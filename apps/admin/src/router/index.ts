@@ -113,6 +113,56 @@ const moduleRoutes = allModules.map((module) => ({
 }));
 
 const MAINTENANCE_MODE_ROUTE = '/system/maintenance-mode';
+const MAINTENANCE_MODE_CACHE_MS = 60_000;
+const MAINTENANCE_MODE_TIMEOUT_MS = 1_200;
+
+type PublicMaintenanceMode = Awaited<ReturnType<typeof maintenanceApi.getPublicMode>>;
+
+const maintenanceModeCache: {
+  expiresAt: number;
+  pending: Promise<PublicMaintenanceMode> | null;
+  value: PublicMaintenanceMode | null;
+} = {
+  expiresAt: 0,
+  pending: null,
+  value: null
+};
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error('Maintenance mode check timed out'));
+    }, timeoutMs);
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timeoutId));
+  });
+}
+
+async function getCachedPublicMaintenanceMode() {
+  const now = Date.now();
+
+  if (maintenanceModeCache.value && maintenanceModeCache.expiresAt > now) {
+    return maintenanceModeCache.value;
+  }
+
+  if (!maintenanceModeCache.pending) {
+    maintenanceModeCache.pending = maintenanceApi
+      .getPublicMode()
+      .then((mode) => {
+        maintenanceModeCache.value = mode;
+        maintenanceModeCache.expiresAt = Date.now() + MAINTENANCE_MODE_CACHE_MS;
+        return mode;
+      })
+      .finally(() => {
+        maintenanceModeCache.pending = null;
+      });
+  }
+
+  return withTimeout(maintenanceModeCache.pending, MAINTENANCE_MODE_TIMEOUT_MS);
+}
 
 async function shouldRedirectToMaintenanceMode(userRoles: string[], targetPath: string) {
   if (targetPath === MAINTENANCE_MODE_ROUTE) {
@@ -120,7 +170,7 @@ async function shouldRedirectToMaintenanceMode(userRoles: string[], targetPath: 
   }
 
   try {
-    const mode = await maintenanceApi.getPublicMode();
+    const mode = await getCachedPublicMaintenanceMode();
 
     if (!mode.enabled) {
       return false;

@@ -11,6 +11,13 @@ coverage/
 .env.*.local
 .env.production
 
+# Local deployment secrets and machine-specific credentials
+.deploy/
+.secrets/
+*.pem
+*.key
+*.p12
+
 # Logs
 *.log
 npm-debug.log*
