@@ -143,7 +143,9 @@ function main() {
   console.log('Next steps');
   console.log('----------');
   if (validation.status === 0) {
-    console.log('- Record prod_env evidence with npm run launch:checklist.');
+    console.log(
+      '- Record prod_env evidence with npm run launch:checklist if it is not already passed.'
+    );
     console.log(
       '- After all manual gates are passed, run npm run release:ready and REQUIRE_PROD_ENV=1 REQUIRE_MANUAL_GATES=1 npm run acceptance:launch.'
     );

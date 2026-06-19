@@ -120,7 +120,7 @@ function printFooter(ok) {
   } else {
     console.log('Release review command completed.');
     console.log('This does not mean production is ready if Manual Gates still says blocked.');
-    console.log('Before production, resolve Telegram, production domain, and Git baseline gates.');
+    console.log('Before production, resolve any blocked Manual Gates shown above.');
   }
 }
 
