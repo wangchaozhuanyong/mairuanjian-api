@@ -1,0 +1,890 @@
+<template>
+  <PageScaffold
+    title="兑换码业务设置"
+    group="兑换码自动发货"
+    phase="Phase 6"
+    description="配置兑换码面值、默认成本、售价、发货方式和组合规则。该业务设置只服务兑换码系统，不和 Apple ID 业务混用。"
+  >
+    <template #actions>
+      <el-tag type="success" effect="light">已接入接口</el-tag>
+    </template>
+
+    <div class="metric-grid metric-grid--four">
+      <MetricCard label="业务数量" :value="total" hint="当前筛选结果" tone="blue" />
+      <MetricCard label="启用业务" :value="enabledCount" hint="当前页" tone="green" />
+      <MetricCard label="半自动发货" :value="semiAutoCount" hint="当前页" tone="orange" />
+      <MetricCard label="允许组合" :value="combinationCount" hint="当前页" tone="purple" />
+    </div>
+
+    <section class="content-panel">
+      <TableToolbar
+        v-model:keyword="query.keyword"
+        v-model:status="query.status"
+        v-model:density="density"
+        v-model:visible-columns="visibleColumns"
+        v-model:saved-view-id="savedViewId"
+        :column-options="serviceColumnOptions"
+        :status-options="statusOptions"
+        :saved-views="savedViews"
+        :filter-chips="filterChips"
+        :selected-count="selectedServices.length"
+        :batch-actions="batchActions"
+        :show-date-shortcut="false"
+        primary-label="新增兑换码业务"
+        placeholder="搜索业务名称、面值、备注"
+        @search="handleSearch"
+        @refresh="loadServices"
+        @primary="openCreate"
+        @clear-filters="clearFilters"
+        @remove-filter="removeFilter"
+        @save-view="saveTableView"
+        @apply-view="applySavedView"
+        @export="exportList"
+        @batch-action="handleBatchAction"
+      >
+        <template #filters>
+          <el-select
+            v-model="query.deliveryMode"
+            class="table-toolbar__select"
+            clearable
+            placeholder="发货方式"
+            @change="handleSearch"
+          >
+            <el-option
+              v-for="mode in deliveryModeOptions"
+              :key="mode.value"
+              :label="mode.label"
+              :value="mode.value"
+            />
+          </el-select>
+        </template>
+      </TableToolbar>
+
+      <el-table
+        v-loading="loading"
+        :data="services"
+        :size="tableSize"
+        row-key="id"
+        empty-text="暂无兑换码业务"
+        @selection-change="handleSelectionChange"
+        @sort-change="handleSortChange"
+      >
+        <el-table-column type="selection" width="46" />
+        <el-table-column
+          v-if="isColumnVisible('name')"
+          prop="name"
+          label="业务"
+          min-width="180"
+          sortable="custom"
+        />
+        <el-table-column
+          v-if="isColumnVisible('faceValue')"
+          prop="faceValue"
+          label="面值"
+          width="110"
+          sortable="custom"
+        />
+        <el-table-column
+          v-if="isColumnVisible('defaultCost')"
+          prop="defaultCost"
+          label="默认成本"
+          width="110"
+          sortable="custom"
+        />
+        <el-table-column
+          v-if="isColumnVisible('defaultPrice')"
+          prop="defaultPrice"
+          label="默认售价"
+          width="110"
+          sortable="custom"
+        />
+        <el-table-column
+          v-if="isColumnVisible('deliveryMode')"
+          prop="deliveryMode"
+          label="发货方式"
+          width="110"
+          sortable="custom"
+        >
+          <template #default="{ row }">{{ getDeliveryModeLabel(row.deliveryMode) }}</template>
+        </el-table-column>
+        <el-table-column v-if="isColumnVisible('rules')" label="匹配规则" min-width="160">
+          <template #default="{ row }">
+            <el-tag size="small" effect="light">
+              {{ row.exactFaceValueOnly ? '精确面值' : '允许近似' }}
+            </el-tag>
+            <el-tag v-if="row.allowCombination" class="tag-gap" size="small" type="warning">
+              可组合
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-if="isColumnVisible('status')"
+          prop="status"
+          label="状态"
+          width="90"
+          sortable="custom"
+        >
+          <template #default="{ row }">
+            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+              {{ getStatusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-if="isColumnVisible('updatedAt')"
+          prop="updatedAt"
+          label="更新时间"
+          min-width="170"
+          sortable="custom"
+        >
+          <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button text @click="openMappings(row)">平台映射</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-row">
+        <el-pagination
+          v-model:current-page="query.page"
+          v-model:page-size="query.pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next"
+          @current-change="loadServices"
+          @size-change="loadServices"
+        />
+      </div>
+    </section>
+
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingService ? '编辑兑换码业务' : '新增兑换码业务'"
+      width="720px"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+        <div class="form-grid">
+          <el-form-item label="业务名称" prop="name">
+            <el-input v-model.trim="form.name" />
+          </el-form-item>
+          <el-form-item label="面值" prop="faceValue">
+            <el-input v-model.trim="form.faceValue" />
+          </el-form-item>
+        </div>
+        <div class="form-grid">
+          <el-form-item label="默认成本">
+            <el-input v-model.trim="form.defaultCost" />
+          </el-form-item>
+          <el-form-item label="默认售价">
+            <el-input v-model.trim="form.defaultPrice" />
+          </el-form-item>
+          <el-form-item label="发货方式">
+            <el-select v-model="form.deliveryMode" class="full-input">
+              <el-option label="自动" value="auto" />
+              <el-option label="半自动" value="semi_auto" />
+              <el-option label="手工" value="manual" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <el-form-item label="匹配和发货规则">
+          <el-checkbox v-model="form.exactFaceValueOnly">只允许精确面值匹配</el-checkbox>
+          <el-checkbox v-model="form.allowCombination">允许组合发货</el-checkbox>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-radio-group v-model="form.status">
+            <el-radio-button value="enabled">启用</el-radio-button>
+            <el-radio-button value="paused">暂停</el-radio-button>
+            <el-radio-button value="disabled">停用</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="form.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveService">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <AppDrawer
+      v-model="mappingDrawerVisible"
+      :title="`平台映射 · ${selectedService?.name ?? ''}`"
+      confirm-text="新增映射"
+      size="880px"
+      @confirm="openCreateMapping"
+    >
+      <div class="panel-title-row">
+        <div>
+          <h3>兑换码平台商品/SKU 映射</h3>
+          <p>用于后续淘宝、闲鱼订单同步时识别兑换码业务，不和 Apple ID 平台映射混用。</p>
+        </div>
+        <el-button @click="loadMappings">刷新</el-button>
+      </div>
+
+      <el-table v-loading="mappingLoading" :data="mappings" row-key="id">
+        <el-table-column label="平台/店铺" min-width="170">
+          <template #default="{ row }">
+            {{ row.platform.name }}
+            <div class="muted-block">{{ row.shopId || row.platform.code }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="商品/SKU" min-width="190">
+          <template #default="{ row }">
+            {{ row.platformItemId }}
+            <div class="muted-block">SKU {{ row.platformSkuId || '-' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="面值/数量" width="130">
+          <template #default="{ row }">{{ row.faceValue }} × {{ row.quantity }}</template>
+        </el-table-column>
+        <el-table-column label="关键词" min-width="140">
+          <template #default="{ row }">{{ row.skuKeyword || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="模板" min-width="150">
+          <template #default="{ row }">{{ row.deliveryTemplate?.name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="启用" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
+              {{ row.enabled ? '启用' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" @click="openEditMapping(row)">编辑</el-button>
+            <el-button text type="danger" @click="deleteMapping(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </AppDrawer>
+
+    <el-dialog
+      v-model="mappingDialogVisible"
+      :title="editingMapping ? '编辑平台映射' : '新增平台映射'"
+      width="720px"
+    >
+      <el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top">
+        <div class="form-grid">
+          <el-form-item label="来源平台" prop="platformId">
+            <el-select v-model="mappingForm.platformId" class="full-input" filterable>
+              <el-option
+                v-for="platform in sourcePlatforms"
+                :key="platform.id"
+                :label="`${platform.name} · ${platform.code}`"
+                :value="platform.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="店铺/账号">
+            <el-input v-model.trim="mappingForm.shopId" />
+          </el-form-item>
+        </div>
+        <div class="form-grid">
+          <el-form-item label="平台商品 ID" prop="platformItemId">
+            <el-input v-model.trim="mappingForm.platformItemId" />
+          </el-form-item>
+          <el-form-item label="平台 SKU ID">
+            <el-input v-model.trim="mappingForm.platformSkuId" />
+          </el-form-item>
+        </div>
+        <div class="form-grid">
+          <el-form-item label="SKU 关键词">
+            <el-input v-model.trim="mappingForm.skuKeyword" />
+          </el-form-item>
+          <el-form-item label="发货数量">
+            <el-input-number v-model="mappingForm.quantity" :min="1" class="full-input" />
+          </el-form-item>
+          <el-form-item label="面值">
+            <el-input v-model.trim="mappingForm.faceValue" />
+          </el-form-item>
+        </div>
+        <el-form-item label="发货模板">
+          <el-select v-model="mappingForm.deliveryTemplateId" class="full-input" clearable>
+            <el-option
+              v-for="template in deliveryTemplates"
+              :key="template.id"
+              :label="template.name"
+              :value="template.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="启用状态">
+          <el-switch v-model="mappingForm.enabled" active-text="启用" inactive-text="停用" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="mappingDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="mappingSaving" @click="saveMapping">保存</el-button>
+      </template>
+    </el-dialog>
+  </PageScaffold>
+</template>
+
+<script setup lang="ts">
+import type { FormInstance, FormRules } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { computed, onMounted, reactive, ref } from 'vue';
+import {
+  codeServicesApi,
+  messageTemplatesApi,
+  sourcePlatformsApi,
+  userTableViewsApi
+} from '@/api/system';
+import AppDrawer from '@/components/ui/AppDrawer.vue';
+import MetricCard from '@/components/ui/MetricCard.vue';
+import PageScaffold from '@/components/ui/PageScaffold.vue';
+import TableToolbar from '@/components/ui/TableToolbar.vue';
+import type {
+  CodePlatformMapping,
+  CodeService,
+  MessageTemplate,
+  SourcePlatform,
+  TableDensity,
+  UserTableView
+} from '@/types/system';
+
+const tableKey = 'code_services';
+const statusOptions = [
+  { label: '启用', value: 'enabled' },
+  { label: '暂停', value: 'paused' },
+  { label: '停用', value: 'disabled' }
+];
+const deliveryModeOptions: Array<{ label: string; value: CodeService['deliveryMode'] }> = [
+  { label: '自动', value: 'auto' },
+  { label: '半自动', value: 'semi_auto' },
+  { label: '手工', value: 'manual' }
+];
+const serviceColumnOptions = [
+  { label: '业务', value: 'name', required: true },
+  { label: '面值', value: 'faceValue' },
+  { label: '默认成本', value: 'defaultCost' },
+  { label: '默认售价', value: 'defaultPrice' },
+  { label: '发货方式', value: 'deliveryMode' },
+  { label: '匹配规则', value: 'rules' },
+  { label: '状态', value: 'status' },
+  { label: '更新时间', value: 'updatedAt' }
+];
+const batchActions = [{ label: '批量导出', value: 'export' }];
+
+const loading = ref(false);
+const saving = ref(false);
+const dialogVisible = ref(false);
+const mappingDrawerVisible = ref(false);
+const mappingDialogVisible = ref(false);
+const editingService = ref<CodeService | null>(null);
+const selectedService = ref<CodeService | null>(null);
+const editingMapping = ref<CodePlatformMapping | null>(null);
+const services = ref<CodeService[]>([]);
+const selectedServices = ref<CodeService[]>([]);
+const mappings = ref<CodePlatformMapping[]>([]);
+const sourcePlatforms = ref<SourcePlatform[]>([]);
+const deliveryTemplates = ref<MessageTemplate[]>([]);
+const total = ref(0);
+const formRef = ref<FormInstance>();
+const mappingFormRef = ref<FormInstance>();
+const mappingLoading = ref(false);
+const mappingSaving = ref(false);
+const density = ref<TableDensity>('default');
+const visibleColumns = ref<string[]>([]);
+const savedViews = ref<UserTableView[]>([]);
+const savedViewId = ref('');
+const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
+
+const query = reactive({
+  page: 1,
+  pageSize: 20,
+  keyword: '',
+  status: '',
+  deliveryMode: ''
+});
+
+const form = reactive({
+  name: '',
+  faceValue: '',
+  defaultPrice: '0',
+  defaultCost: '0',
+  deliveryMode: 'semi_auto' as CodeService['deliveryMode'],
+  exactFaceValueOnly: true,
+  allowCombination: false,
+  status: 'enabled' as CodeService['status'],
+  remark: ''
+});
+
+const mappingForm = reactive({
+  platformId: '',
+  shopId: '',
+  platformItemId: '',
+  platformSkuId: '',
+  skuKeyword: '',
+  faceValue: '',
+  quantity: 1,
+  deliveryTemplateId: '',
+  enabled: true
+});
+
+const rules: FormRules<typeof form> = {
+  name: [{ required: true, message: '请输入业务名称', trigger: 'blur' }],
+  faceValue: [{ required: true, message: '请输入面值', trigger: 'blur' }]
+};
+
+const mappingRules: FormRules<typeof mappingForm> = {
+  platformId: [{ required: true, message: '请选择来源平台', trigger: 'change' }],
+  platformItemId: [{ required: true, message: '请输入平台商品 ID', trigger: 'blur' }]
+};
+
+const enabledCount = computed(
+  () => services.value.filter((service) => service.status === 'enabled').length
+);
+const semiAutoCount = computed(
+  () => services.value.filter((service) => service.deliveryMode === 'semi_auto').length
+);
+const combinationCount = computed(
+  () => services.value.filter((service) => service.allowCombination).length
+);
+const tableSize = computed(() =>
+  density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const filterChips = computed(() => {
+  const chips: Array<{ key: string; label: string; value: string }> = [];
+  const deliveryModeLabel = deliveryModeOptions.find(
+    (mode) => mode.value === query.deliveryMode
+  )?.label;
+  if (query.deliveryMode && deliveryModeLabel) {
+    chips.push({ key: 'deliveryMode', label: '发货方式', value: deliveryModeLabel });
+  }
+  return chips;
+});
+
+function formatDate(value?: string | null) {
+  return value ? new Date(value).toLocaleString('zh-CN') : '-';
+}
+
+function getDeliveryModeLabel(mode: CodeService['deliveryMode']) {
+  const labels: Record<CodeService['deliveryMode'], string> = {
+    auto: '自动',
+    semi_auto: '半自动',
+    manual: '手工'
+  };
+  return labels[mode];
+}
+
+function getStatusLabel(status: CodeService['status']) {
+  const labels: Record<CodeService['status'], string> = {
+    enabled: '启用',
+    paused: '暂停',
+    disabled: '停用'
+  };
+  return labels[status];
+}
+
+function getStatusType(status: CodeService['status']) {
+  if (status === 'enabled') {
+    return 'success';
+  }
+  if (status === 'paused') {
+    return 'warning';
+  }
+  return 'info';
+}
+
+function isColumnVisible(column: string) {
+  return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
+}
+
+async function loadServices() {
+  loading.value = true;
+  try {
+    const data = await codeServicesApi.list({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword || undefined,
+      status: query.status || undefined,
+      deliveryMode: query.deliveryMode || undefined,
+      sortBy: sortConfig.value.prop,
+      sortOrder: mapSortOrder(sortConfig.value.order)
+    });
+    services.value = data.items;
+    total.value = data.total;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载兑换码业务失败');
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function handleSearch() {
+  query.page = 1;
+  await loadServices();
+}
+
+async function handleSortChange(payload: {
+  prop?: string;
+  order?: 'ascending' | 'descending' | null;
+}) {
+  sortConfig.value = payload.prop ? { prop: payload.prop, order: payload.order } : {};
+  query.page = 1;
+  await loadServices();
+}
+
+function handleSelectionChange(rows: CodeService[]) {
+  selectedServices.value = rows;
+}
+
+function clearFilters() {
+  query.page = 1;
+  query.keyword = '';
+  query.status = '';
+  query.deliveryMode = '';
+  savedViewId.value = '';
+  sortConfig.value = {};
+}
+
+function removeFilter(key: string) {
+  if (key === 'deliveryMode') {
+    query.deliveryMode = '';
+  }
+}
+
+function exportList() {
+  ElMessage.info('兑换码业务设置导出会进入数据中心导出任务，后续统一接入');
+}
+
+function handleBatchAction(action: string) {
+  if (action === 'export') {
+    exportList();
+  }
+}
+
+async function loadTableViews(applyDefault = false) {
+  try {
+    const data = await userTableViewsApi.list({
+      page: 1,
+      pageSize: 100,
+      tableKey
+    });
+    savedViews.value = data.items;
+    if (applyDefault) {
+      const defaultView = data.items.find((view) => view.isDefault);
+      if (defaultView) {
+        applyView(defaultView);
+      }
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载保存视图失败');
+  }
+}
+
+async function saveTableView() {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存兑换码业务视图', {
+      inputValue: '兑换码业务常用视图',
+      inputPattern: /^.{1,60}$/,
+      inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
+      confirmButtonText: '保存',
+      cancelButtonText: '取消'
+    });
+    const created = await userTableViewsApi.create({
+      tableKey,
+      viewName: value.trim(),
+      filters: {
+        keyword: query.keyword,
+        status: query.status,
+        deliveryMode: query.deliveryMode
+      },
+      sortConfig: sortConfig.value,
+      columns: visibleColumns.value.length
+        ? visibleColumns.value
+        : serviceColumnOptions.map((column) => column.value),
+      density: density.value,
+      pageSize: query.pageSize,
+      isDefault: savedViews.value.length === 0
+    });
+    await loadTableViews();
+    savedViewId.value = created.id;
+    ElMessage.success('表格视图已保存');
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    ElMessage.error(error instanceof Error ? error.message : '保存视图失败');
+  }
+}
+
+async function applySavedView(id: string) {
+  const view = savedViews.value.find((item) => item.id === id);
+  if (!view) return;
+  applyView(view);
+  ElMessage.success('已应用保存视图');
+  await loadServices();
+}
+
+function applyView(view: UserTableView) {
+  const filters = view.filters;
+  query.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
+  query.status = isServiceStatus(filters.status) ? filters.status : '';
+  query.deliveryMode = isDeliveryMode(filters.deliveryMode) ? filters.deliveryMode : '';
+  query.pageSize = view.pageSize;
+  density.value = view.density;
+  visibleColumns.value = view.columns.length
+    ? view.columns.filter((column) =>
+        serviceColumnOptions.some((option) => option.value === column)
+      )
+    : serviceColumnOptions.map((column) => column.value);
+  sortConfig.value = parseSortConfig(view.sortConfig);
+  savedViewId.value = view.id;
+}
+
+function parseSortConfig(value: Record<string, unknown>): {
+  prop?: string;
+  order?: 'ascending' | 'descending' | null;
+} {
+  const prop = typeof value.prop === 'string' ? value.prop : undefined;
+  const order =
+    value.order === 'ascending' || value.order === 'descending' || value.order === null
+      ? value.order
+      : undefined;
+  return prop ? { prop, order } : {};
+}
+
+function mapSortOrder(order?: 'ascending' | 'descending' | null) {
+  if (order === 'ascending') return 'asc';
+  if (order === 'descending') return 'desc';
+  return undefined;
+}
+
+function isServiceStatus(value: unknown): value is CodeService['status'] | '' {
+  return value === '' || value === 'enabled' || value === 'paused' || value === 'disabled';
+}
+
+function isDeliveryMode(value: unknown): value is CodeService['deliveryMode'] | '' {
+  return value === '' || value === 'auto' || value === 'semi_auto' || value === 'manual';
+}
+
+async function initializePage() {
+  await loadTableViews(true);
+  await loadServices();
+}
+
+async function loadMappingDependencies() {
+  const [platformData, templateData] = await Promise.all([
+    sourcePlatformsApi.list({
+      page: 1,
+      pageSize: 100,
+      status: 'active'
+    }),
+    messageTemplatesApi.list({
+      page: 1,
+      pageSize: 100,
+      status: 'active',
+      type: 'delivery'
+    })
+  ]);
+  sourcePlatforms.value = platformData.items;
+  deliveryTemplates.value = templateData.items;
+}
+
+async function loadMappings() {
+  if (!selectedService.value) {
+    return;
+  }
+
+  mappingLoading.value = true;
+  try {
+    const data = await codeServicesApi.listPlatformMappings({
+      page: 1,
+      pageSize: 100,
+      serviceId: selectedService.value.id
+    });
+    mappings.value = data.items;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载平台映射失败');
+  } finally {
+    mappingLoading.value = false;
+  }
+}
+
+function resetForm() {
+  form.name = '';
+  form.faceValue = '';
+  form.defaultPrice = '0';
+  form.defaultCost = '0';
+  form.deliveryMode = 'semi_auto';
+  form.exactFaceValueOnly = true;
+  form.allowCombination = false;
+  form.status = 'enabled';
+  form.remark = '';
+}
+
+function openCreate() {
+  editingService.value = null;
+  resetForm();
+  dialogVisible.value = true;
+}
+
+function openEdit(service: CodeService) {
+  editingService.value = service;
+  form.name = service.name;
+  form.faceValue = service.faceValue;
+  form.defaultPrice = service.defaultPrice;
+  form.defaultCost = service.defaultCost;
+  form.deliveryMode = service.deliveryMode;
+  form.exactFaceValueOnly = service.exactFaceValueOnly;
+  form.allowCombination = service.allowCombination;
+  form.status = service.status;
+  form.remark = service.remark ?? '';
+  dialogVisible.value = true;
+}
+
+async function openMappings(service: CodeService) {
+  selectedService.value = service;
+  mappingDrawerVisible.value = true;
+  try {
+    await Promise.all([loadMappingDependencies(), loadMappings()]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载平台映射依赖失败');
+  }
+}
+
+function resetMappingForm() {
+  mappingForm.platformId = sourcePlatforms.value[0]?.id ?? '';
+  mappingForm.shopId = '';
+  mappingForm.platformItemId = '';
+  mappingForm.platformSkuId = '';
+  mappingForm.skuKeyword = '';
+  mappingForm.faceValue = selectedService.value?.faceValue ?? '';
+  mappingForm.quantity = 1;
+  mappingForm.deliveryTemplateId = '';
+  mappingForm.enabled = true;
+}
+
+async function openCreateMapping() {
+  if (!selectedService.value) {
+    return;
+  }
+
+  editingMapping.value = null;
+  if (!sourcePlatforms.value.length || !deliveryTemplates.value.length) {
+    await loadMappingDependencies();
+  }
+  resetMappingForm();
+  mappingDialogVisible.value = true;
+}
+
+function openEditMapping(mapping: CodePlatformMapping) {
+  editingMapping.value = mapping;
+  mappingForm.platformId = mapping.platformId;
+  mappingForm.shopId = mapping.shopId ?? '';
+  mappingForm.platformItemId = mapping.platformItemId;
+  mappingForm.platformSkuId = mapping.platformSkuId;
+  mappingForm.skuKeyword = mapping.skuKeyword ?? '';
+  mappingForm.faceValue = mapping.faceValue;
+  mappingForm.quantity = mapping.quantity;
+  mappingForm.deliveryTemplateId = mapping.deliveryTemplateId ?? '';
+  mappingForm.enabled = mapping.enabled;
+  mappingDialogVisible.value = true;
+}
+
+async function saveService() {
+  const valid = await formRef.value?.validate().catch(() => false);
+  if (!valid) {
+    return;
+  }
+
+  saving.value = true;
+  try {
+    const payload = {
+      name: form.name,
+      faceValue: form.faceValue,
+      defaultPrice: form.defaultPrice,
+      defaultCost: form.defaultCost,
+      deliveryMode: form.deliveryMode,
+      exactFaceValueOnly: form.exactFaceValueOnly,
+      allowCombination: form.allowCombination,
+      status: form.status,
+      remark: form.remark || null
+    };
+
+    if (editingService.value) {
+      await codeServicesApi.update(editingService.value.id, payload);
+      ElMessage.success('兑换码业务已更新');
+    } else {
+      await codeServicesApi.create(payload);
+      ElMessage.success('兑换码业务已创建');
+    }
+
+    dialogVisible.value = false;
+    await loadServices();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存兑换码业务失败');
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function saveMapping() {
+  if (!selectedService.value) {
+    return;
+  }
+
+  const valid = await mappingFormRef.value?.validate().catch(() => false);
+  if (!valid) {
+    return;
+  }
+
+  mappingSaving.value = true;
+  try {
+    const payload = {
+      platformId: mappingForm.platformId,
+      shopId: mappingForm.shopId || null,
+      platformItemId: mappingForm.platformItemId,
+      platformSkuId: mappingForm.platformSkuId || null,
+      skuKeyword: mappingForm.skuKeyword || null,
+      serviceId: selectedService.value.id,
+      faceValue: mappingForm.faceValue || undefined,
+      quantity: mappingForm.quantity,
+      deliveryTemplateId: mappingForm.deliveryTemplateId || null,
+      enabled: mappingForm.enabled
+    };
+
+    if (editingMapping.value) {
+      await codeServicesApi.updatePlatformMapping(editingMapping.value.id, payload);
+    } else {
+      await codeServicesApi.createPlatformMapping(payload);
+    }
+
+    ElMessage.success('平台映射已保存');
+    mappingDialogVisible.value = false;
+    await loadMappings();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存平台映射失败');
+  } finally {
+    mappingSaving.value = false;
+  }
+}
+
+async function deleteMapping(mapping: CodePlatformMapping) {
+  try {
+    await ElMessageBox.confirm(
+      '删除后平台订单将无法通过该商品/SKU 自动识别此兑换码业务。',
+      '删除平台映射',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    );
+    await codeServicesApi.removePlatformMapping(mapping.id);
+    ElMessage.success('平台映射已删除');
+    await loadMappings();
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '删除平台映射失败');
+    }
+  }
+}
+
+onMounted(initializePage);
+</script>

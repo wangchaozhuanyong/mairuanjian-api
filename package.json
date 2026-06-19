@@ -1,0 +1,73 @@
+{
+  "name": "apple-id-business-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Apple ID 代充业务管理系统 + 兑换码自动发货系统",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "setup:env": "node scripts/setup-env.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "dev:api": "npm run dev --workspace @apple-business/api",
+    "dev:admin": "npm run dev --workspace @apple-business/admin",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run prisma:validate && npm run audit:high",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test --workspaces --if-present",
+    "audit:high": "npm audit --audit-level=high",
+    "prisma:generate": "npm run prisma:generate --workspace @apple-business/api",
+    "prisma:validate": "npm run prisma:validate --workspace @apple-business/api",
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --workspace @apple-business/api",
+    "prisma:seed": "npm run prisma:seed --workspace @apple-business/api",
+    "prod:config": "docker compose --env-file .env.production -f docker-compose.prod.yml config",
+    "prod:config:example": "PROD_ENV_FILE=.env.production.example docker compose --env-file .env.production.example -f docker-compose.prod.yml config",
+    "prod:env:init": "node scripts/init-production-env.mjs",
+    "prod:env:set-domain": "node scripts/set-production-domain.mjs",
+    "prod:env:set-mode": "node scripts/set-production-release-mode.mjs",
+    "prod:env:check": "node scripts/validate-production-env.mjs",
+    "prod:env:review": "node scripts/production-env-review.mjs",
+    "launch:status": "node scripts/launch-status.mjs",
+    "prod:smoke": "bash scripts/deploy-smoke.sh",
+    "backup:postgres": "bash scripts/backup-postgres.sh",
+    "restore:verify": "bash scripts/verify-postgres-restore.sh",
+    "acceptance:business": "node scripts/acceptance-business-workflows.mjs",
+    "acceptance:security": "node scripts/acceptance-sensitive-security.mjs",
+    "acceptance:launch": "bash scripts/acceptance-launch-local.sh",
+    "git:readiness": "node scripts/git-readiness.mjs",
+    "git:readiness:verbose": "node scripts/git-readiness.mjs --verbose",
+    "launch:gates": "node scripts/manual-gates-status.mjs",
+    "launch:gates:strict": "node scripts/manual-gates-status.mjs --strict",
+    "launch:checklist": "node scripts/record-launch-checklist.mjs",
+    "release:review": "node scripts/release-review.mjs",
+    "release:ready": "node scripts/release-review.mjs --strict",
+    "release:blockers": "node scripts/release-blockers.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.2",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.4",
+    "typescript-eslint": "^8.61.1",
+    "vue-eslint-parser": "^10.4.1"
+  },
+  "dependencies": {
+    "@nestjs/jwt": "^11.0.2"
+  },
+  "overrides": {
+    "@nestjs/platform-express": {
+      "multer": "2.2.0"
+    }
+  }
+}

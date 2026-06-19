@@ -1,0 +1,801 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException
+} from '@nestjs/common';
+import type {
+  AppleService,
+  AppleServiceExpireCalcType,
+  AppleServiceLockRule,
+  AppleServicePeriodType,
+  AppleServicePlatformFeeType,
+  AppleServicePlatformMapping,
+  AppleServiceStatus,
+  Prisma
+} from '@prisma/client';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuthenticatedUser } from '../auth/auth.types';
+import { getPagination, type PaginationQuery } from '../common/pagination';
+import { PrismaService } from '../common/prisma/prisma.service';
+import type { CreateAppleServiceDto } from './dto/create-apple-service.dto';
+import type { CreateAppleServicePlatformMappingDto } from './dto/create-apple-service-platform-mapping.dto';
+import type { UpdateAppleServiceDto } from './dto/update-apple-service.dto';
+import type { UpdateAppleServicePlatformMappingDto } from './dto/update-apple-service-platform-mapping.dto';
+
+interface ListAppleServicesQuery extends PaginationQuery {
+  keyword?: string;
+  status?: string;
+  currency?: string;
+  category?: string;
+  sortBy?: string;
+  sortOrder?: string;
+}
+
+type AppleServicePlatformMappingWithRelations = AppleServicePlatformMapping & {
+  sourcePlatform: {
+    id: string;
+    name: string;
+    code: string;
+    type: string;
+    feeRate: Prisma.Decimal;
+    feeFixed: Prisma.Decimal;
+    status: string;
+  };
+};
+
+const APPLE_SERVICE_SORT_FIELDS: Record<string, keyof Prisma.AppleServiceOrderByWithRelationInput> =
+  {
+    name: 'name',
+    category: 'category',
+    defaultPrice: 'defaultPrice',
+    officialCostValue: 'officialCostValue',
+    currency: 'currency',
+    defaultPeriodValue: 'defaultPeriodValue',
+    lockRule: 'lockRule',
+    status: 'status',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+  };
+
+@Injectable()
+export class AppleServicesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService
+  ) {}
+
+  async list(query: ListAppleServicesQuery) {
+    const pagination = getPagination(query);
+    const keyword = query.keyword?.trim();
+    const status = this.parseStatus(query.status, false);
+    const where: Prisma.AppleServiceWhereInput = {
+      deletedAt: null,
+      status: status ?? undefined,
+      currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
+      category: query.category?.trim() || undefined,
+      OR: keyword
+        ? [
+            { name: { contains: keyword, mode: 'insensitive' } },
+            { category: { contains: keyword, mode: 'insensitive' } },
+            { currency: { contains: keyword, mode: 'insensitive' } },
+            { remark: { contains: keyword, mode: 'insensitive' } }
+          ]
+        : undefined
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.appleService.findMany({
+        where,
+        skip: pagination.skip,
+        take: pagination.take,
+        orderBy: this.buildOrderBy(query)
+      }),
+      this.prisma.appleService.count({ where })
+    ]);
+
+    return {
+      items: items.map((service) => this.toResponse(service)),
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize
+    };
+  }
+
+  async get(id: string) {
+    const service = await this.prisma.appleService.findFirst({
+      where: { id, deletedAt: null }
+    });
+
+    if (!service) {
+      throw new NotFoundException('Apple service not found');
+    }
+
+    return this.toResponse(service);
+  }
+
+  async create(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
+    this.assertRequiredString(dto.name, 'name');
+    const data = this.buildCreateData(dto, operator);
+    const service = await this.prisma.appleService.create({ data });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.create',
+      objectType: 'apple_service',
+      objectId: service.id,
+      afterData: this.toAuditJson(this.toResponse(service)),
+      remark: `Created Apple service ${service.name}`
+    });
+
+    return this.get(service.id);
+  }
+
+  async update(id: string, dto: UpdateAppleServiceDto, operator?: AuthenticatedUser) {
+    const existingService = await this.prisma.appleService.findFirst({
+      where: { id, deletedAt: null }
+    });
+
+    if (!existingService) {
+      throw new NotFoundException('Apple service not found');
+    }
+
+    const data = this.buildUpdateData(dto, operator);
+    await this.prisma.appleService.update({
+      where: { id },
+      data
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.update',
+      objectType: 'apple_service',
+      objectId: id,
+      beforeData: this.toAuditJson(this.toResponse(existingService)),
+      afterData: this.toAuditJson(dto),
+      remark: `Updated Apple service ${existingService.name}`
+    });
+
+    return this.get(id);
+  }
+
+  async remove(id: string, operator?: AuthenticatedUser) {
+    const existingService = await this.prisma.appleService.findFirst({
+      where: { id, deletedAt: null }
+    });
+
+    if (!existingService) {
+      throw new NotFoundException('Apple service not found');
+    }
+
+    await this.prisma.appleService.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        updatedByUserId: operator?.id
+      }
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.delete',
+      objectType: 'apple_service',
+      objectId: id,
+      beforeData: this.toAuditJson(this.toResponse(existingService)),
+      remark: `Deleted Apple service ${existingService.name}`
+    });
+
+    return { deleted: true };
+  }
+
+  async listPlatformMappings(serviceId: string) {
+    await this.assertServiceExists(serviceId);
+    const mappings = await this.prisma.appleServicePlatformMapping.findMany({
+      where: { serviceId },
+      include: this.getPlatformMappingInclude(),
+      orderBy: [{ enabled: 'desc' }, { updatedAt: 'desc' }]
+    });
+
+    return {
+      items: mappings.map((mapping) => this.toPlatformMappingResponse(mapping))
+    };
+  }
+
+  async createPlatformMapping(
+    serviceId: string,
+    dto: CreateAppleServicePlatformMappingDto,
+    operator?: AuthenticatedUser
+  ) {
+    await this.assertServiceExists(serviceId);
+    const data = await this.buildPlatformMappingCreateData(serviceId, dto);
+
+    await this.assertPlatformMappingAvailable({
+      serviceId: data.serviceId,
+      sourcePlatformId: data.sourcePlatformId,
+      platformItemId: data.platformItemId,
+      platformSkuId: data.platformSkuId
+    });
+
+    const mapping = await this.prisma.appleServicePlatformMapping.create({
+      data,
+      include: this.getPlatformMappingInclude()
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.platform_mapping.create',
+      objectType: 'apple_service_platform_mapping',
+      objectId: mapping.id,
+      afterData: this.toAuditJson(this.toPlatformMappingResponse(mapping)),
+      remark: `Created Apple service platform mapping ${mapping.id}`
+    });
+
+    return this.toPlatformMappingResponse(mapping);
+  }
+
+  async updatePlatformMapping(
+    id: string,
+    dto: UpdateAppleServicePlatformMappingDto,
+    operator?: AuthenticatedUser
+  ) {
+    const existingMapping = await this.findPlatformMappingOrThrow(id);
+    const data = await this.buildPlatformMappingUpdateData(dto);
+    const nextSourcePlatformId =
+      typeof data.sourcePlatformId === 'string'
+        ? data.sourcePlatformId
+        : existingMapping.sourcePlatformId;
+    const nextPlatformItemId =
+      typeof data.platformItemId === 'string'
+        ? data.platformItemId
+        : existingMapping.platformItemId;
+    const nextPlatformSkuId =
+      typeof data.platformSkuId === 'string' ? data.platformSkuId : existingMapping.platformSkuId;
+
+    await this.assertPlatformMappingAvailable(
+      {
+        serviceId: existingMapping.serviceId,
+        sourcePlatformId: nextSourcePlatformId,
+        platformItemId: nextPlatformItemId,
+        platformSkuId: nextPlatformSkuId
+      },
+      id
+    );
+
+    const mapping = await this.prisma.appleServicePlatformMapping.update({
+      where: { id },
+      data,
+      include: this.getPlatformMappingInclude()
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.platform_mapping.update',
+      objectType: 'apple_service_platform_mapping',
+      objectId: id,
+      beforeData: this.toAuditJson(this.toPlatformMappingResponse(existingMapping)),
+      afterData: this.toAuditJson(dto),
+      remark: `Updated Apple service platform mapping ${id}`
+    });
+
+    return this.toPlatformMappingResponse(mapping);
+  }
+
+  async removePlatformMapping(id: string, operator?: AuthenticatedUser) {
+    const existingMapping = await this.findPlatformMappingOrThrow(id);
+
+    await this.prisma.appleServicePlatformMapping.delete({
+      where: { id }
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.platform_mapping.delete',
+      objectType: 'apple_service_platform_mapping',
+      objectId: id,
+      beforeData: this.toAuditJson(this.toPlatformMappingResponse(existingMapping)),
+      remark: `Deleted Apple service platform mapping ${id}`
+    });
+
+    return { deleted: true };
+  }
+
+  private buildOrderBy(
+    query: ListAppleServicesQuery
+  ): Prisma.AppleServiceOrderByWithRelationInput[] {
+    const sortOrder = this.parseSortOrder(query.sortOrder);
+    const sortField = query.sortBy ? APPLE_SERVICE_SORT_FIELDS[query.sortBy] : undefined;
+
+    if (!sortField || !sortOrder) {
+      return [{ createdAt: 'desc' }];
+    }
+
+    return [{ [sortField]: sortOrder }, { createdAt: 'desc' }];
+  }
+
+  private parseSortOrder(value?: string): Prisma.SortOrder | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    if (value === 'asc' || value === 'desc') {
+      return value;
+    }
+
+    throw new BadRequestException('sortOrder is invalid');
+  }
+
+  private async buildPlatformMappingCreateData(
+    serviceId: string,
+    dto: CreateAppleServicePlatformMappingDto
+  ) {
+    const sourcePlatformId = this.normalizeRequiredId(dto.sourcePlatformId, 'sourcePlatformId');
+    await this.assertSourcePlatformAvailable(sourcePlatformId);
+
+    return {
+      serviceId,
+      sourcePlatformId,
+      shopName: this.normalizeNullableString(dto.shopName),
+      platformItemId: this.normalizeRequiredString(dto.platformItemId, 'platformItemId'),
+      platformSkuId: this.normalizeOptionalCode(dto.platformSkuId),
+      skuKeyword: this.normalizeNullableString(dto.skuKeyword),
+      platformPrice: this.normalizeDecimal(dto.platformPrice, 'platformPrice', '0'),
+      platformFeeType: this.parsePlatformFeeType(dto.platformFeeType, true) ?? 'none',
+      platformFeeValue: this.normalizeDecimal(dto.platformFeeValue, 'platformFeeValue', '0'),
+      allowAutoOrder: Boolean(dto.allowAutoOrder),
+      enabled: dto.enabled ?? true
+    } satisfies Prisma.AppleServicePlatformMappingUncheckedCreateInput;
+  }
+
+  private async buildPlatformMappingUpdateData(dto: UpdateAppleServicePlatformMappingDto) {
+    const data: Prisma.AppleServicePlatformMappingUncheckedUpdateInput = {};
+
+    if (dto.sourcePlatformId !== undefined) {
+      const sourcePlatformId = this.normalizeRequiredId(dto.sourcePlatformId, 'sourcePlatformId');
+      await this.assertSourcePlatformAvailable(sourcePlatformId);
+      data.sourcePlatformId = sourcePlatformId;
+    }
+
+    if (dto.shopName !== undefined) {
+      data.shopName = this.normalizeNullableString(dto.shopName);
+    }
+
+    if (dto.platformItemId !== undefined) {
+      data.platformItemId = this.normalizeRequiredString(dto.platformItemId, 'platformItemId');
+    }
+
+    if (dto.platformSkuId !== undefined) {
+      data.platformSkuId = this.normalizeOptionalCode(dto.platformSkuId);
+    }
+
+    if (dto.skuKeyword !== undefined) {
+      data.skuKeyword = this.normalizeNullableString(dto.skuKeyword);
+    }
+
+    if (dto.platformPrice !== undefined) {
+      data.platformPrice = this.normalizeDecimal(dto.platformPrice, 'platformPrice', '0');
+    }
+
+    if (dto.platformFeeType !== undefined) {
+      data.platformFeeType = this.parsePlatformFeeType(dto.platformFeeType, true);
+    }
+
+    if (dto.platformFeeValue !== undefined) {
+      data.platformFeeValue = this.normalizeDecimal(dto.platformFeeValue, 'platformFeeValue', '0');
+    }
+
+    if (dto.allowAutoOrder !== undefined) {
+      data.allowAutoOrder = Boolean(dto.allowAutoOrder);
+    }
+
+    if (dto.enabled !== undefined) {
+      data.enabled = Boolean(dto.enabled);
+    }
+
+    return data;
+  }
+
+  private async assertServiceExists(id: string) {
+    const service = await this.prisma.appleService.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true }
+    });
+
+    if (!service) {
+      throw new NotFoundException('Apple service not found');
+    }
+  }
+
+  private async assertSourcePlatformAvailable(id: string) {
+    const sourcePlatform = await this.prisma.sourcePlatform.findFirst({
+      where: { id, deletedAt: null, status: 'active' },
+      select: { id: true }
+    });
+
+    if (!sourcePlatform) {
+      throw new BadRequestException('Source platform does not exist or is disabled');
+    }
+  }
+
+  private async assertPlatformMappingAvailable(
+    mapping: {
+      serviceId: string;
+      sourcePlatformId: string;
+      platformItemId: string;
+      platformSkuId: string;
+    },
+    currentId?: string
+  ) {
+    const existingMapping = await this.prisma.appleServicePlatformMapping.findFirst({
+      where: {
+        serviceId: mapping.serviceId,
+        sourcePlatformId: mapping.sourcePlatformId,
+        platformItemId: mapping.platformItemId,
+        platformSkuId: mapping.platformSkuId,
+        id: currentId ? { not: currentId } : undefined
+      },
+      select: { id: true }
+    });
+
+    if (existingMapping) {
+      throw new ConflictException('Apple service platform mapping already exists');
+    }
+  }
+
+  private async findPlatformMappingOrThrow(id: string) {
+    const mapping = await this.prisma.appleServicePlatformMapping.findUnique({
+      where: { id },
+      include: this.getPlatformMappingInclude()
+    });
+
+    if (!mapping) {
+      throw new NotFoundException('Apple service platform mapping not found');
+    }
+
+    return mapping;
+  }
+
+  private getPlatformMappingInclude() {
+    return {
+      sourcePlatform: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          type: true,
+          feeRate: true,
+          feeFixed: true,
+          status: true
+        }
+      }
+    } satisfies Prisma.AppleServicePlatformMappingInclude;
+  }
+
+  private buildCreateData(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
+    return {
+      name: dto.name.trim(),
+      category: this.normalizeCode(dto.category, 'default', false),
+      defaultPrice: this.normalizeDecimal(dto.defaultPrice, 'defaultPrice', '0'),
+      officialCostValue: this.normalizeDecimal(dto.officialCostValue, 'officialCostValue', '0'),
+      currency: this.normalizeCode(dto.currency, 'USD', true),
+      defaultPeriodType: this.parsePeriodType(dto.defaultPeriodType, true) ?? 'month',
+      defaultPeriodValue: this.normalizePositiveInteger(
+        dto.defaultPeriodValue,
+        'defaultPeriodValue',
+        1
+      ),
+      expireCalcType: this.parseExpireCalcType(dto.expireCalcType, true) ?? 'by_month',
+      requireAppleId: dto.requireAppleId ?? true,
+      requireServiceAccount: dto.requireServiceAccount ?? false,
+      autoMatchAppleId: dto.autoMatchAppleId ?? true,
+      lockRule: this.parseLockRule(dto.lockRule, true) ?? 'by_service',
+      allowedRegions: this.normalizeRegions(dto.allowedRegions),
+      minBalanceRequired: this.normalizeDecimal(dto.minBalanceRequired, 'minBalanceRequired', '0'),
+      status: this.parseStatus(dto.status, true) ?? 'enabled',
+      remark: this.normalizeNullableString(dto.remark),
+      createdByUserId: operator?.id,
+      updatedByUserId: operator?.id
+    } satisfies Prisma.AppleServiceUncheckedCreateInput;
+  }
+
+  private buildUpdateData(dto: UpdateAppleServiceDto, operator?: AuthenticatedUser) {
+    const data: Prisma.AppleServiceUpdateInput = {
+      updatedBy: operator?.id ? { connect: { id: operator.id } } : undefined
+    };
+
+    if (dto.name !== undefined) {
+      this.assertRequiredString(dto.name, 'name');
+      data.name = dto.name.trim();
+    }
+
+    if (dto.category !== undefined) {
+      data.category = this.normalizeCode(dto.category, 'default', false);
+    }
+
+    if (dto.defaultPrice !== undefined) {
+      data.defaultPrice = this.normalizeDecimal(dto.defaultPrice, 'defaultPrice', '0');
+    }
+
+    if (dto.officialCostValue !== undefined) {
+      data.officialCostValue = this.normalizeDecimal(
+        dto.officialCostValue,
+        'officialCostValue',
+        '0'
+      );
+    }
+
+    if (dto.currency !== undefined) {
+      data.currency = this.normalizeCode(dto.currency, 'USD', true);
+    }
+
+    if (dto.defaultPeriodType !== undefined) {
+      data.defaultPeriodType = this.parsePeriodType(dto.defaultPeriodType, true);
+    }
+
+    if (dto.defaultPeriodValue !== undefined) {
+      data.defaultPeriodValue = this.normalizePositiveInteger(
+        dto.defaultPeriodValue,
+        'defaultPeriodValue',
+        1
+      );
+    }
+
+    if (dto.expireCalcType !== undefined) {
+      data.expireCalcType = this.parseExpireCalcType(dto.expireCalcType, true);
+    }
+
+    if (dto.requireAppleId !== undefined) {
+      data.requireAppleId = dto.requireAppleId;
+    }
+
+    if (dto.requireServiceAccount !== undefined) {
+      data.requireServiceAccount = dto.requireServiceAccount;
+    }
+
+    if (dto.autoMatchAppleId !== undefined) {
+      data.autoMatchAppleId = dto.autoMatchAppleId;
+    }
+
+    if (dto.lockRule !== undefined) {
+      data.lockRule = this.parseLockRule(dto.lockRule, true);
+    }
+
+    if (dto.allowedRegions !== undefined) {
+      data.allowedRegions = this.normalizeRegions(dto.allowedRegions);
+    }
+
+    if (dto.minBalanceRequired !== undefined) {
+      data.minBalanceRequired = this.normalizeDecimal(
+        dto.minBalanceRequired,
+        'minBalanceRequired',
+        '0'
+      );
+    }
+
+    if (dto.status !== undefined) {
+      data.status = this.parseStatus(dto.status, true);
+    }
+
+    if (dto.remark !== undefined) {
+      data.remark = this.normalizeNullableString(dto.remark);
+    }
+
+    return data;
+  }
+
+  private assertRequiredString(value: unknown, field: string): asserts value is string {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new BadRequestException(`${field} is required`);
+    }
+  }
+
+  private normalizeRequiredString(value: unknown, field: string) {
+    this.assertRequiredString(value, field);
+    return value.trim();
+  }
+
+  private normalizeRequiredId(value: unknown, field: string) {
+    this.assertRequiredString(value, field);
+    const normalized = value.trim();
+
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)) {
+      throw new BadRequestException(`${field} must be a uuid`);
+    }
+
+    return normalized;
+  }
+
+  private normalizeNullableString(value: string | null | undefined) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    const normalized = value.trim();
+    return normalized || null;
+  }
+
+  private normalizeOptionalCode(value: string | null | undefined) {
+    return this.normalizeNullableString(value) ?? '';
+  }
+
+  private normalizeCode(value: string | undefined, fallback: string, upperCase: boolean) {
+    const normalized = (value || fallback).trim();
+    const formatted = upperCase ? normalized.toUpperCase() : normalized.toLowerCase();
+
+    if (!/^[a-zA-Z0-9_-]{2,40}$/.test(formatted)) {
+      throw new BadRequestException('Invalid code format');
+    }
+
+    return formatted;
+  }
+
+  private normalizeRegions(regions?: string[]) {
+    return [
+      ...new Set((regions ?? []).map((region) => region.trim().toUpperCase()).filter(Boolean))
+    ];
+  }
+
+  private normalizePositiveInteger(value: number | undefined, field: string, fallback: number) {
+    const normalized = value ?? fallback;
+
+    if (!Number.isInteger(normalized) || normalized < 1) {
+      throw new BadRequestException(`${field} must be a positive integer`);
+    }
+
+    return normalized;
+  }
+
+  private normalizeDecimal(value: string | number | undefined, field: string, fallback: string) {
+    const normalized = value === undefined || value === '' ? fallback : String(value).trim();
+
+    if (!/^\d+(\.\d{1,8})?$/.test(normalized)) {
+      throw new BadRequestException(`${field} must be a non-negative decimal`);
+    }
+
+    return normalized;
+  }
+
+  private parsePlatformFeeType(
+    value: string | undefined,
+    strict: boolean
+  ): AppleServicePlatformFeeType | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    if (value === 'none' || value === 'rate' || value === 'fixed' || value === 'mixed') {
+      return value;
+    }
+
+    if (strict) {
+      throw new BadRequestException('Invalid platform fee type');
+    }
+
+    return undefined;
+  }
+
+  private parseStatus(value: unknown, strict: boolean) {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    if (value === 'enabled' || value === 'paused' || value === 'disabled') {
+      return value satisfies AppleServiceStatus;
+    }
+
+    if (strict) {
+      throw new BadRequestException('Invalid Apple service status');
+    }
+
+    return undefined;
+  }
+
+  private parsePeriodType(value: unknown, strict: boolean) {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    if (value === 'month' || value === 'day' || value === 'manual') {
+      return value satisfies AppleServicePeriodType;
+    }
+
+    if (strict) {
+      throw new BadRequestException('Invalid Apple service period type');
+    }
+
+    return undefined;
+  }
+
+  private parseExpireCalcType(value: unknown, strict: boolean) {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    if (value === 'by_month' || value === 'by_day' || value === 'manual') {
+      return value satisfies AppleServiceExpireCalcType;
+    }
+
+    if (strict) {
+      throw new BadRequestException('Invalid Apple service expire calc type');
+    }
+
+    return undefined;
+  }
+
+  private parseLockRule(value: unknown, strict: boolean) {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    if (value === 'by_service' || value === 'global') {
+      return value satisfies AppleServiceLockRule;
+    }
+
+    if (strict) {
+      throw new BadRequestException('Invalid Apple service lock rule');
+    }
+
+    return undefined;
+  }
+
+  private toAuditJson(data: unknown) {
+    return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
+  }
+
+  private toResponse(service: AppleService) {
+    return {
+      id: service.id,
+      name: service.name,
+      category: service.category,
+      defaultPrice: service.defaultPrice.toString(),
+      officialCostValue: service.officialCostValue.toString(),
+      currency: service.currency,
+      defaultPeriodType: service.defaultPeriodType,
+      defaultPeriodValue: service.defaultPeriodValue,
+      expireCalcType: service.expireCalcType,
+      requireAppleId: service.requireAppleId,
+      requireServiceAccount: service.requireServiceAccount,
+      autoMatchAppleId: service.autoMatchAppleId,
+      lockRule: service.lockRule,
+      allowedRegions: service.allowedRegions,
+      minBalanceRequired: service.minBalanceRequired.toString(),
+      status: service.status,
+      remark: service.remark,
+      createdAt: service.createdAt,
+      updatedAt: service.updatedAt
+    };
+  }
+
+  private toPlatformMappingResponse(mapping: AppleServicePlatformMappingWithRelations) {
+    return {
+      id: mapping.id,
+      serviceId: mapping.serviceId,
+      sourcePlatformId: mapping.sourcePlatformId,
+      sourcePlatform: {
+        id: mapping.sourcePlatform.id,
+        name: mapping.sourcePlatform.name,
+        code: mapping.sourcePlatform.code,
+        type: mapping.sourcePlatform.type,
+        feeRate: mapping.sourcePlatform.feeRate.toString(),
+        feeFixed: mapping.sourcePlatform.feeFixed.toString(),
+        status: mapping.sourcePlatform.status
+      },
+      shopName: mapping.shopName,
+      platformItemId: mapping.platformItemId,
+      platformSkuId: mapping.platformSkuId,
+      skuKeyword: mapping.skuKeyword,
+      platformPrice: mapping.platformPrice.toString(),
+      platformFeeType: mapping.platformFeeType,
+      platformFeeValue: mapping.platformFeeValue.toString(),
+      allowAutoOrder: mapping.allowAutoOrder,
+      enabled: mapping.enabled,
+      createdAt: mapping.createdAt,
+      updatedAt: mapping.updatedAt
+    };
+  }
+}

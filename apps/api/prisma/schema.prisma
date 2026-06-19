@@ -1,0 +1,2084 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  active
+  disabled
+}
+
+enum CustomerStatus {
+  active
+  disabled
+}
+
+enum SourcePlatformType {
+  taobao
+  xianyu
+  wechat
+  manual
+  other
+}
+
+enum SourcePlatformStatus {
+  active
+  disabled
+}
+
+enum MessageTemplateType {
+  renewal
+  delivery
+  after_sale
+  notification
+  custom
+}
+
+enum MessageTemplateChannel {
+  internal
+  telegram
+  customer_service
+}
+
+enum MessageTemplateStatus {
+  active
+  disabled
+}
+
+enum AppleAccountStatus {
+  normal
+  need_verify
+  locked
+  password_error
+  risk
+  unknown
+}
+
+enum AppleServiceStatus {
+  enabled
+  paused
+  disabled
+}
+
+enum AppleServicePeriodType {
+  month
+  day
+  manual
+}
+
+enum AppleServiceExpireCalcType {
+  by_month
+  by_day
+  manual
+}
+
+enum AppleServiceLockRule {
+  by_service
+  global
+}
+
+enum AppleOrderStatus {
+  pending
+  active
+  completed
+  cancelled
+  abnormal
+}
+
+enum ServiceActivationStatus {
+  active
+  expired
+  cancelled
+  abnormal
+}
+
+enum AutoRenewStatus {
+  enabled
+  disabled
+  unknown
+}
+
+enum RenewalDecision {
+  unconfirmed
+  renew
+  no_renew
+  change_plan
+}
+
+enum RenewalTaskType {
+  contact_customer
+  remind_customer_reply
+  confirm_payment
+  topup_apple_balance
+  check_balance
+  cancel_subscription
+  change_plan
+  wait_auto_renewal
+  check_renewal_result
+  notify_customer
+  handle_abnormal
+  after_sale
+}
+
+enum RenewalTaskStatus {
+  pending
+  processing
+  waiting_customer
+  waiting_payment
+  waiting_auto_renewal
+  waiting_manual_verify
+  completed
+  cancelled
+  failed
+  abnormal
+  postponed
+}
+
+enum RenewalTaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum RenewalTaskCustomerDecision {
+  not_contacted
+  contacted_waiting_reply
+  confirmed_renewal
+  confirmed_no_renewal
+  change_plan
+  considering
+  paid
+  unpaid
+  cancelled
+  renewed_success
+  abnormal
+}
+
+enum AppleActionPlanStatus {
+  pending
+  processing
+  completed
+  abnormal
+}
+
+enum AppleActionPlanItemActionType {
+  renew
+  cancel
+  change_plan
+  wait_customer
+}
+
+enum AppleActionPlanItemStatus {
+  pending
+  completed
+  abnormal
+}
+
+enum AppleAccountLockScope {
+  by_service
+  global
+}
+
+enum AppleAccountLockStatus {
+  active
+  released
+  expired
+}
+
+enum AppleBalanceAdjustmentCostMethod {
+  none
+  current_avg
+  manual
+}
+
+enum AppleAccountStatusCheckType {
+  manual
+  automation
+}
+
+enum AutomationTaskType {
+  check_status
+  check_balance
+  topup
+  cancel_subscription
+  change_phone
+  change_security
+  check_renewal
+}
+
+enum AutomationTaskStatus {
+  pending
+  queued
+  running
+  waiting_manual_verify
+  success
+  failed
+  skipped
+  cancelled
+  need_review
+}
+
+enum AutomationTaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum AutomationTaskLogLevel {
+  info
+  warning
+  error
+  success
+}
+
+enum NotificationChannelType {
+  telegram
+  in_app
+}
+
+enum NotificationLevel {
+  info
+  warning
+  error
+  critical
+}
+
+enum NotificationLogStatus {
+  pending
+  sent
+  failed
+  skipped
+}
+
+enum TelegramTestStatus {
+  not_tested
+  success
+  failed
+}
+
+enum AppleServicePlatformFeeType {
+  none
+  rate
+  fixed
+  mixed
+}
+
+enum CodeServiceStatus {
+  enabled
+  paused
+  disabled
+}
+
+enum CodeDeliveryMode {
+  auto
+  semi_auto
+  manual
+}
+
+enum RedeemCodeStatus {
+  unsold
+  locked
+  delivered
+  delivery_failed
+  after_sale
+  reissued
+  voided
+  refunded
+}
+
+enum CodeDeliveryStatus {
+  pending
+  delivered
+  failed
+  manual
+}
+
+enum CodeRefundStatus {
+  none
+  refunding
+  refunded
+}
+
+enum CodeDeliveryMethod {
+  eticket
+  dummy_send
+  message_card
+  manual
+}
+
+enum CodeDeliveryLogStatus {
+  success
+  failed
+  pending
+}
+
+enum CodeAfterSaleStatus {
+  pending
+  completed
+  rejected
+}
+
+enum CodeRefundRecordStatus {
+  refunding
+  refunded
+  rejected
+}
+
+enum LoginLogStatus {
+  success
+  failed
+  blocked
+}
+
+enum IpWhitelistScope {
+  admin
+  api
+  automation
+}
+
+enum SensitiveAccessApprovalStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+enum DataJobStatus {
+  pending
+  running
+  success
+  failed
+  cancelled
+}
+
+enum BackupJobType {
+  database
+  files
+  config
+}
+
+enum DataDictionaryStatus {
+  active
+  disabled
+}
+
+enum OpsHealthStatus {
+  normal
+  warning
+  error
+  critical
+  unknown
+}
+
+enum CronJobLogStatus {
+  running
+  success
+  failed
+  skipped
+}
+
+enum PlatformSyncLogStatus {
+  success
+  failed
+}
+
+enum ErrorLogLevel {
+  info
+  warn
+  error
+  fatal
+}
+
+enum AppAnnouncementLevel {
+  info
+  warning
+  error
+}
+
+enum AppVersionStatus {
+  draft
+  released
+  deprecated
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  username     String     @unique @db.VarChar(100)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  displayName  String     @map("display_name") @db.VarChar(100)
+  phone        String?    @db.VarChar(50)
+  email        String?    @db.VarChar(255)
+  status       UserStatus @default(active)
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  userRoles                UserRole[]
+  auditLogs                AuditLog[]
+  attachments              Attachment[]
+  customersCreated         Customer[]                @relation("CustomerCreatedBy")
+  customersUpdated         Customer[]                @relation("CustomerUpdatedBy")
+  sourcePlatformsCreated   SourcePlatform[]          @relation("SourcePlatformCreatedBy")
+  sourcePlatformsUpdated   SourcePlatform[]          @relation("SourcePlatformUpdatedBy")
+  messageTemplatesCreated  MessageTemplate[]         @relation("MessageTemplateCreatedBy")
+  messageTemplatesUpdated  MessageTemplate[]         @relation("MessageTemplateUpdatedBy")
+  appleAccountsCreated     AppleAccount[]            @relation("AppleAccountCreatedBy")
+  appleAccountsUpdated     AppleAccount[]            @relation("AppleAccountUpdatedBy")
+  appleAccountsLocked      AppleAccount[]            @relation("AppleAccountLockedBy")
+  appleTopupsCreated       AppleBalanceTopup[]       @relation("AppleBalanceTopupCreatedBy")
+  appleConsumptionsCreated AppleBalanceConsumption[] @relation("AppleBalanceConsumptionCreatedBy")
+  appleBalanceAdjustments  AppleBalanceAdjustment[]  @relation("AppleBalanceAdjustmentOperator")
+  appleStatusChecks        AppleAccountStatusCheck[] @relation("AppleAccountStatusCheckOperator")
+  appleServicesCreated     AppleService[]            @relation("AppleServiceCreatedBy")
+  appleServicesUpdated     AppleService[]            @relation("AppleServiceUpdatedBy")
+  appleOrdersCreated       AppleOrder[]              @relation("AppleOrderCreatedBy")
+  appleOrdersUpdated       AppleOrder[]              @relation("AppleOrderUpdatedBy")
+  appleAccountLocksCreated AppleAccountLock[]        @relation("AppleAccountLockCreatedBy")
+  renewalTasksAssigned     RenewalTask[]             @relation("RenewalTaskAssignedTo")
+  renewalTasksCreated      RenewalTask[]             @relation("RenewalTaskCreatedBy")
+  renewalTasksCompleted    RenewalTask[]             @relation("RenewalTaskCompletedBy")
+  actionPlansCreated       AppleAccountActionPlan[]  @relation("AppleActionPlanCreatedBy")
+  actionPlansCompleted     AppleAccountActionPlan[]  @relation("AppleActionPlanCompletedBy")
+  codeServicesCreated      CodeService[]             @relation("CodeServiceCreatedBy")
+  codeServicesUpdated      CodeService[]             @relation("CodeServiceUpdatedBy")
+  redeemCodeBatches        RedeemCodeBatch[]         @relation("RedeemCodeBatchImportedBy")
+  codeAfterSalesHandled    CodeAfterSale[]           @relation("CodeAfterSaleHandledBy")
+  automationTasksCreated   AutomationTask[]          @relation("AutomationTaskCreatedBy")
+  notificationLogsRead     NotificationLog[]         @relation("NotificationLogReadBy")
+  loginLogs                LoginLog[]                @relation("LoginLogUser")
+  activeSessions           ActiveSession[]           @relation("ActiveSessionUser")
+  securitySettingsUpdated  SecuritySetting[]         @relation("SecuritySettingUpdatedBy")
+  ipWhitelistsCreated      IpWhitelist[]             @relation("IpWhitelistCreatedBy")
+  sensitiveAccessLogs      SensitiveAccessLog[]      @relation("SensitiveAccessLogUser")
+  sensitiveApprovalsAsked  SensitiveAccessApproval[] @relation("SensitiveAccessApprovalRequester")
+  sensitiveApprovalsDone   SensitiveAccessApproval[] @relation("SensitiveAccessApprovalApprover")
+  backupJobsCreated        BackupJob[]               @relation("BackupJobCreatedBy")
+  restoreJobsCreated       RestoreJob[]              @relation("RestoreJobCreatedBy")
+  dataImportJobsCreated    DataImportJob[]           @relation("DataImportJobCreatedBy")
+  dataExportJobsCreated    DataExportJob[]           @relation("DataExportJobCreatedBy")
+  recycleBinRecordsDeleted RecycleBinRecord[]        @relation("RecycleBinRecordDeletedBy")
+  recycleBinRecordsRestored RecycleBinRecord[]       @relation("RecycleBinRecordRestoredBy")
+  systemParametersUpdated  SystemParameter[]         @relation("SystemParameterUpdatedBy")
+  dataDictionariesCreated  DataDictionary[]          @relation("DataDictionaryCreatedBy")
+  dataDictionariesUpdated  DataDictionary[]          @relation("DataDictionaryUpdatedBy")
+  dataCleanupJobsCreated   DataCleanupJob[]          @relation("DataCleanupJobCreatedBy")
+  duplicateMergeJobsCreated DuplicateMergeJob[]      @relation("DuplicateMergeJobCreatedBy")
+  appAnnouncementsCreated  AppAnnouncement[]         @relation("AppAnnouncementCreatedBy")
+  appAnnouncementsUpdated  AppAnnouncement[]         @relation("AppAnnouncementUpdatedBy")
+  maintenanceWindowsCreated MaintenanceWindow[]      @relation("MaintenanceWindowCreatedBy")
+  maintenanceWindowsUpdated MaintenanceWindow[]      @relation("MaintenanceWindowUpdatedBy")
+  featureFlagsUpdated      FeatureFlag[]             @relation("FeatureFlagUpdatedBy")
+  appVersionsCreated       AppVersion[]              @relation("AppVersionCreatedBy")
+  tableViews               UserTableView[]           @relation("UserTableViewUser")
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Customer {
+  id               String         @id @default(uuid()) @db.Uuid
+  name             String         @db.VarChar(120)
+  contactName      String?        @map("contact_name") @db.VarChar(120)
+  phone            String?        @db.VarChar(50)
+  phoneTail        String?        @map("phone_tail") @db.VarChar(8)
+  wechat           String?        @db.VarChar(120)
+  sourcePlatformId String?        @map("source_platform_id") @db.Uuid
+  tags             String[]       @default([])
+  remark           String?        @db.Text
+  status           CustomerStatus @default(active)
+  createdByUserId  String?        @map("created_by_user_id") @db.Uuid
+  updatedByUserId  String?        @map("updated_by_user_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  sourcePlatform              SourcePlatform?              @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
+  createdBy                   User?                        @relation("CustomerCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy                   User?                        @relation("CustomerUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  appleOrders                 AppleOrder[]
+  activations                 ServiceActivation[]
+  renewalTasks                RenewalTask[]
+  appleAccountActionPlanItems AppleAccountActionPlanItem[]
+  automationTasks             AutomationTask[]
+
+  @@index([name])
+  @@index([phoneTail])
+  @@index([sourcePlatformId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("customers")
+}
+
+model SourcePlatform {
+  id              String               @id @default(uuid()) @db.Uuid
+  name            String               @db.VarChar(120)
+  code            String               @unique @db.VarChar(80)
+  type            SourcePlatformType   @default(other)
+  feeRate         Decimal              @default(0) @map("fee_rate") @db.Decimal(8, 4)
+  feeFixed        Decimal              @default(0) @map("fee_fixed") @db.Decimal(12, 2)
+  syncEnabled     Boolean              @default(false) @map("sync_enabled")
+  deliveryEnabled Boolean              @default(false) @map("delivery_enabled")
+  status          SourcePlatformStatus @default(active)
+  remark          String?              @db.Text
+  createdByUserId String?              @map("created_by_user_id") @db.Uuid
+  updatedByUserId String?              @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz(6)
+
+  customers                    Customer[]
+  appleOrders                  AppleOrder[]
+  activations                  ServiceActivation[]
+  appleServicePlatformMappings AppleServicePlatformMapping[]
+  deliveredRedeemCodes         RedeemCode[]                  @relation("RedeemCodeDeliveredPlatform")
+  codePlatformMappings         CodePlatformMapping[]
+  codePlatformOrders           CodePlatformOrder[]
+  codeDeliveryLogs             CodeDeliveryLog[]
+  codeRefundRecords            CodeRefundRecord[]
+  createdBy                    User?                         @relation("SourcePlatformCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy                    User?                         @relation("SourcePlatformUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("source_platforms")
+}
+
+model MessageTemplate {
+  id              String                 @id @default(uuid()) @db.Uuid
+  name            String                 @db.VarChar(120)
+  type            MessageTemplateType    @default(custom)
+  channel         MessageTemplateChannel @default(internal)
+  content         String                 @db.Text
+  variables       String[]               @default([])
+  status          MessageTemplateStatus  @default(active)
+  remark          String?                @db.Text
+  createdByUserId String?                @map("created_by_user_id") @db.Uuid
+  updatedByUserId String?                @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?              @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy            User?                 @relation("MessageTemplateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy            User?                 @relation("MessageTemplateUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  codePlatformMappings CodePlatformMapping[] @relation("CodePlatformMappingDeliveryTemplate")
+
+  @@index([type])
+  @@index([channel])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("message_templates")
+}
+
+model AppleAccount {
+  id                     String             @id @default(uuid()) @db.Uuid
+  appleId                String             @map("apple_id") @db.VarChar(255)
+  appleIdNormalized      String             @unique @map("apple_id_normalized") @db.VarChar(255)
+  region                 String             @default("US") @db.VarChar(50)
+  currency               String             @default("USD") @db.VarChar(10)
+  currentBalance         Decimal            @default(0) @map("current_balance") @db.Decimal(18, 4)
+  balanceCostAmount      Decimal            @default(0) @map("balance_cost_amount") @db.Decimal(18, 4)
+  averageCost            Decimal            @default(0) @map("average_cost") @db.Decimal(18, 8)
+  status                 AppleAccountStatus @default(normal)
+  isManuallyLocked       Boolean            @default(false) @map("is_manually_locked")
+  manualLockReason       String?            @map("manual_lock_reason") @db.Text
+  lockedAt               DateTime?          @map("locked_at") @db.Timestamptz(6)
+  lockedByUserId         String?            @map("locked_by_user_id") @db.Uuid
+  passwordEncrypted      String?            @map("password_encrypted") @db.Text
+  securityInfoEncrypted  String?            @map("security_info_encrypted") @db.Text
+  phoneEncrypted         String?            @map("phone_encrypted") @db.Text
+  recoveryEmailEncrypted String?            @map("recovery_email_encrypted") @db.Text
+  remark                 String?            @db.Text
+  createdByUserId        String?            @map("created_by_user_id") @db.Uuid
+  updatedByUserId        String?            @map("updated_by_user_id") @db.Uuid
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy       User?                     @relation("AppleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy       User?                     @relation("AppleAccountUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  lockedBy        User?                     @relation("AppleAccountLockedBy", fields: [lockedByUserId], references: [id], onDelete: SetNull)
+  topups          AppleBalanceTopup[]
+  consumptions    AppleBalanceConsumption[]
+  adjustments     AppleBalanceAdjustment[]
+  statusChecks    AppleAccountStatusCheck[]
+  orders          AppleOrder[]
+  activations     ServiceActivation[]
+  locks           AppleAccountLock[]
+  renewalTasks    RenewalTask[]
+  actionPlans     AppleAccountActionPlan[]
+  automationTasks AutomationTask[]
+
+  @@index([status])
+  @@index([currency])
+  @@index([isManuallyLocked])
+  @@index([deletedAt])
+  @@map("apple_accounts")
+}
+
+model AppleBalanceTopup {
+  id                    String   @id @default(uuid()) @db.Uuid
+  appleAccountId        String   @map("apple_account_id") @db.Uuid
+  faceValue             Decimal  @map("face_value") @db.Decimal(18, 4)
+  costAmount            Decimal  @map("cost_amount") @db.Decimal(18, 4)
+  balanceBefore         Decimal  @map("balance_before") @db.Decimal(18, 4)
+  balanceAfter          Decimal  @map("balance_after") @db.Decimal(18, 4)
+  costBefore            Decimal  @map("cost_before") @db.Decimal(18, 4)
+  costAfter             Decimal  @map("cost_after") @db.Decimal(18, 4)
+  avgCostBefore         Decimal  @map("avg_cost_before") @db.Decimal(18, 8)
+  avgCostAfter          Decimal  @map("avg_cost_after") @db.Decimal(18, 8)
+  giftCardCodeEncrypted String?  @map("gift_card_code_encrypted") @db.Text
+  giftCardCodeHash      String?  @unique @map("gift_card_code_hash") @db.VarChar(128)
+  giftCardCodeTail      String?  @map("gift_card_code_tail") @db.VarChar(8)
+  remark                String?  @db.Text
+  createdByUserId       String?  @map("created_by_user_id") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appleAccount AppleAccount @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("AppleBalanceTopupCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([appleAccountId])
+  @@index([createdAt])
+  @@map("apple_balance_topups")
+}
+
+model AppleBalanceConsumption {
+  id                String   @id @default(uuid()) @db.Uuid
+  appleAccountId    String   @map("apple_account_id") @db.Uuid
+  amount            Decimal  @db.Decimal(18, 4)
+  costAmount        Decimal  @map("cost_amount") @db.Decimal(18, 4)
+  avgUnitCost       Decimal  @map("avg_unit_cost") @db.Decimal(18, 8)
+  balanceBefore     Decimal  @map("balance_before") @db.Decimal(18, 4)
+  balanceAfter      Decimal  @map("balance_after") @db.Decimal(18, 4)
+  costBefore        Decimal  @map("cost_before") @db.Decimal(18, 4)
+  costAfter         Decimal  @map("cost_after") @db.Decimal(18, 4)
+  reason            String?  @db.VarChar(120)
+  relatedObjectType String?  @map("related_object_type") @db.VarChar(120)
+  relatedObjectId   String?  @map("related_object_id") @db.Uuid
+  remark            String?  @db.Text
+  createdByUserId   String?  @map("created_by_user_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appleAccount AppleAccount @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("AppleBalanceConsumptionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([appleAccountId])
+  @@index([createdAt])
+  @@map("apple_balance_consumptions")
+}
+
+model AppleBalanceAdjustment {
+  id                   String                           @id @default(uuid()) @db.Uuid
+  appleAccountId       String                           @map("apple_account_id") @db.Uuid
+  oldBalance           Decimal                          @map("old_balance") @db.Decimal(18, 4)
+  newBalance           Decimal                          @map("new_balance") @db.Decimal(18, 4)
+  difference           Decimal                          @db.Decimal(18, 4)
+  oldCostRmb           Decimal                          @map("old_cost_rmb") @db.Decimal(18, 4)
+  newCostRmb           Decimal                          @map("new_cost_rmb") @db.Decimal(18, 4)
+  costAdjustMethod     AppleBalanceAdjustmentCostMethod @map("cost_adjust_method")
+  costRmbChange        Decimal                          @map("cost_rmb_change") @db.Decimal(18, 4)
+  reason               String                           @db.Text
+  evidenceAttachmentId String?                          @map("evidence_attachment_id") @db.Uuid
+  operatorId           String?                          @map("operator_id") @db.Uuid
+  createdAt            DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appleAccount       AppleAccount @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  evidenceAttachment Attachment?  @relation("AppleBalanceAdjustmentEvidence", fields: [evidenceAttachmentId], references: [id], onDelete: SetNull)
+  operator           User?        @relation("AppleBalanceAdjustmentOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@index([appleAccountId])
+  @@index([costAdjustMethod])
+  @@index([evidenceAttachmentId])
+  @@index([operatorId])
+  @@index([createdAt])
+  @@map("apple_balance_adjustments")
+}
+
+model AppleAccountStatusCheck {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  appleAccountId       String                      @map("apple_account_id") @db.Uuid
+  checkType            AppleAccountStatusCheckType @default(manual) @map("check_type")
+  resultStatus         AppleAccountStatus          @map("result_status")
+  balanceSnapshot      Decimal?                    @map("balance_snapshot") @db.Decimal(18, 4)
+  remark               String?                     @db.Text
+  evidenceAttachmentId String?                     @map("evidence_attachment_id") @db.Uuid
+  operatorId           String?                     @map("operator_id") @db.Uuid
+  createdAt            DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appleAccount       AppleAccount @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  evidenceAttachment Attachment?  @relation("AppleAccountStatusCheckEvidence", fields: [evidenceAttachmentId], references: [id], onDelete: SetNull)
+  operator           User?        @relation("AppleAccountStatusCheckOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@index([appleAccountId])
+  @@index([checkType])
+  @@index([resultStatus])
+  @@index([evidenceAttachmentId])
+  @@index([operatorId])
+  @@index([createdAt])
+  @@map("apple_account_status_checks")
+}
+
+model AppleService {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  name                  String                     @db.VarChar(120)
+  category              String                     @default("default") @db.VarChar(80)
+  defaultPrice          Decimal                    @default(0) @map("default_price") @db.Decimal(18, 2)
+  officialCostValue     Decimal                    @default(0) @map("official_cost_value") @db.Decimal(18, 4)
+  currency              String                     @default("USD") @db.VarChar(10)
+  defaultPeriodType     AppleServicePeriodType     @default(month) @map("default_period_type")
+  defaultPeriodValue    Int                        @default(1) @map("default_period_value")
+  expireCalcType        AppleServiceExpireCalcType @default(by_month) @map("expire_calc_type")
+  requireAppleId        Boolean                    @default(true) @map("require_apple_id")
+  requireServiceAccount Boolean                    @default(false) @map("require_service_account")
+  autoMatchAppleId      Boolean                    @default(true) @map("auto_match_apple_id")
+  lockRule              AppleServiceLockRule       @default(by_service) @map("lock_rule")
+  allowedRegions        String[]                   @default([]) @map("allowed_regions")
+  minBalanceRequired    Decimal                    @default(0) @map("min_balance_required") @db.Decimal(18, 4)
+  status                AppleServiceStatus         @default(enabled)
+  remark                String?                    @db.Text
+  createdByUserId       String?                    @map("created_by_user_id") @db.Uuid
+  updatedByUserId       String?                    @map("updated_by_user_id") @db.Uuid
+  createdAt             DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt             DateTime?                  @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy        User?                         @relation("AppleServiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy        User?                         @relation("AppleServiceUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  orders           AppleOrder[]
+  activations      ServiceActivation[]
+  locks            AppleAccountLock[]
+  renewalTasks     RenewalTask[]
+  actionPlanItems  AppleAccountActionPlanItem[]
+  platformMappings AppleServicePlatformMapping[]
+  automationTasks  AutomationTask[]
+
+  @@index([category])
+  @@index([currency])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("apple_services")
+}
+
+model AppleServicePlatformMapping {
+  id               String                      @id @default(uuid()) @db.Uuid
+  serviceId        String                      @map("service_id") @db.Uuid
+  sourcePlatformId String                      @map("source_platform_id") @db.Uuid
+  shopName         String?                     @map("shop_name") @db.VarChar(120)
+  platformItemId   String                      @map("platform_item_id") @db.VarChar(120)
+  platformSkuId    String                      @default("") @map("platform_sku_id") @db.VarChar(120)
+  skuKeyword       String?                     @map("sku_keyword") @db.VarChar(255)
+  platformPrice    Decimal                     @default(0) @map("platform_price") @db.Decimal(18, 2)
+  platformFeeType  AppleServicePlatformFeeType @default(none) @map("platform_fee_type")
+  platformFeeValue Decimal                     @default(0) @map("platform_fee_value") @db.Decimal(18, 4)
+  allowAutoOrder   Boolean                     @default(false) @map("allow_auto_order")
+  enabled          Boolean                     @default(true)
+  createdAt        DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  service        AppleService   @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  sourcePlatform SourcePlatform @relation(fields: [sourcePlatformId], references: [id], onDelete: Restrict)
+
+  @@unique([serviceId, sourcePlatformId, platformItemId, platformSkuId])
+  @@index([serviceId])
+  @@index([sourcePlatformId])
+  @@index([enabled])
+  @@map("apple_service_platform_mappings")
+}
+
+model CodeService {
+  id                 String            @id @default(uuid()) @db.Uuid
+  name               String            @db.VarChar(120)
+  faceValue          Decimal           @map("face_value") @db.Decimal(18, 4)
+  defaultPrice       Decimal           @default(0) @map("default_price") @db.Decimal(18, 2)
+  defaultCost        Decimal           @default(0) @map("default_cost") @db.Decimal(18, 2)
+  deliveryMode       CodeDeliveryMode  @default(semi_auto) @map("delivery_mode")
+  exactFaceValueOnly Boolean           @default(true) @map("exact_face_value_only")
+  allowCombination   Boolean           @default(false) @map("allow_combination")
+  status             CodeServiceStatus @default(enabled)
+  remark             String?           @db.Text
+  createdByUserId    String?           @map("created_by_user_id") @db.Uuid
+  updatedByUserId    String?           @map("updated_by_user_id") @db.Uuid
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime?         @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy        User?                 @relation("CodeServiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy        User?                 @relation("CodeServiceUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  batches          RedeemCodeBatch[]
+  codes            RedeemCode[]
+  platformMappings CodePlatformMapping[]
+  platformOrders   CodePlatformOrder[]
+
+  @@index([faceValue])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("code_services")
+}
+
+model CodePlatformMapping {
+  id                 String   @id @default(uuid()) @db.Uuid
+  platformId         String   @map("platform_id") @db.Uuid
+  shopId             String?  @map("shop_id") @db.VarChar(120)
+  platformItemId     String   @map("platform_item_id") @db.VarChar(120)
+  platformSkuId      String   @default("") @map("platform_sku_id") @db.VarChar(120)
+  skuKeyword         String?  @map("sku_keyword") @db.VarChar(255)
+  serviceId          String   @map("service_id") @db.Uuid
+  faceValue          Decimal  @map("face_value") @db.Decimal(18, 4)
+  quantity           Int      @default(1)
+  deliveryTemplateId String?  @map("delivery_template_id") @db.Uuid
+  enabled            Boolean  @default(true)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  platform         SourcePlatform   @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  service          CodeService      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  deliveryTemplate MessageTemplate? @relation("CodePlatformMappingDeliveryTemplate", fields: [deliveryTemplateId], references: [id], onDelete: SetNull)
+
+  @@unique([platformId, platformItemId, platformSkuId, serviceId])
+  @@index([platformId])
+  @@index([serviceId])
+  @@index([platformItemId])
+  @@index([platformSkuId])
+  @@index([enabled])
+  @@map("code_platform_mappings")
+}
+
+model CodePlatformOrder {
+  id              String             @id @default(uuid()) @db.Uuid
+  platformId      String             @map("platform_id") @db.Uuid
+  externalOrderNo String             @map("external_order_no") @db.VarChar(120)
+  buyerId         String?            @map("buyer_id") @db.VarChar(120)
+  buyerNameMasked String?            @map("buyer_name_masked") @db.VarChar(120)
+  itemId          String             @map("item_id") @db.VarChar(120)
+  skuId           String             @default("") @map("sku_id") @db.VarChar(120)
+  itemTitle       String?            @map("item_title") @db.VarChar(255)
+  skuName         String?            @map("sku_name") @db.VarChar(255)
+  serviceId       String?            @map("service_id") @db.Uuid
+  faceValue       Decimal?           @map("face_value") @db.Decimal(18, 4)
+  quantity        Int                @default(1)
+  paidAmount      Decimal            @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  platformFee     Decimal            @default(0) @map("platform_fee") @db.Decimal(18, 2)
+  costAmount      Decimal            @default(0) @map("cost_amount") @db.Decimal(18, 2)
+  profitAmount    Decimal            @default(0) @map("profit_amount") @db.Decimal(18, 2)
+  orderStatus     String             @default("paid") @map("order_status") @db.VarChar(80)
+  deliveryStatus  CodeDeliveryStatus @default(pending) @map("delivery_status")
+  refundStatus    CodeRefundStatus   @default(none) @map("refund_status")
+  paidAt          DateTime?          @map("paid_at") @db.Timestamptz(6)
+  deliveredAt     DateTime?          @map("delivered_at") @db.Timestamptz(6)
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  platform       SourcePlatform     @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  service        CodeService?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  lockedCodes    RedeemCode[]       @relation("RedeemCodeLockedOrder")
+  deliveredCodes RedeemCode[]       @relation("RedeemCodeDeliveredOrder")
+  deliveryLogs   CodeDeliveryLog[]
+  afterSales     CodeAfterSale[]
+  refundRecords  CodeRefundRecord[]
+
+  @@unique([platformId, externalOrderNo])
+  @@index([platformId])
+  @@index([serviceId])
+  @@index([itemId])
+  @@index([skuId])
+  @@index([deliveryStatus])
+  @@index([refundStatus])
+  @@index([createdAt])
+  @@map("code_platform_orders")
+}
+
+model CodeDeliveryLog {
+  id                      String                @id @default(uuid()) @db.Uuid
+  orderId                 String                @map("order_id") @db.Uuid
+  platformId              String                @map("platform_id") @db.Uuid
+  externalOrderNo         String                @map("external_order_no") @db.VarChar(120)
+  codeId                  String                @map("code_id") @db.Uuid
+  faceValue               Decimal               @map("face_value") @db.Decimal(18, 4)
+  deliveryMethod          CodeDeliveryMethod    @map("delivery_method")
+  deliveryContentSnapshot String                @map("delivery_content_snapshot") @db.Text
+  deliveryStatus          CodeDeliveryLogStatus @default(success) @map("delivery_status")
+  errorMessage            String?               @map("error_message") @db.Text
+  cost                    Decimal               @db.Decimal(18, 2)
+  paidAmount              Decimal               @map("paid_amount") @db.Decimal(18, 2)
+  profit                  Decimal               @db.Decimal(18, 2)
+  createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order    CodePlatformOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  platform SourcePlatform    @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  code     RedeemCode        @relation(fields: [codeId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([platformId])
+  @@index([codeId])
+  @@index([externalOrderNo])
+  @@index([deliveryStatus])
+  @@index([createdAt])
+  @@map("code_delivery_logs")
+}
+
+model CodeAfterSale {
+  id              String              @id @default(uuid()) @db.Uuid
+  orderId         String              @map("order_id") @db.Uuid
+  originalCodeId  String              @map("original_code_id") @db.Uuid
+  newCodeId       String?             @unique @map("new_code_id") @db.Uuid
+  reason          String              @db.Text
+  status          CodeAfterSaleStatus @default(pending)
+  handledByUserId String?             @map("handled_by") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt     DateTime?           @map("completed_at") @db.Timestamptz(6)
+
+  order        CodePlatformOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  originalCode RedeemCode        @relation("CodeAfterSaleOriginalCode", fields: [originalCodeId], references: [id], onDelete: Restrict)
+  newCode      RedeemCode?       @relation("CodeAfterSaleNewCode", fields: [newCodeId], references: [id], onDelete: Restrict)
+  handledBy    User?             @relation("CodeAfterSaleHandledBy", fields: [handledByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, originalCodeId])
+  @@index([orderId, status])
+  @@index([originalCodeId])
+  @@index([newCodeId])
+  @@index([handledByUserId])
+  @@index([createdAt])
+  @@map("code_after_sales")
+}
+
+model CodeRefundRecord {
+  id               String                 @id @default(uuid()) @db.Uuid
+  orderId          String                 @map("order_id") @db.Uuid
+  platformId       String                 @map("platform_id") @db.Uuid
+  externalRefundNo String                 @map("external_refund_no") @db.VarChar(120)
+  refundAmount     Decimal                @map("refund_amount") @db.Decimal(18, 2)
+  status           CodeRefundRecordStatus @default(refunding)
+  reason           String?                @db.Text
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order    CodePlatformOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  platform SourcePlatform    @relation(fields: [platformId], references: [id], onDelete: Restrict)
+
+  @@unique([platformId, externalRefundNo])
+  @@index([orderId])
+  @@index([platformId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("code_refund_records")
+}
+
+model RedeemCodeBatch {
+  id           String   @id @default(uuid()) @db.Uuid
+  batchNo      String   @unique @map("batch_no") @db.VarChar(80)
+  serviceId    String   @map("service_id") @db.Uuid
+  faceValue    Decimal  @map("face_value") @db.Decimal(18, 4)
+  totalCount   Int      @default(0) @map("total_count")
+  successCount Int      @default(0) @map("success_count")
+  failedCount  Int      @default(0) @map("failed_count")
+  defaultCost  Decimal  @default(0) @map("default_cost") @db.Decimal(18, 2)
+  remark       String?  @db.Text
+  importedById String?  @map("imported_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  service    CodeService  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  importedBy User?        @relation("RedeemCodeBatchImportedBy", fields: [importedById], references: [id], onDelete: SetNull)
+  codes      RedeemCode[]
+
+  @@index([serviceId])
+  @@index([faceValue])
+  @@index([createdAt])
+  @@map("redeem_code_batches")
+}
+
+model RedeemCode {
+  id                  String           @id @default(uuid()) @db.Uuid
+  serviceId           String           @map("service_id") @db.Uuid
+  batchId             String           @map("batch_id") @db.Uuid
+  codeEncrypted       String           @map("code_encrypted") @db.Text
+  codeHash            String           @unique @map("code_hash") @db.VarChar(128)
+  codeTail            String           @map("code_tail") @db.VarChar(8)
+  faceValue           Decimal          @map("face_value") @db.Decimal(18, 4)
+  cost                Decimal          @db.Decimal(18, 2)
+  status              RedeemCodeStatus @default(unsold)
+  lockedOrderId       String?          @map("locked_order_id") @db.Uuid
+  deliveredOrderId    String?          @map("delivered_order_id") @db.Uuid
+  deliveredPlatformId String?          @map("delivered_platform_id") @db.Uuid
+  deliveredAt         DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  expireAt            DateTime?        @map("expire_at") @db.Timestamptz(6)
+  remark              String?          @db.Text
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  service            CodeService        @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  batch              RedeemCodeBatch    @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  lockedOrder        CodePlatformOrder? @relation("RedeemCodeLockedOrder", fields: [lockedOrderId], references: [id], onDelete: SetNull)
+  deliveredOrder     CodePlatformOrder? @relation("RedeemCodeDeliveredOrder", fields: [deliveredOrderId], references: [id], onDelete: SetNull)
+  deliveredPlatform  SourcePlatform?    @relation("RedeemCodeDeliveredPlatform", fields: [deliveredPlatformId], references: [id], onDelete: SetNull)
+  deliveryLogs       CodeDeliveryLog[]
+  originalAfterSales CodeAfterSale[]    @relation("CodeAfterSaleOriginalCode")
+  newAfterSale       CodeAfterSale?     @relation("CodeAfterSaleNewCode")
+
+  @@index([serviceId, status])
+  @@index([faceValue, status])
+  @@index([batchId])
+  @@index([deliveredOrderId])
+  @@index([expireAt])
+  @@map("redeem_codes")
+}
+
+model AppleOrder {
+  id               String           @id @default(uuid()) @db.Uuid
+  orderNo          String           @unique @map("order_no") @db.VarChar(40)
+  customerId       String           @map("customer_id") @db.Uuid
+  sourcePlatformId String?          @map("source_platform_id") @db.Uuid
+  externalOrderNo  String?          @map("external_order_no") @db.VarChar(120)
+  serviceId        String           @map("service_id") @db.Uuid
+  appleAccountId   String?          @map("apple_account_id") @db.Uuid
+  serviceAccount   String?          @map("service_account") @db.VarChar(255)
+  currentPlan      String?          @map("current_plan") @db.VarChar(120)
+  targetPlan       String?          @map("target_plan") @db.VarChar(120)
+  startTime        DateTime?        @map("start_time") @db.Timestamptz(6)
+  expireTime       DateTime?        @map("expire_time") @db.Timestamptz(6)
+  paidAmount       Decimal          @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  platformFee      Decimal          @default(0) @map("platform_fee") @db.Decimal(18, 2)
+  refundLoss       Decimal          @default(0) @map("refund_loss") @db.Decimal(18, 2)
+  appleCostValue   Decimal          @default(0) @map("apple_cost_value") @db.Decimal(18, 4)
+  appleCostRmb     Decimal          @default(0) @map("apple_cost_rmb") @db.Decimal(18, 4)
+  profitAmount     Decimal          @default(0) @map("profit_amount") @db.Decimal(18, 4)
+  status           AppleOrderStatus @default(active)
+  remark           String?          @db.Text
+  createdByUserId  String?          @map("created_by_user_id") @db.Uuid
+  updatedByUserId  String?          @map("updated_by_user_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer       Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sourcePlatform SourcePlatform?    @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
+  service        AppleService       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  appleAccount   AppleAccount?      @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  createdBy      User?              @relation("AppleOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy      User?              @relation("AppleOrderUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  activation     ServiceActivation?
+  locks          AppleAccountLock[]
+  renewalTasks   RenewalTask[]
+
+  @@unique([sourcePlatformId, externalOrderNo])
+  @@index([customerId])
+  @@index([sourcePlatformId])
+  @@index([serviceId])
+  @@index([appleAccountId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("apple_orders")
+}
+
+model ServiceActivation {
+  id               String                  @id @default(uuid()) @db.Uuid
+  orderId          String                  @unique @map("order_id") @db.Uuid
+  customerId       String                  @map("customer_id") @db.Uuid
+  appleAccountId   String?                 @map("apple_account_id") @db.Uuid
+  serviceId        String                  @map("service_id") @db.Uuid
+  currentPlan      String?                 @map("current_plan") @db.VarChar(120)
+  targetPlan       String?                 @map("target_plan") @db.VarChar(120)
+  startTime        DateTime?               @map("start_time") @db.Timestamptz(6)
+  expireTime       DateTime?               @map("expire_time") @db.Timestamptz(6)
+  consumedValue    Decimal                 @default(0) @map("consumed_value") @db.Decimal(18, 4)
+  currency         String                  @default("USD") @db.VarChar(10)
+  avgUnitCost      Decimal                 @default(0) @map("avg_unit_cost") @db.Decimal(18, 8)
+  costRmb          Decimal                 @default(0) @map("cost_rmb") @db.Decimal(18, 4)
+  paidAmount       Decimal                 @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  platformFee      Decimal                 @default(0) @map("platform_fee") @db.Decimal(18, 2)
+  refundLoss       Decimal                 @default(0) @map("refund_loss") @db.Decimal(18, 2)
+  profitAmount     Decimal                 @default(0) @map("profit_amount") @db.Decimal(18, 4)
+  sourcePlatformId String?                 @map("source_platform_id") @db.Uuid
+  externalOrderNo  String?                 @map("external_order_no") @db.VarChar(120)
+  status           ServiceActivationStatus @default(active)
+  autoRenewStatus  AutoRenewStatus         @default(unknown) @map("auto_renew_status")
+  renewalDecision  RenewalDecision         @default(unconfirmed) @map("renewal_decision")
+  renewalNote      String?                 @map("renewal_note") @db.Text
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order           AppleOrder                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer        Customer                     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  appleAccount    AppleAccount?                @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  service         AppleService                 @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  sourcePlatform  SourcePlatform?              @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
+  renewalTasks    RenewalTask[]
+  actionPlanItems AppleAccountActionPlanItem[]
+  automationTasks AutomationTask[]
+
+  @@index([customerId])
+  @@index([appleAccountId])
+  @@index([serviceId])
+  @@index([expireTime])
+  @@index([status])
+  @@map("service_activations")
+}
+
+model AppleAccountLock {
+  id              String                 @id @default(uuid()) @db.Uuid
+  appleAccountId  String                 @map("apple_account_id") @db.Uuid
+  serviceId       String?                @map("service_id") @db.Uuid
+  orderId         String?                @map("order_id") @db.Uuid
+  lockScope       AppleAccountLockScope  @default(by_service) @map("lock_scope")
+  status          AppleAccountLockStatus @default(active)
+  reason          String?                @db.Text
+  lockedAt        DateTime               @default(now()) @map("locked_at") @db.Timestamptz(6)
+  releasedAt      DateTime?              @map("released_at") @db.Timestamptz(6)
+  createdByUserId String?                @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  appleAccount AppleAccount  @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  service      AppleService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  order        AppleOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdBy    User?         @relation("AppleAccountLockCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([appleAccountId, status])
+  @@index([serviceId, status])
+  @@index([orderId])
+  @@index([lockScope, status])
+  @@map("apple_account_locks")
+}
+
+model RenewalTask {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  taskType             RenewalTaskType             @map("task_type")
+  title                String                      @db.VarChar(160)
+  status               RenewalTaskStatus           @default(pending)
+  priority             RenewalTaskPriority         @default(medium)
+  customerId           String                      @map("customer_id") @db.Uuid
+  appleAccountId       String?                     @map("apple_account_id") @db.Uuid
+  serviceId            String                      @map("service_id") @db.Uuid
+  activationId         String                      @map("activation_id") @db.Uuid
+  orderId              String                      @map("order_id") @db.Uuid
+  currentPlan          String?                     @map("current_plan") @db.VarChar(120)
+  targetPlan           String?                     @map("target_plan") @db.VarChar(120)
+  customerDecision     RenewalTaskCustomerDecision @default(not_contacted) @map("customer_decision")
+  requiredAction       String?                     @map("required_action") @db.VarChar(160)
+  currentBalance       Decimal                     @default(0) @map("current_balance") @db.Decimal(18, 4)
+  expectedChargeAmount Decimal                     @default(0) @map("expected_charge_amount") @db.Decimal(18, 4)
+  suggestedTopupAmount Decimal                     @default(0) @map("suggested_topup_amount") @db.Decimal(18, 4)
+  expectedChargeTime   DateTime?                   @map("expected_charge_time") @db.Timestamptz(6)
+  cancelDeadline       DateTime?                   @map("cancel_deadline") @db.Timestamptz(6)
+  remindAt             DateTime?                   @map("remind_at") @db.Timestamptz(6)
+  dueAt                DateTime?                   @map("due_at") @db.Timestamptz(6)
+  assignedToUserId     String?                     @map("assigned_to") @db.Uuid
+  note                 String?                     @db.Text
+  resultNote           String?                     @map("result_note") @db.Text
+  evidenceAttachmentId String?                     @map("evidence_attachment_id") @db.Uuid
+  createdByUserId      String?                     @map("created_by") @db.Uuid
+  completedByUserId    String?                     @map("completed_by") @db.Uuid
+  createdAt            DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt          DateTime?                   @map("completed_at") @db.Timestamptz(6)
+
+  customer           Customer                     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  appleAccount       AppleAccount?                @relation(fields: [appleAccountId], references: [id], onDelete: SetNull)
+  service            AppleService                 @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  activation         ServiceActivation            @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  order              AppleOrder                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  assignedTo         User?                        @relation("RenewalTaskAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  createdBy          User?                        @relation("RenewalTaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  completedBy        User?                        @relation("RenewalTaskCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+  evidenceAttachment Attachment?                  @relation(fields: [evidenceAttachmentId], references: [id], onDelete: SetNull)
+  actionPlanItems    AppleAccountActionPlanItem[]
+
+  @@index([status])
+  @@index([taskType])
+  @@index([priority])
+  @@index([customerId])
+  @@index([appleAccountId])
+  @@index([serviceId])
+  @@index([activationId])
+  @@index([orderId])
+  @@index([dueAt])
+  @@index([assignedToUserId])
+  @@index([customerDecision])
+  @@map("renewal_tasks")
+}
+
+model AppleAccountActionPlan {
+  id                    String                @id @default(uuid()) @db.Uuid
+  appleAccountId        String                @map("apple_account_id") @db.Uuid
+  planDate              DateTime              @map("plan_date") @db.Date
+  currentBalance        Decimal               @default(0) @map("current_balance") @db.Decimal(18, 4)
+  avgUnitCost           Decimal               @default(0) @map("avg_unit_cost") @db.Decimal(18, 8)
+  activeServiceCount    Int                   @default(0) @map("active_service_count")
+  renewServicesCount    Int                   @default(0) @map("renew_services_count")
+  cancelServicesCount   Int                   @default(0) @map("cancel_services_count")
+  pendingCustomerCount  Int                   @default(0) @map("pending_customer_count")
+  requiredRenewalAmount Decimal               @default(0) @map("required_renewal_amount") @db.Decimal(18, 4)
+  suggestedTopupAmount  Decimal               @default(0) @map("suggested_topup_amount") @db.Decimal(18, 4)
+  hasWrongChargeRisk    Boolean               @default(false) @map("has_wrong_charge_risk")
+  status                AppleActionPlanStatus @default(pending)
+  mainNote              String?               @map("main_note") @db.Text
+  createdByUserId       String?               @map("created_by_user_id") @db.Uuid
+  completedByUserId     String?               @map("completed_by_user_id") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt           DateTime?             @map("completed_at") @db.Timestamptz(6)
+
+  appleAccount AppleAccount                 @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  createdBy    User?                        @relation("AppleActionPlanCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  completedBy  User?                        @relation("AppleActionPlanCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+  items        AppleAccountActionPlanItem[]
+
+  @@unique([appleAccountId, planDate])
+  @@index([planDate])
+  @@index([status])
+  @@index([hasWrongChargeRisk])
+  @@map("apple_account_action_plans")
+}
+
+model AppleAccountActionPlanItem {
+  id                   String                        @id @default(uuid()) @db.Uuid
+  planId               String                        @map("plan_id") @db.Uuid
+  activationId         String                        @map("activation_id") @db.Uuid
+  customerId           String                        @map("customer_id") @db.Uuid
+  serviceId            String                        @map("service_id") @db.Uuid
+  currentPlan          String?                       @map("current_plan") @db.VarChar(120)
+  targetPlan           String?                       @map("target_plan") @db.VarChar(120)
+  expireTime           DateTime?                     @map("expire_time") @db.Timestamptz(6)
+  customerDecision     RenewalDecision               @default(unconfirmed) @map("customer_decision")
+  actionType           AppleActionPlanItemActionType @map("action_type")
+  expectedChargeAmount Decimal                       @default(0) @map("expected_charge_amount") @db.Decimal(18, 4)
+  cancelDeadline       DateTime?                     @map("cancel_deadline") @db.Timestamptz(6)
+  taskId               String?                       @map("task_id") @db.Uuid
+  status               AppleActionPlanItemStatus     @default(pending)
+  note                 String?                       @db.Text
+  createdAt            DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  plan       AppleAccountActionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  activation ServiceActivation      @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  customer   Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  service    AppleService           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  task       RenewalTask?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([planId])
+  @@index([activationId])
+  @@index([customerId])
+  @@index([serviceId])
+  @@index([taskId])
+  @@index([actionType])
+  @@index([status])
+  @@map("apple_account_action_plan_items")
+}
+
+model AutomationTask {
+  id                     String                 @id @default(uuid()) @db.Uuid
+  taskType               AutomationTaskType     @map("task_type")
+  appleAccountId         String                 @map("apple_account_id") @db.Uuid
+  customerId             String?                @map("customer_id") @db.Uuid
+  serviceId              String?                @map("service_id") @db.Uuid
+  activationId           String?                @map("activation_id") @db.Uuid
+  priority               AutomationTaskPriority @default(medium)
+  status                 AutomationTaskStatus   @default(pending)
+  inputPayloadEncrypted  String?                @map("input_payload_encrypted") @db.Text
+  resultPayload          Json?                  @map("result_payload")
+  screenshotAttachmentId String?                @map("screenshot_attachment_id") @db.Uuid
+  errorCode              String?                @map("error_code") @db.VarChar(120)
+  errorMessage           String?                @map("error_message") @db.Text
+  createdByUserId        String?                @map("created_by") @db.Uuid
+  startedAt              DateTime?              @map("started_at") @db.Timestamptz(6)
+  finishedAt             DateTime?              @map("finished_at") @db.Timestamptz(6)
+  retryCount             Int                    @default(0) @map("retry_count")
+  manualRequired         Boolean                @default(false) @map("manual_required")
+  queueJobId             String?                @map("queue_job_id") @db.VarChar(120)
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  appleAccount         AppleAccount        @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  customer             Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  service              AppleService?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  activation           ServiceActivation?  @relation(fields: [activationId], references: [id], onDelete: SetNull)
+  screenshotAttachment Attachment?         @relation("AutomationTaskScreenshot", fields: [screenshotAttachmentId], references: [id], onDelete: SetNull)
+  createdBy            User?               @relation("AutomationTaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  logs                 AutomationTaskLog[]
+
+  @@index([taskType])
+  @@index([status])
+  @@index([priority])
+  @@index([appleAccountId])
+  @@index([customerId])
+  @@index([serviceId])
+  @@index([activationId])
+  @@index([manualRequired])
+  @@index([createdAt])
+  @@map("automation_tasks")
+}
+
+model AutomationTaskLog {
+  id                     String                 @id @default(uuid()) @db.Uuid
+  taskId                 String                 @map("task_id") @db.Uuid
+  level                  AutomationTaskLogLevel @default(info)
+  message                String                 @db.Text
+  payload                Json?
+  screenshotAttachmentId String?                @map("screenshot_attachment_id") @db.Uuid
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  task                 AutomationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  screenshotAttachment Attachment?    @relation("AutomationTaskLogScreenshot", fields: [screenshotAttachmentId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([level])
+  @@index([createdAt])
+  @@map("automation_task_logs")
+}
+
+model NotificationChannel {
+  id        String                  @id @default(uuid()) @db.Uuid
+  name      String                  @db.VarChar(120)
+  code      String                  @unique @db.VarChar(80)
+  type      NotificationChannelType @default(in_app)
+  enabled   Boolean                 @default(true)
+  level     NotificationLevel       @default(info)
+  config    Json?
+  createdAt DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime?               @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([type, enabled])
+  @@index([deletedAt])
+  @@map("notification_channels")
+}
+
+model TelegramConfig {
+  id                String             @id @default(uuid()) @db.Uuid
+  notificationName  String             @map("notification_name") @db.VarChar(120)
+  enabled           Boolean            @default(false)
+  botTokenEncrypted String?            @map("bot_token_encrypted") @db.Text
+  botTokenTail      String?            @map("bot_token_tail") @db.VarChar(12)
+  chatId            String             @map("chat_id") @db.VarChar(160)
+  notificationLevel NotificationLevel  @default(warning) @map("notification_level")
+  silentStartTime   String?            @map("silent_start_time") @db.VarChar(10)
+  silentEndTime     String?            @map("silent_end_time") @db.VarChar(10)
+  retryCount        Int                @default(3) @map("retry_count")
+  lastTestStatus    TelegramTestStatus @default(not_tested) @map("last_test_status")
+  lastTestError     String?            @map("last_test_error") @db.Text
+  lastTestAt        DateTime?          @map("last_test_at") @db.Timestamptz(6)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([enabled])
+  @@index([notificationLevel])
+  @@index([deletedAt])
+  @@map("telegram_configs")
+}
+
+model NotificationRule {
+  id               String                 @id @default(uuid()) @db.Uuid
+  name             String                 @db.VarChar(120)
+  eventCode        String                 @unique @map("event_code") @db.VarChar(120)
+  module           String                 @db.VarChar(80)
+  level            NotificationLevel      @default(info)
+  enabled          Boolean                @default(true)
+  channels         String[]               @default([])
+  recipients       Json?
+  triggerCondition Json?                  @map("trigger_condition")
+  rateLimit        Json?                  @map("rate_limit")
+  lastTriggeredAt  DateTime?              @map("last_triggered_at") @db.Timestamptz(6)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?              @map("deleted_at") @db.Timestamptz(6)
+  logs             NotificationLog[]
+  templates        NotificationTemplate[]
+
+  @@index([module, enabled])
+  @@index([level])
+  @@index([deletedAt])
+  @@map("notification_rules")
+}
+
+model NotificationTemplate {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @db.VarChar(120)
+  eventCode String    @map("event_code") @db.VarChar(120)
+  ruleId    String?   @map("rule_id") @db.Uuid
+  channel   String    @db.VarChar(40)
+  title     String    @db.VarChar(160)
+  content   String    @db.Text
+  variables Json      @default("[]")
+  enabled   Boolean   @default(true)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  rule NotificationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@unique([eventCode, channel])
+  @@index([ruleId])
+  @@index([enabled])
+  @@index([deletedAt])
+  @@map("notification_templates")
+}
+
+model NotificationLog {
+  id              String                @id @default(uuid()) @db.Uuid
+  ruleId          String?               @map("rule_id") @db.Uuid
+  eventCode       String                @map("event_code") @db.VarChar(120)
+  module          String                @db.VarChar(80)
+  channel         String                @db.VarChar(40)
+  recipient       String?               @db.VarChar(255)
+  recipientUserId String?               @map("recipient_user_id") @db.Uuid
+  title           String                @db.VarChar(160)
+  contentDigest   String                @map("content_digest") @db.Text
+  payload         Json?
+  status          NotificationLogStatus @default(pending)
+  errorMessage    String?               @map("error_message") @db.Text
+  retryCount      Int                   @default(0) @map("retry_count")
+  triggeredAt     DateTime              @default(now()) @map("triggered_at") @db.Timestamptz(6)
+  sentAt          DateTime?             @map("sent_at") @db.Timestamptz(6)
+  readAt          DateTime?             @map("read_at") @db.Timestamptz(6)
+  readByUserId    String?               @map("read_by_user_id") @db.Uuid
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rule   NotificationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  readBy User?             @relation("NotificationLogReadBy", fields: [readByUserId], references: [id], onDelete: SetNull)
+
+  @@index([eventCode])
+  @@index([module, status])
+  @@index([channel, status])
+  @@index([recipientUserId, readAt])
+  @@index([createdAt])
+  @@map("notification_logs")
+}
+
+model LoginLog {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String?        @map("user_id") @db.Uuid
+  username      String         @db.VarChar(100)
+  status        LoginLogStatus
+  failureReason String?        @map("failure_reason") @db.Text
+  ip            String?        @db.VarChar(100)
+  userAgent     String?        @map("user_agent") @db.Text
+  location      String?        @db.VarChar(120)
+  abnormal      Boolean        @default(false)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation("LoginLogUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([username])
+  @@index([ip])
+  @@index([abnormal])
+  @@index([createdAt])
+  @@map("login_logs")
+}
+
+model ActiveSession {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash") @db.VarChar(128)
+  ip           String?   @db.VarChar(100)
+  userAgent    String?   @map("user_agent") @db.Text
+  lastActiveAt DateTime  @default(now()) @map("last_active_at") @db.Timestamptz(6)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation("ActiveSessionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("active_sessions")
+}
+
+model SecuritySetting {
+  id              String   @id @default(uuid()) @db.Uuid
+  key             String   @unique @db.VarChar(120)
+  value           Json     @default("{}")
+  remark          String?  @db.Text
+  updatedByUserId String?  @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy User? @relation("SecuritySettingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+  @@map("security_settings")
+}
+
+model IpWhitelist {
+  id              String           @id @default(uuid()) @db.Uuid
+  ipOrCidr        String           @map("ip_or_cidr") @db.VarChar(100)
+  scope           IpWhitelistScope @default(admin)
+  enabled         Boolean          @default(true)
+  remark          String?          @db.Text
+  createdByUserId String?          @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("IpWhitelistCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([ipOrCidr, scope])
+  @@index([scope, enabled])
+  @@index([createdByUserId])
+  @@map("ip_whitelists")
+}
+
+model SensitiveAccessLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  module       String   @db.VarChar(100)
+  fieldName    String   @map("field_name") @db.VarChar(120)
+  objectType   String   @map("object_type") @db.VarChar(120)
+  objectId     String?  @map("object_id") @db.Uuid
+  accessReason String?  @map("access_reason") @db.Text
+  approved     Boolean  @default(false)
+  ip           String?  @db.VarChar(100)
+  userAgent    String?  @map("user_agent") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation("SensitiveAccessLogUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([module, fieldName])
+  @@index([objectType, objectId])
+  @@index([approved])
+  @@index([createdAt])
+  @@map("sensitive_access_logs")
+}
+
+model SensitiveAccessApproval {
+  id            String                        @id @default(uuid()) @db.Uuid
+  requesterId   String                        @map("requester_id") @db.Uuid
+  approverId    String?                       @map("approver_id") @db.Uuid
+  module        String                        @db.VarChar(100)
+  fieldName     String                        @map("field_name") @db.VarChar(120)
+  objectType    String                        @map("object_type") @db.VarChar(120)
+  objectId      String?                       @map("object_id") @db.Uuid
+  reason        String                        @db.Text
+  status        SensitiveAccessApprovalStatus @default(pending)
+  decisionNote  String?                       @map("decision_note") @db.Text
+  approvedAt    DateTime?                     @map("approved_at") @db.Timestamptz(6)
+  expiresAt     DateTime?                     @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  requester User  @relation("SensitiveAccessApprovalRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  approver  User? @relation("SensitiveAccessApprovalApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([requesterId])
+  @@index([approverId])
+  @@index([module, fieldName])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("sensitive_access_approvals")
+}
+
+model BackupJob {
+  id           String        @id @default(uuid()) @db.Uuid
+  jobType      BackupJobType @map("job_type")
+  status       DataJobStatus @default(pending)
+  storagePath  String?       @map("storage_path") @db.VarChar(500)
+  fileSize     BigInt?       @map("file_size")
+  startedAt    DateTime?     @map("started_at") @db.Timestamptz(6)
+  finishedAt   DateTime?     @map("finished_at") @db.Timestamptz(6)
+  errorMessage String?       @map("error_message") @db.Text
+  remark       String?       @db.Text
+  createdById  String?       @map("created_by") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy   User?        @relation("BackupJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  restoreJobs RestoreJob[]
+
+  @@index([jobType])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("backup_jobs")
+}
+
+model RestoreJob {
+  id           String        @id @default(uuid()) @db.Uuid
+  backupJobId  String?       @map("backup_job_id") @db.Uuid
+  status       DataJobStatus @default(pending)
+  restoreScope String        @map("restore_scope") @db.VarChar(120)
+  approvalNote String?       @map("approval_note") @db.Text
+  startedAt    DateTime?     @map("started_at") @db.Timestamptz(6)
+  finishedAt   DateTime?     @map("finished_at") @db.Timestamptz(6)
+  errorMessage String?       @map("error_message") @db.Text
+  createdById  String?       @map("created_by") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  backupJob BackupJob? @relation(fields: [backupJobId], references: [id], onDelete: SetNull)
+  createdBy User?      @relation("RestoreJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([backupJobId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("restore_jobs")
+}
+
+model DataImportJob {
+  id           String        @id @default(uuid()) @db.Uuid
+  module       String        @db.VarChar(100)
+  filePath     String?       @map("file_path") @db.VarChar(500)
+  status       DataJobStatus @default(pending)
+  totalCount   Int           @default(0) @map("total_count")
+  successCount Int           @default(0) @map("success_count")
+  failedCount  Int           @default(0) @map("failed_count")
+  errorReport  String?       @map("error_report") @db.VarChar(500)
+  remark       String?       @db.Text
+  createdById  String?       @map("created_by") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt   DateTime?     @map("finished_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("DataImportJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([module])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("data_import_jobs")
+}
+
+model DataExportJob {
+  id                  String        @id @default(uuid()) @db.Uuid
+  module              String        @db.VarChar(100)
+  exportScope         Json?         @map("export_scope")
+  fields              String[]      @default([])
+  containsSensitive   Boolean       @default(false) @map("contains_sensitive")
+  status              DataJobStatus @default(pending)
+  filePath            String?       @map("file_path") @db.VarChar(500)
+  downloadExpiresAt   DateTime?     @map("download_expires_at") @db.Timestamptz(6)
+  errorMessage        String?       @map("error_message") @db.Text
+  createdById         String?       @map("created_by") @db.Uuid
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt          DateTime?     @map("finished_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("DataExportJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([module])
+  @@index([status])
+  @@index([containsSensitive])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("data_export_jobs")
+}
+
+model RecycleBinRecord {
+  id           String    @id @default(uuid()) @db.Uuid
+  module       String    @db.VarChar(100)
+  objectType   String    @map("object_type") @db.VarChar(120)
+  objectId     String?   @map("object_id") @db.Uuid
+  objectLabel  String    @map("object_label") @db.VarChar(255)
+  snapshotData Json?     @map("snapshot_data")
+  deletedById  String?   @map("deleted_by") @db.Uuid
+  deletedAt    DateTime  @default(now()) @map("deleted_at") @db.Timestamptz(6)
+  restoredById String?   @map("restored_by") @db.Uuid
+  restoredAt   DateTime? @map("restored_at") @db.Timestamptz(6)
+
+  deletedBy  User? @relation("RecycleBinRecordDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  restoredBy User? @relation("RecycleBinRecordRestoredBy", fields: [restoredById], references: [id], onDelete: SetNull)
+
+  @@index([module])
+  @@index([objectType, objectId])
+  @@index([deletedById])
+  @@index([restoredAt])
+  @@index([deletedAt])
+  @@map("recycle_bin_records")
+}
+
+model SystemParameter {
+  id              String   @id @default(uuid()) @db.Uuid
+  key             String   @unique @db.VarChar(120)
+  value           Json     @default("{}")
+  group           String   @default("default") @db.VarChar(80)
+  remark          String?  @db.Text
+  updatedByUserId String?  @map("updated_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy User? @relation("SystemParameterUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([group])
+  @@index([updatedByUserId])
+  @@map("system_parameters")
+}
+
+model UserTableView {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  tableKey   String   @map("table_key") @db.VarChar(120)
+  viewName   String   @map("view_name") @db.VarChar(120)
+  filters    Json     @default("{}")
+  sortConfig Json     @default("{}") @map("sort_config")
+  columns    Json     @default("[]")
+  density    String   @default("default") @db.VarChar(20)
+  pageSize   Int      @default(20) @map("page_size")
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation("UserTableViewUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tableKey, viewName])
+  @@index([userId, tableKey])
+  @@index([userId, tableKey, isDefault])
+  @@map("user_table_views")
+}
+
+model DataDictionary {
+  id              String               @id @default(uuid()) @db.Uuid
+  group           String               @db.VarChar(80)
+  code            String               @db.VarChar(120)
+  label           String               @db.VarChar(160)
+  value           String?              @db.VarChar(255)
+  sortOrder       Int                  @default(0) @map("sort_order")
+  status          DataDictionaryStatus @default(active)
+  remark          String?              @db.Text
+  createdByUserId String?              @map("created_by_user_id") @db.Uuid
+  updatedByUserId String?              @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("DataDictionaryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("DataDictionaryUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([group, code])
+  @@index([group])
+  @@index([status])
+  @@index([sortOrder])
+  @@map("data_dictionaries")
+}
+
+model DataCleanupJob {
+  id           String        @id @default(uuid()) @db.Uuid
+  module       String        @db.VarChar(100)
+  cleanupScope Json?         @map("cleanup_scope")
+  status       DataJobStatus @default(pending)
+  affectedCount Int          @default(0) @map("affected_count")
+  approvalNote String?       @map("approval_note") @db.Text
+  errorMessage String?       @map("error_message") @db.Text
+  createdById  String?       @map("created_by") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt   DateTime?     @map("finished_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("DataCleanupJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([module])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("data_cleanup_jobs")
+}
+
+model DuplicateMergeJob {
+  id           String        @id @default(uuid()) @db.Uuid
+  module       String        @db.VarChar(100)
+  matchRule    Json?         @map("match_rule")
+  primaryObjectId String?    @map("primary_object_id") @db.Uuid
+  duplicateObjectIds String[] @default([]) @map("duplicate_object_ids")
+  status       DataJobStatus @default(pending)
+  affectedCount Int          @default(0) @map("affected_count")
+  approvalNote String?       @map("approval_note") @db.Text
+  errorMessage String?       @map("error_message") @db.Text
+  createdById  String?       @map("created_by") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt   DateTime?     @map("finished_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("DuplicateMergeJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([module])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("duplicate_merge_jobs")
+}
+
+model SystemHealthSnapshot {
+  id            String          @id @default(uuid()) @db.Uuid
+  apiStatus     OpsHealthStatus @map("api_status")
+  dbStatus      OpsHealthStatus @map("db_status")
+  redisStatus   OpsHealthStatus @map("redis_status")
+  storageStatus OpsHealthStatus @map("storage_status")
+  queueStatus   OpsHealthStatus @map("queue_status")
+  workerStatus  OpsHealthStatus @map("worker_status")
+  diskUsage     Decimal?        @map("disk_usage") @db.Decimal(18, 4)
+  metrics       Json?           @default("{}")
+  checkedAt     DateTime        @default(now()) @map("checked_at") @db.Timestamptz(6)
+
+  @@index([apiStatus])
+  @@index([dbStatus])
+  @@index([redisStatus])
+  @@index([queueStatus])
+  @@index([workerStatus])
+  @@index([checkedAt])
+  @@map("system_health_snapshots")
+}
+
+model QueueStatusLog {
+  id           String          @id @default(uuid()) @db.Uuid
+  queueName    String          @map("queue_name") @db.VarChar(120)
+  waitingCount Int             @default(0) @map("waiting_count")
+  activeCount  Int             @default(0) @map("active_count")
+  failedCount  Int             @default(0) @map("failed_count")
+  delayedCount Int             @default(0) @map("delayed_count")
+  status       OpsHealthStatus @default(normal)
+  checkedAt    DateTime        @default(now()) @map("checked_at") @db.Timestamptz(6)
+
+  @@index([queueName])
+  @@index([status])
+  @@index([checkedAt])
+  @@map("queue_status_logs")
+}
+
+model CronJobLog {
+  id           String           @id @default(uuid()) @db.Uuid
+  jobName      String           @map("job_name") @db.VarChar(160)
+  status       CronJobLogStatus
+  startedAt    DateTime?        @map("started_at") @db.Timestamptz(6)
+  finishedAt   DateTime?        @map("finished_at") @db.Timestamptz(6)
+  errorMessage String?          @map("error_message") @db.Text
+  metadata     Json?            @default("{}")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([jobName])
+  @@index([status])
+  @@index([startedAt])
+  @@index([finishedAt])
+  @@index([createdAt])
+  @@map("cron_job_logs")
+}
+
+model PlatformSyncLog {
+  id           String                @id @default(uuid()) @db.Uuid
+  platform     String                @db.VarChar(80)
+  syncType     String                @map("sync_type") @db.VarChar(80)
+  status       PlatformSyncLogStatus
+  requestCount Int                   @default(0) @map("request_count")
+  errorRate    Decimal               @default(0) @map("error_rate") @db.Decimal(18, 4)
+  errorMessage String?               @map("error_message") @db.Text
+  startedAt    DateTime?             @map("started_at") @db.Timestamptz(6)
+  finishedAt   DateTime?             @map("finished_at") @db.Timestamptz(6)
+  metadata     Json?                 @default("{}")
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([platform])
+  @@index([syncType])
+  @@index([status])
+  @@index([startedAt])
+  @@index([finishedAt])
+  @@index([createdAt])
+  @@map("platform_sync_logs")
+}
+
+model ErrorLog {
+  id         String        @id @default(uuid()) @db.Uuid
+  level      ErrorLogLevel
+  module     String        @db.VarChar(100)
+  message    String        @db.Text
+  stack      String?       @db.Text
+  context    Json?         @default("{}")
+  occurredAt DateTime      @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  @@index([level])
+  @@index([module])
+  @@index([occurredAt])
+  @@map("error_logs")
+}
+
+model AppAnnouncement {
+  id              String               @id @default(uuid()) @db.Uuid
+  title           String               @db.VarChar(160)
+  content         String               @db.Text
+  level           AppAnnouncementLevel @default(info)
+  enabled         Boolean              @default(true)
+  startAt         DateTime?            @map("start_at") @db.Timestamptz(6)
+  endAt           DateTime?            @map("end_at") @db.Timestamptz(6)
+  createdById     String?              @map("created_by") @db.Uuid
+  updatedByUserId String?              @map("updated_by") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("AppAnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("AppAnnouncementUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([level])
+  @@index([enabled])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([createdById])
+  @@index([deletedAt])
+  @@map("app_announcements")
+}
+
+model MaintenanceWindow {
+  id              String    @id @default(uuid()) @db.Uuid
+  enabled         Boolean   @default(false)
+  reason          String    @db.Text
+  allowedRoles    String[]  @default([]) @map("allowed_roles")
+  allowedIps      String[]  @default([]) @map("allowed_ips")
+  startAt         DateTime? @map("start_at") @db.Timestamptz(6)
+  endAt           DateTime? @map("end_at") @db.Timestamptz(6)
+  createdById     String?   @map("created_by") @db.Uuid
+  updatedByUserId String?   @map("updated_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("MaintenanceWindowCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("MaintenanceWindowUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([enabled])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([createdById])
+  @@index([deletedAt])
+  @@map("maintenance_windows")
+}
+
+model FeatureFlag {
+  id              String    @id @default(uuid()) @db.Uuid
+  key             String    @unique @db.VarChar(120)
+  name            String    @db.VarChar(160)
+  enabled         Boolean   @default(false)
+  config          Json?     @default("{}")
+  remark          String?   @db.Text
+  updatedByUserId String?   @map("updated_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  updatedBy User? @relation("FeatureFlagUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([enabled])
+  @@index([updatedByUserId])
+  @@index([deletedAt])
+  @@map("feature_flags")
+}
+
+model AppVersion {
+  id            String           @id @default(uuid()) @db.Uuid
+  version       String           @db.VarChar(80)
+  title         String           @db.VarChar(160)
+  status        AppVersionStatus @default(draft)
+  releaseNotes  String           @map("release_notes") @db.Text
+  impactModules String[]         @default([]) @map("impact_modules")
+  releasedAt    DateTime?        @map("released_at") @db.Timestamptz(6)
+  createdById   String?          @map("created_by") @db.Uuid
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("AppVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([version])
+  @@index([status])
+  @@index([releasedAt])
+  @@index([createdById])
+  @@map("app_versions")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  code        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(100)
+  code      String   @unique @db.VarChar(150)
+  module    String   @db.VarChar(100)
+  action    String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+
+  @@index([module, action])
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  module     String   @db.VarChar(100)
+  action     String   @db.VarChar(100)
+  objectType String?  @map("object_type") @db.VarChar(100)
+  objectId   String?  @map("object_id") @db.Uuid
+  beforeData Json?    @map("before_data")
+  afterData  Json?    @map("after_data")
+  ip         String?  @db.VarChar(100)
+  userAgent  String?  @map("user_agent") @db.Text
+  remark     String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([module, action])
+  @@index([objectType, objectId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Attachment {
+  id              String   @id @default(uuid()) @db.Uuid
+  originalName    String   @map("original_name") @db.VarChar(255)
+  storageKey      String   @unique @map("storage_key") @db.VarChar(500)
+  mimeType        String   @map("mime_type") @db.VarChar(150)
+  sizeBytes       BigInt   @map("size_bytes")
+  businessModule  String?  @map("business_module") @db.VarChar(80)
+  objectType      String?  @map("object_type") @db.VarChar(120)
+  objectId        String?  @map("object_id") @db.Uuid
+  purpose         String?  @db.VarChar(120)
+  remark          String?  @db.Text
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy          User?                     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  renewalTasks       RenewalTask[]
+  balanceAdjustments AppleBalanceAdjustment[]  @relation("AppleBalanceAdjustmentEvidence")
+  statusChecks       AppleAccountStatusCheck[] @relation("AppleAccountStatusCheckEvidence")
+  automationTasks    AutomationTask[]          @relation("AutomationTaskScreenshot")
+  automationTaskLogs AutomationTaskLog[]       @relation("AutomationTaskLogScreenshot")
+
+  @@index([createdByUserId])
+  @@index([businessModule, objectType])
+  @@index([objectId])
+  @@index([purpose])
+  @@index([createdAt])
+  @@map("attachments")
+}
