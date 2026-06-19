@@ -369,7 +369,7 @@
 - [x] T1610 完成敏感字段查看权限、原因、审计和敏感访问日志回归
 - [x] T1611 完成数据库备份和恢复演练
 - [ ] T1612 完成 Telegram 真实测试发送
-- [ ] T1613 准备生产 `.env.production`，确认没有占位密钥和明文敏感信息
+- [x] T1613 准备生产 `.env.production`，确认没有占位密钥和明文敏感信息
 - [x] T1614 将生产 Compose 示例校验和 Git 提交前安全检查纳入 GitHub Actions 质量门禁
 - [x] T1615 将 API/Admin 生产 Docker 镜像构建纳入 GitHub Actions 质量门禁
 - [x] T1616 新增生产 `.env.production` 强随机密钥初始化脚本
@@ -403,7 +403,7 @@
 
 补充验证记录：`npm run acceptance:launch` 已纳入 `launch:gates`。本地默认使用非 strict 模式，只展示生产 env 和 Telegram 真实测试门禁状态，不阻断本地等效验收；当设置 `REQUIRE_PROD_ENV=1` 或 `REQUIRE_MANUAL_GATES=1` 时，会执行 `launch:gates:strict`，确保预发布或生产等效验收在真实域名或 Telegram 真实测试未完成时失败退出。
 
-补充验证记录：新增 `npm run prod:env:set-domain`，支持 `--dry-run`、`--app-url`、`--cors-origin` 和 `--env-file`。该脚本用于拿到真实 HTTPS 域名后安全更新 `.env.production`，只改 `APP_PUBLIC_URL` 和 `CORS_ORIGIN`，不会打印或重置生产密钥。当前真实域名仍未提供，因此 T1613 仍保持未完成。
+补充验证记录：新增 `npm run prod:env:set-domain`，支持 `--dry-run`、`--app-url`、`--cors-origin` 和 `--env-file`。该脚本用于拿到真实 HTTPS 域名后安全更新 `.env.production`，只改 `APP_PUBLIC_URL` 和 `CORS_ORIGIN`，不会打印或重置生产密钥。
 
 补充验证记录：`npm run git:readiness` 已增强 Telegram Bot Token 扫描，除 `.env`、`.env.production`、备份、上传文件、构建产物和常见云厂商/API 密钥外，也会拦截形如真实 Telegram Bot Token 的内容进入 Git 候选文件。真实 Telegram 配置仍应只保存在数据库加密字段和生产环境中，不应写入代码或文档。
 
@@ -431,6 +431,8 @@
 
 补充验证记录：新增 `npm run release:blockers`，只读汇总当前上线阻塞项、负责人、处理动作、验证命令和证据记录命令。当前输出 3 个阻塞项：Telegram real test、Production env、Git baseline；该命令不写文件、不写数据库、不发送通知、不 commit/push，只用于安排下一步处理顺序。
 
+补充验证记录：2026-06-19 已复核 `.env.production`，`npm run prod:env:review` 和 `npm run prod:env:check` 均通过，公开域名为 `https://mairuanjian-admin-lt160f.pages.dev`，密钥只输出状态摘要不打印明文；已通过 `npm run launch:checklist -- --id=prod_env --status=passed` 记录 `prod_env` 证据。`npm run launch:status` 已同步读取上线检查清单，生产 env 已通过并已记录时不再把 T1613 作为首版阻塞项。当前首版阻塞项只剩 Telegram 真实测试。
+
 - [x] T1632 新增生产发布模式安全设置脚本 `npm run prod:env:set-mode`
 
 补充验证记录：新增 `npm run prod:env:set-mode`，用于安全设置 `.env.production` 中的 `FIRST_RELEASE_MODE`。脚本只支持 `semi_auto` 或 `full_auto`，支持 `--dry-run`，不会打印、重置或改动生产密钥。已用 `--dry-run` 验证当前可写入 `semi_auto`，但未实际修改 `.env.production`；`prod:env:review` 仍正确提示 `FIRST_RELEASE_MODE` 缺失，等待真实上线前按手册写入。
@@ -454,6 +456,7 @@
 - [x] T1640 修正上线手册中的手工门禁记录顺序，避免 `prod_env` 等待 strict acceptance、strict acceptance 又等待 `prod_env=passed` 的循环依赖
 
 - [x] T1641 修正 `npm run launch:status` 的发布模式来源和生产 env 下一步提示；当 `.env.production` 存在但缺少 `FIRST_RELEASE_MODE` 时明确提示字段缺失，并将下一步收敛为先跑 `prod:env:review/check`、记录 `prod_env` 证据，再进入最终 strict 验收
+- [x] T1642 修正 `npm run launch:status` 与 `release:blockers` 的手工门禁口径；生产 env 已校验并记录 `prod_env=passed` 后，不再重复提示 T1613 或 prod_env 证据记录
 
 ## Phase 17 - 平台接口与自动化增强
 

@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(rootDir);
 
+const checklistIds = ['telegram_test', 'prod_env', 'git_baseline'];
+const passedChecklistStatuses = new Set(['passed']);
+
 function readText(path) {
   return readFileSync(path, 'utf8');
 }
@@ -25,6 +28,39 @@ function readEnvValue(filePath, key) {
       .trim()
       .replace(/^['"]|['"]$/g, '') || null
   );
+}
+
+function parseEnvFile(path) {
+  if (!existsSync(path)) return new Map();
+
+  const values = new Map();
+  for (const rawLine of readText(path).split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || !line.includes('=')) continue;
+
+    const index = line.indexOf('=');
+    const key = line.slice(0, index).trim();
+    let value = line.slice(index + 1).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    values.set(key, value);
+  }
+
+  return values;
+}
+
+function loadLocalEnv() {
+  const env = parseEnvFile('.env');
+  for (const [key, value] of env.entries()) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
 }
 
 function run(command, args, options = {}) {
@@ -114,6 +150,83 @@ function getGitStatus() {
   };
 }
 
+async function loadPrismaClient() {
+  try {
+    const module = await import('@prisma/client');
+    return module.PrismaClient;
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'Cannot load @prisma/client'
+    };
+  }
+}
+
+function normalizeChecklistItems(value) {
+  const items = value && typeof value === 'object' && !Array.isArray(value) ? value.items : value;
+  return Array.isArray(items) ? items : [];
+}
+
+async function getManualGateStatus() {
+  const PrismaClient = await loadPrismaClient();
+  if (PrismaClient.error) {
+    return {
+      ok: false,
+      telegramPassed: false,
+      checklist: new Map(),
+      detail: PrismaClient.error
+    };
+  }
+
+  const prisma = new PrismaClient();
+  try {
+    const [telegramConfigs, checklistParameter] = await Promise.all([
+      prisma.telegramConfig.findMany({
+        where: { deletedAt: null },
+        orderBy: [{ lastTestAt: 'desc' }, { updatedAt: 'desc' }],
+        take: 20
+      }),
+      prisma.systemParameter.findUnique({
+        where: { key: 'maintenance_launch_checklist' }
+      })
+    ]);
+    const successfulTelegram = telegramConfigs.find(
+      (config) =>
+        config.enabled &&
+        config.botTokenEncrypted &&
+        config.chatId &&
+        config.lastTestStatus === 'success'
+    );
+    const checklist = new Map(
+      normalizeChecklistItems(checklistParameter?.value)
+        .filter((item) => checklistIds.includes(item?.id))
+        .map((item) => [item.id, item])
+    );
+
+    return {
+      ok: true,
+      telegramPassed: Boolean(successfulTelegram),
+      checklist,
+      detail: successfulTelegram
+        ? `Telegram passed via ${successfulTelegram.notificationName}.`
+        : 'No enabled Telegram config has a successful real test.'
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      telegramPassed: false,
+      checklist: new Map(),
+      detail: error instanceof Error ? error.message : 'Manual gate check failed'
+    };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+function checklistPassed(manualGates, id) {
+  const item = manualGates.checklist.get(id);
+  return Boolean(item && passedChecklistStatuses.has(item.status));
+}
+
 function getLaunchStrategy() {
   const candidates = [
     { source: '.env.production', mode: readEnvValue('.env.production', 'FIRST_RELEASE_MODE') },
@@ -144,7 +257,30 @@ function getLaunchStrategy() {
   };
 }
 
-function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrategy) {
+function getRuntimeResolvedPhase16Codes(productionEnv, manualGates) {
+  const resolved = new Set();
+
+  if (manualGates.telegramPassed && checklistPassed(manualGates, 'telegram_test')) {
+    resolved.add('T1612');
+  }
+
+  if (productionEnv.status === 'passed' && checklistPassed(manualGates, 'prod_env')) {
+    resolved.add('T1613');
+  }
+
+  return resolved;
+}
+
+function applyRuntimeResolvedTasks(summary, resolvedCodes) {
+  const resolvedOpen = summary.open.filter((task) => resolvedCodes.has(task.code));
+  return {
+    ...summary,
+    done: summary.done + resolvedOpen.length,
+    open: summary.open.filter((task) => !resolvedCodes.has(task.code))
+  };
+}
+
+function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrategy, manualGates) {
   const blockers = [];
   const blockerCodes = new Set();
 
@@ -158,6 +294,39 @@ function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrat
       code: 'PROD_ENV',
       title: productionEnv.detail.split(/\r?\n/)[0] || 'Production env check did not pass',
       source: 'Production env'
+    });
+  }
+
+  if (
+    (productionEnv.status !== 'passed' || !checklistPassed(manualGates, 'prod_env')) &&
+    !blockerCodes.has('T1613') &&
+    !blockerCodes.has('PROD_ENV')
+  ) {
+    blockers.push({
+      code: 'T1613',
+      title: '准备生产 `.env.production`，确认没有占位密钥和明文敏感信息',
+      source: 'Launch checklist'
+    });
+    blockerCodes.add('T1613');
+  }
+
+  if (
+    (!manualGates.telegramPassed || !checklistPassed(manualGates, 'telegram_test')) &&
+    !blockerCodes.has('T1612')
+  ) {
+    blockers.push({
+      code: 'T1612',
+      title: '完成 Telegram 真实测试发送',
+      source: 'Launch checklist'
+    });
+    blockerCodes.add('T1612');
+  }
+
+  if (!checklistPassed(manualGates, 'git_baseline')) {
+    blockers.push({
+      code: 'GIT_BASELINE',
+      title: '确认 Git 基线、提交和推送策略',
+      source: 'Launch checklist'
     });
   }
 
@@ -209,11 +378,15 @@ function printFirstReleaseGate(gate) {
   }
 }
 
-function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrategy) {
+function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrategy, manualGates) {
   const openCodes = new Set(phase16.open.map((task) => task.code));
   const phase17OpenCodes = new Set(phase17.open.map((task) => task.code));
 
-  if (openCodes.has('T1612')) {
+  if (
+    openCodes.has('T1612') ||
+    !manualGates.telegramPassed ||
+    !checklistPassed(manualGates, 'telegram_test')
+  ) {
     console.log(
       '- Configure a real Telegram Bot Token and Chat ID in the notification center, then send a real test message.'
     );
@@ -223,9 +396,15 @@ function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrateg
     console.log(
       '- Set FIRST_RELEASE_MODE in .env.production, fill the real production domain, run npm run prod:env:review && npm run prod:env:check, then record prod_env evidence.'
     );
-  } else if (openCodes.has('T1613')) {
+  } else if (openCodes.has('T1613') || !checklistPassed(manualGates, 'prod_env')) {
     console.log(
       '- Production env check passed; record prod_env evidence with npm run launch:checklist after confirming the reviewed values.'
+    );
+  }
+
+  if (!checklistPassed(manualGates, 'git_baseline')) {
+    console.log(
+      '- Confirm the Git baseline and record git_baseline evidence in the launch checklist.'
     );
   }
 
@@ -247,9 +426,10 @@ function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrateg
   console.log('- Commit/push only after explicit approval.');
 }
 
-function main() {
+async function main() {
+  loadLocalEnv();
   const tasksMarkdown = readText('docs/TASKS.md');
-  const phase16 = summarizeTasks(
+  const rawPhase16 = summarizeTasks(
     'Phase 16 launch preparation',
     parseTasks(extractSection(tasksMarkdown, '## Phase 16 - 上线缺口盘点与发布准备'))
   );
@@ -263,11 +443,15 @@ function main() {
   );
   const productionEnv = getProductionEnvStatus();
   const launchStrategy = getLaunchStrategy();
+  const manualGates = await getManualGateStatus();
+  const runtimeResolvedPhase16 = getRuntimeResolvedPhase16Codes(productionEnv, manualGates);
+  const phase16 = applyRuntimeResolvedTasks(rawPhase16, runtimeResolvedPhase16);
   const firstReleaseGate = getFirstReleaseGateSummary(
     phase16,
     phase17,
     productionEnv,
-    launchStrategy
+    launchStrategy,
+    manualGates
   );
   const git = getGitStatus();
 
@@ -286,6 +470,9 @@ function main() {
   console.log();
   console.log(`Production env: ${productionEnv.status}`);
   console.log(productionEnv.detail);
+  console.log(
+    `Manual gates source: ${manualGates.ok ? 'database' : `unavailable (${manualGates.detail})`}`
+  );
   console.log();
   printFirstReleaseGate(firstReleaseGate);
   console.log();
@@ -297,7 +484,7 @@ function main() {
   console.log();
   console.log('Recommended next steps');
   console.log('----------------------');
-  printRecommendedNextStep(phase16, phase17, productionEnv, launchStrategy);
+  printRecommendedNextStep(phase16, phase17, productionEnv, launchStrategy, manualGates);
 }
 
-main();
+await main();
