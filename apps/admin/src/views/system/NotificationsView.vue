@@ -6,7 +6,6 @@
     description="集中管理站内通知、Telegram 配置、通知规则、通知模板和发送日志。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="refreshCurrentTab">刷新</el-button>
       <el-button type="primary" @click="openPrimaryDialog">{{ primaryActionText }}</el-button>
     </template>

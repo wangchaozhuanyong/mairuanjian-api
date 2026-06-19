@@ -527,19 +527,23 @@ async function main() {
 
   const adminUsername = process.env.SEED_ADMIN_USERNAME;
   const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const shouldResetAdminPassword = process.env.SEED_ADMIN_RESET_PASSWORD === 'true';
 
   if (!adminUsername || !adminPassword) {
     return;
   }
 
+  const adminPasswordHash = await hashPassword(adminPassword);
+
   const adminUser = await prisma.user.upsert({
     where: { username: adminUsername },
     update: {
+      ...(shouldResetAdminPassword ? { passwordHash: adminPasswordHash } : {}),
       displayName: process.env.SEED_ADMIN_DISPLAY_NAME ?? '管理员'
     },
     create: {
       username: adminUsername,
-      passwordHash: await hashPassword(adminPassword),
+      passwordHash: adminPasswordHash,
       displayName: process.env.SEED_ADMIN_DISPLAY_NAME ?? '管理员'
     }
   });

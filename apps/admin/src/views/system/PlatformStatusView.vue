@@ -6,7 +6,6 @@
     description="查看淘宝、闲鱼、Telegram、文件存储和自动化服务的授权状态、最近同步、失败原因、调用次数和错误率。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="loadPlatforms">刷新</el-button>
       <el-button type="primary" :loading="testingAll" @click="testAllPlatforms">测试全部</el-button>
     </template>

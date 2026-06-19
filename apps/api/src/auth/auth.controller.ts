@@ -7,6 +7,7 @@ import type { LoginDto } from './dto/login.dto';
 interface RequestWithMeta {
   ip?: string;
   headers: Record<string, string | string[] | undefined>;
+  user?: AuthenticatedUser;
 }
 
 @Controller('auth')
@@ -23,10 +24,8 @@ export class AuthController {
   }
 
   @Post('logout')
-  logout() {
-    return {
-      loggedOut: true
-    };
+  logout(@Req() request: RequestWithMeta, @CurrentUser() user?: AuthenticatedUser) {
+    return this.authService.logout(this.extractBearerToken(request), user);
   }
 
   @Get('me')
@@ -35,11 +34,20 @@ export class AuthController {
   }
 
   @Post('refresh')
-  refresh(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.refresh(user);
+  refresh(@CurrentUser() user: AuthenticatedUser, @Req() request: RequestWithMeta) {
+    return this.authService.refresh(user, {
+      ip: request.ip,
+      userAgent: this.getHeaderValue(request.headers['user-agent'])
+    });
   }
 
   private getHeaderValue(value: string | string[] | undefined) {
     return Array.isArray(value) ? value.join(', ') : value;
+  }
+
+  private extractBearerToken(request: RequestWithMeta) {
+    const authorization = this.getHeaderValue(request.headers.authorization);
+    const [type, token] = authorization?.split(' ') ?? [];
+    return type === 'Bearer' ? token : undefined;
   }
 }

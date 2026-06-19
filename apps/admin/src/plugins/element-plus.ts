@@ -93,6 +93,10 @@ const components: Array<[string, ComponentLoader]> = [
     () => import('element-plus/es/components/form/index.mjs').then((module) => module.ElFormItem)
   ],
   [
+    'ElIcon',
+    () => import('element-plus/es/components/icon/index.mjs').then((module) => module.ElIcon)
+  ],
+  [
     'ElInput',
     () => import('element-plus/es/components/input/index.mjs').then((module) => module.ElInput)
   ],

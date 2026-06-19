@@ -155,8 +155,14 @@ describe('SecurityService', () => {
       },
       activeSession: {
         create: jest.fn().mockResolvedValue(activeSession),
+        findUnique: jest.fn().mockResolvedValue(activeSession),
         findMany: jest.fn().mockResolvedValue([activeSession]),
-        count: jest.fn().mockResolvedValue(1)
+        count: jest.fn().mockResolvedValue(1),
+        update: jest.fn().mockResolvedValue({
+          ...activeSession,
+          revokedAt: now
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 })
       },
       ipWhitelist: {
         findMany: jest.fn().mockResolvedValue([ipWhitelist]),
@@ -336,6 +342,45 @@ describe('SecurityService', () => {
     const data = (prisma.activeSession.create as jest.Mock).mock.calls[0]?.[0]?.data;
     expect(data.tokenHash).toHaveLength(64);
     expect(data.tokenHash).not.toBe('plain.jwt.token');
+  });
+
+  it('accepts only active non-revoked access tokens', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.isAccessTokenActive('plain.jwt.token')).resolves.toBe(true);
+    expect(prisma.activeSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastActiveAt: expect.any(Date)
+        })
+      })
+    );
+
+    (prisma.activeSession.findUnique as jest.Mock).mockResolvedValueOnce({
+      revokedAt: now,
+      expiresAt: new Date('2026-06-25T00:00:00.000Z')
+    });
+
+    await expect(service.isAccessTokenActive('plain.jwt.token')).resolves.toBe(false);
+  });
+
+  it('enforces enabled IP whitelist records when present', async () => {
+    const { service, prisma } = createService();
+    (prisma.ipWhitelist.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        ipOrCidr: '10.0.0.0/24'
+      }
+    ]);
+
+    await expect(service.isRequestIpAllowed('10.0.0.25', ['admin', 'api'])).resolves.toBe(true);
+
+    (prisma.ipWhitelist.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        ipOrCidr: '10.0.0.0/24'
+      }
+    ]);
+
+    await expect(service.isRequestIpAllowed('10.0.1.25', ['admin', 'api'])).resolves.toBe(false);
   });
 
   it('applies whitelisted login log sorting', async () => {

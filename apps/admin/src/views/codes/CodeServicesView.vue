@@ -5,10 +5,6 @@
     phase="Phase 6"
     description="配置兑换码面值、默认成本、售价、发货方式和组合规则。该业务设置只服务兑换码系统，不和 Apple ID 业务混用。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="业务数量" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="启用业务" :value="enabledCount" hint="当前页" tone="green" />

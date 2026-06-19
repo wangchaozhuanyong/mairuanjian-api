@@ -5,10 +5,6 @@
     phase="Phase 6"
     description="独立统计兑换码销售、成本、退款、售后损耗和净利润。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard
         label="订单数"

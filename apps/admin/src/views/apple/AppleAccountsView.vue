@@ -6,7 +6,6 @@
     description="管理 Apple ID 基础资料、余额、余额人民币成本、移动加权平均成本、状态和手动锁定。敏感字段加密保存，列表默认脱敏。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="openImport">批量导入</el-button>
     </template>
 

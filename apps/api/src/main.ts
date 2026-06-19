@@ -8,6 +8,9 @@ async function bootstrap() {
   const allowedOrigins = process.env.CORS_ORIGIN?.split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  if (process.env.NODE_ENV === 'production' && !allowedOrigins?.length) {
+    throw new Error('CORS_ORIGIN is required in production');
+  }
 
   app.setGlobalPrefix('api');
   app.useGlobalFilters(new HttpExceptionFilter());

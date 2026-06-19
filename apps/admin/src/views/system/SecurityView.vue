@@ -6,7 +6,6 @@
     description="集中管理登录日志、在线会话、密码策略、MFA、IP 白名单和敏感字段审批。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="refreshCurrentTab">刷新</el-button>
       <el-button v-if="activeTab === 'ip'" type="primary" @click="openIpDialog()"
         >新增 IP 规则</el-button

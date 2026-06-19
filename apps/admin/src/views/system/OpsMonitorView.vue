@@ -6,7 +6,6 @@
     description="监控 API、数据库、Redis、队列、定时任务、平台同步、Worker、文件存储、磁盘空间和最近错误。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="refreshCurrentTab">刷新</el-button>
       <el-button type="primary" :loading="capturing" @click="captureSnapshot">记录快照</el-button>
       <el-button v-if="activeTab === 'errors'" type="primary" @click="openErrorDialog"

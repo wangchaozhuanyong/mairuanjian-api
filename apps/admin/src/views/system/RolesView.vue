@@ -6,7 +6,6 @@
     description="管理角色、权限树和字段级权限入口。权限变更应写入审计日志。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button
         type="primary"
         :disabled="!selectedRole"

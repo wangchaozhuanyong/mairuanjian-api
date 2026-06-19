@@ -208,12 +208,15 @@ async function main() {
   }
 
   if (!productionEnv.ok || !checklistPassed(database, 'prod_env')) {
+    const prodEnvAction = productionEnv.ok
+      ? 'Production env check already passed. Review the public values, then record prod_env evidence in the launch checklist.'
+      : 'Set FIRST_RELEASE_MODE with npm run prod:env:set-mode -- --mode=semi_auto, set real HTTPS APP_PUBLIC_URL and CORS_ORIGIN, then run production env checks.';
+
     blockers.push({
       title: 'Production env',
       owner: '技术',
       status: productionEnv.summary,
-      action:
-        'Set FIRST_RELEASE_MODE with npm run prod:env:set-mode -- --mode=semi_auto, set real HTTPS APP_PUBLIC_URL and CORS_ORIGIN, then run production env checks.',
+      action: prodEnvAction,
       verify: 'npm run prod:env:review && npm run prod:env:check',
       evidence:
         'npm run launch:checklist -- --id=prod_env --status=passed --evidence="npm run prod:env:check passed; APP_PUBLIC_URL=https://your-domain.com"'

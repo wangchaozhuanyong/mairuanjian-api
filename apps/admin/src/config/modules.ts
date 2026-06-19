@@ -1,4 +1,13 @@
 export type ModuleStatus = 'ready' | 'design-ready' | 'planned' | 'later';
+export type MenuSectionIcon =
+  | 'workspace'
+  | 'common'
+  | 'id'
+  | 'codes'
+  | 'security'
+  | 'data'
+  | 'ops'
+  | 'system';
 
 export interface AppModuleItem {
   key: string;
@@ -24,9 +33,65 @@ export interface AppModuleItem {
 }
 
 export interface MenuSection {
+  key: string;
   title: string;
+  icon: MenuSectionIcon;
   items: AppModuleItem[];
+  defaultOpen?: boolean;
 }
+
+const modulePermissionByKey: Record<string, string> = {
+  renewal: 'apple.renewal_task.view',
+  'renewal-cancel': 'apple.renewal_task.view',
+  'renewal-topup': 'apple.renewal_task.view',
+  'renewal-waiting-auto': 'apple.renewal_task.view',
+  'action-plans': 'apple.action_plan.view',
+  'launch-audit': 'maintenance.system_parameter.manage',
+  'apple-list': 'apple.account.view',
+  'apple-detail': 'apple.account.view',
+  'apple-settings': 'apple.service.manage',
+  'apple-orders': 'apple.order.view',
+  'order-entry': 'apple.order.view',
+  'apple-activations': 'apple.activation.view',
+  'balance-reconciliation': 'apple.balance.view',
+  'finance-center': 'apple.report.view',
+  'apple-automation': 'apple.automation_task.manage',
+  'apple-reports': 'apple.report.view',
+  'code-inventory': 'code.inventory.view',
+  'code-settings': 'code.service.manage',
+  'code-orders': 'code.order.view',
+  'delivery-exceptions': 'code.delivery.view',
+  'after-sales': 'code.after_sale.manage',
+  'taobao-orders': 'code.order.view',
+  'xianyu-orders': 'code.order.view',
+  'code-reports': 'code.report.view',
+  customers: 'customer.view',
+  'source-platforms': 'source_platform.view',
+  'message-templates': 'message_template.manage',
+  attachments: 'attachment.view',
+  notifications: 'notification.view',
+  security: 'security.overview.view',
+  'login-logs': 'security.login_log.view',
+  sessions: 'security.session.view',
+  mfa: 'security.mfa.manage',
+  'ip-whitelist': 'security.ip_whitelist.manage',
+  'sensitive-approvals': 'security.sensitive_access_approval.manage',
+  'data-center': 'data.overview.view',
+  'data-imports': 'data.import.view',
+  'data-exports': 'data.export.view',
+  'data-dictionaries': 'data.dictionary.manage',
+  'recycle-bin': 'data.recycle_bin.view',
+  'ops-monitor': 'ops.overview.view',
+  maintenance: 'maintenance.announcement.view',
+  'feature-flags': 'maintenance.feature_flag.view',
+  versions: 'maintenance.version.view',
+  changelog: 'maintenance.version.view',
+  'system-parameters': 'maintenance.system_parameter.manage',
+  'audit-log': 'audit_log.view',
+  'platform-status': 'ops.api_status.view',
+  'platform-interface-logs': 'audit_log.view',
+  'automation-logs': 'audit_log.view'
+};
 
 const workspaceModules: AppModuleItem[] = [
   {
@@ -802,22 +867,151 @@ export const hiddenModules: AppModuleItem[] = [
   }
 ];
 
+function selectModules(source: AppModuleItem[], keys: string[]) {
+  const moduleByKey = new Map(source.map((item) => [item.key, item]));
+  return keys
+    .map((key) => moduleByKey.get(key))
+    .filter((item): item is AppModuleItem => Boolean(item));
+}
+
+export function getModuleDisplayTitle(item: AppModuleItem) {
+  return item.title.replaceAll('Apple ID', 'ID');
+}
+
+export function getModuleDisplayGroup(item: AppModuleItem) {
+  return item.group.replaceAll('Apple ID', 'ID');
+}
+
+export function getModuleDisplayDescription(item: AppModuleItem) {
+  return item.description.replaceAll('Apple ID', 'ID').replaceAll('Apple ', 'ID ');
+}
+
+export function getModulePermission(item: AppModuleItem) {
+  return item.permission ?? modulePermissionByKey[item.key];
+}
+
+export function getModuleSearchText(item: AppModuleItem) {
+  return [
+    item.title,
+    getModuleDisplayTitle(item),
+    item.group,
+    getModuleDisplayGroup(item),
+    item.phase,
+    item.description
+  ].join(' ');
+}
+
 export const menuSections: MenuSection[] = [
   {
+    key: 'workspace',
     title: '工作台',
-    items: workspaceModules
+    icon: 'workspace',
+    defaultOpen: true,
+    items: selectModules(workspaceModules, [
+      'dashboard',
+      'renewal',
+      'renewal-cancel',
+      'renewal-topup',
+      'renewal-waiting-auto',
+      'action-plans',
+      'launch-audit'
+    ])
   },
   {
-    title: 'Apple ID 业务',
-    items: appleModules.filter((item) => item.key !== 'apple-detail')
+    key: 'common',
+    title: '客户与公共资料',
+    icon: 'common',
+    items: selectModules(systemModules, [
+      'customers',
+      'source-platforms',
+      'message-templates',
+      'attachments',
+      'notifications',
+      'work-orders',
+      'risk-control'
+    ])
   },
   {
-    title: '兑换码自动发货',
-    items: codeModules
+    key: 'id-business',
+    title: 'ID 业务',
+    icon: 'id',
+    items: selectModules(appleModules, [
+      'apple-list',
+      'apple-settings',
+      'balance-reconciliation',
+      'order-entry',
+      'apple-orders',
+      'apple-activations',
+      'finance-center',
+      'apple-automation',
+      'apple-reports'
+    ])
   },
   {
-    title: '系统管理',
-    items: systemModules
+    key: 'codes',
+    title: '兑换码业务',
+    icon: 'codes',
+    items: selectModules(codeModules, [
+      'code-settings',
+      'code-inventory',
+      'code-orders',
+      'delivery-exceptions',
+      'taobao-orders',
+      'xianyu-orders',
+      'after-sales',
+      'code-reports'
+    ])
+  },
+  {
+    key: 'security',
+    title: '安全与权限',
+    icon: 'security',
+    items: selectModules(systemModules, [
+      'users',
+      'roles',
+      'security',
+      'login-logs',
+      'sessions',
+      'mfa',
+      'ip-whitelist',
+      'sensitive-approvals'
+    ])
+  },
+  {
+    key: 'data-audit',
+    title: '数据与审计',
+    icon: 'data',
+    items: selectModules(systemModules, [
+      'data-center',
+      'data-imports',
+      'data-exports',
+      'data-dictionaries',
+      'recycle-bin',
+      'audit-log'
+    ])
+  },
+  {
+    key: 'ops-platform',
+    title: '运维与平台',
+    icon: 'ops',
+    items: selectModules(systemModules, [
+      'ops-monitor',
+      'platform-status',
+      'platform-interface-logs',
+      'automation-logs'
+    ])
+  },
+  {
+    key: 'system-config',
+    title: '系统配置',
+    icon: 'system',
+    items: selectModules(systemModules, [
+      'maintenance',
+      'feature-flags',
+      'versions',
+      'changelog',
+      'system-parameters'
+    ])
   }
 ];
 

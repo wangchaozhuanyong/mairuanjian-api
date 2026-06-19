@@ -219,9 +219,13 @@ function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrateg
     );
   }
 
-  if (openCodes.has('T1613') || productionEnv.status !== 'passed') {
+  if (productionEnv.status !== 'passed') {
     console.log(
       '- Set FIRST_RELEASE_MODE in .env.production, fill the real production domain, run npm run prod:env:review && npm run prod:env:check, then record prod_env evidence.'
+    );
+  } else if (openCodes.has('T1613')) {
+    console.log(
+      '- Production env check passed; record prod_env evidence with npm run launch:checklist after confirming the reviewed values.'
     );
   }
 

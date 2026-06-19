@@ -5,10 +5,6 @@
     phase="Phase 1"
     description="查看上传凭证、截图、售后材料和导入导出附件元数据。第一版先支持本地上传和列表查询。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"

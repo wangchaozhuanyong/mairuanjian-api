@@ -5,10 +5,6 @@
     phase="Phase 2"
     description="维护续费询问、发货、售后、通知等模板。模板变量使用 {{ variable }} 格式。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"

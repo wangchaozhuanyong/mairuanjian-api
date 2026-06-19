@@ -5,10 +5,6 @@
     phase="Phase 5"
     description="按 Apple ID 聚合临期业务、续费、取消订阅、待客户确认和误扣费风险，形成当天操作清单。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="计划数量" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="风险计划" :value="riskCount" hint="当前页误扣费风险" tone="red" />

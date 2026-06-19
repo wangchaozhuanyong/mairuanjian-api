@@ -1,9 +1,5 @@
 <template>
   <PageScaffold :title="title" group="Apple ID 业务" :phase="phase" :description="description">
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard
         label="订单数"
@@ -105,6 +101,7 @@
       <el-tabs v-model="activeTab">
         <el-tab-pane label="按日期对账" name="daily">
           <el-table
+            v-if="activeTab === 'daily'"
             v-loading="loading"
             :data="report.daily"
             :size="tableSize"
@@ -169,6 +166,7 @@
         </el-tab-pane>
         <el-tab-pane label="按业务" name="service">
           <el-table
+            v-if="activeTab === 'service'"
             v-loading="loading"
             :data="report.byService"
             :size="tableSize"
@@ -233,6 +231,7 @@
         </el-tab-pane>
         <el-tab-pane label="按来源平台" name="source">
           <el-table
+            v-if="activeTab === 'source'"
             v-loading="loading"
             :data="report.bySourcePlatform"
             :size="tableSize"
@@ -297,6 +296,7 @@
         </el-tab-pane>
         <el-tab-pane label="按 Apple ID" name="account">
           <el-table
+            v-if="activeTab === 'account'"
             v-loading="loading"
             :data="report.byAppleAccount"
             :size="tableSize"
@@ -361,6 +361,7 @@
         </el-tab-pane>
         <el-tab-pane label="最近订单" name="recent">
           <el-table
+            v-if="activeTab === 'recent'"
             v-loading="loading"
             :data="report.recentOrders"
             :size="tableSize"

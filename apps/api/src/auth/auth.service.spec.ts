@@ -48,10 +48,12 @@ describe('AuthService', () => {
       create: jest.fn().mockResolvedValue({})
     } as unknown as AuditLogsService;
     const securityService = {
+      isRequestIpAllowed: jest.fn().mockResolvedValue(true),
       isMfaRequiredForUser: jest.fn().mockResolvedValue(Boolean(options?.mfaRequired)),
       verifyUserMfaCode: jest.fn().mockResolvedValue({ method: 'totp' }),
       recordLoginAttempt: jest.fn().mockResolvedValue({}),
-      createActiveSession: jest.fn().mockResolvedValue({})
+      createActiveSession: jest.fn().mockResolvedValue({}),
+      revokeAccessToken: jest.fn().mockResolvedValue(true)
     } as unknown as SecurityService;
 
     return {
@@ -88,6 +90,31 @@ describe('AuthService', () => {
     expect(securityService.verifyUserMfaCode).not.toHaveBeenCalled();
     expect(jwtService.sign).not.toHaveBeenCalled();
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('blocks token issuance when request IP is not whitelisted', async () => {
+    const { service, prisma, jwtService, securityService } = await createService();
+    (securityService.isRequestIpAllowed as jest.Mock).mockResolvedValueOnce(false);
+
+    await expect(
+      service.login(
+        {
+          username: 'admin',
+          password: fixturePassword
+        },
+        { ip: '10.0.1.25', userAgent: 'unit-test' }
+      )
+    ).rejects.toThrow(new UnauthorizedException('IP address is not allowed'));
+
+    expect(securityService.recordLoginAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'admin',
+        status: 'blocked',
+        failureReason: 'ip_not_allowed'
+      })
+    );
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+    expect(jwtService.sign).not.toHaveBeenCalled();
   });
 
   it('blocks token issuance when bound MFA code is invalid', async () => {
@@ -145,6 +172,36 @@ describe('AuthService', () => {
         userId,
         accessToken: result.accessToken
       })
+    );
+  });
+
+  it('creates an active session when refreshing a token', async () => {
+    const { service, securityService } = await createService();
+
+    const result = await service.refresh(authenticatedUser, {
+      ip: '127.0.0.1',
+      userAgent: 'unit-test'
+    });
+
+    expect(securityService.createActiveSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        accessToken: result.accessToken,
+        ip: '127.0.0.1',
+        userAgent: 'unit-test'
+      })
+    );
+  });
+
+  it('revokes the active session when logging out', async () => {
+    const { service, securityService } = await createService();
+
+    await expect(service.logout('plain.jwt.token', authenticatedUser)).resolves.toEqual({
+      loggedOut: true
+    });
+    expect(securityService.revokeAccessToken).toHaveBeenCalledWith(
+      'plain.jwt.token',
+      authenticatedUser
     );
   });
 });

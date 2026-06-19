@@ -5,10 +5,6 @@
     phase="Phase 14"
     description="统一查看操作日志、敏感查看日志、登录日志、导出日志、权限变更日志、自动化任务日志和平台接口日志。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="操作日志" :value="operationTotal" hint="当前筛选结果" tone="blue" />
       <MetricCard label="敏感查看" :value="sensitiveTotal" hint="敏感字段访问记录" tone="orange" />

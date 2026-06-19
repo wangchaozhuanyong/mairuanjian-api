@@ -5,10 +5,6 @@
     phase="Phase 1"
     description="管理员工账号、启停状态、角色分配和基础身份信息。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"

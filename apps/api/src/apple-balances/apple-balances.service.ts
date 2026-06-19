@@ -154,14 +154,11 @@ export class AppleBalancesService {
         }
       });
 
-      await tx.appleAccount.update({
-        where: { id: account.id },
-        data: {
-          currentBalance: snapshot.balanceAfter,
-          balanceCostAmount: snapshot.costAfter,
-          averageCost: snapshot.avgCostAfter,
-          updatedByUserId: operator?.id
-        }
+      await this.updateAccountBalanceSnapshot(tx, account, {
+        currentBalance: snapshot.balanceAfter,
+        balanceCostAmount: snapshot.costAfter,
+        averageCost: snapshot.avgCostAfter,
+        operatorId: operator?.id
       });
 
       return createdTopup;
@@ -245,14 +242,11 @@ export class AppleBalancesService {
         }
       });
 
-      await tx.appleAccount.update({
-        where: { id: account.id },
-        data: {
-          currentBalance: snapshot.balanceAfter,
-          balanceCostAmount: snapshot.costAfter,
-          averageCost: snapshot.avgCostAfter,
-          updatedByUserId: operator?.id
-        }
+      await this.updateAccountBalanceSnapshot(tx, account, {
+        currentBalance: snapshot.balanceAfter,
+        balanceCostAmount: snapshot.costAfter,
+        averageCost: snapshot.avgCostAfter,
+        operatorId: operator?.id
       });
 
       return createdConsumption;
@@ -346,14 +340,11 @@ export class AppleBalancesService {
         include
       });
 
-      await tx.appleAccount.update({
-        where: { id: account.id },
-        data: {
-          currentBalance: snapshot.newBalance,
-          balanceCostAmount: snapshot.newCostRmb,
-          averageCost: snapshot.avgCostAfter,
-          updatedByUserId: operator?.id
-        }
+      await this.updateAccountBalanceSnapshot(tx, account, {
+        currentBalance: snapshot.newBalance,
+        balanceCostAmount: snapshot.newCostRmb,
+        averageCost: snapshot.avgCostAfter,
+        operatorId: operator?.id
       });
 
       return createdAdjustment;
@@ -577,6 +568,37 @@ export class AppleBalancesService {
 
     if (!account) {
       throw new NotFoundException('Apple account not found');
+    }
+  }
+
+  private async updateAccountBalanceSnapshot(
+    tx: Prisma.TransactionClient,
+    account: Pick<AppleAccount, 'id' | 'currentBalance' | 'balanceCostAmount' | 'averageCost'>,
+    snapshot: {
+      currentBalance: PrismaNamespace.Decimal;
+      balanceCostAmount: PrismaNamespace.Decimal;
+      averageCost: PrismaNamespace.Decimal;
+      operatorId?: string;
+    }
+  ) {
+    const result = await tx.appleAccount.updateMany({
+      where: {
+        id: account.id,
+        deletedAt: null,
+        currentBalance: account.currentBalance,
+        balanceCostAmount: account.balanceCostAmount,
+        averageCost: account.averageCost
+      },
+      data: {
+        currentBalance: snapshot.currentBalance,
+        balanceCostAmount: snapshot.balanceCostAmount,
+        averageCost: snapshot.averageCost,
+        updatedByUserId: snapshot.operatorId
+      }
+    });
+
+    if (result.count !== 1) {
+      throw new ConflictException('Apple ID balance changed, please retry');
     }
   }
 

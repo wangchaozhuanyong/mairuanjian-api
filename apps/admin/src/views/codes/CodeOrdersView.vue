@@ -5,10 +5,6 @@
     phase="Phase 6"
     description="处理手工订单导入、平台映射识别、锁定未售兑换码和生成半自动发货内容。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="订单数" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="待发货" :value="pendingCount" hint="当前页" tone="orange" />

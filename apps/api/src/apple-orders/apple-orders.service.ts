@@ -353,14 +353,11 @@ export class AppleOrdersService {
           }
         });
 
-        await tx.appleAccount.update({
-          where: { id: appleAccount.id },
-          data: {
-            currentBalance: balanceSnapshot.balanceAfter,
-            balanceCostAmount: balanceSnapshot.costAfter,
-            averageCost: balanceSnapshot.avgCostAfter,
-            updatedByUserId: operator?.id
-          }
+        await this.updateAccountBalanceSnapshot(tx, appleAccount, {
+          currentBalance: balanceSnapshot.balanceAfter,
+          balanceCostAmount: balanceSnapshot.costAfter,
+          averageCost: balanceSnapshot.avgCostAfter,
+          operatorId: operator?.id
         });
       }
 
@@ -644,6 +641,37 @@ export class AppleOrdersService {
         ? new PrismaNamespace.Decimal(0)
         : costAfter.div(balanceAfter).toDecimalPlaces(8)
     };
+  }
+
+  private async updateAccountBalanceSnapshot(
+    tx: Prisma.TransactionClient,
+    account: Pick<AppleAccount, 'id' | 'currentBalance' | 'balanceCostAmount' | 'averageCost'>,
+    snapshot: {
+      currentBalance: PrismaNamespace.Decimal;
+      balanceCostAmount: PrismaNamespace.Decimal;
+      averageCost: PrismaNamespace.Decimal;
+      operatorId?: string;
+    }
+  ) {
+    const result = await tx.appleAccount.updateMany({
+      where: {
+        id: account.id,
+        deletedAt: null,
+        currentBalance: account.currentBalance,
+        balanceCostAmount: account.balanceCostAmount,
+        averageCost: account.averageCost
+      },
+      data: {
+        currentBalance: snapshot.currentBalance,
+        balanceCostAmount: snapshot.balanceCostAmount,
+        averageCost: snapshot.averageCost,
+        updatedByUserId: snapshot.operatorId
+      }
+    });
+
+    if (result.count !== 1) {
+      throw new ConflictException('Apple ID balance changed while creating order, please retry');
+    }
   }
 
   private calculatePlatformFee(

@@ -5,10 +5,6 @@
     phase="Phase 3"
     description="处理人工或自动查询发现的余额差异，支持只修余额、按当前均价修正和手动成本修正。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="账号数量" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="当前页余额" :value="totalBalance" hint="按当前页合计" tone="green" />

@@ -5,10 +5,6 @@
     phase="Phase 4"
     description="维护业务售价、官方消耗金额、币种、周期、允许地区和 Apple ID 锁定规则。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="业务数量" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="启用业务" :value="enabledCount" hint="当前页" tone="green" />

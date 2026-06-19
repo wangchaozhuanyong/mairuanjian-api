@@ -6,7 +6,6 @@
     description="集中管理备份、恢复、导入、导出、回收站、数据清理、重复合并、数据字典和系统参数。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="refreshCurrentTab">刷新</el-button>
       <el-button v-if="activeTab === 'backups'" type="primary" @click="openBackupDialog"
         >创建备份</el-button

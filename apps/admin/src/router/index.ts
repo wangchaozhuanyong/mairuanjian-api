@@ -1,7 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import { ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { maintenanceApi } from '@/api/system';
-import { allModules } from '@/config/modules';
+import type { CurrentUser } from '@/types/system';
+import {
+  allModules,
+  getModuleDisplayDescription,
+  getModuleDisplayGroup,
+  getModulePermission,
+  getModuleDisplayTitle
+} from '@/config/modules';
 
 const AdminLayout = () => import('@/layouts/AdminLayout.vue');
 const LoginView = () => import('@/views/auth/LoginView.vue');
@@ -42,6 +50,8 @@ const UsersView = () => import('@/views/system/UsersView.vue');
 const RolesView = () => import('@/views/system/RolesView.vue');
 const AuditLogsView = () => import('@/views/system/AuditLogsView.vue');
 const PlatformStatusView = () => import('@/views/system/PlatformStatusView.vue');
+
+export const isRoutePending = ref(false);
 
 const readyPageComponents = {
   dashboard: DashboardView,
@@ -98,89 +108,195 @@ const readyPageComponents = {
   'automation-logs': AuditLogsView
 } as const;
 
+type RouteComponentLoader = () => Promise<unknown>;
+
+const prefetchedRouteLoaders = new Set<RouteComponentLoader>();
+const routeComponentLoaders = new Map<string, RouteComponentLoader>();
+
+for (const module of allModules) {
+  const loader = readyPageComponents[module.key as keyof typeof readyPageComponents];
+
+  if (loader) {
+    routeComponentLoaders.set(module.route, loader as RouteComponentLoader);
+  }
+}
+
+function prefetchRouteLoader(loader: RouteComponentLoader) {
+  if (prefetchedRouteLoaders.has(loader)) {
+    return;
+  }
+
+  prefetchedRouteLoaders.add(loader);
+  void loader().catch(() => {
+    prefetchedRouteLoaders.delete(loader);
+  });
+}
+
+function scheduleRoutePrefetch(callback: () => void, delay = 220) {
+  const requestIdle = (
+    window as Window & {
+      requestIdleCallback?: (handler: () => void, options?: { timeout?: number }) => number;
+    }
+  ).requestIdleCallback;
+
+  if (requestIdle) {
+    requestIdle(callback, { timeout: 1800 });
+    return;
+  }
+
+  window.setTimeout(callback, delay);
+}
+
+export function prefetchRouteComponent(routePath: string) {
+  const loader = routeComponentLoaders.get(routePath);
+
+  if (loader) {
+    prefetchRouteLoader(loader);
+  }
+}
+
+export function prefetchReadyRouteComponents() {
+  const loaders = [...new Set(routeComponentLoaders.values())];
+  let cursor = 0;
+
+  const prefetchNextBatch = () => {
+    for (let batchCount = 0; batchCount < 3 && cursor < loaders.length; batchCount += 1) {
+      const loader = loaders[cursor];
+      cursor += 1;
+
+      if (loader) {
+        prefetchRouteLoader(loader);
+      }
+    }
+
+    if (cursor < loaders.length) {
+      scheduleRoutePrefetch(prefetchNextBatch, 450);
+    }
+  };
+
+  scheduleRoutePrefetch(prefetchNextBatch);
+}
+
 const moduleRoutes = allModules.map((module) => ({
   path: module.route.replace(/^\//, ''),
   name: module.key,
   component:
     readyPageComponents[module.key as keyof typeof readyPageComponents] ?? ModulePlaceholderView,
   meta: {
-    title: module.title,
-    group: module.group,
+    title: getModuleDisplayTitle(module),
+    group: getModuleDisplayGroup(module),
+    phase: module.phase,
+    description: getModuleDisplayDescription(module),
     moduleKey: module.key,
-    permission: module.permission,
+    permission: getModulePermission(module),
     status: module.status
   }
 }));
 
 const MAINTENANCE_MODE_ROUTE = '/system/maintenance-mode';
 const MAINTENANCE_MODE_CACHE_MS = 60_000;
-const MAINTENANCE_MODE_TIMEOUT_MS = 1_200;
+const MAINTENANCE_MODE_RETRY_FLOOR_MS = 10_000;
+const ROUTE_PENDING_SETTLE_MS = 140;
 
 type PublicMaintenanceMode = Awaited<ReturnType<typeof maintenanceApi.getPublicMode>>;
 
 const maintenanceModeCache: {
   expiresAt: number;
-  pending: Promise<PublicMaintenanceMode> | null;
+  lastAttemptAt: number;
+  pending: Promise<PublicMaintenanceMode | null> | null;
   value: PublicMaintenanceMode | null;
 } = {
   expiresAt: 0,
+  lastAttemptAt: 0,
   pending: null,
   value: null
 };
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
-  return new Promise<T>((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => {
-      reject(new Error('Maintenance mode check timed out'));
-    }, timeoutMs);
+let routePendingTimer: number | undefined;
 
-    promise
-      .then(resolve)
-      .catch(reject)
-      .finally(() => window.clearTimeout(timeoutId));
-  });
+function refreshPublicMaintenanceMode(userRoles?: string[], targetPath?: string) {
+  const now = Date.now();
+
+  if (maintenanceModeCache.pending) {
+    return maintenanceModeCache.pending;
+  }
+
+  if (now - maintenanceModeCache.lastAttemptAt < MAINTENANCE_MODE_RETRY_FLOOR_MS) {
+    return Promise.resolve(maintenanceModeCache.value);
+  }
+
+  maintenanceModeCache.lastAttemptAt = now;
+  maintenanceModeCache.pending = maintenanceApi
+    .getPublicMode()
+    .then((mode) => {
+      maintenanceModeCache.value = mode;
+      maintenanceModeCache.expiresAt = Date.now() + MAINTENANCE_MODE_CACHE_MS;
+
+      if (
+        userRoles &&
+        targetPath &&
+        shouldRedirectToMaintenanceMode(userRoles, targetPath, mode) &&
+        router.currentRoute.value.path === targetPath
+      ) {
+        void router.replace(MAINTENANCE_MODE_ROUTE);
+      }
+
+      return mode;
+    })
+    .catch(() => maintenanceModeCache.value)
+    .finally(() => {
+      maintenanceModeCache.pending = null;
+    });
+
+  return maintenanceModeCache.pending;
 }
 
-async function getCachedPublicMaintenanceMode() {
+function getMaintenanceModeSnapshot(userRoles: string[], targetPath: string) {
   const now = Date.now();
 
   if (maintenanceModeCache.value && maintenanceModeCache.expiresAt > now) {
     return maintenanceModeCache.value;
   }
 
-  if (!maintenanceModeCache.pending) {
-    maintenanceModeCache.pending = maintenanceApi
-      .getPublicMode()
-      .then((mode) => {
-        maintenanceModeCache.value = mode;
-        maintenanceModeCache.expiresAt = Date.now() + MAINTENANCE_MODE_CACHE_MS;
-        return mode;
-      })
-      .finally(() => {
-        maintenanceModeCache.pending = null;
-      });
-  }
-
-  return withTimeout(maintenanceModeCache.pending, MAINTENANCE_MODE_TIMEOUT_MS);
+  void refreshPublicMaintenanceMode(userRoles, targetPath);
+  return null;
 }
 
-async function shouldRedirectToMaintenanceMode(userRoles: string[], targetPath: string) {
+function shouldRedirectToMaintenanceMode(
+  userRoles: string[],
+  targetPath: string,
+  mode: PublicMaintenanceMode | null
+) {
   if (targetPath === MAINTENANCE_MODE_ROUTE) {
     return false;
   }
 
-  try {
-    const mode = await getCachedPublicMaintenanceMode();
-
-    if (!mode.enabled) {
-      return false;
-    }
-
-    const allowedRoles = new Set(mode.allowedRoles?.length ? mode.allowedRoles : ['admin']);
-    return !userRoles.some((role) => allowedRoles.has(role));
-  } catch {
+  if (!mode?.enabled) {
     return false;
   }
+
+  const allowedRoles = new Set(mode.allowedRoles?.length ? mode.allowedRoles : ['admin']);
+  return !userRoles.some((role) => allowedRoles.has(role));
+}
+
+function hasRoutePermission(user: CurrentUser | null, permission: unknown) {
+  if (typeof permission !== 'string' || !permission) {
+    return true;
+  }
+
+  return Boolean(user?.roles.includes('admin') || user?.permissions.includes(permission));
+}
+
+function startRoutePending() {
+  window.clearTimeout(routePendingTimer);
+  isRoutePending.value = true;
+}
+
+function finishRoutePending() {
+  window.clearTimeout(routePendingTimer);
+  routePendingTimer = window.setTimeout(() => {
+    isRoutePending.value = false;
+  }, ROUTE_PENDING_SETTLE_MS);
 }
 
 export const router = createRouter({
@@ -211,6 +327,8 @@ export const router = createRouter({
           meta: {
             title: '客户详情',
             group: '系统管理',
+            phase: 'Phase 2',
+            description: '聚合客户基础资料、来源平台、ID 订单、开通记录和续费任务。',
             permission: 'customer.view',
             status: 'ready'
           }
@@ -224,7 +342,11 @@ export const router = createRouter({
   ]
 });
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
+  if (to.fullPath !== from.fullPath) {
+    startRoutePending();
+  }
+
   const authStore = useAuthStore();
 
   if (to.meta.public) {
@@ -244,9 +366,24 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (await shouldRedirectToMaintenanceMode(authStore.user?.roles ?? [], to.path)) {
+  if (!hasRoutePermission(authStore.user, to.meta.permission)) {
+    return '/403';
+  }
+
+  const userRoles = authStore.user?.roles ?? [];
+  const maintenanceMode = getMaintenanceModeSnapshot(userRoles, to.path);
+
+  if (shouldRedirectToMaintenanceMode(userRoles, to.path, maintenanceMode)) {
     return MAINTENANCE_MODE_ROUTE;
   }
 
   return true;
+});
+
+router.afterEach(() => {
+  finishRoutePending();
+});
+
+router.onError(() => {
+  finishRoutePending();
 });

@@ -52,6 +52,10 @@ export function validateEnv(config: RawEnv) {
     throw new Error('APP_PORT must be a valid TCP port');
   }
 
+  if (nodeEnv === 'production' && !config.CORS_ORIGIN) {
+    throw new Error('CORS_ORIGIN is required in production');
+  }
+
   if (config.CORS_ORIGIN) {
     for (const origin of config.CORS_ORIGIN.split(',').map((item) => item.trim())) {
       if (origin) {

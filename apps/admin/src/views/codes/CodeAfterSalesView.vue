@@ -5,10 +5,6 @@
     phase="Phase 6"
     description="处理已发货兑换码的售后补发，记录原码、新码、损耗成本和处理状态。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="售后单" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="待处理" :value="pendingCount" hint="当前页" tone="orange" />

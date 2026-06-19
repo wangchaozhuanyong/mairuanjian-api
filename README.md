@@ -145,7 +145,10 @@ npm run prisma:seed
 SEED_ADMIN_USERNAME=admin
 SEED_ADMIN_PASSWORD=请改成强密码
 SEED_ADMIN_DISPLAY_NAME=管理员
+SEED_ADMIN_RESET_PASSWORD=false
 ```
+
+`SEED_ADMIN_RESET_PASSWORD` 默认建议保持 `false`。只有需要用 seed 主动重置已有管理员密码时，才临时改成 `true`。
 
 启动后端：
 

@@ -24,6 +24,21 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto, requestMeta?: LoginRequestMeta) {
+    const ipAllowed = await this.securityService.isRequestIpAllowed(requestMeta?.ip, [
+      'admin',
+      'api'
+    ]);
+    if (!ipAllowed) {
+      await this.securityService.recordLoginAttempt({
+        username: dto.username,
+        status: 'blocked',
+        failureReason: 'ip_not_allowed',
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent
+      });
+      throw new UnauthorizedException('IP address is not allowed');
+    }
+
     const user = await this.prisma.user.findFirst({
       where: {
         username: dto.username,
@@ -124,8 +139,27 @@ export class AuthService {
     return response;
   }
 
-  async refresh(user: AuthenticatedUser) {
-    return this.createAuthResponse(user);
+  async logout(accessToken?: string, user?: AuthenticatedUser) {
+    if (accessToken) {
+      await this.securityService.revokeAccessToken(accessToken, user);
+    }
+
+    return {
+      loggedOut: true
+    };
+  }
+
+  async refresh(user: AuthenticatedUser, requestMeta?: LoginRequestMeta) {
+    const response = this.createAuthResponse(user);
+    await this.securityService.createActiveSession({
+      userId: user.id,
+      accessToken: response.accessToken,
+      expiresAt: this.getTokenExpiresAt(response.accessToken),
+      ip: requestMeta?.ip,
+      userAgent: requestMeta?.userAgent
+    });
+
+    return response;
   }
 
   private createAuthResponse(user: AuthenticatedUser) {

@@ -5,10 +5,6 @@
     phase="Phase 5"
     :description="pageCopy.description"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="任务数量" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="待处理" :value="pendingCount" hint="当前页未完成" tone="orange" />

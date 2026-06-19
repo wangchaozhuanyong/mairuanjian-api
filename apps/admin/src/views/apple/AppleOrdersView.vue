@@ -5,10 +5,6 @@
     phase="Phase 4"
     description="查看 Apple ID 订单、开通记录、余额消耗和利润。订单创建后会自动生成消费流水和开通记录。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="订单数量" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="当前页实收" :value="sumField('paidAmount')" hint="人民币" tone="green" />

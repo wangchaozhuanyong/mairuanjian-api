@@ -280,6 +280,102 @@ export class SecurityService {
     return this.toSessionResponse(session);
   }
 
+  async isAccessTokenActive(accessToken: string | null | undefined) {
+    if (!accessToken) {
+      return false;
+    }
+
+    const now = new Date();
+    const tokenHash = this.hashToken(accessToken);
+    const session = await this.prisma.activeSession.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        revokedAt: true,
+        expiresAt: true
+      }
+    });
+
+    if (!session || session.revokedAt || session.expiresAt <= now) {
+      return false;
+    }
+
+    await this.prisma.activeSession.updateMany({
+      where: {
+        id: session.id,
+        revokedAt: null,
+        expiresAt: { gt: now }
+      },
+      data: {
+        lastActiveAt: now
+      }
+    });
+
+    return true;
+  }
+
+  async revokeAccessToken(accessToken: string | null | undefined, operator?: AuthenticatedUser) {
+    if (!accessToken) {
+      return false;
+    }
+
+    const session = await this.prisma.activeSession.findUnique({
+      where: { tokenHash: this.hashToken(accessToken) },
+      include: this.getSessionInclude()
+    });
+
+    if (!session || session.revokedAt) {
+      return false;
+    }
+
+    const updated = await this.prisma.activeSession.update({
+      where: { id: session.id },
+      data: { revokedAt: new Date() },
+      include: this.getSessionInclude()
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'security',
+      action: 'security.session.logout',
+      objectType: 'active_session',
+      objectId: session.id,
+      afterData: this.toAuditJson({
+        sessionId: session.id,
+        userId: session.userId,
+        username: session.user.username
+      }),
+      remark: `Logged out active session ${session.id}`
+    });
+
+    return Boolean(updated.revokedAt);
+  }
+
+  async isRequestIpAllowed(ip: string | null | undefined, scopes: IpWhitelistScope[]) {
+    const records = await this.prisma.ipWhitelist.findMany({
+      where: {
+        enabled: true,
+        scope: {
+          in: scopes
+        }
+      },
+      select: {
+        ipOrCidr: true
+      }
+    });
+
+    if (!records.length) {
+      return true;
+    }
+
+    const normalizedIp = this.normalizeRequestIp(ip);
+    if (!normalizedIp) {
+      return false;
+    }
+
+    return records.some((record) => this.matchesIpOrCidr(normalizedIp, record.ipOrCidr));
+  }
+
   async listLoginLogs(query: ListLoginLogsQuery) {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();
@@ -1402,6 +1498,62 @@ export class SecurityService {
       throw new BadRequestException('ipOrCidr format is invalid');
     }
     return normalized;
+  }
+
+  private normalizeRequestIp(value: string | null | undefined) {
+    const firstIp = this.normalizeNullableString(value)?.split(',')[0]?.trim() ?? null;
+    if (!firstIp) {
+      return null;
+    }
+
+    return firstIp.startsWith('::ffff:') ? firstIp.slice('::ffff:'.length) : firstIp;
+  }
+
+  private matchesIpOrCidr(ip: string, ipOrCidr: string) {
+    const normalizedEntry = this.normalizeRequestIp(ipOrCidr);
+    if (!normalizedEntry) {
+      return false;
+    }
+
+    if (!normalizedEntry.includes('/')) {
+      return normalizedEntry === ip;
+    }
+
+    const [network, prefixText] = normalizedEntry.split('/');
+    const prefix = Number(prefixText);
+    const ipInt = this.ipv4ToInt(ip);
+    const networkInt = this.ipv4ToInt(network);
+
+    if (
+      ipInt === null ||
+      networkInt === null ||
+      !Number.isInteger(prefix) ||
+      prefix < 0 ||
+      prefix > 32
+    ) {
+      return false;
+    }
+
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    return (ipInt & mask) === (networkInt & mask);
+  }
+
+  private ipv4ToInt(value: string | undefined) {
+    if (!value || !/^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
+      return null;
+    }
+
+    const parts = value.split('.').map(Number);
+    if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return null;
+    }
+
+    return (
+      ((parts[0] << 24) >>> 0) +
+      ((parts[1] << 16) >>> 0) +
+      ((parts[2] << 8) >>> 0) +
+      (parts[3] >>> 0)
+    );
   }
 
   private normalizeRequiredString(value: unknown, field: string) {

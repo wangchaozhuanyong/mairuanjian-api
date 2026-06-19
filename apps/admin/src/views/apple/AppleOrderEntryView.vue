@@ -6,7 +6,6 @@
     description="录入客户订单，按业务规则自动匹配 Apple ID，提交后自动生成开通记录、扣减余额并计算利润。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="loadInitialData">刷新基础数据</el-button>
       <el-button type="primary" :loading="saving" @click="submitOrder">提交订单</el-button>
     </template>

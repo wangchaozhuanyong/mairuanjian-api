@@ -5,10 +5,6 @@
     phase="Phase 2"
     description="管理客户资料、来源平台、标签和基础联系方式。手机号列表默认脱敏展示。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"

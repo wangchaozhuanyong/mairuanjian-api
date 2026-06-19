@@ -11,6 +11,7 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import { hashPassword } from '../auth/password-hasher';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import type { CreateUserDto } from './dto/create-user.dto';
+import { SecurityService } from '../security/security.service';
 import type { UpdateUserDto } from './dto/update-user.dto';
 
 interface ListUsersQuery extends PaginationQuery {
@@ -50,7 +51,8 @@ const userSelect = {
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService
+    private readonly auditLogsService: AuditLogsService,
+    private readonly securityService: SecurityService
   ) {}
 
   async getAuthenticatedUser(userId: string): Promise<AuthenticatedUser> {
@@ -172,6 +174,7 @@ export class UsersService {
     this.assertRequiredString(dto.username, 'username');
     this.assertRequiredString(dto.password, 'password');
     this.assertRequiredString(dto.displayName, 'displayName');
+    await this.assertPasswordMatchesPolicy(dto.password);
 
     const username = dto.username.trim();
     const existingUser = await this.prisma.user.findUnique({
@@ -262,6 +265,7 @@ export class UsersService {
     }
 
     if (dto.password !== undefined && dto.password !== '') {
+      await this.assertPasswordMatchesPolicy(dto.password);
       data.passwordHash = await hashPassword(dto.password);
     }
 
@@ -346,6 +350,46 @@ export class UsersService {
     }
 
     return undefined;
+  }
+
+  private async assertPasswordMatchesPolicy(password: string) {
+    const setting = await this.securityService.getPasswordPolicy();
+    const policy = setting.value as Record<string, unknown>;
+    const minLength = this.getPolicyNumber(policy.minLength, 8);
+    const failures: string[] = [];
+
+    if (password.length < minLength) {
+      failures.push(`at least ${minLength} characters`);
+    }
+
+    if (this.getPolicyBoolean(policy.requireUppercase, true) && !/[A-Z]/.test(password)) {
+      failures.push('one uppercase letter');
+    }
+
+    if (this.getPolicyBoolean(policy.requireLowercase, true) && !/[a-z]/.test(password)) {
+      failures.push('one lowercase letter');
+    }
+
+    if (this.getPolicyBoolean(policy.requireNumber, true) && !/\d/.test(password)) {
+      failures.push('one number');
+    }
+
+    if (this.getPolicyBoolean(policy.requireSymbol, false) && !/[^A-Za-z0-9]/.test(password)) {
+      failures.push('one symbol');
+    }
+
+    if (failures.length) {
+      throw new BadRequestException(`Password must contain ${failures.join(', ')}`);
+    }
+  }
+
+  private getPolicyNumber(value: unknown, fallback: number) {
+    const numberValue = typeof value === 'number' ? value : Number(value);
+    return Number.isInteger(numberValue) && numberValue > 0 ? numberValue : fallback;
+  }
+
+  private getPolicyBoolean(value: unknown, fallback: boolean) {
+    return typeof value === 'boolean' ? value : fallback;
   }
 
   private buildOrderBy(query: ListUsersQuery): Prisma.UserOrderByWithRelationInput[] {

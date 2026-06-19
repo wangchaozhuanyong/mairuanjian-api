@@ -2,6 +2,7 @@ import { validateEnv } from './env.validation';
 
 const productionSafeEnv = {
   NODE_ENV: 'production',
+  CORS_ORIGIN: 'https://admin.example.com',
   DATABASE_URL: 'postgresql://user:password@localhost:5432/apple_business',
   JWT_SECRET: 'production-jwt-secret',
   FIELD_ENCRYPTION_KEY: 'production-field-encryption-key',
@@ -21,10 +22,18 @@ describe('validateEnv', () => {
     expect(() => validateEnv(env)).toThrow('FIRST_RELEASE_MODE is required in production');
   });
 
+  it('requires CORS_ORIGIN in production', () => {
+    const env: Record<string, string> = { ...productionSafeEnv };
+    delete env.CORS_ORIGIN;
+
+    expect(() => validateEnv(env)).toThrow('CORS_ORIGIN is required in production');
+  });
+
   it('rejects an invalid FIRST_RELEASE_MODE', () => {
     expect(() =>
       validateEnv({
         NODE_ENV: 'production',
+        CORS_ORIGIN: productionSafeEnv.CORS_ORIGIN,
         DATABASE_URL: productionSafeEnv.DATABASE_URL,
         JWT_SECRET: productionSafeEnv.JWT_SECRET,
         FIELD_ENCRYPTION_KEY: productionSafeEnv.FIELD_ENCRYPTION_KEY,

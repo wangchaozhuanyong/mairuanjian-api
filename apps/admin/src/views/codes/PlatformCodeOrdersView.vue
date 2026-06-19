@@ -6,7 +6,6 @@
     :description="description"
   >
     <template #actions>
-      <el-tag type="warning" effect="light">平台接口占位</el-tag>
       <el-button type="primary" :loading="syncingOrders" @click="syncOrders">同步订单</el-button>
       <el-button :loading="syncingRefunds" @click="syncRefunds">同步退款</el-button>
     </template>

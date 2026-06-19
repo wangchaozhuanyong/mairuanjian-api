@@ -5,10 +5,6 @@
     phase="Phase 2"
     description="配置淘宝、闲鱼、微信、手工等客户来源和平台能力。手续费字段会按 Decimal 字符串提交。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"

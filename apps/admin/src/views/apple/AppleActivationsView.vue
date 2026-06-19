@@ -5,10 +5,6 @@
     phase="Phase 4"
     description="查看每笔 Apple ID 业务开通后的服务记录、到期时间、成本利润和续费状态。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="记录数量" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="开通中" :value="activeCount" hint="当前页" tone="green" />

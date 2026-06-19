@@ -5,10 +5,6 @@
     phase="Phase 6"
     description="管理兑换码批次、尾号、面值、成本和库存状态。完整兑换码已加密保存，列表只显示尾号。"
   >
-    <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
-    </template>
-
     <div class="metric-grid metric-grid--four">
       <MetricCard label="库存记录" :value="total" hint="当前筛选结果" tone="blue" />
       <MetricCard label="未售" :value="unsoldCount" hint="当前页" tone="green" />

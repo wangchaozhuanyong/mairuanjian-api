@@ -1,5 +1,6 @@
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { SecurityService } from '../security/security.service';
 import { UsersService } from './users.service';
 
 describe('UsersService', () => {
@@ -25,7 +26,7 @@ describe('UsersService', () => {
         count
       }
     } as unknown as PrismaService;
-    const service = new UsersService(prisma, {} as AuditLogsService);
+    const service = new UsersService(prisma, {} as AuditLogsService, {} as SecurityService);
 
     const result = await service.listUsers({
       page: '1',
@@ -41,5 +42,28 @@ describe('UsersService', () => {
       })
     );
     expect(count).toHaveBeenCalled();
+  });
+
+  it('enforces configured password policy when creating users', async () => {
+    const securityService = {
+      getPasswordPolicy: jest.fn().mockResolvedValue({
+        value: {
+          minLength: 12,
+          requireUppercase: true,
+          requireLowercase: true,
+          requireNumber: true,
+          requireSymbol: true
+        }
+      })
+    } as unknown as SecurityService;
+    const service = new UsersService({} as PrismaService, {} as AuditLogsService, securityService);
+
+    await expect(
+      service.createUser({
+        username: 'operator',
+        password: 'short',
+        displayName: 'Operator'
+      })
+    ).rejects.toThrow('Password must contain');
   });
 });

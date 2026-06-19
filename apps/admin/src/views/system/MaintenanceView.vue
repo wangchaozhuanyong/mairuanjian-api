@@ -6,7 +6,6 @@
     description="集中管理系统公告、维护模式、版本信息、更新日志、功能开关、菜单配置、主题配置和系统参数。"
   >
     <template #actions>
-      <el-tag type="success" effect="light">已接入接口</el-tag>
       <el-button @click="refreshCurrentTab">刷新</el-button>
       <el-button type="primary" @click="openPrimaryDialog">{{ primaryActionText }}</el-button>
     </template>
