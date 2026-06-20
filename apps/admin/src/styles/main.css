@@ -154,6 +154,31 @@ a {
   margin-bottom: 24px;
 }
 
+.login-error {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--v3-red-border-soft);
+  border-radius: var(--v3-radius);
+  background: var(--v3-red-soft);
+  color: var(--v3-red);
+}
+
+.login-error strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.login-error span {
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: var(--color-primary);

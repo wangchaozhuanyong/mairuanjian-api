@@ -31,6 +31,10 @@
             placeholder="未绑定 MFA 可留空"
           />
         </el-form-item>
+        <div v-if="loginError" class="login-error" role="alert">
+          <strong>登录失败</strong>
+          <span>{{ loginError }}</span>
+        </div>
         <AppButton variant="primary" class="full-button" :loading="loading" @click="submit">
           登录
         </AppButton>
@@ -45,12 +49,14 @@ import { ElMessage } from 'element-plus';
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppButton from '@/components/ui/AppButton.vue';
+import { getApiErrorMessage } from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
 
 const router = useRouter();
 const authStore = useAuthStore();
 const formRef = ref<FormInstance>();
 const loading = ref(false);
+const loginError = ref('');
 
 const form = reactive({
   username: '',
@@ -70,11 +76,13 @@ async function submit() {
   }
 
   loading.value = true;
+  loginError.value = '';
   try {
     await authStore.login(form.username, form.password, form.mfaCode || undefined);
     await router.push('/dashboard');
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '登录失败');
+    loginError.value = getApiErrorMessage(error);
+    ElMessage.error(loginError.value);
   } finally {
     loading.value = false;
   }
