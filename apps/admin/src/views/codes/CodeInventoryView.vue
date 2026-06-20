@@ -452,7 +452,7 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { codeServicesApi, redeemCodesApi, userTableViewsApi } from '@/api/system';
+import { redeemCodesApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
@@ -470,11 +470,11 @@ import type {
 } from '@/types/system';
 import {
   createSmartQueryKey,
-  getSmartQueryData,
   invalidateSmartQueries,
-  refreshSmartQuery
+  refreshSmartQueryResource
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { loadSmartCodeServices } from '@/utils/smartSystemQueries';
 
 const tableKey = 'code_inventory';
 const inventoryStatusOptions = [
@@ -632,48 +632,31 @@ function isColumnVisible(column: string) {
 }
 
 async function loadServices() {
-  const data = await codeServicesApi.list({
-    page: 1,
-    pageSize: 100,
-    status: 'enabled'
-  });
+  const data = await loadSmartCodeServices({ page: 1, pageSize: 100, status: 'enabled' });
   services.value = data.items;
 }
 
 async function loadInventory(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildInventoryListParams();
   const key = createSmartQueryKey('code-inventory', params);
-  const cached = getSmartQueryData<CodeInventoryPage>(key);
 
   activeInventoryQueryKey.value = key;
 
-  if (cached) {
-    applyInventoryListResult(cached);
-  }
-
-  loading.value = !cached && !options.background;
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
       fetcher: () => redeemCodesApi.listInventory(params),
+      apply: applyInventoryListResult,
+      background: options.background,
+      isCurrent: () => activeInventoryQueryKey.value === key,
+      setLoading: (value) => {
+        loading.value = value;
+      },
       force: options.force ?? true
     });
-
-    if (activeInventoryQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyInventoryListResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载兑换码库存失败');
-    }
-  } finally {
-    if (activeInventoryQueryKey.value === key) {
-      loading.value = false;
     }
   }
 }

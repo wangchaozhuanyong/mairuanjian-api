@@ -351,7 +351,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleOrder, PageResult, TableDensity, UserTableView } from '@/types/system';
-import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const router = useRouter();
 const tableKey = 'apple_orders';
@@ -460,37 +460,24 @@ function applyOrderResult(data: PageResult<AppleOrder>) {
 async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildOrderParams();
   const key = createSmartQueryKey('apple-orders', params);
-  const cached = getSmartQueryData<PageResult<AppleOrder>>(key);
 
   activeOrdersQueryKey.value = key;
 
-  if (cached) {
-    applyOrderResult(cached);
-  }
-
-  loading.value = !cached && !options.background;
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
       fetcher: () => appleOrdersApi.list(params),
+      apply: applyOrderResult,
+      background: options.background,
+      isCurrent: () => activeOrdersQueryKey.value === key,
+      setLoading: (value) => {
+        loading.value = value;
+      },
       force: options.force ?? true
     });
-
-    if (activeOrdersQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyOrderResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 订单失败');
-    }
-  } finally {
-    if (activeOrdersQueryKey.value === key) {
-      loading.value = false;
     }
   }
 }

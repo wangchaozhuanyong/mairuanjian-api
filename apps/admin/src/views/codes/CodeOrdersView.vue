@@ -544,7 +544,7 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { codeOrdersApi, codeServicesApi, userTableViewsApi } from '@/api/system';
+import { codeOrdersApi, userTableViewsApi } from '@/api/system';
 import type { CodeOrderQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
@@ -563,8 +563,8 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
-import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
-import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
+import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
+import { loadSmartCodeServices, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
 const tableKey = 'code_orders';
 const deliveryStatusOptions = [
@@ -734,19 +734,10 @@ function applyDependenciesResult(data: {
 
 async function loadDependencies(options: { background?: boolean; force?: boolean } = {}) {
   const key = createSmartQueryKey('code-order-dependencies');
-  const cached = getSmartQueryData<{
-    platforms: PageResult<SourcePlatform>;
-    services: PageResult<CodeService>;
-  }>(key);
-
   activeDependenciesQueryKey.value = key;
 
-  if (cached) {
-    applyDependenciesResult(cached);
-  }
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
       fetcher: async () => {
         const [platformData, serviceData] = await Promise.all([
@@ -758,11 +749,14 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
             },
             options
           ),
-          codeServicesApi.list({
-            page: 1,
-            pageSize: 100,
-            status: 'enabled'
-          })
+          loadSmartCodeServices(
+            {
+              page: 1,
+              pageSize: 100,
+              status: 'enabled'
+            },
+            options
+          )
         ]);
 
         return {
@@ -770,16 +764,11 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
           services: serviceData
         };
       },
+      apply: applyDependenciesResult,
+      background: options.background,
+      isCurrent: () => activeDependenciesQueryKey.value === key,
       force: options.force ?? true
     });
-
-    if (activeDependenciesQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyDependenciesResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单依赖失败');
@@ -807,37 +796,24 @@ function applyOrderResult(data: PageResult<CodePlatformOrder>) {
 async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildOrderParams();
   const key = createSmartQueryKey('code-orders', params);
-  const cached = getSmartQueryData<PageResult<CodePlatformOrder>>(key);
 
   activeOrdersQueryKey.value = key;
 
-  if (cached) {
-    applyOrderResult(cached);
-  }
-
-  loading.value = !cached && !options.background;
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
       fetcher: () => codeOrdersApi.list(params),
+      apply: applyOrderResult,
+      background: options.background,
+      isCurrent: () => activeOrdersQueryKey.value === key,
+      setLoading: (value) => {
+        loading.value = value;
+      },
       force: options.force ?? true
     });
-
-    if (activeOrdersQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyOrderResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单失败');
-    }
-  } finally {
-    if (activeOrdersQueryKey.value === key) {
-      loading.value = false;
     }
   }
 }

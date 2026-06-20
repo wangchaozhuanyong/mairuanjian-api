@@ -654,9 +654,7 @@ async function loadDashboardOverview(
   }
 }
 
-function applyDashboardOverview(
-  results: Awaited<ReturnType<typeof loadDashboardOverviewData>>
-) {
+function applyDashboardOverview(results: Awaited<ReturnType<typeof loadDashboardOverviewData>>) {
   const [
     accountResult,
     appleOrderResult,

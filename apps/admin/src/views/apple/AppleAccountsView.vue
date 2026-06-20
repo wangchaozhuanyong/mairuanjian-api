@@ -1146,9 +1146,8 @@ import {
 } from '@/utils/appleAccountRegion';
 import {
   createSmartQueryKey,
-  getSmartQueryData,
   invalidateSmartQueries,
-  refreshSmartQuery
+  refreshSmartQueryResource
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 
@@ -1563,37 +1562,24 @@ function isColumnVisible(column: string) {
 async function loadAccounts(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildAccountListParams();
   const key = createSmartQueryKey('apple-accounts', params);
-  const cached = getSmartQueryData<AppleAccountPage>(key);
 
   activeAccountsQueryKey.value = key;
 
-  if (cached) {
-    applyAccountListResult(cached);
-  }
-
-  loading.value = !cached && !options.background;
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
       fetcher: () => appleAccountsApi.list(params),
+      apply: applyAccountListResult,
+      background: options.background,
+      isCurrent: () => activeAccountsQueryKey.value === key,
+      setLoading: (value) => {
+        loading.value = value;
+      },
       force: options.force ?? true
     });
-
-    if (activeAccountsQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyAccountListResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 失败');
-    }
-  } finally {
-    if (activeAccountsQueryKey.value === key) {
-      loading.value = false;
     }
   }
 }

@@ -106,7 +106,10 @@ export function loadSmartAppleServices(
   );
 }
 
-export function loadSmartCodeServices(params: CodeServiceQuery, options: SmartSystemQueryOptions = {}) {
+export function loadSmartCodeServices(
+  params: CodeServiceQuery,
+  options: SmartSystemQueryOptions = {}
+) {
   return loadSmartSystemQuery<PageResult<CodeService>>(
     'code-services',
     params,

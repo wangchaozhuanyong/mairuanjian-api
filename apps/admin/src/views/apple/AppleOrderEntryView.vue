@@ -343,15 +343,19 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { appleMatchingApi, appleOrdersApi, appleServicesApi } from '@/api/system';
+import { appleMatchingApi, appleOrdersApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleService, AvailableAppleAccount, Customer, SourcePlatform } from '@/types/system';
-import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
-import { loadSmartCustomers, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
+import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
+import {
+  loadSmartAppleServices,
+  loadSmartCustomers,
+  loadSmartSourcePlatforms
+} from '@/utils/smartSystemQueries';
 
 const ORDER_ENTRY_BASE_SCOPE = 'order-entry-base';
 const ORDER_ENTRY_REALTIME_SCOPES = ['customers', 'source-platforms', 'apple-services'];
@@ -530,36 +534,45 @@ function formatMoney(value: number) {
 async function loadInitialData(
   options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
 ) {
-  if (!options.silent || !customers.value.length) {
-    loading.value = true;
-  }
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key: createSmartQueryKey(ORDER_ENTRY_BASE_SCOPE),
-      fetcher: () =>
-        Promise.all([
-          loadSmartCustomers(
-            { page: 1, pageSize: 100, status: 'active' },
-            { force: options.force ?? true, dedupeMs: options.dedupeMs }
-          ),
-          loadSmartSourcePlatforms(
-            { page: 1, pageSize: 100, status: 'active' },
-            { force: options.force ?? true, dedupeMs: options.dedupeMs }
-          ),
-          appleServicesApi.list({ page: 1, pageSize: 100, status: 'enabled' })
-        ]),
+      fetcher: () => loadOrderEntryBaseData(options),
+      apply: applyOrderEntryBaseData,
+      background: Boolean(options.silent && customers.value.length),
+      setLoading: (value) => {
+        loading.value = value;
+      },
       force: options.force ?? true,
       dedupeMs: options.dedupeMs ?? 1_200
     });
-    const [customerData, platformData, serviceData] = result.data;
-    customers.value = customerData.items;
-    sourcePlatforms.value = platformData.items;
-    services.value = serviceData.items;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载订单基础数据失败');
-  } finally {
-    loading.value = false;
   }
+}
+
+async function loadOrderEntryBaseData(options: { dedupeMs?: number; force?: boolean } = {}) {
+  return Promise.all([
+    loadSmartCustomers(
+      { page: 1, pageSize: 100, status: 'active' },
+      { force: options.force ?? true, dedupeMs: options.dedupeMs }
+    ),
+    loadSmartSourcePlatforms(
+      { page: 1, pageSize: 100, status: 'active' },
+      { force: options.force ?? true, dedupeMs: options.dedupeMs }
+    ),
+    loadSmartAppleServices(
+      { page: 1, pageSize: 100, status: 'enabled' },
+      { force: options.force ?? true, dedupeMs: options.dedupeMs }
+    )
+  ]);
+}
+
+function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryBaseData>>) {
+  const [customerData, platformData, serviceData] = data;
+  customers.value = customerData.items;
+  sourcePlatforms.value = platformData.items;
+  services.value = serviceData.items;
 }
 
 async function handleServiceChange() {

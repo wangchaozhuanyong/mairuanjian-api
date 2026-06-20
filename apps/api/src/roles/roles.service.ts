@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
@@ -8,13 +8,25 @@ import type { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto
 const ROLE_CACHE_TTL_MS = 120_000;
 
 @Injectable()
-export class RolesService {
+export class RolesService implements OnModuleInit {
   private readonly cache = new TimedMemoryCache();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
+
+  onModuleInit() {
+    void this.prewarmCache();
+  }
+
+  private async prewarmCache() {
+    try {
+      await Promise.all([this.listRoles(), this.listPermissions()]);
+    } catch {
+      // Best effort only; requests can still load the cache on demand.
+    }
+  }
 
   listRoles() {
     return this.cache.getOrSet('roles:list', ROLE_CACHE_TTL_MS, () => this.listRolesUncached());

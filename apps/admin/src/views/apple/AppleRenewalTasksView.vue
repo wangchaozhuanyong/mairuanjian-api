@@ -572,7 +572,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { RenewalTask, TableDensity, UserTableView } from '@/types/system';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
-import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const route = useRoute();
 const tasks = ref<RenewalTask[]>([]);
@@ -592,6 +592,7 @@ const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | nul
 const evidenceFile = ref<File | null>(null);
 const evidenceFileInputRef = ref<HTMLInputElement>();
 const activatedOnce = ref(false);
+const activeTasksQueryKey = ref('');
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 type RenewalTaskPage = Awaited<ReturnType<typeof appleRenewalTasksApi.list>>;
 
@@ -877,34 +878,24 @@ async function loadTasks(options: { background?: boolean; force?: boolean } = {}
     tableKey: tableKey.value,
     params
   });
-  const cached = getSmartQueryData<RenewalTaskPage>(queryKey);
-  const shouldShowLoading = !cached && !options.background;
 
-  if (cached) {
-    applyTaskListResult(cached);
-  }
-
-  if (shouldShowLoading) {
-    loading.value = true;
-  }
+  activeTasksQueryKey.value = queryKey;
 
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key: queryKey,
       fetcher: () => appleRenewalTasksApi.list(params),
+      apply: applyTaskListResult,
+      background: options.background,
+      isCurrent: () => activeTasksQueryKey.value === queryKey,
+      setLoading: (value) => {
+        loading.value = value;
+      },
       force: options.force ?? true
     });
-
-    if (result.changed || !cached) {
-      applyTaskListResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载续费任务失败');
-    }
-  } finally {
-    if (shouldShowLoading) {
-      loading.value = false;
     }
   }
 }
