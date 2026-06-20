@@ -209,7 +209,13 @@
         </div>
       </header>
 
-      <div v-if="workspaceTabs.length" class="workspace-tabs">
+      <div
+        v-if="workspaceTabs.length"
+        class="workspace-tabs"
+        :class="{
+          'workspace-tabs--two-rows': workspaceTabs.length > WORKSPACE_TABS_PER_ROW
+        }"
+      >
         <div
           class="workspace-tabs__list"
           :class="{
