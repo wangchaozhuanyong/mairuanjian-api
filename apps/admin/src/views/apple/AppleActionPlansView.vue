@@ -5,14 +5,93 @@
     phase="Phase 5"
     description="按 Apple ID 聚合临期业务、续费、取消订阅、待客户确认和误扣费风险，形成当天操作清单。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="计划数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="风险计划" :value="riskCount" hint="当前页误扣费风险" tone="red" />
-      <MetricCard label="建议充值" :value="suggestedTopupSum" hint="当前页合计" tone="orange" />
-      <MetricCard label="操作项" :value="itemCountSum" hint="当前页合计" tone="purple" />
+    <div class="action-plan-overview">
+      <div class="action-plan-notice" :class="{ 'action-plan-notice--safe': riskCount === 0 }">
+        <StatusChip :tone="riskCount ? 'red' : 'green'" dot>
+          {{ riskCount ? '误扣费风险' : '风险正常' }}
+        </StatusChip>
+        <div>
+          <strong>
+            {{
+              riskCount
+                ? `${riskCount} 个操作计划存在误扣费风险`
+                : '当前筛选范围内没有误扣费风险计划'
+            }}
+          </strong>
+          <p>余额足够但不续费业务未取消时，先处理取消订阅，再处理充值或等待自动扣费。</p>
+        </div>
+        <div class="action-plan-notice__stats">
+          <span>计划 {{ total }}</span>
+          <span>待处理 {{ openPlanCount }}</span>
+          <span>建议充值 {{ suggestedTopupSum }}</span>
+          <span>操作项 {{ itemCountSum }}</span>
+        </div>
+      </div>
+
+      <div class="action-plan-card-list">
+        <article v-for="plan in featuredPlans" :key="plan.id" class="action-plan-card">
+          <div class="action-plan-card__top">
+            <div>
+              <strong class="mono">{{ plan.appleAccount.appleIdMasked }}</strong>
+              <p>
+                当前余额 {{ plan.currentBalance }} · 平均成本 {{ plan.avgUnitCost }} · 建议充值
+                {{ plan.suggestedTopupAmount }}
+              </p>
+            </div>
+            <div class="action-plan-card__chips">
+              <StatusChip :tone="plan.hasWrongChargeRisk ? 'red' : 'green'" dot>
+                {{ plan.hasWrongChargeRisk ? '误扣费风险' : '风险正常' }}
+              </StatusChip>
+              <StatusChip tone="orange">需取消 {{ plan.cancelServicesCount }}</StatusChip>
+              <StatusChip tone="green">续费 {{ plan.renewServicesCount }}</StatusChip>
+            </div>
+            <AppButton
+              :variant="plan.hasWrongChargeRisk ? 'primary' : 'soft'"
+              @click="openDetail(plan)"
+            >
+              处理计划
+            </AppButton>
+          </div>
+
+          <div class="action-plan-services">
+            <div
+              v-for="service in getPlanPreviewServices(plan)"
+              :key="service.label"
+              class="action-plan-service"
+            >
+              <h4>{{ service.title }}</h4>
+              <p>{{ service.description }}</p>
+              <StatusChip :tone="service.tone">{{ service.label }}</StatusChip>
+            </div>
+          </div>
+        </article>
+
+        <div v-if="!loading && featuredPlans.length === 0" class="apple-core-empty-state">
+          <strong>暂无操作计划</strong>
+          <span>可以重新生成未来 7 天 Apple ID 操作计划，或调整筛选条件。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" :loading="generating" @click="generatePlans">
+              生成操作计划
+            </AppButton>
+          </div>
+        </div>
+      </div>
     </div>
 
     <section class="content-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>操作计划队列</h3>
+          <p>按 Apple ID 聚合当日可执行动作，优先处理误扣费风险和需要人工确认的计划。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip :tone="riskCount ? 'red' : 'blue'" dot>
+            {{ riskCount ? '存在风险' : '计划正常' }}
+          </StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -73,6 +152,7 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="plans"
         :size="tableSize"
         row-key="id"
@@ -80,6 +160,18 @@
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无操作计划</strong>
+            <span>可以重新生成未来 7 天 Apple ID 操作计划，或清空筛选后查看全部。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+              <AppButton variant="primary" :loading="generating" @click="generatePlans">
+                生成操作计划
+              </AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column v-if="isColumnVisible('appleAccount')" label="Apple ID" min-width="190">
           <template #default="{ row }">
@@ -116,13 +208,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag
-              :type="row.hasWrongChargeRisk ? 'danger' : 'success'"
-              size="small"
-              effect="light"
-            >
+            <StatusChip :tone="row.hasWrongChargeRisk ? 'red' : 'green'" dot>
               {{ row.hasWrongChargeRisk ? '有风险' : '正常' }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -151,37 +239,111 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button
-              text
-              type="success"
-              :disabled="row.status === 'completed'"
-              @click="completePlan(row)"
-            >
-              完成
-            </el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton
+                size="small"
+                variant="success"
+                :disabled="row.status === 'completed'"
+                @click="completePlan(row)"
+              >
+                完成
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadPlans"
-          @size-change="loadPlans"
-        />
+      <div class="mobile-record-list" aria-label="操作计划移动列表">
+        <article v-for="plan in plans" :key="plan.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ plan.appleAccount.appleIdMasked }}</strong>
+              <span>
+                {{ plan.appleAccount.region }} / {{ plan.appleAccount.currency }} ·
+                {{ formatDate(plan.planDate, true) }}
+              </span>
+            </div>
+            <StatusChip :tone="getStatusTone(plan.status)" dot>
+              {{ getStatusLabel(plan.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>当前余额</span>
+              <strong>{{ plan.currentBalance }}</strong>
+            </div>
+            <div>
+              <span>建议充值</span>
+              <strong>{{ plan.suggestedTopupAmount }}</strong>
+            </div>
+            <div>
+              <span>操作项</span>
+              <strong>{{ plan.itemCount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>业务分布</span>
+              <strong>
+                开通 {{ plan.activeServiceCount }} · 续费 {{ plan.renewServicesCount }} · 取消
+                {{ plan.cancelServicesCount }}
+              </strong>
+            </div>
+            <div>
+              <span>预计续费</span>
+              <strong>{{ plan.requiredRenewalAmount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip :tone="plan.hasWrongChargeRisk ? 'red' : 'green'" dot>
+              {{ plan.hasWrongChargeRisk ? '误扣费风险' : '风险正常' }}
+            </StatusChip>
+            <StatusChip tone="orange">等客户 {{ plan.pendingCustomerCount }}</StatusChip>
+            <StatusChip tone="blue">平均成本 {{ plan.avgUnitCost }}</StatusChip>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(plan)">详情</AppButton>
+            <AppButton
+              size="small"
+              variant="success"
+              :disabled="plan.status === 'completed'"
+              @click="completePlan(plan)"
+            >
+              完成
+            </AppButton>
+          </div>
+        </article>
+
+        <div v-if="!loading && plans.length === 0" class="apple-core-empty-state">
+          <strong>暂无操作计划</strong>
+          <span>可以重新生成未来 7 天 Apple ID 操作计划，或清空筛选后查看全部。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" :loading="generating" @click="generatePlans">
+              生成操作计划
+            </AppButton>
+          </div>
+        </div>
       </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadPlans"
+      />
     </section>
 
     <AppDrawer
@@ -220,72 +382,125 @@
         </div>
       </div>
 
-      <el-alert
+      <div
         v-if="selectedPlan?.hasWrongChargeRisk"
-        class="detail-alert"
-        title="存在误扣费风险"
-        description="该 Apple ID 中存在客户不续费但自动续费未明确关闭，或临期未确认且自动续费开启的业务。"
-        type="error"
-        show-icon
-        :closable="false"
-      />
+        class="detail-alert apple-core-alert apple-core-alert--red"
+      >
+        <StatusChip tone="red">风险</StatusChip>
+        <div>
+          <strong>存在误扣费风险</strong>
+          <p>
+            该 Apple ID 中存在客户不续费但自动续费未明确关闭，或临期未确认且自动续费开启的业务。
+          </p>
+        </div>
+      </div>
 
-      <el-descriptions class="detail-descriptions" :column="1" border>
-        <el-descriptions-item label="计划备注">
-          {{ selectedPlan?.mainNote ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="计划日期">
-          {{ formatDate(selectedPlan?.planDate, true) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="平均成本">
-          {{ selectedPlan?.avgUnitCost ?? '-' }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div class="drawer-section">
+        <div class="drawer-section__title">计划信息</div>
+        <el-descriptions class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="计划备注">
+            {{ selectedPlan?.mainNote ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="计划日期">
+            {{ formatDate(selectedPlan?.planDate, true) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="平均成本">
+            {{ selectedPlan?.avgUnitCost ?? '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
 
-      <el-divider />
-
-      <el-table :data="selectedPlan?.items ?? []" row-key="id">
-        <el-table-column label="客户/业务" min-width="170">
-          <template #default="{ row }">
-            {{ row.customer.name }}
-            <div class="muted-block">{{ row.service.name }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="动作" width="120">
-          <template #default="{ row }">
-            <el-tag :type="getActionType(row.actionType)" size="small" effect="light">
-              {{ getActionLabel(row.actionType) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="到期/截止" min-width="170">
-          <template #default="{ row }">
-            {{ formatDate(row.expireTime) }}
-            <div class="muted-block">取消截止 {{ formatDate(row.cancelDeadline) }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="预计扣费" width="110">
-          <template #default="{ row }">{{ row.expectedChargeAmount }}</template>
-        </el-table-column>
-        <el-table-column label="关联任务" min-width="150">
-          <template #default="{ row }">
-            {{ row.task?.title ?? '-' }}
-            <div v-if="row.task" class="muted-block">{{ row.task.status }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="说明" min-width="220">
-          <template #default="{ row }">{{ row.note ?? '-' }}</template>
-        </el-table-column>
-      </el-table>
-
-      <div class="drawer-inline-actions">
-        <el-button
-          type="success"
-          :disabled="!selectedPlan || selectedPlan.status === 'completed'"
-          @click="completeSelectedPlan"
+      <div class="drawer-section">
+        <div class="drawer-section__title">操作项</div>
+        <el-table class="desktop-data-table" :data="selectedPlan?.items ?? []" row-key="id">
+          <el-table-column label="客户/业务" min-width="170">
+            <template #default="{ row }">
+              {{ row.customer.name }}
+              <div class="muted-block">{{ row.service.name }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="动作" width="120">
+            <template #default="{ row }">
+              <StatusChip :tone="getActionTone(row.actionType)">
+                {{ getActionLabel(row.actionType) }}
+              </StatusChip>
+            </template>
+          </el-table-column>
+          <el-table-column label="到期/截止" min-width="170">
+            <template #default="{ row }">
+              {{ formatDate(row.expireTime) }}
+              <div class="muted-block">取消截止 {{ formatDate(row.cancelDeadline) }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="预计扣费" width="110">
+            <template #default="{ row }">{{ row.expectedChargeAmount }}</template>
+          </el-table-column>
+          <el-table-column label="关联任务" min-width="150">
+            <template #default="{ row }">
+              {{ row.task?.title ?? '-' }}
+              <div v-if="row.task" class="muted-block">{{ row.task.status }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="说明" min-width="220">
+            <template #default="{ row }">{{ row.note ?? '-' }}</template>
+          </el-table-column>
+        </el-table>
+        <div
+          v-if="selectedPlan?.items?.length"
+          class="mobile-record-list"
+          aria-label="操作计划详情移动列表"
         >
-          标记计划完成
-        </el-button>
+          <article v-for="item in selectedPlan.items" :key="item.id" class="mobile-record-card">
+            <div class="mobile-record-card__head">
+              <div class="mobile-record-card__title">
+                <strong>{{ item.customer.name }} · {{ item.service.name }}</strong>
+                <span>{{ item.note ?? '暂无说明' }}</span>
+              </div>
+              <StatusChip :tone="getActionTone(item.actionType)">
+                {{ getActionLabel(item.actionType) }}
+              </StatusChip>
+            </div>
+            <div class="mobile-record-card__stats">
+              <div>
+                <span>到期时间</span>
+                <strong>{{ formatDate(item.expireTime) }}</strong>
+              </div>
+              <div>
+                <span>取消截止</span>
+                <strong>{{ formatDate(item.cancelDeadline) }}</strong>
+              </div>
+              <div>
+                <span>预计扣费</span>
+                <strong>{{ item.expectedChargeAmount }}</strong>
+              </div>
+            </div>
+            <div class="mobile-record-card__meta">
+              <div>
+                <span>关联任务</span>
+                <strong>{{ item.task?.title ?? '-' }}</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div v-else class="mobile-record-list" aria-label="操作计划详情空状态">
+          <div class="apple-core-empty-state">
+            <strong>暂无操作项</strong>
+            <span>该操作计划还没有生成具体客户业务动作。</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <div class="drawer-section__title">计划处理</div>
+        <div class="drawer-inline-actions drawer-inline-actions--inside">
+          <AppButton
+            variant="success"
+            :disabled="!selectedPlan || selectedPlan.status === 'completed'"
+            @click="completeSelectedPlan"
+          >
+            标记计划完成
+          </AppButton>
+        </div>
       </div>
     </AppDrawer>
   </PageScaffold>
@@ -295,9 +510,11 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { appleActionPlansApi, userTableViewsApi, type AppleActionPlanQuery } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   AppleActionPlan,
@@ -320,6 +537,13 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const tableKey = 'apple_action_plans';
+type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+interface PlanPreviewService {
+  title: string;
+  description: string;
+  label: string;
+  tone: ChipTone;
+}
 
 const query = reactive<AppleActionPlanQuery>({
   page: 1,
@@ -369,6 +593,28 @@ const suggestedTopupSum = computed(() =>
 const itemCountSum = computed(() =>
   plans.value.reduce((sum, plan) => sum + Number(plan.itemCount || 0), 0)
 );
+const openPlanCount = computed(
+  () =>
+    plans.value.filter((plan) => plan.status === 'pending' || plan.status === 'processing').length
+);
+const priorityPlans = computed(() =>
+  [...plans.value]
+    .filter((plan) => plan.status !== 'completed')
+    .sort((left, right) => {
+      const riskDiff = Number(right.hasWrongChargeRisk) - Number(left.hasWrongChargeRisk);
+      if (riskDiff !== 0) return riskDiff;
+
+      const itemDiff = Number(right.itemCount || 0) - Number(left.itemCount || 0);
+      if (itemDiff !== 0) return itemDiff;
+
+      return getPlanTimeValue(left.planDate) - getPlanTimeValue(right.planDate);
+    })
+    .slice(0, 3)
+);
+const featuredPlans = computed(() => {
+  const plansToShow = priorityPlans.value.length ? priorityPlans.value : plans.value.slice(0, 2);
+  return plansToShow.slice(0, 2);
+});
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -438,6 +684,11 @@ function clearFilters() {
   clearPlanDateRange();
   savedViewId.value = '';
   sortConfig.value = {};
+}
+
+async function clearFiltersAndSearch() {
+  clearFilters();
+  await loadPlans();
 }
 
 function removeFilter(key: string) {
@@ -563,6 +814,10 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
+function getPlanTimeValue(value?: string | null) {
+  return value ? new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
+}
+
 function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
@@ -681,11 +936,11 @@ function getStatusLabel(value: AppleActionPlan['status']) {
   return labels[value];
 }
 
-function getStatusType(value: AppleActionPlan['status']) {
-  if (value === 'completed') return 'success';
-  if (value === 'abnormal') return 'danger';
-  if (value === 'processing') return 'warning';
-  return 'primary';
+function getStatusTone(value: AppleActionPlan['status']) {
+  if (value === 'completed') return 'green';
+  if (value === 'abnormal') return 'red';
+  if (value === 'processing') return 'orange';
+  return 'blue';
 }
 
 function getActionLabel(value: AppleActionPlanItem['actionType']) {
@@ -698,10 +953,33 @@ function getActionLabel(value: AppleActionPlanItem['actionType']) {
   return labels[value];
 }
 
-function getActionType(value: AppleActionPlanItem['actionType']) {
-  if (value === 'cancel') return 'danger';
-  if (value === 'renew') return 'success';
-  if (value === 'change_plan') return 'warning';
-  return 'info';
+function getActionTone(value: AppleActionPlanItem['actionType']) {
+  if (value === 'cancel') return 'red';
+  if (value === 'renew') return 'green';
+  if (value === 'change_plan') return 'orange';
+  return 'blue';
+}
+
+function getPlanPreviewServices(plan: AppleActionPlan): PlanPreviewService[] {
+  return [
+    {
+      title: '取消订阅',
+      description: `客户确认不续费或存在误扣费风险的业务 ${plan.cancelServicesCount} 项。`,
+      label: plan.cancelServicesCount ? `需取消 ${plan.cancelServicesCount}` : '无取消项',
+      tone: plan.cancelServicesCount || plan.hasWrongChargeRisk ? 'red' : 'green'
+    },
+    {
+      title: '等待续费',
+      description: `余额满足条件后等待自动扣费，当前续费业务 ${plan.renewServicesCount} 项。`,
+      label: plan.suggestedTopupAmount === '0' ? '余额充足' : `需充值 ${plan.suggestedTopupAmount}`,
+      tone: plan.suggestedTopupAmount === '0' ? 'green' : 'orange'
+    },
+    {
+      title: '客户确认',
+      description: `仍需继续询问或等待客户确认的业务 ${plan.pendingCustomerCount} 项。`,
+      label: plan.pendingCustomerCount ? `待确认 ${plan.pendingCustomerCount}` : '已确认',
+      tone: plan.pendingCustomerCount ? 'orange' : 'blue'
+    }
+  ];
 }
 </script>

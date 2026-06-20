@@ -1,10 +1,12 @@
 <template>
-  <el-tag :type="status === 'active' ? 'success' : 'info'" size="small" effect="light">
+  <StatusChip :tone="status === 'active' ? 'green' : 'neutral'" dot>
     {{ status === 'active' ? activeText : disabledText }}
-  </el-tag>
+  </StatusChip>
 </template>
 
 <script setup lang="ts">
+import StatusChip from '@/components/ui/StatusChip.vue';
+
 withDefaults(
   defineProps<{
     status: 'active' | 'disabled';

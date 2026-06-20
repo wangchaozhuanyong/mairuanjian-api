@@ -1,60 +1,24 @@
 <template>
   <PageScaffold :title="title" group="Apple ID 业务" :phase="phase" :description="description">
-    <div class="metric-grid metric-grid--four">
-      <MetricCard
-        label="订单数"
-        :value="report.summary.orderCount"
-        hint="当前筛选范围"
-        tone="blue"
-      />
-      <MetricCard
-        label="销售额"
-        :value="report.summary.paidAmount"
-        hint="实收金额合计"
-        tone="green"
-      />
-      <MetricCard
-        label="Apple 成本"
-        :value="report.summary.appleCostRmb"
-        hint="余额成本消耗"
-        tone="orange"
-      />
-      <MetricCard
-        label="利润"
-        :value="report.summary.profitAmount"
-        hint="扣除手续费和损耗"
-        tone="red"
-      />
-    </div>
+    <section class="content-panel apple-compact-list-panel">
+      <div class="panel-title-row report-panel-title">
+        <div>
+          <h3>报表明细</h3>
+          <p>按当前筛选范围聚合销售额、手续费、余额成本和利润。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>{{ activeTabLabel }}</StatusChip>
+          <StatusChip tone="blue">订单 {{ report.summary.orderCount }}</StatusChip>
+          <StatusChip tone="green">销售额 {{ report.summary.paidAmount }}</StatusChip>
+          <StatusChip tone="orange">成本 {{ report.summary.appleCostRmb }}</StatusChip>
+          <StatusChip tone="purple">利润 {{ report.summary.profitAmount }}</StatusChip>
+          <StatusChip tone="cyan">毛利率 {{ report.summary.grossMarginRate }}%</StatusChip>
+          <StatusChip :tone="reportRiskCount > 0 ? 'orange' : 'green'">
+            {{ reportRiskCount > 0 ? `需关注 ${reportRiskCount}` : '口径稳定' }}
+          </StatusChip>
+        </div>
+      </div>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard
-        label="平台手续费"
-        :value="report.summary.platformFee"
-        hint="当前范围合计"
-        tone="purple"
-      />
-      <MetricCard
-        label="退款损耗"
-        :value="report.summary.refundLoss"
-        hint="订单退款损耗"
-        tone="orange"
-      />
-      <MetricCard
-        label="毛利率"
-        :value="`${report.summary.grossMarginRate}%`"
-        hint="利润 / 销售额"
-        tone="green"
-      />
-      <MetricCard
-        label="单均利润"
-        :value="report.summary.averageOrderProfit"
-        hint="利润 / 订单数"
-        tone="blue"
-      />
-    </div>
-
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -98,11 +62,12 @@
         </template>
       </TableToolbar>
 
-      <el-tabs v-model="activeTab">
+      <el-tabs v-model="activeTab" class="report-table-tabs">
         <el-tab-pane label="按日期对账" name="daily">
           <el-table
             v-if="activeTab === 'daily'"
             v-loading="loading"
+            class="desktop-data-table"
             :data="report.daily"
             :size="tableSize"
             row-key="key"
@@ -168,6 +133,7 @@
           <el-table
             v-if="activeTab === 'service'"
             v-loading="loading"
+            class="desktop-data-table"
             :data="report.byService"
             :size="tableSize"
             row-key="key"
@@ -233,6 +199,7 @@
           <el-table
             v-if="activeTab === 'source'"
             v-loading="loading"
+            class="desktop-data-table"
             :data="report.bySourcePlatform"
             :size="tableSize"
             row-key="key"
@@ -298,6 +265,7 @@
           <el-table
             v-if="activeTab === 'account'"
             v-loading="loading"
+            class="desktop-data-table"
             :data="report.byAppleAccount"
             :size="tableSize"
             row-key="key"
@@ -363,6 +331,7 @@
           <el-table
             v-if="activeTab === 'recent'"
             v-loading="loading"
+            class="desktop-data-table"
             :data="report.recentOrders"
             :size="tableSize"
             row-key="id"
@@ -423,14 +392,122 @@
             />
             <el-table-column v-if="isColumnVisible('recentStatus')" label="状态" width="110">
               <template #default="{ row }">
-                <el-tag :type="getOrderStatusType(row.status)" size="small" effect="light">
+                <StatusChip :tone="getOrderStatusTone(row.status)" dot>
                   {{ getOrderStatusLabel(row.status) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
       </el-tabs>
+
+      <div
+        v-if="activeTab !== 'recent'"
+        class="mobile-record-list"
+        aria-label="Apple ID 报表移动列表"
+      >
+        <article v-for="item in activeGroupRows" :key="item.key" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ item.label }}</strong>
+              <span>{{ activeTabLabel }}</span>
+            </div>
+            <StatusChip :tone="getMarginTone(item.grossMarginRate)" dot>
+              {{ item.grossMarginRate }}%
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>订单数</span>
+              <strong>{{ item.orderCount }}</strong>
+            </div>
+            <div>
+              <span>销售额</span>
+              <strong>{{ item.paidAmount }}</strong>
+            </div>
+            <div>
+              <span>利润</span>
+              <strong>{{ item.profitAmount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>Apple 成本</span>
+              <strong>{{ item.appleCostRmb }}</strong>
+            </div>
+            <div>
+              <span>平台手续费 / 退款损耗</span>
+              <strong>{{ item.platformFee }} / {{ item.refundLoss }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip tone="blue">单均 {{ item.averageOrderProfit }}</StatusChip>
+            <StatusChip :tone="item.orderCount > 0 ? 'green' : 'neutral'">
+              {{ item.orderCount > 0 ? '有订单' : '无订单' }}
+            </StatusChip>
+          </div>
+        </article>
+
+        <div v-if="!loading && activeGroupRows.length === 0" class="apple-core-empty-state">
+          <strong>暂无报表数据</strong>
+          <span>可调整日期、状态或关键词后重新查询。</span>
+        </div>
+      </div>
+
+      <div v-else class="mobile-record-list" aria-label="Apple ID 最近订单移动列表">
+        <article v-for="order in report.recentOrders" :key="order.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ order.orderNo }}</strong>
+              <span>{{ formatDate(order.createdAt) }}</span>
+            </div>
+            <StatusChip :tone="getOrderStatusTone(order.status)" dot>
+              {{ getOrderStatusLabel(order.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>销售额</span>
+              <strong>{{ order.paidAmount }}</strong>
+            </div>
+            <div>
+              <span>成本</span>
+              <strong>{{ order.appleCostRmb }}</strong>
+            </div>
+            <div>
+              <span>利润</span>
+              <strong>{{ order.profitAmount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>业务 / 平台</span>
+              <strong
+                >{{ order.serviceName ?? '-' }} / {{ order.sourcePlatformName ?? '-' }}</strong
+              >
+            </div>
+            <div>
+              <span>Apple ID</span>
+              <strong>{{ order.appleAccountMasked ?? '-' }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip tone="orange">手续费 {{ order.platformFee }}</StatusChip>
+            <StatusChip tone="red">损耗 {{ order.refundLoss }}</StatusChip>
+          </div>
+        </article>
+
+        <div v-if="!loading && report.recentOrders.length === 0" class="apple-core-empty-state">
+          <strong>暂无最近订单</strong>
+          <span>可切换日期范围或清空筛选后再查看最近订单。</span>
+        </div>
+      </div>
     </section>
   </PageScaffold>
 </template>
@@ -439,10 +516,16 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { appleReportsApi, userTableViewsApi, type AppleProfitReportQuery } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { AppleOrder, AppleProfitReport, TableDensity, UserTableView } from '@/types/system';
+import type {
+  AppleOrder,
+  AppleProfitGroup,
+  AppleProfitReport,
+  TableDensity,
+  UserTableView
+} from '@/types/system';
 
 const props = withDefaults(
   defineProps<{
@@ -499,6 +582,35 @@ const report = ref<AppleProfitReport>(createEmptyReport());
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
+const activeTabLabel = computed(() => {
+  const labels: Record<typeof activeTab.value, string> = {
+    daily: '按日期对账',
+    service: '按业务',
+    source: '按来源平台',
+    account: '按 Apple ID',
+    recent: '最近订单'
+  };
+  return labels[activeTab.value] ?? '报表明细';
+});
+const activeGroupRows = computed<AppleProfitGroup[]>(() => {
+  if (activeTab.value === 'daily') {
+    return report.value.daily;
+  }
+
+  if (activeTab.value === 'service') {
+    return report.value.byService;
+  }
+
+  if (activeTab.value === 'source') {
+    return report.value.bySourcePlatform;
+  }
+
+  if (activeTab.value === 'account') {
+    return report.value.byAppleAccount;
+  }
+
+  return [];
+});
 const filterChips = computed(() => {
   if (quickDate.value !== 'custom' || (!query.dateFrom && !query.dateTo)) {
     return [];
@@ -512,7 +624,17 @@ const filterChips = computed(() => {
     }
   ];
 });
+const reportRiskCount = computed(() => {
+  if (activeTab.value === 'recent') {
+    return report.value.recentOrders.filter((order) => Number(order.profitAmount) < 0).length;
+  }
 
+  return activeGroupRows.value.filter((item) => {
+    const rate = Number(item.grossMarginRate);
+
+    return !Number.isNaN(rate) && rate < 20;
+  }).length;
+});
 onMounted(initializePage);
 
 async function loadReport() {
@@ -594,16 +716,33 @@ function getOrderStatusLabel(status: AppleOrder['status']) {
   return labels[status] ?? status;
 }
 
-function getOrderStatusType(status: AppleOrder['status']) {
-  const types: Record<AppleOrder['status'], 'success' | 'warning' | 'danger' | 'info' | 'primary'> =
-    {
-      pending: 'warning',
-      active: 'success',
-      completed: 'success',
-      cancelled: 'info',
-      abnormal: 'danger'
-    };
-  return types[status] ?? 'info';
+function getOrderStatusTone(status: AppleOrder['status']) {
+  const tones: Record<AppleOrder['status'], 'green' | 'orange' | 'red' | 'neutral' | 'blue'> = {
+    pending: 'orange',
+    active: 'green',
+    completed: 'green',
+    cancelled: 'neutral',
+    abnormal: 'red'
+  };
+  return tones[status] ?? 'neutral';
+}
+
+function getMarginTone(rate: string) {
+  const numericRate = Number(rate);
+
+  if (Number.isNaN(numericRate)) {
+    return 'neutral';
+  }
+
+  if (numericRate < 0) {
+    return 'red';
+  }
+
+  if (numericRate < 20) {
+    return 'orange';
+  }
+
+  return 'green';
 }
 
 function isColumnVisible(column: string) {

@@ -21,6 +21,8 @@
             class="nav-section-toggle"
             :class="{ active: isSectionActive(section) }"
             type="button"
+            @focus="prefetchMenuSection(section)"
+            @mouseenter="prefetchMenuSection(section)"
             @click="toggleMenuKey(section.key)"
           >
             <span class="nav-section-toggle__label">
@@ -44,13 +46,14 @@
               :to="item.route"
               class="nav-link"
               :class="{ active: isItemActive(item) }"
+              @pointerdown="prefetchWorkspaceRoute(item.route)"
               @focus="prefetchWorkspaceRoute(item.route)"
               @mouseenter="prefetchWorkspaceRoute(item.route)"
               @click="handleMenuItemClick(item)"
             >
               <span class="nav-mark">{{ item.mark }}</span>
               <span class="nav-title">{{ getMenuItemTitle(item) }}</span>
-              <el-tag v-if="item.badge" size="small" effect="dark">{{ item.badge }}</el-tag>
+              <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
             </RouterLink>
           </div>
         </section>
@@ -60,7 +63,7 @@
         <span class="avatar">管</span>
         <span>
           <strong>{{ authStore.displayName }}</strong>
-          <small>在线 · 本地开发</small>
+          <small>{{ sessionStatusText }}</small>
         </span>
       </div>
     </aside>
@@ -69,20 +72,32 @@
 
     <section class="app-main">
       <header class="topbar">
-        <el-button class="mobile-menu-btn" @click="sidebarOpen = true">菜单</el-button>
+        <AppButton
+          class="mobile-menu-btn"
+          icon-only
+          aria-label="打开菜单"
+          @click="sidebarOpen = true"
+        >
+          <el-icon>
+            <Menu />
+          </el-icon>
+        </AppButton>
         <div class="page-head">
+          <small>当前位置 / {{ routeGroup }}</small>
           <div class="page-title-row">
             <h2>{{ routeTitle }}</h2>
             <el-popover v-if="hasRouteHelp" placement="bottom-start" trigger="click" width="360">
               <template #reference>
-                <el-button
+                <AppButton
                   class="page-help-button"
-                  :icon="QuestionFilled"
-                  circle
-                  size="small"
+                  icon-only
                   title="查看页面说明"
                   aria-label="查看页面说明"
-                />
+                >
+                  <el-icon>
+                    <QuestionFilled />
+                  </el-icon>
+                </AppButton>
               </template>
               <div class="page-help-popover">
                 <strong>{{ routeTitle }}</strong>
@@ -92,7 +107,12 @@
           </div>
         </div>
 
-        <el-popover placement="bottom-start" width="420" trigger="focus">
+        <el-popover
+          placement="bottom-start"
+          width="420"
+          trigger="focus"
+          popper-class="global-search-popover"
+        >
           <template #reference>
             <el-input
               v-model="globalKeyword"
@@ -102,27 +122,83 @@
             />
           </template>
           <div class="global-search-panel">
-            <strong>全局搜索预览</strong>
-            <p>设计已预留入口，后续接入客户、订单、ID、兑换码和任务搜索。</p>
-            <el-empty v-if="!globalKeyword" description="输入关键词后显示结果" :image-size="64" />
-            <el-alert v-else title="接口待接入" type="info" show-icon :closable="false" />
+            <div class="global-search-panel__head">
+              <span class="global-search-panel__mark">GS</span>
+              <div>
+                <strong>全局搜索</strong>
+                <p>按权限范围检索客户、订单、Apple ID、兑换码和任务备注。</p>
+              </div>
+            </div>
+
+            <div v-if="globalKeywordTrimmed" class="global-search-query">
+              <span>当前关键词</span>
+              <strong>{{ globalKeywordTrimmed }}</strong>
+            </div>
+
+            <div class="global-search-scope-list">
+              <section
+                v-for="scope in globalSearchScopes"
+                :key="scope.title"
+                class="global-search-scope"
+              >
+                <span class="global-search-scope__icon">{{ scope.mark }}</span>
+                <span>
+                  <strong>{{ scope.title }}</strong>
+                  <small>{{ scope.description }}</small>
+                </span>
+              </section>
+            </div>
+
+            <p v-if="!globalKeywordTrimmed" class="global-search-panel__hint">
+              输入关键词后，结果会按模块和权限范围归类展示。
+            </p>
+            <p v-else class="global-search-panel__hint">
+              当前没有展开详细结果，后续可在对应模块内继续筛选。
+            </p>
           </div>
         </el-popover>
 
         <div class="topbar-actions">
-          <el-button class="topbar-action topbar-action--refresh" @click="showRefresh">
-            刷新
-          </el-button>
+          <PageActionsPortal />
+          <AppButton
+            class="topbar-action topbar-action--refresh"
+            icon-only
+            title="刷新"
+            aria-label="刷新"
+            @click="showRefresh"
+          >
+            <el-icon>
+              <Refresh />
+            </el-icon>
+          </AppButton>
           <el-badge value="6" class="notification-badge">
-            <el-button class="topbar-action" @click="notificationDrawerVisible = true">
-              通知
-            </el-button>
+            <AppButton
+              class="topbar-action"
+              icon-only
+              title="通知"
+              aria-label="通知"
+              @click="notificationDrawerVisible = true"
+            >
+              <el-icon>
+                <Bell />
+              </el-icon>
+            </AppButton>
           </el-badge>
+          <AppButton
+            class="topbar-action topbar-action--primary"
+            variant="primary"
+            @click="goToOrderEntry"
+          >
+            <el-icon>
+              <Plus />
+            </el-icon>
+            <span>新建订单</span>
+          </AppButton>
 
           <el-dropdown trigger="click" @command="handleCommand">
-            <el-button class="topbar-action topbar-action--user">
+            <AppButton class="topbar-action topbar-action--user">
               {{ authStore.displayName }}
-            </el-button>
+            </AppButton>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="security">安全中心</el-dropdown-item>
@@ -134,12 +210,21 @@
       </header>
 
       <div v-if="workspaceTabs.length" class="workspace-tabs">
-        <div class="workspace-tabs__list" role="tablist" aria-label="已打开页面">
+        <div
+          class="workspace-tabs__list"
+          :class="{
+            'workspace-tabs__list--two-rows': workspaceTabs.length > WORKSPACE_TABS_PER_ROW
+          }"
+          role="tablist"
+          aria-label="已打开页面"
+        >
           <div
             v-for="tab in workspaceTabs"
             :key="tab.fullPath"
             class="workspace-tab"
-            :class="{ active: isWorkspaceTabActive(tab) }"
+            :class="{
+              active: isWorkspaceTabActive(tab)
+            }"
           >
             <button
               class="workspace-tab__button"
@@ -147,6 +232,7 @@
               role="tab"
               :aria-selected="isWorkspaceTabActive(tab)"
               :title="tab.title"
+              @pointerdown="prefetchWorkspaceRoute(tab.fullPath)"
               @click="switchWorkspaceTab(tab)"
             >
               <span class="workspace-tab__title">{{ tab.title }}</span>
@@ -165,46 +251,74 @@
         </div>
 
         <div class="workspace-tabs__actions" aria-label="页签操作">
-          <el-button size="small" :disabled="!activeWorkspaceTab" @click="closeActiveWorkspaceTab">
+          <AppButton size="small" :disabled="!activeWorkspaceTab" @click="closeActiveWorkspaceTab">
             关闭当前
-          </el-button>
-          <el-button
+          </AppButton>
+          <AppButton
             size="small"
             :disabled="workspaceTabs.length <= 1 || !activeWorkspaceTab"
             @click="closeOtherWorkspaceTabs"
           >
             关闭其他
-          </el-button>
-          <el-button size="small" plain type="danger" @click="closeAllWorkspaceTabs">
+          </AppButton>
+          <AppButton size="small" variant="danger" @click="closeAllWorkspaceTabs">
             关闭全部
-          </el-button>
+          </AppButton>
         </div>
       </div>
 
       <main class="workspace">
         <RouterView v-slot="{ Component: ViewComponent, route: viewRoute }">
-          <Transition name="workspace-view" mode="out-in">
-            <KeepAlive :key="workspaceCacheVersion" :max="WORKSPACE_CACHE_LIMIT">
-              <component :is="ViewComponent" :key="viewRoute.fullPath" />
-            </KeepAlive>
-          </Transition>
+          <Suspense :timeout="220">
+            <template #default>
+              <Transition name="workspace-view">
+                <KeepAlive :key="workspaceCacheVersion" :max="WORKSPACE_CACHE_LIMIT">
+                  <component :is="ViewComponent" :key="getWorkspaceViewKey(viewRoute)" />
+                </KeepAlive>
+              </Transition>
+            </template>
+            <template #fallback>
+              <WorkspaceRouteSkeleton :title="String(viewRoute.meta.title ?? '后台页面')" />
+            </template>
+          </Suspense>
         </RouterView>
       </main>
     </section>
 
-    <AppDrawer v-model="notificationDrawerVisible" title="通知中心预览" confirm-text="进入通知中心">
-      <div class="mini-list">
-        <div class="mini-row">
-          <span>ID 余额不足</span>
-          <el-tag type="warning" size="small">重要</el-tag>
+    <AppDrawer
+      v-model="notificationDrawerVisible"
+      title="通知中心"
+      confirm-text="进入通知中心"
+      show-confirm
+      @confirm="goToNotifications"
+    >
+      <div class="notification-drawer">
+        <div class="notification-summary-grid">
+          <section
+            v-for="item in notificationSummary"
+            :key="item.label"
+            class="notification-summary-card"
+          >
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+            <small>{{ item.description }}</small>
+          </section>
         </div>
-        <div class="mini-row">
-          <span>兑换码低库存</span>
-          <el-tag type="danger" size="small">紧急</el-tag>
-        </div>
-        <div class="mini-row">
-          <span>平台接口异常</span>
-          <el-tag type="info" size="small">待处理</el-tag>
+
+        <div class="notification-feed">
+          <div class="notification-feed__head">
+            <strong>最近提醒</strong>
+            <span>按处理优先级排列</span>
+          </div>
+
+          <div v-for="item in notificationItems" :key="item.title" class="notification-feed-item">
+            <span class="notification-feed-item__mark" :class="`is-${item.tone}`" />
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description }}</p>
+            </div>
+            <StatusChip :tone="item.tone" dot>{{ item.level }}</StatusChip>
+          </div>
         </div>
       </div>
     </AppDrawer>
@@ -215,19 +329,28 @@
 import { computed, onMounted, ref, watch, type Component } from 'vue';
 import { ElMessage } from 'element-plus';
 import {
+  Bell,
   CloseBold,
   DataAnalysis,
   House,
   Iphone,
   Lock,
+  Menu,
   Monitor,
+  Plus,
   QuestionFilled,
+  Refresh,
   Setting,
   Ticket,
   UserFilled
 } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import PageActionsPortal from '@/components/ui/PageActionsPortal.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
+import WorkspaceRouteSkeleton from '@/components/ui/WorkspaceRouteSkeleton.vue';
+import { providePageActionsHost } from '@/composables/pageActions';
 import {
   type AppModuleItem,
   type MenuSection,
@@ -237,12 +360,19 @@ import {
   getModuleSearchText,
   menuSections
 } from '@/config/modules';
-import { isRoutePending, prefetchReadyRouteComponents, prefetchRouteComponent } from '@/router';
+import {
+  isRoutePending,
+  prefetchReadyRouteComponents,
+  prefetchRouteComponent,
+  prefetchRouteComponents
+} from '@/router';
 import { useAuthStore } from '@/stores/auth';
 
 const NAV_OPEN_STORAGE_KEY = 'apple_business_sidebar_open_keys';
 const WORKSPACE_TABS_STORAGE_KEY = 'apple_business_workspace_tabs';
-const WORKSPACE_TABS_LIMIT = 12;
+const WORKSPACE_TABS_PER_ROW = 6;
+const WORKSPACE_TABS_ROWS = 2;
+const WORKSPACE_TABS_LIMIT = WORKSPACE_TABS_PER_ROW * WORKSPACE_TABS_ROWS;
 const WORKSPACE_CACHE_LIMIT = WORKSPACE_TABS_LIMIT;
 
 interface WorkspaceTab {
@@ -253,12 +383,72 @@ interface WorkspaceTab {
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+providePageActionsHost();
 const sidebarOpen = ref(false);
 const menuKeyword = ref('');
 const globalKeyword = ref('');
 const notificationDrawerVisible = ref(false);
 const openMenuKeys = ref(readStoredOpenMenuKeys());
 const workspaceCacheVersion = ref(0);
+const globalSearchScopes = [
+  {
+    mark: 'CU',
+    title: '客户资料',
+    description: '微信、手机号、来源平台'
+  },
+  {
+    mark: 'ID',
+    title: 'Apple ID 业务',
+    description: '账号、订单、续费任务'
+  },
+  {
+    mark: 'CD',
+    title: '兑换码业务',
+    description: '库存、发货、售后补发'
+  }
+];
+const notificationSummary = [
+  {
+    label: '紧急',
+    value: '2',
+    description: '需优先处理'
+  },
+  {
+    label: '重要',
+    value: '3',
+    description: '今日关注'
+  },
+  {
+    label: '系统',
+    value: '1',
+    description: '接口状态'
+  }
+];
+const notificationItems: Array<{
+  title: string;
+  description: string;
+  level: string;
+  tone: 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+}> = [
+  {
+    title: 'Apple ID 余额不足',
+    description: '存在续费任务需要确认可用余额。',
+    level: '重要',
+    tone: 'orange'
+  },
+  {
+    title: '兑换码低库存',
+    description: '部分面值库存低于预警线。',
+    level: '紧急',
+    tone: 'red'
+  },
+  {
+    title: '平台接口异常',
+    description: '淘宝/闲鱼同步需要检查授权状态。',
+    level: '待处理',
+    tone: 'blue'
+  }
+];
 const sectionIconMap = {
   workspace: House,
   common: UserFilled,
@@ -273,9 +463,13 @@ const sectionIconMap = {
 const activePath = computed(() => route.path);
 const routeTitle = computed(() => String(route.meta.title ?? '后台管理'));
 const routeDescription = computed(() => String(route.meta.description ?? ''));
+const routeGroup = computed(() => String(route.meta.group ?? '工作台'));
 const hasRouteHelp = computed(() => Boolean(routeDescription.value));
 const activeWorkspaceTabPath = computed(() => route.fullPath);
+const globalKeywordTrimmed = computed(() => globalKeyword.value.trim());
+const sessionStatusText = computed(() => (authStore.userRefreshing ? '验证登录中' : '在线'));
 const workspaceTabs = ref<WorkspaceTab[]>(readStoredWorkspaceTabs());
+const workspaceRouteRefreshVersions = ref<Record<string, number>>({});
 const activeWorkspaceTab = computed(() =>
   workspaceTabs.value.find((tab) => tab.fullPath === activeWorkspaceTabPath.value)
 );
@@ -326,7 +520,7 @@ watch(
 );
 
 onMounted(() => {
-  prefetchReadyRouteComponents();
+  prefetchReadyRouteComponents(getInitialPrefetchRoutes());
 });
 
 function readStoredOpenMenuKeys() {
@@ -355,16 +549,16 @@ function readStoredWorkspaceTabs() {
     const storedTabs = stored ? (JSON.parse(stored) as unknown[]) : [];
     const seenPaths = new Set<string>();
 
-    return storedTabs
-      .filter((tab): tab is WorkspaceTab => {
-        if (!isWorkspaceTab(tab) || seenPaths.has(tab.fullPath)) {
-          return false;
-        }
+    const validTabs = storedTabs.filter((tab): tab is WorkspaceTab => {
+      if (!isWorkspaceTab(tab) || seenPaths.has(tab.fullPath)) {
+        return false;
+      }
 
-        seenPaths.add(tab.fullPath);
-        return true;
-      })
-      .slice(0, WORKSPACE_TABS_LIMIT);
+      seenPaths.add(tab.fullPath);
+      return true;
+    });
+
+    return limitWorkspaceTabs(validTabs);
   } catch {
     return [];
   }
@@ -394,29 +588,26 @@ function addCurrentWorkspaceTab() {
 
   if (existingIndex >= 0) {
     const existingTab = workspaceTabs.value[existingIndex];
+    const nextTabs = workspaceTabs.value.filter((tab) => tab.fullPath !== fullPath);
+    const updatedTab = existingTab.title === title ? existingTab : { ...existingTab, title };
 
-    if (existingTab.title !== title) {
-      const nextTabs = [...workspaceTabs.value];
-      nextTabs[existingIndex] = { ...existingTab, title };
-      workspaceTabs.value = nextTabs;
-    }
-
+    workspaceTabs.value = [...nextTabs, updatedTab];
     return;
   }
 
-  if (workspaceTabs.value.length >= WORKSPACE_TABS_LIMIT) {
-    workspaceTabs.value = [
-      ...workspaceTabs.value.slice(0, WORKSPACE_TABS_LIMIT - 1),
-      { fullPath, title }
-    ];
-    return;
-  }
-
-  workspaceTabs.value = [...workspaceTabs.value, { fullPath, title }];
+  workspaceTabs.value = limitWorkspaceTabs([...workspaceTabs.value, { fullPath, title }]);
 }
 
 function isWorkspaceTabActive(tab: WorkspaceTab) {
   return tab.fullPath === activeWorkspaceTabPath.value;
+}
+
+function limitWorkspaceTabs(tabs: WorkspaceTab[]) {
+  if (tabs.length <= WORKSPACE_TABS_LIMIT) {
+    return tabs;
+  }
+
+  return tabs.slice(-WORKSPACE_TABS_LIMIT);
 }
 
 async function switchWorkspaceTab(tab: WorkspaceTab) {
@@ -424,6 +615,7 @@ async function switchWorkspaceTab(tab: WorkspaceTab) {
     return;
   }
 
+  prefetchWorkspaceRoute(tab.fullPath);
   await router.push(tab.fullPath);
 }
 
@@ -499,6 +691,30 @@ function prefetchWorkspaceRoute(routePath: string) {
   prefetchRouteComponent(routePath);
 }
 
+function prefetchMenuSection(section: MenuSection) {
+  prefetchRouteComponents(section.items.map((item) => item.route));
+}
+
+function getSectionRoutes(sectionKey: string | undefined) {
+  return (
+    menuSections.find((section) => section.key === sectionKey)?.items.map((item) => item.route) ??
+    []
+  );
+}
+
+function getInitialPrefetchRoutes() {
+  return [
+    route.path,
+    '/dashboard',
+    '/workspace/renewal',
+    '/apple/accounts',
+    '/apple/order-entry',
+    '/codes/inventory',
+    '/codes/orders',
+    ...getSectionRoutes(getActiveSectionKey())
+  ];
+}
+
 function getSectionItemCount(section: MenuSection) {
   return section.items.length;
 }
@@ -537,7 +753,30 @@ function toggleMenuKey(key: string) {
 }
 
 function showRefresh() {
-  ElMessage.success('页面状态已刷新');
+  const fullPath = route.fullPath;
+  const currentVersion = workspaceRouteRefreshVersions.value[fullPath] ?? 0;
+
+  workspaceRouteRefreshVersions.value = {
+    ...workspaceRouteRefreshVersions.value,
+    [fullPath]: currentVersion + 1
+  };
+
+  ElMessage.success('已刷新当前页面');
+}
+
+function getWorkspaceViewKey(viewRoute: { path: string; fullPath: string }) {
+  const refreshVersion = workspaceRouteRefreshVersions.value[viewRoute.fullPath] ?? 0;
+
+  return `${viewRoute.path}:${refreshVersion}`;
+}
+
+async function goToOrderEntry() {
+  await router.push('/apple/order-entry');
+}
+
+async function goToNotifications() {
+  notificationDrawerVisible.value = false;
+  await router.push('/system/notifications');
 }
 
 async function handleCommand(command: string) {

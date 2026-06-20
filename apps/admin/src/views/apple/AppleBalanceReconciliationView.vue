@@ -5,14 +5,24 @@
     phase="Phase 3"
     description="处理人工或自动查询发现的余额差异，支持只修余额、按当前均价修正和手动成本修正。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="账号数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="当前页余额" :value="totalBalance" hint="按当前页合计" tone="green" />
-      <MetricCard label="当前页成本" :value="totalCost" hint="人民币成本合计" tone="orange" />
-      <MetricCard label="锁定账号" :value="lockedCount" hint="当前页手动锁定" tone="red" />
-    </div>
+    <section class="content-panel apple-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>余额对账工作台</h3>
+          <p>核对系统余额、实际余额和人民币成本，所有修正记录单独留痕并进入审计链路。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>账号 {{ total }}</StatusChip>
+          <StatusChip tone="green">余额 {{ totalBalance }}</StatusChip>
+          <StatusChip tone="orange">成本 {{ totalCost }}</StatusChip>
+          <StatusChip tone="purple">均价 {{ averageCostPreview }}</StatusChip>
+          <StatusChip tone="green">可对账 {{ reconcilableCount }}</StatusChip>
+          <StatusChip :tone="lockedCount > 0 ? 'red' : 'green'" dot>
+            {{ lockedCount > 0 ? `锁定 ${lockedCount}` : '锁定正常' }}
+          </StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -61,6 +71,7 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="accounts"
         :size="tableSize"
         row-key="id"
@@ -68,6 +79,18 @@
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无需要对账的 Apple ID</strong>
+            <span>可以清空筛选后查看账号，或回到 Apple ID 管理新增账号。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+              <AppButton variant="primary" @click="router.push('/apple/accounts')">
+                Apple ID 管理
+              </AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('appleId')"
@@ -116,9 +139,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -129,9 +152,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="row.isManuallyLocked ? 'danger' : 'success'" size="small">
+            <StatusChip :tone="row.isManuallyLocked ? 'red' : 'green'" dot>
               {{ row.isManuallyLocked ? '已锁定' : '正常' }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -145,38 +168,106 @@
         </el-table-column>
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openAdjustDialog(row)">修正余额</el-button>
-            <el-button text @click="openAdjustmentRecords(row)">修正记录</el-button>
-            <el-button text @click="openDetail(row)">详情</el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton size="small" variant="soft" @click="openAdjustDialog(row)">
+                修正余额
+              </AppButton>
+              <AppButton size="small" variant="ghost" @click="openAdjustmentRecords(row)">
+                修正记录
+              </AppButton>
+              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadAccounts"
-          @size-change="loadAccounts"
-        />
+      <div v-if="accounts.length" class="mobile-record-list" aria-label="余额对账账号移动列表">
+        <article v-for="account in accounts" :key="account.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ account.appleIdMasked }}</strong>
+              <span>{{ account.region }} / {{ account.currency }}</span>
+            </div>
+            <StatusChip :tone="getStatusTone(account.status)" dot>
+              {{ getStatusLabel(account.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>系统余额</span>
+              <strong>{{ account.currentBalance }}</strong>
+            </div>
+            <div>
+              <span>余额成本</span>
+              <strong>{{ account.balanceCostAmount }}</strong>
+            </div>
+            <div>
+              <span>平均成本</span>
+              <strong>{{ account.averageCost }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>锁定状态</span>
+              <StatusChip :tone="account.isManuallyLocked ? 'red' : 'green'" dot>
+                {{ account.isManuallyLocked ? '已锁定' : '正常' }}
+              </StatusChip>
+            </div>
+            <div>
+              <span>更新时间</span>
+              <strong>{{ formatDate(account.updatedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="soft" @click="openAdjustDialog(account)">
+              修正余额
+            </AppButton>
+            <AppButton size="small" variant="ghost" @click="openAdjustmentRecords(account)">
+              修正记录
+            </AppButton>
+            <AppButton size="small" variant="ghost" @click="openDetail(account)">详情</AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list" aria-label="余额对账空状态">
+        <div class="apple-core-empty-state">
+          <strong>暂无需要对账的 Apple ID</strong>
+          <span>可以清空筛选后查看账号，或回到 Apple ID 管理新增账号。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" @click="router.push('/apple/accounts')">
+              Apple ID 管理
+            </AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadAccounts"
+      />
     </section>
 
     <el-dialog
       v-model="adjustDialogVisible"
       :title="`修正余额 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      width="720px"
+      width="min(720px, calc(100vw - 24px))"
     >
-      <el-alert
-        title="余额修正会写入审计日志"
-        description="该操作会更新 Apple ID 当前余额、余额成本和移动平均成本，请只在人工或自动查询确认后使用。"
-        type="warning"
-        show-icon
-        :closable="false"
-      />
+      <div class="apple-core-alert apple-core-alert--orange">
+        <StatusChip tone="orange">审计</StatusChip>
+        <div>
+          <strong>余额修正会写入审计日志</strong>
+          <p>
+            该操作会更新 Apple ID 当前余额、余额成本和移动平均成本，请只在人工或自动查询确认后使用。
+          </p>
+        </div>
+      </div>
 
       <div class="drawer-detail-grid sensitive-form">
         <div>
@@ -245,8 +336,10 @@
       </div>
 
       <template #footer>
-        <el-button @click="adjustDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveAdjustment">保存修正</el-button>
+        <AppButton @click="adjustDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveAdjustment">
+          保存修正
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -257,46 +350,93 @@
       size="780px"
       @confirm="loadAdjustmentRecords"
     >
-      <el-table v-loading="recordsLoading" :data="adjustments" row-key="id">
-        <el-table-column label="余额变化" min-width="170">
-          <template #default="{ row }">
-            {{ row.oldBalance }} -> {{ row.newBalance }}
-            <div class="muted-block">差额 {{ row.difference }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="成本变化" min-width="170">
-          <template #default="{ row }">
-            {{ row.oldCostRmb }} -> {{ row.newCostRmb }}
-            <div class="muted-block">变化 {{ row.costRmbChange }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="方式" width="120">
-          <template #default="{ row }">{{
-            getCostAdjustMethodLabel(row.costAdjustMethod)
-          }}</template>
-        </el-table-column>
-        <el-table-column label="原因" min-width="200">
-          <template #default="{ row }">{{ row.reason }}</template>
-        </el-table-column>
-        <el-table-column label="操作人" width="120">
-          <template #default="{ row }">{{ row.operator?.displayName ?? '-' }}</template>
-        </el-table-column>
-        <el-table-column label="时间" min-width="170">
-          <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-        </el-table-column>
-      </el-table>
-
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="recordsQuery.page"
-          v-model:page-size="recordsQuery.pageSize"
-          :total="adjustmentTotal"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadAdjustmentRecords"
-          @size-change="loadAdjustmentRecords"
-        />
+      <div class="drawer-section">
+        <div class="drawer-section__title">修正记录</div>
+        <el-table
+          v-loading="recordsLoading"
+          class="desktop-data-table"
+          :data="adjustments"
+          row-key="id"
+        >
+          <el-table-column label="余额变化" min-width="170">
+            <template #default="{ row }">
+              {{ row.oldBalance }} -> {{ row.newBalance }}
+              <div class="muted-block">差额 {{ row.difference }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="成本变化" min-width="170">
+            <template #default="{ row }">
+              {{ row.oldCostRmb }} -> {{ row.newCostRmb }}
+              <div class="muted-block">变化 {{ row.costRmbChange }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="方式" width="120">
+            <template #default="{ row }">{{
+              getCostAdjustMethodLabel(row.costAdjustMethod)
+            }}</template>
+          </el-table-column>
+          <el-table-column label="原因" min-width="200">
+            <template #default="{ row }">{{ row.reason }}</template>
+          </el-table-column>
+          <el-table-column label="操作人" width="120">
+            <template #default="{ row }">{{ row.operator?.displayName ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column label="时间" min-width="170">
+            <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+          </el-table-column>
+        </el-table>
+        <div v-if="adjustments.length" class="mobile-record-list" aria-label="余额修正记录移动列表">
+          <article v-for="record in adjustments" :key="record.id" class="mobile-record-card">
+            <div class="mobile-record-card__head">
+              <div class="mobile-record-card__title">
+                <strong>{{ record.oldBalance }} -> {{ record.newBalance }}</strong>
+                <span>{{ getCostAdjustMethodLabel(record.costAdjustMethod) }}</span>
+              </div>
+              <StatusChip tone="blue">差额 {{ record.difference }}</StatusChip>
+            </div>
+            <div class="mobile-record-card__stats">
+              <div>
+                <span>原成本</span>
+                <strong>{{ record.oldCostRmb }}</strong>
+              </div>
+              <div>
+                <span>新成本</span>
+                <strong>{{ record.newCostRmb }}</strong>
+              </div>
+              <div>
+                <span>成本变化</span>
+                <strong>{{ record.costRmbChange }}</strong>
+              </div>
+            </div>
+            <div class="mobile-record-card__meta">
+              <div>
+                <span>修正原因</span>
+                <strong>{{ record.reason }}</strong>
+              </div>
+              <div>
+                <span>操作信息</span>
+                <strong
+                  >{{ record.operator?.displayName ?? '-' }} ·
+                  {{ formatDate(record.createdAt) }}</strong
+                >
+              </div>
+            </div>
+          </article>
+        </div>
+        <div v-else-if="!recordsLoading" class="mobile-record-list" aria-label="余额修正记录空状态">
+          <div class="apple-core-empty-state">
+            <strong>暂无修正记录</strong>
+            <span>该 Apple ID 暂时没有余额修正历史。</span>
+          </div>
+        </div>
       </div>
+
+      <PaginationBar
+        v-model:page="recordsQuery.page"
+        v-model:page-size="recordsQuery.pageSize"
+        :total="adjustmentTotal"
+        @change="loadAdjustmentRecords"
+      />
     </AppDrawer>
   </PageScaffold>
 </template>
@@ -307,9 +447,11 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { appleAccountsApi, userTableViewsApi, type AppleAccountQuery } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   AppleAccount,
@@ -427,6 +569,21 @@ const totalCost = computed(() =>
 const lockedCount = computed(
   () => accounts.value.filter((account) => account.isManuallyLocked).length
 );
+const reconcilableCount = computed(
+  () =>
+    accounts.value.filter((account) => account.status === 'normal' && !account.isManuallyLocked)
+      .length
+);
+const averageCostPreview = computed(() => {
+  const balance = Number(totalBalance.value);
+  const cost = Number(totalCost.value);
+
+  if (!balance) {
+    return '-';
+  }
+
+  return (cost / balance).toFixed(4);
+});
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -506,6 +663,11 @@ function clearFilters() {
   query.sortBy = '';
   query.sortOrder = '';
   savedViewId.value = '';
+}
+
+function clearFiltersAndSearch() {
+  clearFilters();
+  loadAccounts();
 }
 
 function removeFilter(key: string) {
@@ -717,8 +879,13 @@ function getStatusLabel(status: AppleAccount['status']) {
   return statusOptions.find((item) => item.value === status)?.label ?? status;
 }
 
-function getStatusType(status: AppleAccount['status']) {
-  return statusOptions.find((item) => item.value === status)?.type ?? 'info';
+function getStatusTone(status: AppleAccount['status']) {
+  const type = statusOptions.find((item) => item.value === status)?.type ?? 'info';
+
+  if (type === 'success') return 'green';
+  if (type === 'warning') return 'orange';
+  if (type === 'danger') return 'red';
+  return 'neutral';
 }
 
 function getCostAdjustMethodLabel(method: AppleBalanceAdjustment['costAdjustMethod']) {

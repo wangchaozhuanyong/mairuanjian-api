@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router';
 import { ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { maintenanceApi } from '@/api/system';
@@ -37,6 +37,7 @@ const AppleReportsView = () => import('@/views/apple/AppleReportsView.vue');
 const CodeInventoryView = () => import('@/views/codes/CodeInventoryView.vue');
 const CodeServicesView = () => import('@/views/codes/CodeServicesView.vue');
 const CodeOrdersView = () => import('@/views/codes/CodeOrdersView.vue');
+const CodeDeliveryExceptionsView = () => import('@/views/codes/CodeDeliveryExceptionsView.vue');
 const CodeAfterSalesView = () => import('@/views/codes/CodeAfterSalesView.vue');
 const TaobaoOrdersView = () => import('@/views/codes/TaobaoOrdersView.vue');
 const XianyuOrdersView = () => import('@/views/codes/XianyuOrdersView.vue');
@@ -50,6 +51,7 @@ const UsersView = () => import('@/views/system/UsersView.vue');
 const RolesView = () => import('@/views/system/RolesView.vue');
 const AuditLogsView = () => import('@/views/system/AuditLogsView.vue');
 const PlatformStatusView = () => import('@/views/system/PlatformStatusView.vue');
+const SystemStateView = () => import('@/views/system/SystemStateView.vue');
 
 export const isRoutePending = ref(false);
 
@@ -78,6 +80,7 @@ const readyPageComponents = {
   'code-inventory': CodeInventoryView,
   'code-settings': CodeServicesView,
   'code-orders': CodeOrdersView,
+  'delivery-exceptions': CodeDeliveryExceptionsView,
   'after-sales': CodeAfterSalesView,
   'taobao-orders': TaobaoOrdersView,
   'xianyu-orders': XianyuOrdersView,
@@ -105,13 +108,17 @@ const readyPageComponents = {
   'audit-log': AuditLogsView,
   'platform-status': PlatformStatusView,
   'platform-interface-logs': AuditLogsView,
-  'automation-logs': AuditLogsView
+  'automation-logs': AuditLogsView,
+  forbidden: SystemStateView,
+  'not-found': SystemStateView,
+  'maintenance-mode': SystemStateView
 } as const;
 
 type RouteComponentLoader = () => Promise<unknown>;
 
 const prefetchedRouteLoaders = new Set<RouteComponentLoader>();
 const routeComponentLoaders = new Map<string, RouteComponentLoader>();
+let readyRoutePrefetchStarted = false;
 
 for (const module of allModules) {
   const loader = readyPageComponents[module.key as keyof typeof readyPageComponents];
@@ -119,6 +126,10 @@ for (const module of allModules) {
   if (loader) {
     routeComponentLoaders.set(module.route, loader as RouteComponentLoader);
   }
+}
+
+function normalizeRoutePath(routePath: string) {
+  return routePath.split(/[?#]/)[0] || routePath;
 }
 
 function prefetchRouteLoader(loader: RouteComponentLoader) {
@@ -148,19 +159,46 @@ function scheduleRoutePrefetch(callback: () => void, delay = 220) {
 }
 
 export function prefetchRouteComponent(routePath: string) {
-  const loader = routeComponentLoaders.get(routePath);
+  const loader = routeComponentLoaders.get(normalizeRoutePath(routePath));
 
   if (loader) {
     prefetchRouteLoader(loader);
   }
 }
 
-export function prefetchReadyRouteComponents() {
-  const loaders = [...new Set(routeComponentLoaders.values())];
+export function prefetchRouteComponents(routePaths: string[]) {
+  for (const routePath of routePaths) {
+    prefetchRouteComponent(routePath);
+  }
+}
+
+export function prefetchReadyRouteComponents(priorityRoutePaths: string[] = []) {
+  const priorityLoaders = priorityRoutePaths
+    .map((routePath) => routeComponentLoaders.get(normalizeRoutePath(routePath)))
+    .filter((loader): loader is RouteComponentLoader => Boolean(loader));
+  const priorityLoaderSet = new Set(priorityLoaders);
+
+  for (const loader of priorityLoaderSet) {
+    prefetchRouteLoader(loader);
+  }
+
+  if (readyRoutePrefetchStarted) {
+    return;
+  }
+
+  readyRoutePrefetchStarted = true;
+
+  const loaders = [...new Set(routeComponentLoaders.values())].filter(
+    (loader) => !priorityLoaderSet.has(loader)
+  );
   let cursor = 0;
 
   const prefetchNextBatch = () => {
-    for (let batchCount = 0; batchCount < 3 && cursor < loaders.length; batchCount += 1) {
+    for (
+      let batchCount = 0;
+      batchCount < ROUTE_PREFETCH_BATCH_SIZE && cursor < loaders.length;
+      batchCount += 1
+    ) {
       const loader = loaders[cursor];
       cursor += 1;
 
@@ -170,11 +208,11 @@ export function prefetchReadyRouteComponents() {
     }
 
     if (cursor < loaders.length) {
-      scheduleRoutePrefetch(prefetchNextBatch, 450);
+      scheduleRoutePrefetch(prefetchNextBatch, ROUTE_PREFETCH_NEXT_DELAY_MS);
     }
   };
 
-  scheduleRoutePrefetch(prefetchNextBatch);
+  scheduleRoutePrefetch(prefetchNextBatch, ROUTE_PREFETCH_INITIAL_DELAY_MS);
 }
 
 const moduleRoutes = allModules.map((module) => ({
@@ -196,7 +234,11 @@ const moduleRoutes = allModules.map((module) => ({
 const MAINTENANCE_MODE_ROUTE = '/system/maintenance-mode';
 const MAINTENANCE_MODE_CACHE_MS = 60_000;
 const MAINTENANCE_MODE_RETRY_FLOOR_MS = 10_000;
-const ROUTE_PENDING_SETTLE_MS = 140;
+const ROUTE_PREFETCH_BATCH_SIZE = 6;
+const ROUTE_PREFETCH_INITIAL_DELAY_MS = 180;
+const ROUTE_PREFETCH_NEXT_DELAY_MS = 180;
+const ROUTE_PENDING_DELAY_MS = 180;
+const ROUTE_PENDING_SETTLE_MS = 120;
 
 type PublicMaintenanceMode = Awaited<ReturnType<typeof maintenanceApi.getPublicMode>>;
 
@@ -212,7 +254,8 @@ const maintenanceModeCache: {
   value: null
 };
 
-let routePendingTimer: number | undefined;
+let routePendingStartTimer: number | undefined;
+let routePendingFinishTimer: number | undefined;
 
 function refreshPublicMaintenanceMode(userRoles?: string[], targetPath?: string) {
   const now = Date.now();
@@ -288,13 +331,22 @@ function hasRoutePermission(user: CurrentUser | null, permission: unknown) {
 }
 
 function startRoutePending() {
-  window.clearTimeout(routePendingTimer);
-  isRoutePending.value = true;
+  window.clearTimeout(routePendingStartTimer);
+  window.clearTimeout(routePendingFinishTimer);
+  routePendingStartTimer = window.setTimeout(() => {
+    isRoutePending.value = true;
+  }, ROUTE_PENDING_DELAY_MS);
 }
 
 function finishRoutePending() {
-  window.clearTimeout(routePendingTimer);
-  routePendingTimer = window.setTimeout(() => {
+  window.clearTimeout(routePendingStartTimer);
+  window.clearTimeout(routePendingFinishTimer);
+
+  if (!isRoutePending.value) {
+    return;
+  }
+
+  routePendingFinishTimer = window.setTimeout(() => {
     isRoutePending.value = false;
   }, ROUTE_PENDING_SETTLE_MS);
 }
@@ -342,10 +394,69 @@ export const router = createRouter({
   ]
 });
 
-router.beforeEach(async (to, from) => {
+function redirectToLogin(targetFullPath: string) {
+  return {
+    path: '/login',
+    query: targetFullPath === '/login' ? undefined : { redirect: targetFullPath }
+  };
+}
+
+function refreshCurrentUserForRoute(targetRoute: RouteLocationNormalized) {
+  const authStore = useAuthStore();
+  const targetFullPath = targetRoute.fullPath;
+
+  if (!authStore.isAuthenticated) {
+    return;
+  }
+
+  void authStore
+    .loadCurrentUser()
+    .then(() => {
+      const currentRoute = router.currentRoute.value;
+
+      if (
+        currentRoute.fullPath !== targetFullPath ||
+        currentRoute.meta.public ||
+        !authStore.isAuthenticated
+      ) {
+        return;
+      }
+
+      if (!authStore.user) {
+        return;
+      }
+
+      if (!hasRoutePermission(authStore.user, currentRoute.meta.permission)) {
+        void router.replace('/403');
+        return;
+      }
+
+      const userRoles = authStore.user.roles ?? [];
+      void refreshPublicMaintenanceMode(userRoles, currentRoute.path).then((mode) => {
+        if (
+          router.currentRoute.value.fullPath === targetFullPath &&
+          shouldRedirectToMaintenanceMode(userRoles, currentRoute.path, mode)
+        ) {
+          void router.replace(MAINTENANCE_MODE_ROUTE);
+        }
+      });
+    })
+    .catch(() => {
+      const isStillOnTarget = router.currentRoute.value.fullPath === targetFullPath;
+      authStore.clearLocalSession();
+
+      if (isStillOnTarget) {
+        void router.replace(redirectToLogin(targetFullPath));
+      }
+    });
+}
+
+router.beforeEach((to, from) => {
   if (to.fullPath !== from.fullPath) {
     startRoutePending();
   }
+
+  prefetchRouteComponent(to.path);
 
   const authStore = useAuthStore();
 
@@ -354,20 +465,20 @@ router.beforeEach(async (to, from) => {
   }
 
   if (!authStore.isAuthenticated) {
-    return '/login';
+    return redirectToLogin(to.fullPath);
   }
 
   if (!authStore.user) {
-    try {
-      await authStore.loadCurrentUser();
-    } catch {
-      await authStore.logout();
-      return '/login';
-    }
+    refreshCurrentUserForRoute(to);
+    return true;
   }
 
   if (!hasRoutePermission(authStore.user, to.meta.permission)) {
     return '/403';
+  }
+
+  if (authStore.shouldRefreshCurrentUser) {
+    refreshCurrentUserForRoute(to);
   }
 
   const userRoles = authStore.user?.roles ?? [];

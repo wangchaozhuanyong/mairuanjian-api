@@ -5,14 +5,22 @@
     phase="Phase 6"
     description="配置兑换码面值、默认成本、售价、发货方式和组合规则。该业务设置只服务兑换码系统，不和 Apple ID 业务混用。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="业务数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="启用业务" :value="enabledCount" hint="当前页" tone="green" />
-      <MetricCard label="半自动发货" :value="semiAutoCount" hint="当前页" tone="orange" />
-      <MetricCard label="允许组合" :value="combinationCount" hint="当前页" tone="purple" />
-    </div>
+    <section class="content-panel code-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>兑换码业务规则</h3>
+          <p>配置面值、成本、售价、发货方式和平台 SKU 映射，业务逻辑与 Apple ID 模块保持隔离。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 个业务</StatusChip>
+          <StatusChip tone="green">启用 {{ enabledCount }}</StatusChip>
+          <StatusChip :tone="semiAutoCount > 0 ? 'orange' : 'green'" dot>
+            {{ semiAutoCount > 0 ? `半自动 ${semiAutoCount}` : '自动规则稳定' }}
+          </StatusChip>
+          <StatusChip tone="purple">允许组合 {{ combinationCount }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -58,13 +66,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="services"
         :size="tableSize"
         row-key="id"
-        empty-text="暂无兑换码业务"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无兑换码业务</strong>
+            <span>可以新增业务，或清空筛选后查看已有兑换码业务配置。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增兑换码业务</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('name')"
@@ -105,12 +123,12 @@
         </el-table-column>
         <el-table-column v-if="isColumnVisible('rules')" label="匹配规则" min-width="160">
           <template #default="{ row }">
-            <el-tag size="small" effect="light">
+            <StatusChip tone="blue">
               {{ row.exactFaceValueOnly ? '精确面值' : '允许近似' }}
-            </el-tag>
-            <el-tag v-if="row.allowCombination" class="tag-gap" size="small" type="warning">
+            </StatusChip>
+            <StatusChip v-if="row.allowCombination" class="tag-gap" tone="orange">
               可组合
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -121,9 +139,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -137,29 +155,92 @@
         </el-table-column>
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button text @click="openMappings(row)">平台映射</el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton variant="ghost" @click="openEdit(row)">编辑</AppButton>
+              <AppButton variant="ghost" @click="openMappings(row)">平台映射</AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadServices"
-          @size-change="loadServices"
-        />
+      <div v-if="services.length" class="mobile-record-list">
+        <article v-for="service in services" :key="service.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ service.name }}</strong>
+              <span
+                >面值 {{ service.faceValue }} ·
+                {{ getDeliveryModeLabel(service.deliveryMode) }}</span
+              >
+            </div>
+            <StatusChip :tone="getStatusTone(service.status)" dot>
+              {{ getStatusLabel(service.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>默认成本</span>
+              <strong>{{ service.defaultCost }}</strong>
+            </div>
+            <div>
+              <span>默认售价</span>
+              <strong>{{ service.defaultPrice }}</strong>
+            </div>
+            <div>
+              <span>发货方式</span>
+              <strong>{{ getDeliveryModeLabel(service.deliveryMode) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>匹配规则</span>
+              <div class="mobile-record-card__chips">
+                <StatusChip tone="blue">
+                  {{ service.exactFaceValueOnly ? '精确面值' : '允许近似' }}
+                </StatusChip>
+                <StatusChip v-if="service.allowCombination" tone="orange">可组合</StatusChip>
+              </div>
+            </div>
+            <div>
+              <span>更新时间</span>
+              <strong>{{ formatDate(service.updatedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openEdit(service)">编辑</AppButton>
+            <AppButton size="small" variant="ghost" @click="openMappings(service)">
+              平台映射
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无兑换码业务</strong>
+          <span>可以新增业务，或清空筛选后查看已有兑换码业务配置。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增兑换码业务</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadServices"
+      />
     </section>
 
     <el-dialog
       v-model="dialogVisible"
       :title="editingService ? '编辑兑换码业务' : '新增兑换码业务'"
-      width="720px"
+      width="min(720px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="form-grid">
@@ -201,8 +282,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveService">保存</el-button>
+        <AppButton @click="dialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveService">保存</AppButton>
       </template>
     </el-dialog>
 
@@ -210,59 +291,118 @@
       v-model="mappingDrawerVisible"
       :title="`平台映射 · ${selectedService?.name ?? ''}`"
       confirm-text="新增映射"
-      size="880px"
+      size="min(880px, 100vw)"
       @confirm="openCreateMapping"
     >
-      <div class="panel-title-row">
-        <div>
-          <h3>兑换码平台商品/SKU 映射</h3>
-          <p>用于后续淘宝、闲鱼订单同步时识别兑换码业务，不和 Apple ID 平台映射混用。</p>
+      <div class="drawer-section drawer-section--flush">
+        <div class="drawer-section__title">
+          <span>平台商品/SKU 映射</span>
+          <AppButton @click="loadMappings">刷新</AppButton>
         </div>
-        <el-button @click="loadMappings">刷新</el-button>
-      </div>
+        <p class="drawer-section__description">
+          用于后续淘宝、闲鱼订单同步时识别兑换码业务，不和 Apple ID 平台映射混用。
+        </p>
 
-      <el-table v-loading="mappingLoading" :data="mappings" row-key="id">
-        <el-table-column label="平台/店铺" min-width="170">
-          <template #default="{ row }">
-            {{ row.platform.name }}
-            <div class="muted-block">{{ row.shopId || row.platform.code }}</div>
+        <el-table
+          v-loading="mappingLoading"
+          class="desktop-data-table"
+          :data="mappings"
+          row-key="id"
+        >
+          <template #empty>
+            <div class="apple-core-empty-state">
+              <strong>暂无平台映射</strong>
+              <span>新增平台商品或 SKU 映射后，淘宝/闲鱼订单才能自动匹配兑换码业务。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="primary" @click="openCreateMapping">新增映射</AppButton>
+              </div>
+            </div>
           </template>
-        </el-table-column>
-        <el-table-column label="商品/SKU" min-width="190">
-          <template #default="{ row }">
-            {{ row.platformItemId }}
-            <div class="muted-block">SKU {{ row.platformSkuId || '-' }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="面值/数量" width="130">
-          <template #default="{ row }">{{ row.faceValue }} × {{ row.quantity }}</template>
-        </el-table-column>
-        <el-table-column label="关键词" min-width="140">
-          <template #default="{ row }">{{ row.skuKeyword || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="模板" min-width="150">
-          <template #default="{ row }">{{ row.deliveryTemplate?.name || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="启用" width="90">
-          <template #default="{ row }">
-            <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-              {{ row.enabled ? '启用' : '停用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="130" fixed="right">
-          <template #default="{ row }">
-            <el-button text type="primary" @click="openEditMapping(row)">编辑</el-button>
-            <el-button text type="danger" @click="deleteMapping(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+          <el-table-column label="平台/店铺" min-width="170">
+            <template #default="{ row }">
+              {{ row.platform.name }}
+              <div class="muted-block">{{ row.shopId || row.platform.code }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="商品/SKU" min-width="190">
+            <template #default="{ row }">
+              {{ row.platformItemId }}
+              <div class="muted-block">SKU {{ row.platformSkuId || '-' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="面值/数量" width="130">
+            <template #default="{ row }">{{ row.faceValue }} × {{ row.quantity }}</template>
+          </el-table-column>
+          <el-table-column label="关键词" min-width="140">
+            <template #default="{ row }">{{ row.skuKeyword || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="模板" min-width="150">
+            <template #default="{ row }">{{ row.deliveryTemplate?.name || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="启用" width="90">
+            <template #default="{ row }">
+              <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
+                {{ row.enabled ? '启用' : '停用' }}
+              </StatusChip>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="130" fixed="right">
+            <template #default="{ row }">
+              <div class="table-action-group">
+                <AppButton variant="ghost" @click="openEditMapping(row)">编辑</AppButton>
+                <AppButton variant="danger" @click="deleteMapping(row)">删除</AppButton>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="mappings.length" class="mobile-record-list" aria-label="平台商品映射移动列表">
+          <article v-for="mapping in mappings" :key="mapping.id" class="mobile-record-card">
+            <div class="mobile-record-card__head">
+              <div class="mobile-record-card__title">
+                <strong>{{ mapping.platform.name }}</strong>
+                <span>{{ mapping.platformItemId }} · SKU {{ mapping.platformSkuId || '-' }}</span>
+              </div>
+              <StatusChip :tone="mapping.enabled ? 'green' : 'neutral'" dot>
+                {{ mapping.enabled ? '启用' : '停用' }}
+              </StatusChip>
+            </div>
+            <div class="mobile-record-card__stats">
+              <div>
+                <span>面值/数量</span>
+                <strong>{{ mapping.faceValue }} × {{ mapping.quantity }}</strong>
+              </div>
+              <div>
+                <span>关键词</span>
+                <strong>{{ mapping.skuKeyword || '-' }}</strong>
+              </div>
+              <div>
+                <span>模板</span>
+                <strong>{{ mapping.deliveryTemplate?.name || '-' }}</strong>
+              </div>
+            </div>
+            <div class="mobile-record-card__actions">
+              <AppButton size="small" variant="ghost" @click="openEditMapping(mapping)">
+                编辑
+              </AppButton>
+              <AppButton size="small" variant="danger" @click="deleteMapping(mapping)">
+                删除
+              </AppButton>
+            </div>
+          </article>
+        </div>
+        <div v-else-if="!mappingLoading" class="mobile-record-list">
+          <div class="apple-core-empty-state">
+            <strong>暂无平台映射</strong>
+            <span>新增平台商品或 SKU 映射后，淘宝/闲鱼订单才能自动匹配兑换码业务。</span>
+          </div>
+        </div>
+      </div>
     </AppDrawer>
 
     <el-dialog
       v-model="mappingDialogVisible"
       :title="editingMapping ? '编辑平台映射' : '新增平台映射'"
-      width="720px"
+      width="min(720px, calc(100vw - 24px))"
     >
       <el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top">
         <div class="form-grid">
@@ -314,8 +454,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="mappingDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="mappingSaving" @click="saveMapping">保存</el-button>
+        <AppButton @click="mappingDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="mappingSaving" @click="saveMapping">保存</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -331,9 +471,11 @@ import {
   sourcePlatformsApi,
   userTableViewsApi
 } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   CodePlatformMapping,
@@ -478,14 +620,14 @@ function getStatusLabel(status: CodeService['status']) {
   return labels[status];
 }
 
-function getStatusType(status: CodeService['status']) {
+function getStatusTone(status: CodeService['status']) {
   if (status === 'enabled') {
-    return 'success';
+    return 'green';
   }
   if (status === 'paused') {
-    return 'warning';
+    return 'orange';
   }
-  return 'info';
+  return 'neutral';
 }
 
 function isColumnVisible(column: string) {
@@ -884,3 +1026,21 @@ async function deleteMapping(mapping: CodePlatformMapping) {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.code-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.code-compact-list-panel .inline-actions {
+  max-width: min(600px, 100%);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 840px) {
+  .code-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+  }
+}
+</style>

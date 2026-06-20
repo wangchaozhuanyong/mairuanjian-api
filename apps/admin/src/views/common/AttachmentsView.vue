@@ -5,7 +5,20 @@
     phase="Phase 1"
     description="查看上传凭证、截图、售后材料和导入导出附件元数据。第一版先支持本地上传和列表查询。"
   >
-    <section class="content-panel">
+    <section class="content-panel common-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>附件列表</h3>
+          <p>集中管理凭证、截图、售后材料和导入导出附件元数据。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>附件 {{ total }}</StatusChip>
+          <StatusChip tone="green">图片 {{ imageAttachmentCount }}</StatusChip>
+          <StatusChip tone="purple">已关联 {{ linkedAttachmentCount }}</StatusChip>
+          <StatusChip tone="orange">当前页 {{ currentPageSize }}</StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:density="density"
@@ -60,13 +73,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="attachments"
         :size="tableSize"
         row-key="id"
-        empty-text="暂无附件"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无附件</strong>
+            <span>可以上传附件，或清空筛选后重新查看附件列表。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openUploadDialog">上传附件</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('originalName')"
@@ -126,25 +149,84 @@
         </el-table-column>
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="downloadAttachment(row)">下载</el-button>
+            <AppButton size="small" variant="ghost" @click="downloadAttachment(row)"
+              >下载</AppButton
+            >
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadAttachments"
-          @size-change="handlePageSizeChange"
-        />
+      <div v-if="attachments.length" class="mobile-record-list">
+        <article v-for="attachment in attachments" :key="attachment.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ attachment.originalName }}</strong>
+              <span>{{ formatAssociation(attachment) }}</span>
+            </div>
+            <StatusChip tone="blue" dot>{{ formatSize(attachment.sizeBytes) }}</StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>类型</span>
+              <strong>{{ attachment.mimeType }}</strong>
+            </div>
+            <div>
+              <span>用途</span>
+              <strong>{{ attachment.purpose ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>上传人</span>
+              <strong>{{
+                attachment.createdBy?.displayName ?? attachment.createdBy?.username ?? '-'
+              }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>业务归属</span>
+              <strong>{{ formatAssociation(attachment) }}</strong>
+            </div>
+            <div>
+              <span>上传时间</span>
+              <strong>{{ formatDate(attachment.createdAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="downloadAttachment(attachment)">
+              下载
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无附件</strong>
+          <span>可以上传附件，或清空筛选后重新查看附件列表。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openUploadDialog">上传附件</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @page-change="loadAttachments"
+        @page-size-change="handlePageSizeChange"
+      />
     </section>
 
-    <el-dialog v-model="uploadDialogVisible" title="上传附件" width="620px">
+    <el-dialog
+      v-model="uploadDialogVisible"
+      title="上传附件"
+      width="min(620px, calc(100vw - 24px))"
+    >
       <el-form label-position="top">
         <el-form-item label="文件" required>
           <input ref="fileInputRef" type="file" @change="selectUploadFile" />
@@ -175,8 +257,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="uploadDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="uploading" @click="submitUpload">上传</el-button>
+        <AppButton @click="uploadDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="uploading" @click="submitUpload">上传</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -186,7 +268,10 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { attachmentsApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { Attachment, TableDensity, UserTableView } from '@/types/system';
 
@@ -236,6 +321,25 @@ const uploadForm = reactive({
 
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const imageAttachmentCount = computed(
+  () => attachments.value.filter((attachment) => attachment.mimeType.startsWith('image/')).length
+);
+const linkedAttachmentCount = computed(
+  () =>
+    attachments.value.filter((attachment) =>
+      Boolean(attachment.businessModule || attachment.objectType || attachment.objectId)
+    ).length
+);
+const currentPageSize = computed(() =>
+  formatSize(
+    String(
+      attachments.value.reduce((sum, attachment) => {
+        const size = Number(attachment.sizeBytes);
+        return Number.isFinite(size) ? sum + size : sum;
+      }, 0)
+    )
+  )
 );
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
@@ -542,3 +646,22 @@ async function initializePage() {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.common-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.common-compact-list-panel .inline-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(680px, 100%);
+}
+
+@media (max-width: 840px) {
+  .common-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+</style>

@@ -5,7 +5,20 @@
     phase="Phase 2"
     description="管理客户资料、来源平台、标签和基础联系方式。手机号列表默认脱敏展示。"
   >
-    <section class="content-panel">
+    <section class="content-panel common-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>客户列表</h3>
+          <p>统一管理客户资料、来源、标签和敏感联系方式查看入口。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>客户 {{ total }}</StatusChip>
+          <StatusChip tone="green">启用 {{ activeCustomerCount }}</StatusChip>
+          <StatusChip tone="purple">已绑定来源 {{ sourcedCustomerCount }}</StatusChip>
+          <StatusChip tone="orange">手机号 {{ phoneCustomerCount }}</StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -51,13 +64,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="customers"
         :size="tableSize"
         row-key="id"
-        empty-text="暂无客户"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无客户</strong>
+            <span>可以新增客户，或清空筛选后重新查看客户列表。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增客户</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('name')"
@@ -83,15 +106,15 @@
         >
           <template #default="{ row }">
             <span>{{ row.maskedPhone ?? '-' }}</span>
-            <el-button
+            <AppButton
               v-if="row.phoneTail && canRevealPhone"
               class="inline-action"
-              text
-              type="primary"
+              size="small"
+              variant="ghost"
               @click="openPhoneDialog(row)"
             >
               查看
-            </el-button>
+            </AppButton>
           </template>
         </el-table-column>
         <el-table-column
@@ -108,9 +131,9 @@
         </el-table-column>
         <el-table-column v-if="isColumnVisible('tags')" label="标签" min-width="180">
           <template #default="{ row }">
-            <el-tag v-for="tag in row.tags" :key="tag" class="tag-gap" size="small">{{
-              tag
-            }}</el-tag>
+            <StatusChip v-for="tag in row.tags" :key="tag" class="tag-gap" tone="neutral">
+              {{ tag }}
+            </StatusChip>
             <span v-if="!row.tags.length">-</span>
           </template>
         </el-table-column>
@@ -136,29 +159,94 @@
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button text type="primary" @click="openEdit(row)">编辑</el-button>
+            <div class="table-action-group">
+              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadCustomers"
-          @size-change="loadCustomers"
-        />
+      <div v-if="customers.length" class="mobile-record-list">
+        <article v-for="customer in customers" :key="customer.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ customer.name }}</strong>
+              <span>
+                {{ customer.contactName ?? '未填联系人' }} ·
+                {{ customer.sourcePlatform?.name ?? '无来源' }}
+              </span>
+            </div>
+            <StatusTag :status="customer.status" />
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>手机号</span>
+              <strong>{{ customer.maskedPhone ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>微信</span>
+              <strong>{{ customer.wechat ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>来源</span>
+              <strong>{{ customer.sourcePlatform?.name ?? '-' }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip v-for="tag in customer.tags" :key="tag" tone="neutral">
+              {{ tag }}
+            </StatusChip>
+            <StatusChip v-if="!customer.tags.length" tone="neutral">无标签</StatusChip>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>更新时间</span>
+              <strong>{{ formatDate(customer.updatedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(customer)">详情</AppButton>
+            <AppButton size="small" variant="ghost" @click="openEdit(customer)">编辑</AppButton>
+            <AppButton
+              v-if="customer.phoneTail && canRevealPhone"
+              size="small"
+              variant="soft"
+              @click="openPhoneDialog(customer)"
+            >
+              查看手机号
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无客户</strong>
+          <span>可以新增客户，或清空筛选后重新查看客户列表。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增客户</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadCustomers"
+      />
     </section>
 
     <el-dialog
       v-model="dialogVisible"
       :title="editingCustomer ? '编辑客户' : '新增客户'"
-      width="620px"
+      width="min(620px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="客户名称" prop="name">
@@ -206,19 +294,24 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveCustomer">保存</el-button>
+        <AppButton @click="dialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveCustomer">保存</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="phoneDialogVisible" title="查看完整手机号" width="520px">
+    <el-dialog
+      v-model="phoneDialogVisible"
+      title="查看完整手机号"
+      width="min(520px, calc(100vw - 24px))"
+    >
       <el-form ref="phoneFormRef" :model="phoneForm" :rules="phoneRules" label-position="top">
-        <el-alert
-          title="查看完整手机号会写入敏感访问日志和审计日志"
-          type="warning"
-          show-icon
-          :closable="false"
-        />
+        <div class="apple-core-alert apple-core-alert--orange">
+          <StatusChip tone="orange">敏感</StatusChip>
+          <div>
+            <strong>查看完整手机号会写入敏感访问日志和审计日志</strong>
+            <p>请填写明确业务原因，避免无授权查看客户敏感联系方式。</p>
+          </div>
+        </div>
         <el-form-item label="客户">
           <el-input :model-value="selectedCustomer?.name ?? '-'" disabled />
         </el-form-item>
@@ -235,10 +328,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="phoneDialogVisible = false">关闭</el-button>
-        <el-button type="warning" :loading="revealingPhone" @click="revealPhone">
+        <AppButton @click="phoneDialogVisible = false">关闭</AppButton>
+        <AppButton variant="danger" :loading="revealingPhone" @click="revealPhone">
           查看完整手机号
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -250,7 +343,10 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { customersApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -337,6 +433,15 @@ const canRevealPhone = computed(
 );
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const activeCustomerCount = computed(
+  () => customers.value.filter((customer) => customer.status === 'active').length
+);
+const sourcedCustomerCount = computed(
+  () => customers.value.filter((customer) => Boolean(customer.sourcePlatformId)).length
+);
+const phoneCustomerCount = computed(
+  () => customers.value.filter((customer) => Boolean(customer.phoneTail)).length
 );
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
@@ -657,3 +762,22 @@ async function initializePage() {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.common-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.common-compact-list-panel .inline-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(680px, 100%);
+}
+
+@media (max-width: 840px) {
+  .common-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+</style>

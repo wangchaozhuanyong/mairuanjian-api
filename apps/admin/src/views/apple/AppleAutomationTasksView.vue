@@ -3,20 +3,35 @@
     title="Apple ID 自动化任务"
     group="Apple ID 业务"
     phase="Phase 8"
-    description="集中管理查询余额、检测状态、自动充值、取消订阅和账号资料变更等自动化任务；真实 Worker 未接入前会转入人工验证。"
+    description="集中管理查询余额、检测状态、自动充值、取消订阅和账号资料变更等自动化任务，高风险任务进入人工验证兜底。"
   >
     <template #actions>
-      <el-tag type="warning" effect="light">占位 Worker</el-tag>
+      <StatusChip tone="orange" dot>人工验证兜底</StatusChip>
     </template>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="任务数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="队列中" :value="queuedCount" hint="当前页待执行" tone="orange" />
-      <MetricCard label="需人工" :value="manualCount" hint="当前页转人工" tone="red" />
-      <MetricCard label="已成功" :value="successCount" hint="当前页完成" tone="green" />
-    </div>
+    <section class="content-panel apple-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>自动化任务队列</h3>
+          <p>管理余额查询、状态检测、充值、取消订阅和资料变更任务，失败或高风险任务转人工验证。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 个任务</StatusChip>
+          <StatusChip tone="orange">队列中 {{ queuedCount }}</StatusChip>
+          <StatusChip tone="purple">运行中 {{ runningCount }}</StatusChip>
+          <StatusChip :tone="manualCount > 0 ? 'red' : 'green'" dot>
+            {{ manualCount > 0 ? `需人工 ${manualCount}` : '无需人工' }}
+          </StatusChip>
+          <StatusChip :tone="failedCount > 0 ? 'red' : 'green'">
+            失败复核 {{ failedCount }}
+          </StatusChip>
+          <StatusChip tone="green">成功 {{ successCount }}</StatusChip>
+          <StatusChip :tone="automationFocusTasks.length ? 'orange' : 'green'">
+            待处理 {{ automationFocusTasks.length }}
+          </StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -90,6 +105,7 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="tasks"
         :size="tableSize"
         row-key="id"
@@ -97,6 +113,16 @@
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无自动化任务</strong>
+            <span>可以创建自动化任务，或清空筛选后查看全部任务队列。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreateDialog">创建自动化任务</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('task')"
@@ -126,9 +152,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getPriorityType(row.priority)" size="small" effect="light">
+            <StatusChip :tone="getPriorityTone(row.priority)" dot>
               {{ getPriorityLabel(row.priority) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -139,9 +165,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -172,47 +198,132 @@
         </el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button
-              text
-              type="success"
-              :disabled="!canRun(row)"
-              :loading="actionLoadingId === row.id"
-              @click="runPlaceholder(row)"
-            >
-              执行
-            </el-button>
-            <el-button
-              text
-              :disabled="!canRetry(row)"
-              :loading="actionLoadingId === row.id"
-              @click="retryTask(row)"
-            >
-              重试
-            </el-button>
-            <el-button
-              text
-              type="warning"
-              :disabled="isFinalStatus(row.status)"
-              @click="markManual(row)"
-            >
-              转人工
-            </el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton
+                variant="success"
+                :disabled="!canRun(row)"
+                :loading="actionLoadingId === row.id"
+                @click="runPlaceholder(row)"
+              >
+                执行
+              </AppButton>
+              <AppButton
+                variant="ghost"
+                :disabled="!canRetry(row)"
+                :loading="actionLoadingId === row.id"
+                @click="retryTask(row)"
+              >
+                重试
+              </AppButton>
+              <AppButton
+                variant="soft"
+                :disabled="isFinalStatus(row.status)"
+                @click="markManual(row)"
+              >
+                转人工
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadTasks"
-          @size-change="loadTasks"
-        />
+      <div class="mobile-record-list" aria-label="Apple ID 自动化任务移动列表">
+        <article v-for="task in tasks" :key="task.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ getTaskTypeLabel(task.taskType) }}</strong>
+              <span
+                >{{ task.appleAccount.appleIdMasked }} ·
+                {{ task.queueJobId || '未分配队列号' }}</span
+              >
+            </div>
+            <StatusChip :tone="getPriorityTone(task.priority)">
+              {{ getPriorityLabel(task.priority) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>状态</span>
+              <strong>{{ getStatusLabel(task.status) }}</strong>
+            </div>
+            <div>
+              <span>余额</span>
+              <strong>{{ task.appleAccount.currentBalance }}</strong>
+            </div>
+            <div>
+              <span>重试</span>
+              <strong>{{ task.retryCount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>结果 / 异常</span>
+              <strong>{{ task.errorMessage || (task.resultPayload ? '已有结果' : '-') }}</strong>
+            </div>
+            <div>
+              <span>创建时间</span>
+              <strong>{{ formatDate(task.createdAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip :tone="getStatusTone(task.status)" dot>
+              {{ getStatusLabel(task.status) }}
+            </StatusChip>
+            <StatusChip v-if="task.manualRequired" tone="orange">人工验证</StatusChip>
+            <StatusChip tone="blue">{{ task.appleAccount.region }}</StatusChip>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(task)">详情</AppButton>
+            <AppButton
+              size="small"
+              variant="success"
+              :disabled="!canRun(task)"
+              :loading="actionLoadingId === task.id"
+              @click="runPlaceholder(task)"
+            >
+              执行
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="ghost"
+              :disabled="!canRetry(task)"
+              :loading="actionLoadingId === task.id"
+              @click="retryTask(task)"
+            >
+              重试
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="soft"
+              :disabled="isFinalStatus(task.status)"
+              @click="markManual(task)"
+            >
+              转人工
+            </AppButton>
+          </div>
+        </article>
+
+        <div v-if="!loading && tasks.length === 0" class="apple-core-empty-state">
+          <strong>暂无自动化任务</strong>
+          <span>可以创建自动化任务，或清空筛选后查看全部任务队列。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreateDialog">创建自动化任务</AppButton>
+          </div>
+        </div>
       </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadTasks"
+      />
     </section>
 
     <AppDrawer
@@ -241,82 +352,120 @@
         </div>
       </div>
 
-      <el-descriptions class="detail-descriptions" :column="1" border>
-        <el-descriptions-item label="队列号">
-          {{ selectedTask?.queueJobId ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="异常代码">
-          {{ selectedTask?.errorCode ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="异常说明">
-          {{ selectedTask?.errorMessage ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="创建人">
-          {{ selectedTask?.createdBy?.displayName ?? '-' }}
-        </el-descriptions-item>
-      </el-descriptions>
-
-      <el-divider />
-
-      <div class="drawer-inline-actions">
-        <el-button
-          type="success"
-          :disabled="!selectedTask || !canRun(selectedTask)"
-          :loading="Boolean(selectedTask && actionLoadingId === selectedTask.id)"
-          @click="selectedTask && runPlaceholder(selectedTask)"
-        >
-          执行占位任务
-        </el-button>
-        <el-button
-          :disabled="!selectedTask || !canRetry(selectedTask)"
-          :loading="Boolean(selectedTask && actionLoadingId === selectedTask.id)"
-          @click="selectedTask && retryTask(selectedTask)"
-        >
-          重新入队
-        </el-button>
-        <el-button :disabled="!selectedTask" @click="writeSuccessResult">回写成功</el-button>
-        <el-button type="danger" plain :disabled="!selectedTask" @click="writeFailedResult">
-          回写失败
-        </el-button>
-        <el-button
-          type="danger"
-          plain
-          :disabled="!selectedTask || isFinalStatus(selectedTask.status)"
-          @click="selectedTask && cancelTask(selectedTask)"
-        >
-          取消任务
-        </el-button>
+      <div class="drawer-section">
+        <div class="drawer-section__title">任务信息</div>
+        <el-descriptions class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="队列号">
+            {{ selectedTask?.queueJobId ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="异常代码">
+            {{ selectedTask?.errorCode ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="异常说明">
+            {{ selectedTask?.errorMessage ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="创建人">
+            {{ selectedTask?.createdBy?.displayName ?? '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
       </div>
 
-      <el-divider />
+      <div class="drawer-section">
+        <div class="drawer-section__title">处理动作</div>
+        <div class="drawer-inline-actions drawer-inline-actions--inside">
+          <AppButton
+            variant="success"
+            :disabled="!selectedTask || !canRun(selectedTask)"
+            :loading="Boolean(selectedTask && actionLoadingId === selectedTask.id)"
+            @click="selectedTask && runPlaceholder(selectedTask)"
+          >
+            执行任务
+          </AppButton>
+          <AppButton
+            :disabled="!selectedTask || !canRetry(selectedTask)"
+            :loading="Boolean(selectedTask && actionLoadingId === selectedTask.id)"
+            @click="selectedTask && retryTask(selectedTask)"
+          >
+            重新入队
+          </AppButton>
+          <AppButton :disabled="!selectedTask" @click="writeSuccessResult">回写成功</AppButton>
+          <AppButton variant="danger" :disabled="!selectedTask" @click="writeFailedResult">
+            回写失败
+          </AppButton>
+          <AppButton
+            variant="danger"
+            :disabled="!selectedTask || isFinalStatus(selectedTask.status)"
+            @click="selectedTask && cancelTask(selectedTask)"
+          >
+            取消任务
+          </AppButton>
+        </div>
+      </div>
 
-      <h3 class="section-title">结果数据</h3>
-      <pre class="json-preview">{{ formatJson(selectedTask?.resultPayload ?? null) }}</pre>
+      <div class="drawer-section">
+        <div class="drawer-section__title">结果数据</div>
+        <pre class="json-preview">{{ formatJson(selectedTask?.resultPayload ?? null) }}</pre>
+      </div>
 
-      <h3 class="section-title">任务日志</h3>
-      <el-table :data="selectedTask?.logs ?? []" row-key="id">
-        <el-table-column label="级别" width="90">
-          <template #default="{ row }">
-            <el-tag :type="getLogType(row.level)" size="small" effect="light">
-              {{ row.level }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="日志" min-width="260">
-          <template #default="{ row }">
-            {{ row.message }}
-            <div v-if="row.screenshotAttachment" class="muted-block">
-              截图 {{ row.screenshotAttachment.originalName }}
+      <div class="drawer-section">
+        <div class="drawer-section__title">任务日志</div>
+        <el-table class="desktop-data-table" :data="selectedTask?.logs ?? []" row-key="id">
+          <el-table-column label="级别" width="90">
+            <template #default="{ row }">
+              <StatusChip :tone="getLogTone(row.level)" dot>
+                {{ row.level }}
+              </StatusChip>
+            </template>
+          </el-table-column>
+          <el-table-column label="日志" min-width="260">
+            <template #default="{ row }">
+              {{ row.message }}
+              <div v-if="row.screenshotAttachment" class="muted-block">
+                截图 {{ row.screenshotAttachment.originalName }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="时间" min-width="160">
+            <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+          </el-table-column>
+        </el-table>
+        <div
+          v-if="selectedTask?.logs?.length"
+          class="mobile-record-list"
+          aria-label="自动化任务日志移动列表"
+        >
+          <article v-for="log in selectedTask.logs" :key="log.id" class="mobile-record-card">
+            <div class="mobile-record-card__head">
+              <div class="mobile-record-card__title">
+                <strong>{{ log.message }}</strong>
+                <span>{{ formatDate(log.createdAt) }}</span>
+              </div>
+              <StatusChip :tone="getLogTone(log.level)" dot>
+                {{ log.level }}
+              </StatusChip>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="时间" min-width="160">
-          <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-        </el-table-column>
-      </el-table>
+            <div v-if="log.screenshotAttachment" class="mobile-record-card__meta">
+              <div>
+                <span>截图</span>
+                <strong>{{ log.screenshotAttachment.originalName }}</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div v-else class="mobile-record-list" aria-label="自动化任务日志空状态">
+          <div class="apple-core-empty-state">
+            <strong>暂无任务日志</strong>
+            <span>任务执行、重试或人工回写后会生成日志。</span>
+          </div>
+        </div>
+      </div>
     </AppDrawer>
 
-    <el-dialog v-model="createDialogVisible" title="创建自动化任务" width="560px">
+    <el-dialog
+      v-model="createDialogVisible"
+      title="创建自动化任务"
+      width="min(560px, calc(100vw - 24px))"
+    >
       <el-form label-position="top">
         <el-form-item label="任务类型" required>
           <el-select v-model="createForm.taskType" class="full-width">
@@ -363,8 +512,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createTask">创建任务</el-button>
+        <AppButton @click="createDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="createTask">创建任务</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -379,9 +528,11 @@ import {
   userTableViewsApi,
   type AppleAutomationTaskQuery
 } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   AppleAccount,
@@ -483,8 +634,26 @@ const queuedCount = computed(
 );
 const manualCount = computed(() => tasks.value.filter((task) => task.manualRequired).length);
 const successCount = computed(() => tasks.value.filter((task) => task.status === 'success').length);
+const failedCount = computed(
+  () =>
+    tasks.value.filter((task) => task.status === 'failed' || task.status === 'need_review').length
+);
+const runningCount = computed(() => tasks.value.filter((task) => task.status === 'running').length);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const automationFocusTasks = computed(() =>
+  tasks.value
+    .filter(
+      (task) =>
+        task.manualRequired ||
+        task.status === 'failed' ||
+        task.status === 'need_review' ||
+        task.status === 'waiting_manual_verify'
+    )
+    .slice()
+    .sort((a, b) => getAutomationPriorityValue(a) - getAutomationPriorityValue(b))
+    .slice(0, 4)
 );
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
@@ -567,6 +736,11 @@ function clearFilters() {
   query.manualRequired = '';
   savedViewId.value = '';
   sortConfig.value = {};
+}
+
+async function clearFiltersAndSearch() {
+  clearFilters();
+  await loadTasks();
 }
 
 function removeFilter(key: string) {
@@ -783,7 +957,7 @@ async function refreshDetail() {
 async function runPlaceholder(task: AppleAutomationTask) {
   await runTaskAction(task.id, async () => {
     selectedTask.value = await appleAutomationTasksApi.runPlaceholder(task.id);
-    ElMessage.success('占位任务已执行');
+    ElMessage.success('任务已执行');
   });
 }
 
@@ -929,26 +1103,39 @@ function getPriorityLabel(value: AutomationTaskPriority) {
   return priorityOptions.find((item) => item.value === value)?.label ?? value;
 }
 
-function getPriorityType(value: AutomationTaskPriority) {
-  if (value === 'urgent') return 'danger';
-  if (value === 'high') return 'warning';
-  if (value === 'medium') return 'primary';
-  return 'info';
+function getPriorityTone(value: AutomationTaskPriority) {
+  if (value === 'urgent') return 'red';
+  if (value === 'high') return 'orange';
+  if (value === 'medium') return 'blue';
+  return 'neutral';
 }
 
-function getStatusType(value: AutomationTaskStatus) {
-  if (value === 'success') return 'success';
-  if (value === 'failed' || value === 'need_review') return 'danger';
-  if (value === 'waiting_manual_verify' || value === 'running') return 'warning';
-  if (value === 'cancelled' || value === 'skipped') return 'info';
-  return 'primary';
+function getStatusTone(value: AutomationTaskStatus) {
+  if (value === 'success') return 'green';
+  if (value === 'failed' || value === 'need_review') return 'red';
+  if (value === 'waiting_manual_verify' || value === 'running') return 'orange';
+  if (value === 'cancelled' || value === 'skipped') return 'neutral';
+  return 'blue';
 }
 
-function getLogType(value: string) {
-  if (value === 'success') return 'success';
-  if (value === 'error') return 'danger';
-  if (value === 'warning') return 'warning';
-  return 'info';
+function getLogTone(value: string) {
+  if (value === 'success') return 'green';
+  if (value === 'error') return 'red';
+  if (value === 'warning') return 'orange';
+  return 'neutral';
+}
+
+function getAutomationPriorityValue(task: AppleAutomationTask) {
+  if (task.status === 'failed' || task.status === 'need_review') return 0;
+  if (task.manualRequired || task.status === 'waiting_manual_verify') return 1;
+  if (task.priority === 'urgent') return 2;
+  if (task.priority === 'high') return 3;
+  return getTaskTimeValue(task);
+}
+
+function getTaskTimeValue(task: AppleAutomationTask) {
+  const time = new Date(task.createdAt).getTime();
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
 }
 
 function canRun(task: AppleAutomationTask) {
@@ -963,28 +1150,3 @@ function isFinalStatus(value: AutomationTaskStatus) {
   return value === 'success' || value === 'cancelled' || value === 'skipped';
 }
 </script>
-
-<style scoped>
-.section-title {
-  margin: 18px 0 10px;
-  color: var(--color-text);
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.json-preview {
-  min-height: 86px;
-  max-height: 220px;
-  margin: 0;
-  overflow: auto;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: #f8fafc;
-  color: var(--color-text);
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-</style>

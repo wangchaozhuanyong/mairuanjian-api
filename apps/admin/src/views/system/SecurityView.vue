@@ -1,63 +1,63 @@
 <template>
   <PageScaffold
-    title="安全中心"
+    :title="activeTabMeta.title"
     group="系统管理"
     phase="Phase 10"
-    description="集中管理登录日志、在线会话、密码策略、MFA、IP 白名单和敏感字段审批。"
+    :description="activeTabMeta.description"
   >
     <template #actions>
-      <el-button @click="refreshCurrentTab">刷新</el-button>
-      <el-button v-if="activeTab === 'ip'" type="primary" @click="openIpDialog()"
-        >新增 IP 规则</el-button
-      >
-      <el-button v-if="activeTab === 'approvals'" type="primary" @click="openApprovalDialog">
+      <AppButton @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton v-if="activeTab === 'ip'" variant="primary" @click="openIpDialog()">
+        新增 IP 规则
+      </AppButton>
+      <AppButton v-if="activeTab === 'approvals'" variant="primary" @click="openApprovalDialog">
         新增审批申请
-      </el-button>
+      </AppButton>
     </template>
 
-    <div class="metric-grid metric-grid--five">
-      <MetricCard
-        label="失败登录"
-        :value="overview?.failedLoginCount ?? '-'"
-        hint="需要关注暴力尝试"
-        tone="red"
-      />
-      <MetricCard
-        label="异常登录"
-        :value="overview?.abnormalLoginCount ?? '-'"
-        hint="由安全规则识别"
-        tone="orange"
-      />
-      <MetricCard
-        label="在线会话"
-        :value="overview?.activeSessionCount ?? '-'"
-        hint="未过期且未下线"
-        tone="blue"
-      />
-      <MetricCard
-        label="待审批"
-        :value="overview?.pendingApprovalCount ?? '-'"
-        hint="敏感字段访问"
-        tone="purple"
-      />
-      <MetricCard
-        label="白名单"
-        :value="overview?.enabledWhitelistCount ?? '-'"
-        hint="启用中的规则"
-        tone="green"
-      />
-    </div>
+    <section class="content-panel system-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>{{ activeTabMeta.title }}</h3>
+          <p>{{ activeTabMeta.description }}</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
+          <StatusChip :tone="(overview?.failedLoginCount ?? 0) > 0 ? 'red' : 'green'" dot>
+            {{
+              (overview?.failedLoginCount ?? 0) > 0
+                ? `失败登录 ${overview?.failedLoginCount}`
+                : '登录正常'
+            }}
+          </StatusChip>
+          <StatusChip :tone="(overview?.abnormalLoginCount ?? 0) > 0 ? 'orange' : 'green'">
+            异常 {{ overview?.abnormalLoginCount ?? '-' }}
+          </StatusChip>
+          <StatusChip tone="blue">在线 {{ overview?.activeSessionCount ?? '-' }}</StatusChip>
+          <StatusChip :tone="(overview?.pendingApprovalCount ?? 0) > 0 ? 'orange' : 'green'" dot>
+            {{
+              (overview?.pendingApprovalCount ?? 0) > 0
+                ? `待审批 ${overview?.pendingApprovalCount ?? 0}`
+                : '审批正常'
+            }}
+          </StatusChip>
+          <StatusChip tone="green">白名单 {{ overview?.enabledWhitelistCount ?? '-' }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
-      <el-tabs v-model="activeTab" @tab-change="refreshCurrentTab">
+      <el-tabs
+        v-model="activeTab"
+        class="system-tabs security-tabs"
+        @tab-change="refreshCurrentTab"
+      >
         <el-tab-pane label="总览" name="overview">
-          <el-table :data="overview?.recentLoginLogs ?? []" row-key="id">
+          <el-table class="desktop-data-table" :data="overview?.recentLoginLogs ?? []" row-key="id">
             <el-table-column label="账号" min-width="150" prop="username" />
             <el-table-column label="结果" width="110">
               <template #default="{ row }">
-                <el-tag :type="getLoginStatusType(row.status)" size="small" effect="light">
+                <StatusChip :tone="getLoginStatusTone(row.status)" dot>
                   {{ getLoginStatusLabel(row.status) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column label="IP" min-width="140" prop="ip" />
@@ -66,6 +66,35 @@
               <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </el-table-column>
           </el-table>
+          <div v-if="overview?.recentLoginLogs?.length" class="mobile-record-list">
+            <article
+              v-for="log in overview.recentLoginLogs"
+              :key="log.id"
+              class="mobile-record-card"
+            >
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.username }}</strong>
+                  <span>{{ log.ip }} · {{ formatDate(log.createdAt) }}</span>
+                </div>
+                <StatusChip :tone="getLoginStatusTone(log.status)" dot>
+                  {{ getLoginStatusLabel(log.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>失败原因</span>
+                  <strong>{{ log.failureReason ?? '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无最近登录</strong>
+              <span>登录记录生成后会在这里显示最近安全事件。</span>
+            </div>
+          </div>
         </el-tab-pane>
 
         <el-tab-pane label="登录日志" name="loginLogs">
@@ -106,12 +135,21 @@
 
           <el-table
             v-loading="loginLoading"
+            class="desktop-data-table"
             :data="loginLogs"
             :size="loginTableSize"
             row-key="id"
-            empty-text="暂无登录日志"
             @sort-change="handleLoginSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无登录日志</strong>
+                <span>可以清空筛选后重新查看登录成功、失败和异常记录。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearLoginFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isLoginColumnVisible('username')"
               label="账号"
@@ -130,9 +168,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="getLoginStatusType(row.status)" size="small" effect="light">
+                <StatusChip :tone="getLoginStatusTone(row.status)" dot>
                   {{ getLoginStatusLabel(row.status) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -143,9 +181,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="row.abnormal ? 'danger' : 'info'" size="small" effect="light">
+                <StatusChip :tone="row.abnormal ? 'red' : 'neutral'" dot>
                   {{ row.abnormal ? '是' : '否' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -173,6 +211,48 @@
               <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </el-table-column>
           </el-table>
+          <div v-if="loginLogs.length" class="mobile-record-list">
+            <article v-for="log in loginLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.username }}</strong>
+                  <span>{{ log.user?.displayName ?? '未关联用户' }} · {{ log.ip }}</span>
+                </div>
+                <StatusChip :tone="getLoginStatusTone(log.status)" dot>
+                  {{ getLoginStatusLabel(log.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>异常</span>
+                  <strong>{{ log.abnormal ? '是' : '否' }}</strong>
+                </div>
+                <div>
+                  <span>时间</span>
+                  <strong>{{ formatDate(log.createdAt) }}</strong>
+                </div>
+                <div>
+                  <span>IP</span>
+                  <strong>{{ log.ip }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>User-Agent</span>
+                  <strong>{{ log.userAgent ?? '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无登录日志</strong>
+              <span>可以清空筛选后重新查看登录记录。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearLoginFilters">清空筛选</AppButton>
+              </div>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="loginQuery.page"
             v-model:page-size="loginQuery.pageSize"
@@ -206,12 +286,21 @@
 
           <el-table
             v-loading="sessionLoading"
+            class="desktop-data-table"
             :data="sessions"
             :size="sessionTableSize"
             row-key="id"
-            empty-text="暂无在线会话"
             @sort-change="handleSessionSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无在线会话</strong>
+                <span>当前筛选下没有在线会话，可以清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearSessionFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column v-if="isSessionColumnVisible('user')" label="用户" min-width="170">
               <template #default="{ row }"
                 >{{ row.user.displayName }} / {{ row.user.username }}</template
@@ -259,24 +348,76 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="row.revokedAt ? 'info' : 'success'" size="small" effect="light">
+                <StatusChip :tone="row.revokedAt ? 'neutral' : 'green'" dot>
                   {{ row.revokedAt ? '已下线' : '在线' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  text
-                  type="danger"
+                <AppButton
+                  size="small"
+                  variant="danger"
                   :disabled="Boolean(row.revokedAt)"
                   @click="revoke(row.id)"
                 >
                   下线
-                </el-button>
+                </AppButton>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="sessions.length" class="mobile-record-list">
+            <article v-for="session in sessions" :key="session.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ session.user.displayName }}</strong>
+                  <span>{{ session.user.username }} · {{ session.ip }}</span>
+                </div>
+                <StatusChip :tone="session.revokedAt ? 'neutral' : 'green'" dot>
+                  {{ session.revokedAt ? '已下线' : '在线' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>最近活跃</span>
+                  <strong>{{ formatDate(session.lastActiveAt) }}</strong>
+                </div>
+                <div>
+                  <span>过期时间</span>
+                  <strong>{{ formatDate(session.expiresAt) }}</strong>
+                </div>
+                <div>
+                  <span>IP</span>
+                  <strong>{{ session.ip }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>User-Agent</span>
+                  <strong>{{ session.userAgent }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton
+                  size="small"
+                  variant="danger"
+                  :disabled="Boolean(session.revokedAt)"
+                  @click="revoke(session.id)"
+                >
+                  下线
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无在线会话</strong>
+              <span>可以清空筛选后重新查看当前会话。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearSessionFilters">清空筛选</AppButton>
+              </div>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="sessionQuery.page"
             v-model:page-size="sessionQuery.pageSize"
@@ -308,7 +449,7 @@
                 <el-form-item label="失败次数">
                   <el-input-number v-model="passwordPolicy.maxFailedAttempts" :min="1" :max="20" />
                 </el-form-item>
-                <el-button type="primary" @click="savePasswordPolicy">保存密码策略</el-button>
+                <AppButton variant="primary" @click="savePasswordPolicy">保存密码策略</AppButton>
               </el-form>
             </div>
             <div class="settings-panel">
@@ -323,20 +464,16 @@
                 <el-form-item label="签发方">
                   <el-input v-model="mfaSettings.issuer" />
                 </el-form-item>
-                <el-button type="primary" @click="saveMfaSettings">保存 MFA 设置</el-button>
+                <AppButton variant="primary" @click="saveMfaSettings">保存 MFA 设置</AppButton>
               </el-form>
 
-              <el-divider />
+              <h3 class="section-title">我的 MFA</h3>
               <div class="mfa-account">
                 <div class="mfa-account__header">
-                  <h4>我的 MFA</h4>
-                  <el-tag
-                    :type="myMfaStatus?.enabled ? 'success' : 'info'"
-                    size="small"
-                    effect="light"
-                  >
+                  <h4>账号绑定状态</h4>
+                  <StatusChip :tone="myMfaStatus?.enabled ? 'green' : 'neutral'" dot>
                     {{ myMfaStatus?.enabled ? '已启用' : '未启用' }}
-                  </el-tag>
+                  </StatusChip>
                 </div>
                 <div class="mfa-account__meta">
                   <span>恢复码：{{ myMfaStatus?.recoveryCodeCount ?? 0 }} 个</span>
@@ -366,47 +503,48 @@
                     <el-input v-model.trim="mfaDisableReason" placeholder="可选" />
                   </el-form-item>
                   <div class="mfa-actions">
-                    <el-button :loading="mfaActionLoading" @click="setupMyMfa">
+                    <AppButton :loading="mfaActionLoading" @click="setupMyMfa">
                       生成绑定密钥
-                    </el-button>
-                    <el-button
+                    </AppButton>
+                    <AppButton
                       v-if="mfaSetup"
-                      type="primary"
+                      variant="primary"
                       :loading="mfaActionLoading"
                       @click="enableMyMfa"
                     >
                       启用 MFA
-                    </el-button>
-                    <el-button
+                    </AppButton>
+                    <AppButton
                       v-if="myMfaStatus?.enabled"
                       :loading="mfaActionLoading"
                       @click="regenerateMfaRecoveryCodes"
                     >
                       重新生成恢复码
-                    </el-button>
-                    <el-button
+                    </AppButton>
+                    <AppButton
                       v-if="myMfaStatus?.enabled"
-                      type="danger"
+                      variant="danger"
                       :loading="mfaActionLoading"
                       @click="disableMyMfa"
                     >
                       停用 MFA
-                    </el-button>
+                    </AppButton>
                   </div>
                 </el-form>
 
-                <el-alert
+                <div
                   v-if="mfaRecoveryCodes.length"
-                  type="warning"
-                  show-icon
-                  :closable="false"
-                  class="mfa-recovery-alert"
+                  class="apple-core-alert apple-core-alert--orange mfa-recovery-alert"
+                  role="alert"
                 >
-                  <template #title>恢复码只显示一次</template>
-                  <div class="mfa-recovery-grid">
-                    <code v-for="code in mfaRecoveryCodes" :key="code">{{ code }}</code>
+                  <StatusChip tone="orange">恢复码</StatusChip>
+                  <div>
+                    <strong>恢复码只显示一次</strong>
+                    <div class="mfa-recovery-grid">
+                      <code v-for="code in mfaRecoveryCodes" :key="code">{{ code }}</code>
+                    </div>
                   </div>
-                </el-alert>
+                </div>
               </div>
             </div>
           </div>
@@ -454,12 +592,22 @@
 
           <el-table
             v-loading="ipLoading"
+            class="desktop-data-table"
             :data="ipWhitelists"
             :size="ipTableSize"
             row-key="id"
-            empty-text="暂无 IP 白名单"
             @sort-change="handleIpSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无 IP 白名单</strong>
+                <span>可以新增 IP 规则，或清空筛选后查看已有配置。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearIpFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openIpDialog()">新增 IP 规则</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isIpColumnVisible('ipOrCidr')"
               label="IP/CIDR"
@@ -485,9 +633,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="light">
+                <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
                   {{ row.enabled ? '启用' : '停用' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -508,11 +656,48 @@
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="openIpDialog(row)">编辑</el-button>
-                <el-button text type="danger" @click="removeIp(row.id)">删除</el-button>
+                <AppButton size="small" variant="ghost" @click="openIpDialog(row)">编辑</AppButton>
+                <AppButton size="small" variant="danger" @click="removeIp(row.id)">删除</AppButton>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="ipWhitelists.length" class="mobile-record-list">
+            <article v-for="item in ipWhitelists" :key="item.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ item.ipOrCidr }}</strong>
+                  <span>{{ getIpScopeLabel(item.scope) }} · {{ formatDate(item.updatedAt) }}</span>
+                </div>
+                <StatusChip :tone="item.enabled ? 'green' : 'neutral'" dot>
+                  {{ item.enabled ? '启用' : '停用' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>备注</span>
+                  <strong>{{ item.remark ?? '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="ghost" @click="openIpDialog(item)">
+                  编辑
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="removeIp(item.id)">
+                  删除
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无 IP 白名单</strong>
+              <span>可以新增 IP 规则，或清空筛选后重新查看。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearIpFilters">清空筛选</AppButton>
+                <AppButton variant="primary" @click="openIpDialog()">新增 IP 规则</AppButton>
+              </div>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="ipQuery.page"
             v-model:page-size="ipQuery.pageSize"
@@ -557,12 +742,22 @@
 
           <el-table
             v-loading="approvalLoading"
+            class="desktop-data-table"
             :data="approvals"
             :size="approvalTableSize"
             row-key="id"
-            empty-text="暂无敏感审批"
             @sort-change="handleApprovalSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无敏感审批</strong>
+                <span>可以新增审批申请，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearApprovalFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openApprovalDialog">新增审批申请</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isApprovalColumnVisible('requester')"
               label="申请人"
@@ -605,9 +800,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="getApprovalStatusType(row.status)" size="small" effect="light">
+                <StatusChip :tone="getApprovalStatusTone(row.status)" dot>
                   {{ getApprovalStatusLabel(row.status) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -621,25 +816,86 @@
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  text
-                  type="success"
+                <AppButton
+                  size="small"
+                  variant="success"
                   :disabled="row.status !== 'pending'"
                   @click="approve(row.id)"
                 >
                   批准
-                </el-button>
-                <el-button
-                  text
-                  type="danger"
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="danger"
                   :disabled="row.status !== 'pending'"
                   @click="reject(row.id)"
                 >
                   拒绝
-                </el-button>
+                </AppButton>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="approvals.length" class="mobile-record-list">
+            <article v-for="approval in approvals" :key="approval.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ approval.requester.displayName }}</strong>
+                  <span>{{ approval.module }} / {{ approval.fieldName }}</span>
+                </div>
+                <StatusChip :tone="getApprovalStatusTone(approval.status)" dot>
+                  {{ getApprovalStatusLabel(approval.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>对象</span>
+                  <strong>{{ approval.objectType }} / {{ approval.objectId ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>申请时间</span>
+                  <strong>{{ formatDate(approval.createdAt) }}</strong>
+                </div>
+                <div>
+                  <span>字段</span>
+                  <strong>{{ approval.fieldName }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>原因</span>
+                  <strong>{{ approval.reason }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton
+                  size="small"
+                  variant="success"
+                  :disabled="approval.status !== 'pending'"
+                  @click="approve(approval.id)"
+                >
+                  批准
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="danger"
+                  :disabled="approval.status !== 'pending'"
+                  @click="reject(approval.id)"
+                >
+                  拒绝
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无敏感审批</strong>
+              <span>可以新增审批申请，或清空筛选后重新查看。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearApprovalFilters">清空筛选</AppButton>
+                <AppButton variant="primary" @click="openApprovalDialog">新增审批申请</AppButton>
+              </div>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="approvalQuery.page"
             v-model:page-size="approvalQuery.pageSize"
@@ -684,12 +940,21 @@
 
           <el-table
             v-loading="accessLogLoading"
+            class="desktop-data-table"
             :data="accessLogs"
             :size="accessLogTableSize"
             row-key="id"
-            empty-text="暂无敏感查看日志"
             @sort-change="handleAccessLogSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无敏感查看日志</strong>
+                <span>当前筛选下没有敏感字段查看记录。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearAccessLogFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column v-if="isAccessLogColumnVisible('user')" label="用户" min-width="150">
               <template #default="{ row }">{{ row.user?.displayName ?? '-' }}</template>
             </el-table-column>
@@ -747,6 +1012,48 @@
               <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </el-table-column>
           </el-table>
+          <div v-if="accessLogs.length" class="mobile-record-list">
+            <article v-for="log in accessLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.user?.displayName ?? '-' }}</strong>
+                  <span>{{ log.module }} / {{ log.fieldName }}</span>
+                </div>
+                <StatusChip :tone="log.approved ? 'green' : 'orange'" dot>
+                  {{ log.approved ? '已审批' : '未审批' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>对象</span>
+                  <strong>{{ log.objectType }} / {{ log.objectId ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>IP</span>
+                  <strong>{{ log.ip ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>时间</span>
+                  <strong>{{ formatDate(log.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>原因</span>
+                  <strong>{{ log.accessReason }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无敏感查看日志</strong>
+              <span>可以清空筛选后重新查看敏感字段访问记录。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearAccessLogFilters">清空筛选</AppButton>
+              </div>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="accessLogQuery.page"
             v-model:page-size="accessLogQuery.pageSize"
@@ -760,7 +1067,7 @@
     <el-dialog
       v-model="ipDialogVisible"
       :title="editingIp?.id ? '编辑 IP 规则' : '新增 IP 规则'"
-      width="520px"
+      width="min(520px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
         <el-form-item label="IP/CIDR" required><el-input v-model="ipForm.ipOrCidr" /></el-form-item>
@@ -777,12 +1084,16 @@
         /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="ipDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingIp" @click="saveIp">保存</el-button>
+        <AppButton @click="ipDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingIp" @click="saveIp">保存</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="approvalDialogVisible" title="新增敏感字段审批申请" width="560px">
+    <el-dialog
+      v-model="approvalDialogVisible"
+      title="新增敏感字段审批申请"
+      width="min(560px, calc(100vw - 24px))"
+    >
       <el-form label-width="110px">
         <el-form-item label="模块" required
           ><el-input v-model="approvalForm.module"
@@ -799,8 +1110,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="approvalDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingApproval" @click="createApproval">提交</el-button>
+        <AppButton @click="approvalDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingApproval" @click="createApproval">
+          提交
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -808,11 +1121,13 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { securityApi, userTableViewsApi } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   ActiveSession,
@@ -1060,11 +1375,81 @@ const accessLogFilterChips = computed(() => {
   }
   return chips;
 });
+const activeTabMeta = computed(() => {
+  const metaMap: Record<
+    typeof activeTab.value,
+    {
+      title: string;
+      description: string;
+      badge: string;
+      tone: 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+    }
+  > = {
+    overview: {
+      title: '安全中心',
+      description: '集中管理登录异常、在线会话、MFA、IP 白名单、敏感字段审批和访问日志。',
+      badge: '总览',
+      tone: 'blue'
+    },
+    loginLogs: {
+      title: '登录日志',
+      description: '查看登录成功、失败、拦截、异常 IP、设备和时间线记录。',
+      badge: '登录',
+      tone: 'orange'
+    },
+    sessions: {
+      title: '在线会话',
+      description: '查看当前在线用户、设备、IP 和过期时间，并支持强制下线。',
+      badge: '会话',
+      tone: 'green'
+    },
+    settings: {
+      title: 'MFA 与密码策略',
+      description: '配置密码复杂度、失败限制、MFA 策略和当前账号的 MFA 状态。',
+      badge: 'MFA',
+      tone: 'purple'
+    },
+    ip: {
+      title: 'IP 白名单',
+      description: '配置后台、API 和自动化访问范围的 IP/CIDR 白名单规则。',
+      badge: '白名单',
+      tone: 'cyan'
+    },
+    approvals: {
+      title: '敏感字段访问审批',
+      description: '审批查看密码、密保、完整兑换码和平台密钥等敏感字段的申请。',
+      badge: '审批',
+      tone: 'orange'
+    },
+    accessLogs: {
+      title: '敏感字段访问日志',
+      description: '追踪敏感字段查看、复制、导出时的用户、原因、审批和 IP 信息。',
+      badge: '审计',
+      tone: 'red'
+    }
+  };
+
+  return metaMap[activeTab.value] ?? metaMap.overview;
+});
 
 onMounted(() => {
   void loadOverview();
   void refreshCurrentTab();
 });
+
+watch(
+  () => route.path,
+  async () => {
+    const nextTab = getInitialTab();
+
+    if (activeTab.value === nextTab) {
+      return;
+    }
+
+    activeTab.value = nextTab;
+    await refreshCurrentTab();
+  }
+);
 
 async function loadOverview() {
   overview.value = await securityApi.overview();
@@ -1307,7 +1692,7 @@ function removeLoginFilter(key: string) {
   if (key === 'abnormal') loginQuery.abnormal = '';
 }
 
-function removeSessionFilter(_key: string) {
+function removeSessionFilter() {
   // 在线会话当前只使用内置状态和搜索筛选。
 }
 
@@ -1921,10 +2306,10 @@ function getLoginStatusLabel(status: string) {
   return { success: '成功', failed: '失败', blocked: '拦截' }[status] ?? status;
 }
 
-function getLoginStatusType(status: string) {
-  if (status === 'success') return 'success';
-  if (status === 'blocked') return 'warning';
-  return 'danger';
+function getLoginStatusTone(status: string) {
+  if (status === 'success') return 'green';
+  if (status === 'blocked') return 'orange';
+  return 'red';
 }
 
 function getIpScopeLabel(scope: string) {
@@ -1985,11 +2370,11 @@ function getApprovalStatusLabel(status: string) {
   );
 }
 
-function getApprovalStatusType(status: string) {
-  if (status === 'approved') return 'success';
-  if (status === 'rejected') return 'danger';
-  if (status === 'expired') return 'info';
-  return 'warning';
+function getApprovalStatusTone(status: string) {
+  if (status === 'approved') return 'green';
+  if (status === 'rejected') return 'red';
+  if (status === 'expired') return 'neutral';
+  return 'orange';
 }
 
 function formatDate(value?: string | null) {
@@ -1997,82 +2382,7 @@ function formatDate(value?: string | null) {
 }
 </script>
 
-<script lang="ts">
-import { defineComponent } from 'vue';
-
-export default defineComponent({
-  components: {
-    PaginationBar: {
-      props: {
-        page: { type: Number, required: true },
-        pageSize: { type: Number, required: true },
-        total: { type: Number, required: true }
-      },
-      emits: ['update:page', 'update:pageSize', 'change'],
-      template: `
-        <div class="pagination-row">
-          <el-pagination
-            :current-page="page"
-            :page-size="pageSize"
-            :total="total"
-            layout="total, sizes, prev, pager, next"
-            @current-change="$emit('update:page', $event); $emit('change')"
-            @size-change="$emit('update:pageSize', $event); $emit('change')"
-          />
-        </div>
-      `
-    }
-  }
-});
-</script>
-
 <style scoped>
-.content-panel {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--surface-color);
-}
-
-.toolbar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-.toolbar-search {
-  width: min(320px, 100%);
-}
-
-.toolbar-select {
-  width: 140px;
-}
-
-.pagination-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-
-.settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.settings-panel {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-}
-
-.settings-panel h3 {
-  margin: 0 0 16px;
-  font-size: 16px;
-}
-
 .mfa-account {
   display: grid;
   gap: 14px;
@@ -2118,25 +2428,65 @@ export default defineComponent({
 
 .mfa-recovery-grid code {
   padding: 6px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--surface-muted);
-  color: var(--text-primary);
+  border: 1px solid var(--v3-border);
+  border-radius: 10px;
+  background: var(--v3-surface-2);
+  color: var(--v3-text);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 900px) {
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
+.system-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
 
+.system-compact-list-panel .inline-actions {
+  max-width: min(680px, 100%);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
   .mfa-actions {
     padding-left: 0;
   }
 
   .mfa-recovery-grid {
     grid-template-columns: 1fr;
+  }
+
+  .system-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__nav-wrap),
+  .system-compact-list-panel :deep(.el-tabs__nav-scroll) {
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__nav) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    transform: none !important;
+    white-space: normal;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__item) {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 10px;
+    line-height: 32px;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__active-bar),
+  .system-compact-list-panel :deep(.el-tabs__nav-next),
+  .system-compact-list-panel :deep(.el-tabs__nav-prev) {
+    display: none;
   }
 }
 </style>

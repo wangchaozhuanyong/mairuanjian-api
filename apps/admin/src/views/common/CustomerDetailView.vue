@@ -6,26 +6,28 @@
     description="聚合客户基础资料、来源平台、Apple ID 订单、开通记录和续费任务。"
   >
     <template #actions>
-      <el-tag :type="customer?.status === 'active' ? 'success' : 'info'" effect="light">
+      <StatusChip :tone="customer?.status === 'active' ? 'green' : 'neutral'" dot>
         {{ customer ? getCustomerStatusLabel(customer.status) : '待选择客户' }}
-      </el-tag>
-      <el-button @click="goBack">返回客户列表</el-button>
-      <el-button :disabled="!customerId" :loading="loading" @click="loadDetail">刷新</el-button>
+      </StatusChip>
+      <AppButton @click="goBack">返回客户列表</AppButton>
+      <AppButton :disabled="!customerId" :loading="loading" @click="loadDetail">刷新</AppButton>
     </template>
 
     <section v-if="!customerId" class="content-panel">
-      <el-empty description="请先从客户管理列表进入详情页">
-        <el-button type="primary" @click="goBack">去选择客户</el-button>
-      </el-empty>
+      <div class="apple-core-empty-state">
+        <strong>请先选择客户</strong>
+        <span>从客户管理列表进入详情页后，可以查看客户资料、订单、开通记录和续费任务。</span>
+        <div class="apple-core-empty-state__actions">
+          <AppButton variant="primary" @click="goBack">去选择客户</AppButton>
+        </div>
+      </div>
     </section>
 
     <section v-else-if="loadError" class="content-panel">
-      <el-result icon="error" title="加载失败" :sub-title="loadError">
-        <template #extra>
-          <el-button type="primary" @click="loadDetail">重新加载</el-button>
-          <el-button @click="goBack">返回客户列表</el-button>
-        </template>
-      </el-result>
+      <AppState type="error" title="加载失败" :description="loadError">
+        <AppButton variant="primary" @click="loadDetail">重新加载</AppButton>
+        <AppButton @click="goBack">返回客户列表</AppButton>
+      </AppState>
     </section>
 
     <section v-else-if="loading && !customer" class="content-panel">
@@ -33,22 +35,30 @@
     </section>
 
     <template v-else-if="customer">
-      <div class="metric-grid metric-grid--four">
-        <MetricCard label="Apple ID 订单" :value="orderTotal" hint="最近订单统计" tone="blue" />
-        <MetricCard
-          label="开通记录"
-          :value="activationTotal"
-          hint="当前客户关联业务"
-          tone="green"
-        />
-        <MetricCard label="续费任务" :value="taskTotal" hint="待办与历史任务" tone="orange" />
-        <MetricCard
-          label="客户状态"
-          :value="getCustomerStatusLabel(customer.status)"
-          hint="客户基础资料状态"
-          :tone="customer.status === 'active' ? 'purple' : 'red'"
-        />
-      </div>
+      <section class="content-panel" aria-label="客户详情概览">
+        <div class="detail-note-grid">
+          <div class="detail-note-item">
+            <span>Apple ID 订单</span>
+            <strong>{{ orderTotal }}</strong>
+            <span>最近订单统计</span>
+          </div>
+          <div class="detail-note-item">
+            <span>开通记录</span>
+            <strong>{{ activationTotal }}</strong>
+            <span>当前客户关联业务</span>
+          </div>
+          <div class="detail-note-item">
+            <span>续费任务</span>
+            <strong>{{ taskTotal }}</strong>
+            <span>待办与历史任务</span>
+          </div>
+          <div class="detail-note-item">
+            <span>客户状态</span>
+            <strong>{{ getCustomerStatusLabel(customer.status) }}</strong>
+            <span>客户基础资料状态</span>
+          </div>
+        </div>
+      </section>
 
       <section class="content-panel">
         <div class="panel-title-row">
@@ -60,12 +70,10 @@
             </p>
           </div>
           <div class="inline-actions">
-            <el-tag type="info" effect="light">{{
-              customer.sourcePlatform?.name ?? '无来源平台'
-            }}</el-tag>
-            <el-tag :type="customer.status === 'active' ? 'success' : 'info'" effect="light">
+            <StatusChip tone="blue">{{ customer.sourcePlatform?.name ?? '无来源平台' }}</StatusChip>
+            <StatusChip :tone="customer.status === 'active' ? 'green' : 'neutral'" dot>
               {{ getCustomerStatusLabel(customer.status) }}
-            </el-tag>
+            </StatusChip>
           </div>
         </div>
 
@@ -96,17 +104,24 @@
           </div>
         </div>
 
-        <el-descriptions class="detail-descriptions" :column="1" border>
-          <el-descriptions-item label="标签">
-            <el-tag v-for="tag in customer.tags" :key="tag" class="tag-gap" size="small">
-              {{ tag }}
-            </el-tag>
-            <span v-if="!customer.tags.length">-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="备注">
-            {{ customer.remark || '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
+        <div class="drawer-section customer-detail-notes">
+          <div class="drawer-section__title">补充资料</div>
+          <div class="detail-note-grid">
+            <div class="detail-note-item">
+              <span>客户标签</span>
+              <div class="detail-chip-row">
+                <StatusChip v-for="tag in customer.tags" :key="tag" class="tag-gap" tone="neutral">
+                  {{ tag }}
+                </StatusChip>
+                <strong v-if="!customer.tags.length">-</strong>
+              </div>
+            </div>
+            <div class="detail-note-item detail-note-item--wide">
+              <span>备注</span>
+              <strong>{{ customer.remark || '-' }}</strong>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section v-loading="relatedLoading" class="content-panel">
@@ -115,12 +130,18 @@
             <h3>关联业务数据</h3>
             <p>展示最近记录，完整处理仍在对应业务模块完成。</p>
           </div>
-          <el-tag type="success" effect="light">真实接口</el-tag>
+          <StatusChip tone="green" dot>真实接口</StatusChip>
         </div>
 
         <el-tabs v-model="activeTab">
           <el-tab-pane :label="`Apple ID 订单 ${orderTotal}`" name="orders">
-            <el-table :data="orders" row-key="id" empty-text="暂无 Apple ID 订单">
+            <el-table class="desktop-data-table" :data="orders" row-key="id">
+              <template #empty>
+                <div class="apple-core-empty-state">
+                  <strong>暂无 Apple ID 订单</strong>
+                  <span>该客户最近没有 Apple ID 订单记录。</span>
+                </div>
+              </template>
               <el-table-column prop="orderNo" label="订单号" min-width="150" />
               <el-table-column label="业务" min-width="160">
                 <template #default="{ row }">{{ row.service?.name ?? '-' }}</template>
@@ -132,17 +153,64 @@
               <el-table-column prop="profitAmount" label="利润" width="100" />
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">
-                  <el-tag size="small" effect="light">{{ row.status }}</el-tag>
+                  <StatusChip tone="blue">{{ row.status }}</StatusChip>
                 </template>
               </el-table-column>
               <el-table-column label="时间" min-width="170">
                 <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
               </el-table-column>
             </el-table>
+            <div
+              v-if="orders.length"
+              class="mobile-record-list"
+              aria-label="客户 Apple ID 订单移动列表"
+            >
+              <article v-for="order in orders" :key="order.id" class="mobile-record-card">
+                <div class="mobile-record-card__head">
+                  <div class="mobile-record-card__title">
+                    <strong>{{ order.orderNo }}</strong>
+                    <span>{{ order.service?.name ?? '-' }}</span>
+                  </div>
+                  <StatusChip tone="blue">{{ order.status }}</StatusChip>
+                </div>
+                <div class="mobile-record-card__stats">
+                  <div>
+                    <span>Apple ID</span>
+                    <strong>{{ order.appleAccount?.appleIdMasked ?? '-' }}</strong>
+                  </div>
+                  <div>
+                    <span>实收</span>
+                    <strong>{{ order.paidAmount }}</strong>
+                  </div>
+                  <div>
+                    <span>利润</span>
+                    <strong>{{ order.profitAmount }}</strong>
+                  </div>
+                </div>
+                <div class="mobile-record-card__meta">
+                  <div>
+                    <span>创建时间</span>
+                    <strong>{{ formatDate(order.createdAt) }}</strong>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else class="mobile-record-list">
+              <div class="apple-core-empty-state">
+                <strong>暂无 Apple ID 订单</strong>
+                <span>该客户最近没有 Apple ID 订单记录。</span>
+              </div>
+            </div>
           </el-tab-pane>
 
           <el-tab-pane :label="`开通记录 ${activationTotal}`" name="activations">
-            <el-table :data="activations" row-key="id" empty-text="暂无开通记录">
+            <el-table class="desktop-data-table" :data="activations" row-key="id">
+              <template #empty>
+                <div class="apple-core-empty-state">
+                  <strong>暂无开通记录</strong>
+                  <span>该客户暂未关联 Apple ID 开通记录。</span>
+                </div>
+              </template>
               <el-table-column label="业务" min-width="160">
                 <template #default="{ row }">{{ row.service?.name ?? '-' }}</template>
               </el-table-column>
@@ -158,40 +226,118 @@
               </el-table-column>
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">
-                  <el-tag size="small" effect="light">{{ row.status }}</el-tag>
+                  <StatusChip tone="blue">{{ row.status }}</StatusChip>
                 </template>
               </el-table-column>
             </el-table>
+            <div
+              v-if="activations.length"
+              class="mobile-record-list"
+              aria-label="客户开通记录移动列表"
+            >
+              <article
+                v-for="activation in activations"
+                :key="activation.id"
+                class="mobile-record-card"
+              >
+                <div class="mobile-record-card__head">
+                  <div class="mobile-record-card__title">
+                    <strong>{{ activation.service?.name ?? '-' }}</strong>
+                    <span>{{ activation.appleAccount?.appleIdMasked ?? '-' }}</span>
+                  </div>
+                  <StatusChip tone="blue">{{ activation.status }}</StatusChip>
+                </div>
+                <div class="mobile-record-card__stats">
+                  <div>
+                    <span>到期时间</span>
+                    <strong>{{ formatDate(activation.expireTime) }}</strong>
+                  </div>
+                  <div>
+                    <span>利润</span>
+                    <strong>{{ activation.profitAmount }}</strong>
+                  </div>
+                  <div>
+                    <span>续费决定</span>
+                    <strong>{{ activation.renewalDecision }}</strong>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else class="mobile-record-list">
+              <div class="apple-core-empty-state">
+                <strong>暂无开通记录</strong>
+                <span>该客户暂未关联 Apple ID 开通记录。</span>
+              </div>
+            </div>
           </el-tab-pane>
 
           <el-tab-pane :label="`续费任务 ${taskTotal}`" name="tasks">
-            <el-table :data="tasks" row-key="id" empty-text="暂无续费任务">
+            <el-table class="desktop-data-table" :data="tasks" row-key="id">
+              <template #empty>
+                <div class="apple-core-empty-state">
+                  <strong>暂无续费任务</strong>
+                  <span>该客户暂未生成续费任务。</span>
+                </div>
+              </template>
               <el-table-column prop="title" label="任务" min-width="220" show-overflow-tooltip />
               <el-table-column label="业务" min-width="150">
                 <template #default="{ row }">{{ row.service?.name ?? '-' }}</template>
               </el-table-column>
               <el-table-column label="优先级" width="100">
                 <template #default="{ row }">
-                  <el-tag size="small" effect="light">{{ row.priority }}</el-tag>
+                  <StatusChip tone="orange">{{ row.priority }}</StatusChip>
                 </template>
               </el-table-column>
               <el-table-column label="状态" width="130">
                 <template #default="{ row }">
-                  <el-tag size="small" effect="light">{{ row.status }}</el-tag>
+                  <StatusChip tone="blue">{{ row.status }}</StatusChip>
                 </template>
               </el-table-column>
               <el-table-column label="截止时间" min-width="170">
                 <template #default="{ row }">{{ formatDate(row.dueAt) }}</template>
               </el-table-column>
             </el-table>
+            <div v-if="tasks.length" class="mobile-record-list" aria-label="客户续费任务移动列表">
+              <article v-for="task in tasks" :key="task.id" class="mobile-record-card">
+                <div class="mobile-record-card__head">
+                  <div class="mobile-record-card__title">
+                    <strong>{{ task.title }}</strong>
+                    <span>{{ task.service?.name ?? '-' }}</span>
+                  </div>
+                  <StatusChip tone="blue">{{ task.status }}</StatusChip>
+                </div>
+                <div class="mobile-record-card__stats">
+                  <div>
+                    <span>优先级</span>
+                    <strong>{{ task.priority }}</strong>
+                  </div>
+                  <div>
+                    <span>截止时间</span>
+                    <strong>{{ formatDate(task.dueAt) }}</strong>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else class="mobile-record-list">
+              <div class="apple-core-empty-state">
+                <strong>暂无续费任务</strong>
+                <span>该客户暂未生成续费任务。</span>
+              </div>
+            </div>
           </el-tab-pane>
 
           <el-tab-pane label="兑换码订单" name="code-orders">
-            <el-empty description="兑换码订单按客户聚合接口待接入" />
+            <div class="apple-core-empty-state">
+              <strong>兑换码订单聚合待接入</strong>
+              <span>后续接入客户维度兑换码订单接口后，将在这里展示订单、发货和售后记录。</span>
+            </div>
           </el-tab-pane>
 
           <el-tab-pane label="客服工单" name="tickets">
-            <el-empty description="客服工单模块为后期增强模块" />
+            <div class="apple-core-empty-state">
+              <strong>客服工单为后期增强模块</strong>
+              <span>当前先保留入口，后续接入工单、附件、处理记录和责任人。</span>
+            </div>
           </el-tab-pane>
         </el-tabs>
       </section>
@@ -209,8 +355,10 @@ import {
   appleRenewalTasksApi,
   customersApi
 } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
+import AppState from '@/components/ui/AppState.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import type { AppleOrder, Customer, RenewalTask, ServiceActivation } from '@/types/system';
 
 const route = useRoute();

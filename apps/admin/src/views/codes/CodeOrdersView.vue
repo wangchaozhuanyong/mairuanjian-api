@@ -5,14 +5,25 @@
     phase="Phase 6"
     description="处理手工订单导入、平台映射识别、锁定未售兑换码和生成半自动发货内容。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="订单数" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="待发货" :value="pendingCount" hint="当前页" tone="orange" />
-      <MetricCard label="已锁码" :value="lockedCount" hint="当前页" tone="green" />
-      <MetricCard label="发货失败" :value="failedCount" hint="当前页" tone="red" />
-    </div>
+    <section class="content-panel code-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>兑换码发货队列</h3>
+          <p>处理平台识别、兑换码锁定、半自动发货和失败重试，防止重复发货和库存误消耗。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 单</StatusChip>
+          <StatusChip :tone="pendingCount > 0 ? 'orange' : 'green'">
+            待发货 {{ pendingCount }}
+          </StatusChip>
+          <StatusChip tone="green">已锁码 {{ lockedCount }}</StatusChip>
+          <StatusChip tone="cyan">已发货 {{ deliveredCount }}</StatusChip>
+          <StatusChip :tone="failedCount > 0 ? 'red' : 'green'" dot>
+            {{ failedCount > 0 ? `失败 ${failedCount}` : '发货稳定' }}
+          </StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.deliveryStatus"
@@ -58,12 +69,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="orders"
         :size="tableSize"
         row-key="id"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无兑换码订单</strong>
+            <span>可以手工导入订单，或清空筛选后重新查看发货队列。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">手工导入订单</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('order')"
@@ -86,7 +108,7 @@
         <el-table-column v-if="isColumnVisible('service')" label="匹配业务" min-width="170">
           <template #default="{ row }">
             <span v-if="row.service">{{ row.service.name }}</span>
-            <el-tag v-else type="warning" size="small">未匹配</el-tag>
+            <StatusChip v-else tone="orange" dot>未匹配</StatusChip>
             <div class="muted-block">面值 {{ row.faceValue || '-' }} × {{ row.quantity }}</div>
           </template>
         </el-table-column>
@@ -104,9 +126,9 @@
         </el-table-column>
         <el-table-column v-if="isColumnVisible('locked')" label="锁码" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.lockedCodeCount ? 'success' : 'info'" size="small">
+            <StatusChip :tone="row.lockedCodeCount ? 'green' : 'neutral'" dot>
               {{ row.lockedCodeCount }}/{{ row.quantity }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -117,9 +139,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getDeliveryStatusType(row.deliveryStatus)" size="small" effect="light">
+            <StatusChip :tone="getDeliveryStatusTone(row.deliveryStatus)" dot>
               {{ getDeliveryStatusLabel(row.deliveryStatus) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -133,35 +155,106 @@
         </el-table-column>
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button text type="warning" @click="matchCode(row)">匹配锁码</el-button>
-            <el-button text @click="openGenerate(row)">生成发货</el-button>
-            <el-button
-              text
-              type="success"
-              :disabled="row.deliveryStatus === 'delivered'"
-              @click="openDeliver(row)"
-            >
-              确认发货
-            </el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton variant="soft" @click="matchCode(row)">匹配锁码</AppButton>
+              <AppButton variant="ghost" @click="openGenerate(row)">生成发货</AppButton>
+              <AppButton
+                variant="success"
+                :disabled="row.deliveryStatus === 'delivered'"
+                @click="openDeliver(row)"
+              >
+                确认发货
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadOrders"
-          @size-change="loadOrders"
-        />
+      <div v-if="orders.length" class="mobile-record-list">
+        <article v-for="order in orders" :key="order.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ order.externalOrderNo }}</strong>
+              <span>{{ order.platform.name }} · {{ order.itemTitle || order.itemId }}</span>
+            </div>
+            <StatusChip :tone="getDeliveryStatusTone(order.deliveryStatus)" dot>
+              {{ getDeliveryStatusLabel(order.deliveryStatus) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>实收</span>
+              <strong>{{ order.paidAmount }}</strong>
+            </div>
+            <div>
+              <span>利润</span>
+              <strong>{{ order.profitAmount }}</strong>
+            </div>
+            <div>
+              <span>锁码</span>
+              <strong>{{ order.lockedCodeCount }}/{{ order.quantity }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>匹配业务</span>
+              <strong>{{ order.service?.name || '未匹配' }}</strong>
+            </div>
+            <div>
+              <span>面值/数量</span>
+              <strong>{{ order.faceValue || '-' }} × {{ order.quantity }}</strong>
+            </div>
+            <div>
+              <span>创建时间</span>
+              <strong>{{ formatDate(order.createdAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(order)">详情</AppButton>
+            <AppButton size="small" variant="soft" @click="matchCode(order)">匹配锁码</AppButton>
+            <AppButton size="small" variant="ghost" @click="openGenerate(order)">
+              生成发货
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="success"
+              :disabled="order.deliveryStatus === 'delivered'"
+              @click="openDeliver(order)"
+            >
+              确认发货
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无兑换码订单</strong>
+          <span>可以手工导入订单，或清空筛选后重新查看发货队列。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">手工导入订单</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadOrders"
+      />
     </section>
 
-    <el-dialog v-model="dialogVisible" title="手工导入兑换码订单" width="760px">
+    <el-dialog
+      v-model="dialogVisible"
+      title="手工导入兑换码订单"
+      width="min(760px, calc(100vw - 24px))"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="form-grid">
           <el-form-item label="平台" prop="platformId">
@@ -225,8 +318,8 @@
         </div>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveOrder">保存</el-button>
+        <AppButton @click="dialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveOrder">保存</AppButton>
       </template>
     </el-dialog>
 
@@ -234,36 +327,41 @@
       v-model="detailVisible"
       :title="`兑换码订单 · ${selectedOrder?.externalOrderNo ?? ''}`"
     >
-      <el-descriptions v-if="selectedOrder" :column="1" border>
-        <el-descriptions-item label="平台">{{ selectedOrder.platform.name }}</el-descriptions-item>
-        <el-descriptions-item label="商品">{{
-          selectedOrder.itemTitle || selectedOrder.itemId
-        }}</el-descriptions-item>
-        <el-descriptions-item label="业务">{{
-          selectedOrder.service?.name || '-'
-        }}</el-descriptions-item>
-        <el-descriptions-item label="面值/数量">
-          {{ selectedOrder.faceValue || '-' }} × {{ selectedOrder.quantity }}
-        </el-descriptions-item>
-        <el-descriptions-item label="锁定兑换码">
-          <el-tag
-            v-for="code in selectedOrder.lockedCodes"
-            :key="code.id"
-            class="tag-gap"
-            size="small"
-          >
-            尾号 {{ code.codeTail }}
-          </el-tag>
-          <span v-if="!selectedOrder.lockedCodes.length">-</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="成本/利润">
-          {{ selectedOrder.costAmount }} / {{ selectedOrder.profitAmount }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div class="drawer-section">
+        <div class="drawer-section__title">订单信息</div>
+        <el-descriptions v-if="selectedOrder" class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="平台">{{
+            selectedOrder.platform.name
+          }}</el-descriptions-item>
+          <el-descriptions-item label="商品">{{
+            selectedOrder.itemTitle || selectedOrder.itemId
+          }}</el-descriptions-item>
+          <el-descriptions-item label="业务">{{
+            selectedOrder.service?.name || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="面值/数量">
+            {{ selectedOrder.faceValue || '-' }} × {{ selectedOrder.quantity }}
+          </el-descriptions-item>
+          <el-descriptions-item label="锁定兑换码">
+            <StatusChip
+              v-for="code in selectedOrder.lockedCodes"
+              :key="code.id"
+              class="tag-gap"
+              tone="purple"
+            >
+              尾号 {{ code.codeTail }}
+            </StatusChip>
+            <span v-if="!selectedOrder.lockedCodes.length">-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="成本/利润">
+            {{ selectedOrder.costAmount }} / {{ selectedOrder.profitAmount }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
 
       <div class="drawer-section">
         <div class="drawer-section__title">发货记录</div>
-        <el-table :data="deliveryLogs" size="small">
+        <el-table class="desktop-data-table" :data="deliveryLogs" size="small">
           <el-table-column label="尾号" width="90">
             <template #default="{ row }">尾号 {{ row.code.codeTail }}</template>
           </el-table-column>
@@ -272,9 +370,9 @@
           </el-table-column>
           <el-table-column label="状态" width="90">
             <template #default="{ row }">
-              <el-tag :type="row.deliveryStatus === 'success' ? 'success' : 'danger'" size="small">
+              <StatusChip :tone="row.deliveryStatus === 'success' ? 'green' : 'red'" dot>
                 {{ row.deliveryStatus === 'success' ? '成功' : '失败' }}
-              </el-tag>
+              </StatusChip>
             </template>
           </el-table-column>
           <el-table-column label="利润" width="90" prop="profit" />
@@ -282,11 +380,46 @@
             <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
           </el-table-column>
         </el-table>
-        <el-empty v-if="!deliveryLogs.length" description="暂无发货记录" :image-size="80" />
+        <div v-if="deliveryLogs.length" class="mobile-record-list" aria-label="发货记录移动列表">
+          <article v-for="log in deliveryLogs" :key="log.id" class="mobile-record-card">
+            <div class="mobile-record-card__head">
+              <div class="mobile-record-card__title">
+                <strong>尾号 {{ log.code.codeTail }}</strong>
+                <span
+                  >{{ getDeliveryMethodLabel(log.deliveryMethod) }} ·
+                  {{ formatDate(log.createdAt) }}</span
+                >
+              </div>
+              <StatusChip :tone="log.deliveryStatus === 'success' ? 'green' : 'red'" dot>
+                {{ log.deliveryStatus === 'success' ? '成功' : '失败' }}
+              </StatusChip>
+            </div>
+            <div class="mobile-record-card__stats">
+              <div>
+                <span>利润</span>
+                <strong>{{ log.profit }}</strong>
+              </div>
+              <div>
+                <span>发货方式</span>
+                <strong>{{ getDeliveryMethodLabel(log.deliveryMethod) }}</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div v-else class="mobile-record-list">
+          <div class="apple-core-empty-state">
+            <strong>暂无发货记录</strong>
+            <span>生成或补发兑换码后会在这里显示发货明细。</span>
+          </div>
+        </div>
       </div>
     </AppDrawer>
 
-    <el-dialog v-model="generateDialogVisible" title="生成发货内容" width="620px">
+    <el-dialog
+      v-model="generateDialogVisible"
+      title="生成发货内容"
+      width="min(620px, calc(100vw - 24px))"
+    >
       <el-form
         ref="generateFormRef"
         :model="generateForm"
@@ -309,26 +442,33 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="generateDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="generating" @click="generateDelivery"> 生成 </el-button>
-        <el-button
-          type="success"
+        <AppButton @click="generateDialogVisible = false">关闭</AppButton>
+        <AppButton variant="primary" :loading="generating" @click="generateDelivery">
+          生成
+        </AppButton>
+        <AppButton
+          variant="success"
           :disabled="!generateForm.content"
           :loading="delivering"
           @click="confirmDeliveryFromGenerated"
         >
           确认发货
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="deliverDialogVisible" title="确认兑换码发货" width="640px">
-      <el-alert
-        title="确认后会把锁定兑换码标记为已发货，并写入发货日志；同一订单不能重复发货。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
+    <el-dialog
+      v-model="deliverDialogVisible"
+      title="确认兑换码发货"
+      width="min(640px, calc(100vw - 24px))"
+    >
+      <div class="apple-core-alert apple-core-alert--orange">
+        <StatusChip tone="orange">防重复</StatusChip>
+        <div>
+          <strong>确认后会把锁定兑换码标记为已发货</strong>
+          <p>系统会写入发货日志；同一订单不能重复发货，提交前请核对发货内容。</p>
+        </div>
+      </div>
       <el-form ref="deliverFormRef" :model="deliverForm" :rules="deliverRules" label-position="top">
         <el-form-item label="订单">
           <el-input :model-value="selectedOrder?.externalOrderNo ?? '-'" disabled />
@@ -351,10 +491,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="deliverDialogVisible = false">取消</el-button>
-        <el-button type="success" :loading="delivering" @click="confirmDelivery">
+        <AppButton @click="deliverDialogVisible = false">取消</AppButton>
+        <AppButton variant="success" :loading="delivering" @click="confirmDelivery">
           确认发货
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -370,9 +510,11 @@ import {
   sourcePlatformsApi,
   userTableViewsApi
 } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   CodeDeliveryLog,
@@ -483,6 +625,9 @@ const lockedCount = computed(
 const failedCount = computed(
   () => orders.value.filter((order) => order.deliveryStatus === 'failed').length
 );
+const deliveredCount = computed(
+  () => orders.value.filter((order) => order.deliveryStatus === 'delivered').length
+);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -509,17 +654,17 @@ function getDeliveryStatusLabel(status: CodePlatformOrder['deliveryStatus']) {
   return labels[status];
 }
 
-function getDeliveryStatusType(status: CodePlatformOrder['deliveryStatus']) {
+function getDeliveryStatusTone(status: CodePlatformOrder['deliveryStatus']) {
   if (status === 'pending') {
-    return 'warning';
+    return 'orange';
   }
   if (status === 'delivered') {
-    return 'success';
+    return 'green';
   }
   if (status === 'failed') {
-    return 'danger';
+    return 'red';
   }
-  return 'info';
+  return 'neutral';
 }
 
 function getDeliveryMethodLabel(method: CodeDeliveryLog['deliveryMethod']) {
@@ -902,3 +1047,21 @@ async function initializePage() {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.code-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.code-compact-list-panel .inline-actions {
+  max-width: min(620px, 100%);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 840px) {
+  .code-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+  }
+}
+</style>

@@ -6,73 +6,77 @@
     description="集中管理备份、恢复、导入、导出、回收站、数据清理、重复合并、数据字典和系统参数。"
   >
     <template #actions>
-      <el-button @click="refreshCurrentTab">刷新</el-button>
-      <el-button v-if="activeTab === 'backups'" type="primary" @click="openBackupDialog"
-        >创建备份</el-button
+      <AppButton variant="soft" @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton v-if="activeTab === 'backups'" variant="primary" @click="openBackupDialog">
+        创建备份
+      </AppButton>
+      <AppButton v-if="activeTab === 'restores'" variant="primary" @click="openRestoreDialog">
+        创建恢复
+      </AppButton>
+      <AppButton v-if="activeTab === 'imports'" variant="primary" @click="openImportDialog">
+        新建导入
+      </AppButton>
+      <AppButton v-if="activeTab === 'exports'" variant="primary" @click="openExportDialog">
+        新建导出
+      </AppButton>
+      <AppButton v-if="activeTab === 'cleanup'" variant="primary" @click="openCleanupDialog">
+        新建清理
+      </AppButton>
+      <AppButton v-if="activeTab === 'duplicates'" variant="primary" @click="openDuplicateDialog">
+        新建合并
+      </AppButton>
+      <AppButton
+        v-if="activeTab === 'dictionaries'"
+        variant="primary"
+        @click="() => openDictionaryDialog()"
       >
-      <el-button v-if="activeTab === 'restores'" type="primary" @click="openRestoreDialog"
-        >创建恢复</el-button
+        新增字典
+      </AppButton>
+      <AppButton
+        v-if="activeTab === 'parameters'"
+        variant="primary"
+        @click="() => openParameterDialog()"
       >
-      <el-button v-if="activeTab === 'imports'" type="primary" @click="openImportDialog"
-        >新建导入</el-button
-      >
-      <el-button v-if="activeTab === 'exports'" type="primary" @click="openExportDialog"
-        >新建导出</el-button
-      >
-      <el-button v-if="activeTab === 'cleanup'" type="primary" @click="openCleanupDialog"
-        >新建清理</el-button
-      >
-      <el-button v-if="activeTab === 'duplicates'" type="primary" @click="openDuplicateDialog"
-        >新建合并</el-button
-      >
-      <el-button v-if="activeTab === 'dictionaries'" type="primary" @click="openDictionaryDialog"
-        >新增字典</el-button
-      >
-      <el-button v-if="activeTab === 'parameters'" type="primary" @click="openParameterDialog"
-        >保存参数</el-button
-      >
+        保存参数
+      </AppButton>
     </template>
 
-    <div class="metric-grid metric-grid--five">
-      <MetricCard
-        label="失败备份"
-        :value="overview?.failedBackupCount ?? '-'"
-        hint="需要人工处理"
-        tone="red"
-      />
-      <MetricCard
-        label="导入队列"
-        :value="overview?.runningImportCount ?? '-'"
-        hint="待处理或运行中"
-        tone="orange"
-      />
-      <MetricCard
-        label="导出队列"
-        :value="overview?.runningExportCount ?? '-'"
-        hint="待处理或运行中"
-        tone="blue"
-      />
-      <MetricCard
-        label="回收站"
-        :value="overview?.recycleBinCount ?? '-'"
-        hint="未恢复记录"
-        tone="purple"
-      />
-      <MetricCard
-        label="数据字典"
-        :value="overview?.dictionaryCount ?? '-'"
-        hint="启用中的字典项"
-        tone="green"
-      />
-    </div>
+    <section class="content-panel system-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>{{ activeTabMeta.title }}</h3>
+          <p>{{ activeTabMeta.description }}</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
+          <StatusChip :tone="(overview?.failedBackupCount ?? 0) > 0 ? 'red' : 'green'" dot>
+            {{
+              (overview?.failedBackupCount ?? 0) > 0
+                ? `失败备份 ${overview?.failedBackupCount}`
+                : '备份正常'
+            }}
+          </StatusChip>
+          <StatusChip tone="orange">导入 {{ overview?.runningImportCount ?? '-' }}</StatusChip>
+          <StatusChip tone="blue">导出 {{ overview?.runningExportCount ?? '-' }}</StatusChip>
+          <StatusChip tone="purple">回收站 {{ overview?.recycleBinCount ?? '-' }}</StatusChip>
+          <StatusChip tone="green">字典 {{ overview?.dictionaryCount ?? '-' }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
-      <el-tabs v-model="activeTab" @tab-change="refreshCurrentTab">
+      <el-tabs
+        v-model="activeTab"
+        class="system-tabs data-center-tabs"
+        @tab-change="refreshCurrentTab"
+      >
         <el-tab-pane label="总览" name="overview">
           <div class="overview-grid">
             <div>
               <h3>最近备份</h3>
-              <el-table :data="overview?.recentBackupJobs ?? []" row-key="id">
+              <el-table
+                class="desktop-data-table"
+                :data="overview?.recentBackupJobs ?? []"
+                row-key="id"
+              >
                 <el-table-column label="类型" width="110">
                   <template #default="{ row }">{{ getBackupTypeLabel(row.jobType) }}</template>
                 </el-table-column>
@@ -84,10 +88,43 @@
                   <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
                 </el-table-column>
               </el-table>
+              <div v-if="overview?.recentBackupJobs.length" class="mobile-record-list">
+                <article
+                  v-for="row in overview.recentBackupJobs"
+                  :key="row.id"
+                  class="mobile-record-card"
+                >
+                  <div class="mobile-record-card__head">
+                    <div class="mobile-record-card__title">
+                      <strong>{{ getBackupTypeLabel(row.jobType) }}</strong>
+                      <span>{{ row.remark || row.storagePath || '暂无备注' }}</span>
+                    </div>
+                    <JobStatusTag :status="row.status" />
+                  </div>
+                  <div class="mobile-record-card__meta">
+                    <div>
+                      <span>创建时间</span>
+                      <strong>{{ formatDate(row.createdAt) }}</strong>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <AppState
+                v-else
+                class="mobile-record-list"
+                type="empty"
+                title="暂无最近备份"
+                description="备份任务执行后会在这里显示最近记录。"
+                compact
+              />
             </div>
             <div>
               <h3>最近导入</h3>
-              <el-table :data="overview?.recentImportJobs ?? []" row-key="id">
+              <el-table
+                class="desktop-data-table"
+                :data="overview?.recentImportJobs ?? []"
+                row-key="id"
+              >
                 <el-table-column label="模块" width="120" prop="module" />
                 <el-table-column label="状态" width="110">
                   <template #default="{ row }"><JobStatusTag :status="row.status" /></template>
@@ -101,10 +138,51 @@
                   <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
                 </el-table-column>
               </el-table>
+              <div v-if="overview?.recentImportJobs.length" class="mobile-record-list">
+                <article
+                  v-for="row in overview.recentImportJobs"
+                  :key="row.id"
+                  class="mobile-record-card"
+                >
+                  <div class="mobile-record-card__head">
+                    <div class="mobile-record-card__title">
+                      <strong>{{ row.module }}</strong>
+                      <span>{{ row.filePath || row.remark || '暂无文件信息' }}</span>
+                    </div>
+                    <JobStatusTag :status="row.status" />
+                  </div>
+                  <div class="mobile-record-card__stats">
+                    <div>
+                      <span>成功</span>
+                      <strong>{{ row.successCount }}</strong>
+                    </div>
+                    <div>
+                      <span>失败</span>
+                      <strong>{{ row.failedCount }}</strong>
+                    </div>
+                    <div>
+                      <span>创建时间</span>
+                      <strong>{{ formatDate(row.createdAt) }}</strong>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <AppState
+                v-else
+                class="mobile-record-list"
+                type="empty"
+                title="暂无最近导入"
+                description="导入任务执行后会在这里显示成功和失败统计。"
+                compact
+              />
             </div>
             <div>
               <h3>最近导出</h3>
-              <el-table :data="overview?.recentExportJobs ?? []" row-key="id">
+              <el-table
+                class="desktop-data-table"
+                :data="overview?.recentExportJobs ?? []"
+                row-key="id"
+              >
                 <el-table-column label="模块" width="120" prop="module" />
                 <el-table-column label="状态" width="110">
                   <template #default="{ row }"><JobStatusTag :status="row.status" /></template>
@@ -116,6 +194,43 @@
                   <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
                 </el-table-column>
               </el-table>
+              <div v-if="overview?.recentExportJobs.length" class="mobile-record-list">
+                <article
+                  v-for="row in overview.recentExportJobs"
+                  :key="row.id"
+                  class="mobile-record-card"
+                >
+                  <div class="mobile-record-card__head">
+                    <div class="mobile-record-card__title">
+                      <strong>{{ row.module }}</strong>
+                      <span>{{ row.filePath || row.fields.join(', ') || '暂无字段信息' }}</span>
+                    </div>
+                    <JobStatusTag :status="row.status" />
+                  </div>
+                  <div class="mobile-record-card__stats">
+                    <div>
+                      <span>敏感字段</span>
+                      <strong>{{ row.containsSensitive ? '是' : '否' }}</strong>
+                    </div>
+                    <div>
+                      <span>字段数</span>
+                      <strong>{{ row.fields.length }}</strong>
+                    </div>
+                    <div>
+                      <span>创建时间</span>
+                      <strong>{{ formatDate(row.createdAt) }}</strong>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <AppState
+                v-else
+                class="mobile-record-list"
+                type="empty"
+                title="暂无最近导出"
+                description="导出任务执行后会在这里显示文件和敏感字段状态。"
+                compact
+              />
             </div>
           </div>
         </el-tab-pane>
@@ -159,12 +274,22 @@
           </TableToolbar>
           <el-table
             v-loading="backupLoading"
+            class="desktop-data-table"
             :data="backups"
             :size="backupTableSize"
             row-key="id"
-            empty-text="暂无备份任务"
             @sort-change="handleBackupSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无备份任务</strong>
+                <span>可以创建备份任务，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearBackupFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openBackupDialog">创建备份</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isBackupColumnVisible('jobType')"
               label="类型"
@@ -214,13 +339,70 @@
             </el-table-column>
             <el-table-column label="操作" width="360" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="executeBackup(row)">执行备份</el-button>
-                <el-button text @click="markBackup(row, 'running')">运行</el-button>
-                <el-button text type="success" @click="markBackup(row, 'success')">成功</el-button>
-                <el-button text type="danger" @click="markBackup(row, 'failed')">失败</el-button>
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton size="small" variant="soft" @click="executeBackup(row)">
+                    执行备份
+                  </AppButton>
+                  <AppButton size="small" variant="ghost" @click="markBackup(row, 'running')">
+                    运行
+                  </AppButton>
+                  <AppButton size="small" variant="success" @click="markBackup(row, 'success')">
+                    成功
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="markBackup(row, 'failed')">
+                    失败
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="backups.length" class="mobile-record-list">
+            <article v-for="row in backups" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ getBackupTypeLabel(row.jobType) }}</strong>
+                  <span>{{ row.storagePath || row.remark || '等待生成备份文件' }}</span>
+                </div>
+                <JobStatusTag :status="row.status" />
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>文件大小</span>
+                  <strong>{{ formatFileSize(row.fileSize) }}</strong>
+                </div>
+                <div>
+                  <span>发起人</span>
+                  <strong>{{ row.createdBy?.displayName ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(row.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="soft" @click="executeBackup(row)">
+                  执行备份
+                </AppButton>
+                <AppButton size="small" variant="ghost" @click="markBackup(row, 'running')">
+                  运行
+                </AppButton>
+                <AppButton size="small" variant="success" @click="markBackup(row, 'success')">
+                  成功
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="markBackup(row, 'failed')">
+                  失败
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!backupLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无备份任务"
+            description="可以创建备份任务，或调整筛选后重新查看。"
+            compact
+          />
           <PaginationBar
             v-model:page="backupQuery.page"
             v-model:page-size="backupQuery.pageSize"
@@ -262,12 +444,22 @@
           </TableToolbar>
           <el-table
             v-loading="restoreLoading"
+            class="desktop-data-table"
             :data="restores"
             :size="restoreTableSize"
             row-key="id"
-            empty-text="暂无恢复任务"
             @sort-change="handleRestoreSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无恢复任务</strong>
+                <span>可以创建恢复任务，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearRestoreFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openRestoreDialog">创建恢复</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isRestoreColumnVisible('restoreScope')"
               label="恢复范围"
@@ -310,17 +502,66 @@
             </el-table-column>
             <el-table-column label="操作" width="320" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="executeRestore(row)">恢复演练</el-button>
-                <el-button text @click="markRestore(row.id, 'running')">运行</el-button>
-                <el-button text type="success" @click="markRestore(row.id, 'success')"
-                  >成功</el-button
-                >
-                <el-button text type="danger" @click="markRestore(row.id, 'failed')"
-                  >失败</el-button
-                >
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton size="small" variant="soft" @click="executeRestore(row)">
+                    恢复演练
+                  </AppButton>
+                  <AppButton size="small" variant="ghost" @click="markRestore(row.id, 'running')">
+                    运行
+                  </AppButton>
+                  <AppButton size="small" variant="success" @click="markRestore(row.id, 'success')">
+                    成功
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="markRestore(row.id, 'failed')">
+                    失败
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="restores.length" class="mobile-record-list">
+            <article v-for="row in restores" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.restoreScope }}</strong>
+                  <span>备份任务：{{ row.backupJob?.id ?? row.backupJobId ?? '-' }}</span>
+                </div>
+                <JobStatusTag :status="row.status" />
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>审批说明</span>
+                  <strong>{{ row.approvalNote || '-' }}</strong>
+                </div>
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(row.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="soft" @click="executeRestore(row)">
+                  恢复演练
+                </AppButton>
+                <AppButton size="small" variant="ghost" @click="markRestore(row.id, 'running')">
+                  运行
+                </AppButton>
+                <AppButton size="small" variant="success" @click="markRestore(row.id, 'success')">
+                  成功
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="markRestore(row.id, 'failed')">
+                  失败
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!restoreLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无恢复任务"
+            description="恢复演练或恢复申请创建后会显示在这里。"
+            compact
+          />
           <PaginationBar
             v-model:page="restoreQuery.page"
             v-model:page-size="restoreQuery.pageSize"
@@ -362,12 +603,22 @@
           </TableToolbar>
           <el-table
             v-loading="importLoading"
+            class="desktop-data-table"
             :data="imports"
             :size="importTableSize"
             row-key="id"
-            empty-text="暂无导入任务"
             @sort-change="handleImportSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无导入任务</strong>
+                <span>可以新建导入任务，或清空筛选后查看历史导入。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearImportFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openImportDialog">新建导入</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isImportColumnVisible('module')"
               label="模块"
@@ -432,23 +683,100 @@
             </el-table-column>
             <el-table-column label="操作" width="210" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  text
-                  type="primary"
-                  :disabled="row.status === 'running'"
-                  @click="executeImport(row)"
-                  >运行</el-button
-                >
-                <el-button text type="success" @click="markImport(row.id, 'success')"
-                  >成功</el-button
-                >
-                <el-button text type="danger" @click="markImport(row.id, 'failed')">失败</el-button>
-                <el-button text :disabled="!row.errorReport" @click="downloadImportErrorReport(row)"
-                  >错误报告</el-button
-                >
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton
+                    size="small"
+                    variant="soft"
+                    :disabled="row.status === 'running'"
+                    @click="executeImport(row)"
+                  >
+                    运行
+                  </AppButton>
+                  <AppButton size="small" variant="success" @click="markImport(row.id, 'success')">
+                    成功
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="markImport(row.id, 'failed')">
+                    失败
+                  </AppButton>
+                  <AppButton
+                    size="small"
+                    variant="ghost"
+                    :disabled="!row.errorReport"
+                    @click="downloadImportErrorReport(row)"
+                  >
+                    错误报告
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="imports.length" class="mobile-record-list">
+            <article v-for="row in imports" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.module }}</strong>
+                  <span>{{ row.filePath || row.remark || '暂无文件信息' }}</span>
+                </div>
+                <JobStatusTag :status="row.status" />
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>总数</span>
+                  <strong>{{ row.totalCount }}</strong>
+                </div>
+                <div>
+                  <span>成功</span>
+                  <strong>{{ row.successCount }}</strong>
+                </div>
+                <div>
+                  <span>失败</span>
+                  <strong>{{ row.failedCount }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(row.createdAt) }}</strong>
+                </div>
+                <div>
+                  <span>错误报告</span>
+                  <strong>{{ row.errorReport || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton
+                  size="small"
+                  variant="soft"
+                  :disabled="row.status === 'running'"
+                  @click="executeImport(row)"
+                >
+                  运行
+                </AppButton>
+                <AppButton size="small" variant="success" @click="markImport(row.id, 'success')">
+                  成功
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="markImport(row.id, 'failed')">
+                  失败
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="ghost"
+                  :disabled="!row.errorReport"
+                  @click="downloadImportErrorReport(row)"
+                >
+                  错误报告
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!importLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无导入任务"
+            description="新建导入任务后可跟踪总数、成功数和失败数。"
+            compact
+          />
           <PaginationBar
             v-model:page="importQuery.page"
             v-model:page-size="importQuery.pageSize"
@@ -504,12 +832,22 @@
           </TableToolbar>
           <el-table
             v-loading="exportLoading"
+            class="desktop-data-table"
             :data="exports"
             :size="exportTableSize"
             row-key="id"
-            empty-text="暂无导出任务"
             @sort-change="handleExportSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无导出任务</strong>
+                <span>可以新建导出任务，或清空筛选后查看历史导出。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearExportFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openExportDialog">新建导出</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isExportColumnVisible('module')"
               label="模块"
@@ -538,13 +876,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag
-                  :type="row.containsSensitive ? 'warning' : 'info'"
-                  size="small"
-                  effect="light"
-                >
+                <StatusChip :tone="row.containsSensitive ? 'orange' : 'neutral'">
                   {{ row.containsSensitive ? '是' : '否' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -567,23 +901,96 @@
             </el-table-column>
             <el-table-column label="操作" width="260" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  text
-                  type="primary"
-                  :disabled="row.status === 'running'"
-                  @click="executeExport(row)"
-                  >运行</el-button
-                >
-                <el-button text type="success" @click="markExport(row.id, 'success')"
-                  >成功</el-button
-                >
-                <el-button text type="danger" @click="markExport(row.id, 'failed')">失败</el-button>
-                <el-button text :disabled="row.status !== 'success'" @click="showDownload(row)"
-                  >下载</el-button
-                >
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton
+                    size="small"
+                    variant="soft"
+                    :disabled="row.status === 'running'"
+                    @click="executeExport(row)"
+                  >
+                    运行
+                  </AppButton>
+                  <AppButton size="small" variant="success" @click="markExport(row.id, 'success')">
+                    成功
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="markExport(row.id, 'failed')">
+                    失败
+                  </AppButton>
+                  <AppButton
+                    size="small"
+                    variant="ghost"
+                    :disabled="row.status !== 'success'"
+                    @click="showDownload(row)"
+                  >
+                    下载
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="exports.length" class="mobile-record-list">
+            <article v-for="row in exports" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.module }}</strong>
+                  <span>{{ row.filePath || row.fields.join(', ') || '暂无字段信息' }}</span>
+                </div>
+                <JobStatusTag :status="row.status" />
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>字段数</span>
+                  <strong>{{ row.fields.length }}</strong>
+                </div>
+                <div>
+                  <span>敏感</span>
+                  <strong>{{ row.containsSensitive ? '是' : '否' }}</strong>
+                </div>
+                <div>
+                  <span>过期</span>
+                  <strong>{{ formatDate(row.downloadExpiresAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(row.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton
+                  size="small"
+                  variant="soft"
+                  :disabled="row.status === 'running'"
+                  @click="executeExport(row)"
+                >
+                  运行
+                </AppButton>
+                <AppButton size="small" variant="success" @click="markExport(row.id, 'success')">
+                  成功
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="markExport(row.id, 'failed')">
+                  失败
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="ghost"
+                  :disabled="row.status !== 'success'"
+                  @click="showDownload(row)"
+                >
+                  下载
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!exportLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无导出任务"
+            description="导出任务创建后可查看字段、敏感标记和下载状态。"
+            compact
+          />
           <PaginationBar
             v-model:page="exportQuery.page"
             v-model:page-size="exportQuery.pageSize"
@@ -633,12 +1040,21 @@
           </TableToolbar>
           <el-table
             v-loading="recycleLoading"
+            class="desktop-data-table"
             :data="recycleRecords"
             :size="recycleTableSize"
             row-key="id"
-            empty-text="暂无回收站记录"
             @sort-change="handleRecycleSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无回收站记录</strong>
+                <span>删除后的可恢复数据会进入这里统一管理。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearRecycleFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isRecycleColumnVisible('objectLabel')"
               label="对象"
@@ -679,9 +1095,9 @@
               width="110"
             >
               <template #default="{ row }">
-                <el-tag :type="row.restoredAt ? 'success' : 'warning'" size="small" effect="light">
+                <StatusChip :tone="row.restoredAt ? 'green' : 'orange'">
                   {{ row.restoredAt ? '已恢复' : '未恢复' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -695,17 +1111,70 @@
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  text
-                  type="primary"
-                  :disabled="Boolean(row.restoredAt)"
-                  @click="restoreRecycle(row.id)"
-                  >恢复</el-button
-                >
-                <el-button text type="danger" @click="purgeRecycle(row.id)">清理</el-button>
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton
+                    size="small"
+                    variant="soft"
+                    :disabled="Boolean(row.restoredAt)"
+                    @click="restoreRecycle(row.id)"
+                  >
+                    恢复
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="purgeRecycle(row.id)">
+                    清理
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="recycleRecords.length" class="mobile-record-list">
+            <article v-for="row in recycleRecords" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.objectLabel }}</strong>
+                  <span>{{ row.module }} · {{ row.objectType }}</span>
+                </div>
+                <StatusChip :tone="row.restoredAt ? 'green' : 'orange'">
+                  {{ row.restoredAt ? '已恢复' : '未恢复' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>删除人</span>
+                  <strong>{{ row.deletedBy?.displayName ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>删除时间</span>
+                  <strong>{{ formatDate(row.deletedAt) }}</strong>
+                </div>
+                <div>
+                  <span>恢复时间</span>
+                  <strong>{{ formatDate(row.restoredAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton
+                  size="small"
+                  variant="soft"
+                  :disabled="Boolean(row.restoredAt)"
+                  @click="restoreRecycle(row.id)"
+                >
+                  恢复
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="purgeRecycle(row.id)">
+                  清理
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!recycleLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无回收站记录"
+            description="删除后的可恢复数据会进入这里统一管理。"
+            compact
+          />
           <PaginationBar
             v-model:page="recycleQuery.page"
             v-model:page-size="recycleQuery.pageSize"
@@ -747,12 +1216,22 @@
           </TableToolbar>
           <el-table
             v-loading="cleanupLoading"
+            class="desktop-data-table"
             :data="cleanupJobs"
             :size="cleanupTableSize"
             row-key="id"
-            empty-text="暂无数据清理任务"
             @sort-change="handleCleanupSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无数据清理任务</strong>
+                <span>可以新建清理任务，或清空筛选后查看历史任务。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearCleanupFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openCleanupDialog">新建清理</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isCleanupColumnVisible('module')"
               label="模块"
@@ -801,18 +1280,64 @@
             </el-table-column>
             <el-table-column label="操作" width="210" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="markCleanup(row.id, 'running')"
-                  >运行</el-button
-                >
-                <el-button text type="success" @click="markCleanup(row.id, 'success')"
-                  >成功</el-button
-                >
-                <el-button text type="danger" @click="markCleanup(row.id, 'failed')"
-                  >失败</el-button
-                >
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton size="small" variant="soft" @click="markCleanup(row.id, 'running')">
+                    运行
+                  </AppButton>
+                  <AppButton size="small" variant="success" @click="markCleanup(row.id, 'success')">
+                    成功
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="markCleanup(row.id, 'failed')">
+                    失败
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="cleanupJobs.length" class="mobile-record-list">
+            <article v-for="row in cleanupJobs" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.module }}</strong>
+                  <span>{{ row.approvalNote || row.errorMessage || '暂无说明' }}</span>
+                </div>
+                <JobStatusTag :status="row.status" />
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>影响数量</span>
+                  <strong>{{ row.affectedCount }}</strong>
+                </div>
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(row.createdAt) }}</strong>
+                </div>
+                <div>
+                  <span>完成时间</span>
+                  <strong>{{ formatDate(row.finishedAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="soft" @click="markCleanup(row.id, 'running')">
+                  运行
+                </AppButton>
+                <AppButton size="small" variant="success" @click="markCleanup(row.id, 'success')">
+                  成功
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="markCleanup(row.id, 'failed')">
+                  失败
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!cleanupLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无数据清理任务"
+            description="创建清理任务后可跟踪审批、影响数量和执行结果。"
+            compact
+          />
           <PaginationBar
             v-model:page="cleanupQuery.page"
             v-model:page-size="cleanupQuery.pageSize"
@@ -854,12 +1379,22 @@
           </TableToolbar>
           <el-table
             v-loading="duplicateLoading"
+            class="desktop-data-table"
             :data="duplicateJobs"
             :size="duplicateTableSize"
             row-key="id"
-            empty-text="暂无重复合并任务"
             @sort-change="handleDuplicateSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无重复合并任务</strong>
+                <span>可以新建合并任务，或清空筛选后查看历史任务。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearDuplicateFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openDuplicateDialog">新建合并</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isDuplicateColumnVisible('module')"
               label="模块"
@@ -916,18 +1451,74 @@
             </el-table-column>
             <el-table-column label="操作" width="210" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="markDuplicate(row.id, 'running')"
-                  >运行</el-button
-                >
-                <el-button text type="success" @click="markDuplicate(row.id, 'success')"
-                  >成功</el-button
-                >
-                <el-button text type="danger" @click="markDuplicate(row.id, 'failed')"
-                  >失败</el-button
-                >
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton size="small" variant="soft" @click="markDuplicate(row.id, 'running')">
+                    运行
+                  </AppButton>
+                  <AppButton
+                    size="small"
+                    variant="success"
+                    @click="markDuplicate(row.id, 'success')"
+                  >
+                    成功
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="markDuplicate(row.id, 'failed')">
+                    失败
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="duplicateJobs.length" class="mobile-record-list">
+            <article v-for="row in duplicateJobs" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.module }}</strong>
+                  <span>{{ row.primaryObjectId || '未指定主对象' }}</span>
+                </div>
+                <JobStatusTag :status="row.status" />
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>重复对象</span>
+                  <strong>{{ row.duplicateObjectIds?.length ?? 0 }}</strong>
+                </div>
+                <div>
+                  <span>影响数量</span>
+                  <strong>{{ row.affectedCount }}</strong>
+                </div>
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(row.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>审批说明</span>
+                  <strong>{{ row.approvalNote || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="soft" @click="markDuplicate(row.id, 'running')">
+                  运行
+                </AppButton>
+                <AppButton size="small" variant="success" @click="markDuplicate(row.id, 'success')">
+                  成功
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="markDuplicate(row.id, 'failed')">
+                  失败
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!duplicateLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无重复合并任务"
+            description="重复对象合并任务创建后会在这里显示。"
+            compact
+          />
           <PaginationBar
             v-model:page="duplicateQuery.page"
             v-model:page-size="duplicateQuery.pageSize"
@@ -969,12 +1560,24 @@
           </TableToolbar>
           <el-table
             v-loading="dictionaryLoading"
+            class="desktop-data-table"
             :data="dictionaries"
             :size="dictionaryTableSize"
             row-key="id"
-            empty-text="暂无数据字典"
             @sort-change="handleDictionarySortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无数据字典</strong>
+                <span>可以新增字典项，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearDictionaryFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="() => openDictionaryDialog()">
+                    新增字典
+                  </AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isDictionaryColumnVisible('group')"
               label="分组"
@@ -1021,13 +1624,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag
-                  :type="row.status === 'active' ? 'success' : 'info'"
-                  size="small"
-                  effect="light"
-                >
+                <StatusChip :tone="row.status === 'active' ? 'green' : 'neutral'">
                   {{ row.status === 'active' ? '启用' : '停用' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -1048,10 +1647,60 @@
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="openDictionaryDialog(row)">编辑</el-button>
+                <div class="table-action-group">
+                  <AppButton size="small" variant="soft" @click="openDictionaryDialog(row)">
+                    编辑
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="dictionaries.length" class="mobile-record-list">
+            <article v-for="row in dictionaries" :key="row.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.label }}</strong>
+                  <span>{{ row.group }} · {{ row.code }}</span>
+                </div>
+                <StatusChip :tone="row.status === 'active' ? 'green' : 'neutral'">
+                  {{ row.status === 'active' ? '启用' : '停用' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>值</span>
+                  <strong>{{ row.value || '-' }}</strong>
+                </div>
+                <div>
+                  <span>排序</span>
+                  <strong>{{ row.sortOrder }}</strong>
+                </div>
+                <div>
+                  <span>更新人</span>
+                  <strong>{{ row.updatedBy?.displayName ?? '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>更新时间</span>
+                  <strong>{{ formatDate(row.updatedAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="soft" @click="openDictionaryDialog(row)">
+                  编辑
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!dictionaryLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无数据字典"
+            description="新增字典项后可在这里维护分组、编码和值。"
+            compact
+          />
           <PaginationBar
             v-model:page="dictionaryQuery.page"
             v-model:page-size="dictionaryQuery.pageSize"
@@ -1092,12 +1741,21 @@
           </TableToolbar>
           <el-table
             v-loading="parameterLoading"
+            class="desktop-data-table"
             :data="parameters"
             :size="parameterTableSize"
             row-key="id"
-            empty-text="暂无系统参数"
             @sort-change="handleParameterSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无系统参数</strong>
+                <span>系统参数加载后可在这里查看和编辑配置值。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearParameterFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isParameterColumnVisible('key')"
               label="Key"
@@ -1144,10 +1802,54 @@
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="openParameterDialog(row)">编辑</el-button>
+                <div class="table-action-group">
+                  <AppButton size="small" variant="soft" @click="openParameterDialog(row)">
+                    编辑
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="parameters.length" class="mobile-record-list">
+            <article v-for="row in parameters" :key="row.key" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ row.key }}</strong>
+                  <span>{{ row.group }} · {{ row.remark || '暂无备注' }}</span>
+                </div>
+                <StatusChip tone="blue">参数</StatusChip>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>值</span>
+                  <strong>
+                    <code class="json-cell">{{ JSON.stringify(row.value) }}</code>
+                  </strong>
+                </div>
+                <div>
+                  <span>更新人</span>
+                  <strong>{{ row.updatedBy?.displayName ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>更新时间</span>
+                  <strong>{{ formatDate(row.updatedAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="soft" @click="openParameterDialog(row)">
+                  编辑
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <AppState
+            v-else-if="!parameterLoading"
+            class="mobile-record-list"
+            type="empty"
+            title="暂无系统参数"
+            description="系统参数加载后可在这里查看和编辑配置值。"
+            compact
+          />
           <PaginationBar
             v-model:page="parameterQuery.page"
             v-model:page-size="parameterQuery.pageSize"
@@ -1158,7 +1860,11 @@
       </el-tabs>
     </section>
 
-    <el-dialog v-model="backupDialogVisible" title="创建备份任务" width="520px">
+    <el-dialog
+      v-model="backupDialogVisible"
+      title="创建备份任务"
+      width="min(520px, calc(100vw - 24px))"
+    >
       <el-form label-width="100px">
         <el-form-item label="备份类型" required>
           <el-select v-model="backupForm.jobType">
@@ -1172,12 +1878,16 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="backupDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createBackup">创建</el-button>
+        <AppButton @click="backupDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="createBackup">创建</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="restoreDialogVisible" title="创建恢复任务" width="560px">
+    <el-dialog
+      v-model="restoreDialogVisible"
+      title="创建恢复任务"
+      width="min(560px, calc(100vw - 24px))"
+    >
       <el-form label-width="110px">
         <el-form-item label="备份任务 ID"
           ><el-input v-model="restoreForm.backupJobId"
@@ -1190,12 +1900,16 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="restoreDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createRestore">创建</el-button>
+        <AppButton @click="restoreDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="createRestore">创建</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialogVisible" title="新建导入任务" width="560px">
+    <el-dialog
+      v-model="importDialogVisible"
+      title="新建导入任务"
+      width="min(560px, calc(100vw - 24px))"
+    >
       <el-form label-width="100px">
         <el-form-item label="模块" required>
           <el-select v-model="importForm.module" filterable>
@@ -1213,12 +1927,16 @@
         /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createImport">创建</el-button>
+        <AppButton @click="importDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="createImport">创建</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="exportDialogVisible" title="新建导出任务" width="560px">
+    <el-dialog
+      v-model="exportDialogVisible"
+      title="新建导出任务"
+      width="min(560px, calc(100vw - 24px))"
+    >
       <el-form label-width="110px">
         <el-form-item label="模块" required>
           <el-select v-model="exportForm.module" filterable>
@@ -1238,12 +1956,16 @@
         /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="exportDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createExport">创建</el-button>
+        <AppButton @click="exportDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="createExport">创建</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="cleanupDialogVisible" title="新建数据清理任务" width="560px">
+    <el-dialog
+      v-model="cleanupDialogVisible"
+      title="新建数据清理任务"
+      width="min(560px, calc(100vw - 24px))"
+    >
       <el-form label-width="100px">
         <el-form-item label="模块" required><el-input v-model="cleanupForm.module" /></el-form-item>
         <el-form-item label="审批说明">
@@ -1251,12 +1973,16 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="cleanupDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createCleanup">创建</el-button>
+        <AppButton @click="cleanupDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="createCleanup">创建</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="duplicateDialogVisible" title="新建重复数据合并任务" width="600px">
+    <el-dialog
+      v-model="duplicateDialogVisible"
+      title="新建重复数据合并任务"
+      width="min(600px, calc(100vw - 24px))"
+    >
       <el-form label-width="120px">
         <el-form-item label="模块" required
           ><el-input v-model="duplicateForm.module"
@@ -1272,15 +1998,15 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="duplicateDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createDuplicate">创建</el-button>
+        <AppButton @click="duplicateDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="createDuplicate">创建</AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="dictionaryDialogVisible"
       :title="editingDictionary ? '编辑数据字典' : '新增数据字典'"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
         <el-form-item label="分组" required
@@ -1307,12 +2033,16 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dictionaryDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveDictionary">保存</el-button>
+        <AppButton @click="dictionaryDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveDictionary">保存</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="parameterDialogVisible" title="保存系统参数" width="620px">
+    <el-dialog
+      v-model="parameterDialogVisible"
+      title="保存系统参数"
+      width="min(620px, calc(100vw - 24px))"
+    >
       <el-form label-width="100px">
         <el-form-item label="Key" required
           ><el-input v-model="parameterForm.key" :disabled="Boolean(editingParameter)"
@@ -1326,8 +2056,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="parameterDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveParameter">保存</el-button>
+        <AppButton @click="parameterDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveParameter">保存</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -1338,8 +2068,12 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { dataCenterApi, userTableViewsApi } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
+import AppState from '@/components/ui/AppState.vue';
+import JobStatusTag from '@/components/ui/DataJobStatusTag.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   BackupJob,
@@ -1688,6 +2422,79 @@ const cleanupTableSize = computed(() => getTableSize(cleanupDensity.value));
 const duplicateTableSize = computed(() => getTableSize(duplicateDensity.value));
 const dictionaryTableSize = computed(() => getTableSize(dictionaryDensity.value));
 const parameterTableSize = computed(() => getTableSize(parameterDensity.value));
+const activeTabMeta = computed(() => {
+  const metaMap: Record<
+    string,
+    {
+      title: string;
+      description: string;
+      badge: string;
+      tone: 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+    }
+  > = {
+    overview: {
+      title: '数据总览',
+      description: '集中查看最近备份、导入、导出和回收站数据状态。',
+      badge: '总览',
+      tone: 'blue'
+    },
+    backups: {
+      title: '备份任务',
+      description: '管理数据库、文件和配置备份，失败任务需要人工确认。',
+      badge: '备份',
+      tone: 'red'
+    },
+    restores: {
+      title: '恢复任务',
+      description: '恢复操作必须记录范围和审批说明，避免误覆盖关键数据。',
+      badge: '恢复',
+      tone: 'orange'
+    },
+    imports: {
+      title: '导入任务',
+      description: '跟踪导入文件、成功失败数量和错误报告。',
+      badge: '导入',
+      tone: 'cyan'
+    },
+    exports: {
+      title: '导出任务',
+      description: '导出任务需要标记是否包含敏感字段并保留审计线索。',
+      badge: '导出',
+      tone: 'purple'
+    },
+    recycle: {
+      title: '回收站',
+      description: '查看软删除记录、恢复状态和彻底清理入口。',
+      badge: '回收',
+      tone: 'green'
+    },
+    cleanup: {
+      title: '数据清理',
+      description: '清理任务必须记录影响数量、审批说明和失败原因。',
+      badge: '清理',
+      tone: 'orange'
+    },
+    duplicates: {
+      title: '重复合并',
+      description: '合并重复数据时保留主对象、重复对象和处理结果。',
+      badge: '合并',
+      tone: 'blue'
+    },
+    dictionaries: {
+      title: '数据字典',
+      description: '维护分组、编码、显示名称、排序和启停状态。',
+      badge: '字典',
+      tone: 'green'
+    },
+    parameters: {
+      title: '系统参数',
+      description: '系统参数以 JSON 形式保存，修改后需可追溯。',
+      badge: '参数',
+      tone: 'neutral'
+    }
+  };
+  return metaMap[activeTab.value] ?? metaMap.overview;
+});
 
 onMounted(() => {
   void refreshCurrentTab();
@@ -3306,126 +4113,50 @@ function splitList(value: string) {
 }
 </script>
 
-<script lang="ts">
-import { defineComponent } from 'vue';
-
-export default defineComponent({
-  components: {
-    JobStatusTag: {
-      props: {
-        status: { type: String, required: true }
-      },
-      methods: {
-        getStatusLabel(status: string) {
-          return (
-            {
-              pending: '待处理',
-              running: '运行中',
-              success: '成功',
-              failed: '失败',
-              cancelled: '已取消'
-            }[status] ?? status
-          );
-        },
-        getStatusType(status: string) {
-          if (status === 'success') return 'success';
-          if (status === 'failed') return 'danger';
-          if (status === 'running') return 'primary';
-          if (status === 'cancelled') return 'info';
-          return 'warning';
-        }
-      },
-      template: `
-        <el-tag :type="getStatusType(status)" size="small" effect="light">
-          {{ getStatusLabel(status) }}
-        </el-tag>
-      `
-    },
-    PaginationBar: {
-      props: {
-        page: { type: Number, required: true },
-        pageSize: { type: Number, required: true },
-        total: { type: Number, required: true }
-      },
-      emits: ['update:page', 'update:pageSize', 'change'],
-      template: `
-        <div class="pagination-row">
-          <el-pagination
-            :current-page="page"
-            :page-size="pageSize"
-            :total="total"
-            layout="total, sizes, prev, pager, next"
-            @current-change="$emit('update:page', $event); $emit('change')"
-            @size-change="$emit('update:pageSize', $event); $emit('change')"
-          />
-        </div>
-      `
-    }
-  }
-});
-</script>
-
 <style scoped>
-.content-panel {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--surface-color);
+.system-compact-list-panel .panel-title-row {
+  align-items: flex-start;
 }
 
-.overview-grid {
-  display: grid;
-  gap: 18px;
-}
-
-.overview-grid h3 {
-  margin: 0 0 10px;
-  font-size: 15px;
-  color: var(--text-color);
-}
-
-.toolbar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-
-.toolbar-search {
-  width: min(320px, 100%);
-}
-
-.toolbar-select {
-  width: 150px;
-}
-
-.pagination-row {
-  display: flex;
+.system-compact-list-panel .inline-actions {
+  max-width: min(680px, 100%);
   justify-content: flex-end;
-  margin-top: 14px;
+  flex-wrap: wrap;
 }
 
-.json-cell {
-  display: inline-block;
-  max-width: 100%;
-  padding: 2px 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: 4px;
-  background: var(--muted-bg-color);
-  color: var(--text-color);
-}
-
-@media (max-width: 760px) {
-  .content-panel {
-    padding: 12px;
+@media (max-width: 840px) {
+  .system-compact-list-panel .inline-actions {
+    justify-content: flex-start;
   }
 
-  .toolbar-search,
-  .toolbar-select {
+  .system-compact-list-panel :deep(.el-tabs__nav-wrap),
+  .system-compact-list-panel :deep(.el-tabs__nav-scroll) {
     width: 100%;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__nav) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    transform: none !important;
+    white-space: normal;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__item) {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 10px;
+    line-height: 32px;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__active-bar),
+  .system-compact-list-panel :deep(.el-tabs__nav-next),
+  .system-compact-list-panel :deep(.el-tabs__nav-prev) {
+    display: none;
   }
 }
 </style>

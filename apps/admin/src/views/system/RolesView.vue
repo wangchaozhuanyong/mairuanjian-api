@@ -6,18 +6,54 @@
     description="管理角色、权限树和字段级权限入口。权限变更应写入审计日志。"
   >
     <template #actions>
-      <el-button
-        type="primary"
+      <StatusChip :tone="selectedRole ? 'green' : 'neutral'" dot>
+        {{ selectedRole ? `当前角色：${selectedRole.name}` : '未选择角色' }}
+      </StatusChip>
+      <AppButton
+        variant="primary"
         :disabled="!selectedRole"
         :loading="saving"
         @click="savePermissions"
       >
         保存权限
-      </el-button>
+      </AppButton>
     </template>
+
+    <section class="content-panel" aria-label="权限管理概览">
+      <div class="detail-note-grid">
+        <div class="detail-note-item">
+          <span>角色数量</span>
+          <strong>{{ roles.length }}</strong>
+          <span>当前角色全集</span>
+        </div>
+        <div class="detail-note-item">
+          <span>权限模块</span>
+          <strong>{{ permissionModuleCount }}</strong>
+          <span>按 module 分组</span>
+        </div>
+        <div class="detail-note-item">
+          <span>已选权限</span>
+          <strong>{{ selectedPermissionCount }}</strong>
+          <span>当前角色</span>
+        </div>
+        <div class="detail-note-item">
+          <span>覆盖用户</span>
+          <strong>{{ totalAssignedUsers }}</strong>
+          <span>角色绑定用户合计</span>
+        </div>
+      </div>
+    </section>
 
     <section class="split-page">
       <section class="content-panel role-list-panel">
+        <div class="panel-title-row">
+          <div>
+            <h3>角色列表</h3>
+            <p>选择一个角色后，在右侧维护该角色可访问的模块和动作权限。</p>
+          </div>
+          <StatusChip tone="blue" dot>权限角色</StatusChip>
+        </div>
+
         <TableToolbar
           v-model:keyword="roleKeyword"
           v-model:density="density"
@@ -39,14 +75,23 @@
 
         <el-table
           v-loading="loading"
+          class="desktop-data-table"
           :data="filteredRoles"
           :size="tableSize"
           row-key="id"
-          empty-text="暂无角色"
           highlight-current-row
           @current-change="selectRole"
           @sort-change="handleSortChange"
         >
+          <template #empty>
+            <div class="apple-core-empty-state">
+              <strong>暂无角色</strong>
+              <span>可以清空筛选后重新查看角色，或在后续版本接入角色新增入口。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearRoleFilters">清空筛选</AppButton>
+              </div>
+            </div>
+          </template>
           <el-table-column
             v-if="isColumnVisible('name')"
             prop="name"
@@ -89,31 +134,115 @@
             <template #default="{ row }">{{ row.rolePermissions?.length ?? 0 }}</template>
           </el-table-column>
         </el-table>
+
+        <div v-if="filteredRoles.length" class="mobile-record-list" aria-label="角色移动列表">
+          <article v-for="role in filteredRoles" :key="role.id" class="mobile-record-card">
+            <div class="mobile-record-card__head">
+              <div class="mobile-record-card__title">
+                <strong>{{ role.name }}</strong>
+                <span>{{ role.code }}</span>
+              </div>
+              <StatusChip :tone="selectedRole?.id === role.id ? 'green' : 'blue'" dot>
+                {{ selectedRole?.id === role.id ? '当前角色' : '可选择' }}
+              </StatusChip>
+            </div>
+
+            <div class="mobile-record-card__stats">
+              <div>
+                <span>绑定用户</span>
+                <strong>{{ role._count?.userRoles ?? 0 }}</strong>
+              </div>
+              <div>
+                <span>权限数</span>
+                <strong>{{ role.rolePermissions?.length ?? 0 }}</strong>
+              </div>
+              <div>
+                <span>权限模块</span>
+                <strong>{{ permissionModuleCount }}</strong>
+              </div>
+            </div>
+
+            <div class="mobile-record-card__meta">
+              <div>
+                <span>描述</span>
+                <strong>{{ role.description || '-' }}</strong>
+              </div>
+            </div>
+
+            <div class="mobile-record-card__actions">
+              <AppButton size="small" variant="soft" @click="selectRole(role)">选择角色</AppButton>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="mobile-record-list">
+          <div class="apple-core-empty-state">
+            <strong>暂无匹配角色</strong>
+            <span>可以清空搜索条件后查看全部角色。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearRoleFilters">清空筛选</AppButton>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="content-panel permission-panel">
         <div class="panel-title-row">
-          <strong>{{ selectedRole?.name ?? '权限' }}</strong>
-          <el-button
-            type="primary"
+          <div>
+            <h3>{{ selectedRole?.name ?? '权限配置' }}</h3>
+            <p>{{ selectedRole?.description || '请选择左侧角色后维护权限树。' }}</p>
+          </div>
+          <StatusChip :tone="selectedRole ? 'green' : 'neutral'" dot>
+            {{ selectedRole ? selectedRole.code : '待选择' }}
+          </StatusChip>
+          <AppButton
+            variant="primary"
             :disabled="!selectedRole"
             :loading="saving"
             @click="savePermissions"
           >
             保存权限
-          </el-button>
+          </AppButton>
         </div>
 
-        <el-empty v-if="!selectedRole" description="请选择角色" />
-        <el-tree
-          v-else
-          ref="treeRef"
-          :data="permissionTree"
-          :props="{ label: 'label', children: 'children' }"
-          node-key="id"
-          show-checkbox
-          default-expand-all
-        />
+        <div v-if="!selectedRole" class="apple-core-empty-state">
+          <strong>请选择角色</strong>
+          <span>选择左侧角色后，可以查看绑定用户数量、已配置权限和权限树。</span>
+        </div>
+        <template v-else>
+          <div class="detail-note-grid permission-summary-grid">
+            <div class="detail-note-item">
+              <span>角色编码</span>
+              <strong>{{ selectedRole.code }}</strong>
+            </div>
+            <div class="detail-note-item">
+              <span>绑定用户</span>
+              <strong>{{ selectedRole._count?.userRoles ?? 0 }}</strong>
+            </div>
+            <div class="detail-note-item">
+              <span>已配置权限</span>
+              <strong>{{ selectedPermissionCount }}</strong>
+            </div>
+            <div class="detail-note-item">
+              <span>权限模块</span>
+              <strong>{{ permissionModuleCount }}</strong>
+            </div>
+          </div>
+          <div class="drawer-section permission-tree-section">
+            <div class="drawer-section__title">
+              <span>权限树</span>
+              <StatusChip tone="blue">{{ permissions.length }} 项权限</StatusChip>
+            </div>
+            <el-tree
+              ref="treeRef"
+              :data="permissionTree"
+              :props="{ label: 'label', children: 'children' }"
+              node-key="id"
+              show-checkbox
+              default-expand-all
+            />
+          </div>
+        </template>
       </section>
     </section>
   </PageScaffold>
@@ -124,7 +253,9 @@ import type { ElTree } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, ref } from 'vue';
 import { rolesApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { Permission, Role, TableDensity, UserTableView } from '@/types/system';
 
@@ -178,6 +309,13 @@ const permissionTree = computed<PermissionTreeNode[]>(() => {
 
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const permissionModuleCount = computed(
+  () => new Set(permissions.value.map((item) => item.module)).size
+);
+const selectedPermissionCount = computed(() => selectedRole.value?.rolePermissions?.length ?? 0);
+const totalAssignedUsers = computed(() =>
+  roles.value.reduce((sum, role) => sum + (role._count?.userRoles ?? 0), 0)
 );
 
 const filteredRoles = computed(() => {

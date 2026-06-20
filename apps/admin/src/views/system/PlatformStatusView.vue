@@ -6,23 +6,51 @@
     description="查看淘宝、闲鱼、Telegram、文件存储和自动化服务的授权状态、最近同步、失败原因、调用次数和错误率。"
   >
     <template #actions>
-      <el-button @click="loadPlatforms">刷新</el-button>
-      <el-button type="primary" :loading="testingAll" @click="testAllPlatforms">测试全部</el-button>
+      <AppButton @click="loadPlatforms">刷新</AppButton>
+      <AppButton variant="primary" :loading="testingAll" @click="testAllPlatforms">
+        测试全部
+      </AppButton>
     </template>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="平台数量" :value="platforms.length" hint="当前监控对象" tone="blue" />
-      <MetricCard label="正常" :value="normalCount" hint="状态正常的平台" tone="green" />
-      <MetricCard label="异常" :value="errorCount" hint="需要处理的平台" tone="red" />
-      <MetricCard
-        label="未配置"
-        :value="notConfiguredCount"
-        hint="授权或配置未完成"
-        tone="orange"
-      />
-    </div>
+    <section class="content-panel" aria-label="平台接口概览">
+      <div class="detail-note-grid">
+        <div class="detail-note-item">
+          <span>平台数量</span>
+          <strong>{{ platforms.length }}</strong>
+          <span>当前监控对象</span>
+        </div>
+        <div class="detail-note-item">
+          <span>正常</span>
+          <strong>{{ normalCount }}</strong>
+          <span>状态正常的平台</span>
+        </div>
+        <div class="detail-note-item">
+          <span>异常</span>
+          <strong>{{ errorCount }}</strong>
+          <span>需要处理的平台</span>
+        </div>
+        <div class="detail-note-item">
+          <span>未配置</span>
+          <strong>{{ notConfiguredCount }}</strong>
+          <span>授权或配置未完成</span>
+        </div>
+      </div>
+    </section>
 
     <section class="content-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>平台接口健康台账</h3>
+          <p>跟踪授权状态、Token 有效期、同步时间、失败原因、调用次数和错误率。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>平台接口</StatusChip>
+          <StatusChip :tone="errorCount > 0 ? 'red' : 'green'" dot>
+            {{ errorCount > 0 ? `异常 ${errorCount}` : '接口稳定' }}
+          </StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -64,12 +92,21 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="platformRows"
         :size="tableSize"
         row-key="platform"
-        empty-text="暂无平台接口状态"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无平台接口状态</strong>
+            <span>可以清空筛选，或到平台授权配置中测试连接状态。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column
           v-if="isColumnVisible('platform')"
           label="平台"
@@ -90,9 +127,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getHealthTagType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getHealthTone(row.status)" dot>
               {{ getHealthLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -103,13 +140,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag
-              :type="getAuthorizationTagType(row.authorizationStatus)"
-              size="small"
-              effect="light"
-            >
+            <StatusChip :tone="getAuthorizationTone(row.authorizationStatus)" dot>
               {{ getAuthorizationLabel(row.authorizationStatus) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -201,48 +234,131 @@
         />
         <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
-            <el-button
-              text
-              type="primary"
+            <AppButton
+              size="small"
+              variant="ghost"
               :disabled="!row.canTestConnection"
               :loading="testingPlatform === row.platform"
               @click="testPlatform(row)"
             >
               测试
-            </el-button>
-            <el-button
-              text
-              type="warning"
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="ghost"
               :disabled="!row.canReauthorize"
               :loading="reauthorizingPlatform === row.platform"
               @click="reauthorize(row)"
             >
               授权配置
-            </el-button>
+            </AppButton>
           </template>
         </el-table-column>
       </el-table>
+
+      <div v-if="platformRows.length" class="mobile-record-list" aria-label="平台接口状态移动列表">
+        <article
+          v-for="platform in platformRows"
+          :key="platform.platform"
+          class="mobile-record-card"
+        >
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ platform.displayName }}</strong>
+              <span>{{ platform.platform }} · {{ platform.message }}</span>
+            </div>
+            <StatusChip :tone="getHealthTone(platform.status)" dot>
+              {{ getHealthLabel(platform.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>授权</span>
+              <strong>{{ getAuthorizationLabel(platform.authorizationStatus) }}</strong>
+            </div>
+            <div>
+              <span>错误率</span>
+              <strong>{{ formatErrorRate(platform.errorRate) }}</strong>
+            </div>
+            <div>
+              <span>调用次数</span>
+              <strong>{{ platform.requestCount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>Token 有效期</span>
+              <strong>{{ formatDate(platform.tokenExpiresAt) }}</strong>
+            </div>
+            <div>
+              <span>最近失败</span>
+              <strong>{{ platform.lastFailureReason || '-' }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip :tone="getAuthorizationTone(platform.authorizationStatus)" dot>
+              {{ getAuthorizationLabel(platform.authorizationStatus) }}
+            </StatusChip>
+            <StatusChip tone="blue">最近同步 {{ formatDate(platform.lastSyncAt) }}</StatusChip>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton
+              size="small"
+              variant="ghost"
+              :disabled="!platform.canTestConnection"
+              :loading="testingPlatform === platform.platform"
+              @click="testPlatform(platform)"
+            >
+              测试
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="soft"
+              :disabled="!platform.canReauthorize"
+              :loading="reauthorizingPlatform === platform.platform"
+              @click="reauthorize(platform)"
+            >
+              授权配置
+            </AppButton>
+          </div>
+        </article>
+      </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无平台接口状态</strong>
+          <span>可以清空筛选或刷新平台接口状态后重新查看。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" :loading="loading" @click="loadPlatforms">刷新</AppButton>
+          </div>
+        </div>
+      </div>
     </section>
 
     <el-dialog
       v-model="authorizationDialogVisible"
       :title="`${authorizationPlatform?.displayName ?? ''}授权配置`"
-      width="760px"
+      width="min(760px, calc(100vw - 24px))"
       destroy-on-close
     >
       <el-skeleton v-if="authorizationLoading" :rows="5" animated />
       <el-form v-else label-position="top">
-        <el-alert
-          class="auth-alert"
-          type="warning"
-          show-icon
-          :closable="false"
-          title="敏感字段只支持重新填写，不会回显历史明文。真实平台接口接入前，保存配置只代表凭据已托管。"
-        />
+        <div class="apple-core-alert apple-core-alert--orange auth-alert">
+          <StatusChip tone="orange">敏感</StatusChip>
+          <div>
+            <strong>敏感字段只支持重新填写，不会回显历史明文</strong>
+            <p>真实平台接口接入前，保存配置只代表凭据已托管。</p>
+          </div>
+        </div>
         <div v-if="authorizationConfig" class="auth-summary">
-          <el-tag :type="authorizationConfig.configured ? 'success' : 'warning'" effect="light">
+          <StatusChip :tone="authorizationConfig.configured ? 'green' : 'orange'" dot>
             {{ authorizationConfig.configured ? '已保存授权配置' : '未保存授权配置' }}
-          </el-tag>
+          </StatusChip>
           <span>App Key 尾号：{{ authorizationConfig.appKeyTail || '-' }}</span>
           <span>Access Token 尾号：{{ authorizationConfig.accessTokenTail || '-' }}</span>
           <span>Refresh Token 尾号：{{ authorizationConfig.refreshTokenTail || '-' }}</span>
@@ -329,19 +445,18 @@
         </el-checkbox>
       </el-form>
       <template #footer>
-        <el-button @click="authorizationDialogVisible = false">取消</el-button>
-        <el-button
-          type="warning"
-          plain
+        <AppButton @click="authorizationDialogVisible = false">取消</AppButton>
+        <AppButton
+          variant="soft"
           :loading="oauthStarting"
           :disabled="authorizationForm.authMode !== 'oauth'"
           @click="startOAuth"
         >
           发起 OAuth
-        </el-button>
-        <el-button type="primary" :loading="authorizationSaving" @click="saveAuthorization">
+        </AppButton>
+        <AppButton variant="primary" :loading="authorizationSaving" @click="saveAuthorization">
           保存配置
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -351,8 +466,9 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { opsApi, userTableViewsApi } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   OpsHealthStatus,
@@ -797,11 +913,11 @@ function getHealthLabel(status: OpsHealthStatus) {
   );
 }
 
-function getHealthTagType(status: OpsHealthStatus) {
-  if (status === 'normal') return 'success';
-  if (status === 'warning' || status === 'unknown') return 'warning';
-  if (status === 'error' || status === 'critical') return 'danger';
-  return 'info';
+function getHealthTone(status: OpsHealthStatus) {
+  if (status === 'normal') return 'green';
+  if (status === 'warning' || status === 'unknown') return 'orange';
+  if (status === 'error' || status === 'critical') return 'red';
+  return 'neutral';
 }
 
 function getAuthorizationLabel(status: PlatformAuthorizationStatus) {
@@ -817,11 +933,11 @@ function getAuthorizationLabel(status: PlatformAuthorizationStatus) {
   );
 }
 
-function getAuthorizationTagType(status: PlatformAuthorizationStatus) {
-  if (status === 'configured' || status === 'not_required') return 'success';
-  if (status === 'not_configured' || status === 'expiring') return 'warning';
-  if (status === 'expired') return 'danger';
-  return 'info';
+function getAuthorizationTone(status: PlatformAuthorizationStatus) {
+  if (status === 'configured' || status === 'not_required') return 'green';
+  if (status === 'not_configured' || status === 'expiring') return 'orange';
+  if (status === 'expired') return 'red';
+  return 'neutral';
 }
 
 function isHealthStatus(value: unknown): value is OpsHealthStatus {
@@ -857,13 +973,6 @@ function formatErrorRate(value?: string | null) {
 </script>
 
 <style scoped>
-.content-panel {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--surface-color);
-}
-
 .muted-block {
   margin-top: 4px;
   color: var(--muted-text-color);

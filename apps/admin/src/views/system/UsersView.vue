@@ -5,7 +5,40 @@
     phase="Phase 1"
     description="管理员工账号、启停状态、角色分配和基础身份信息。"
   >
+    <section class="content-panel" aria-label="用户管理概览">
+      <div class="detail-note-grid">
+        <div class="detail-note-item">
+          <span>用户数量</span>
+          <strong>{{ total }}</strong>
+          <span>当前筛选结果</span>
+        </div>
+        <div class="detail-note-item">
+          <span>启用账号</span>
+          <strong>{{ activeUserCount }}</strong>
+          <span>当前页</span>
+        </div>
+        <div class="detail-note-item">
+          <span>已分配角色</span>
+          <strong>{{ roleAssignedCount }}</strong>
+          <span>当前页</span>
+        </div>
+        <div class="detail-note-item">
+          <span>有登录记录</span>
+          <strong>{{ loggedInUserCount }}</strong>
+          <span>当前页</span>
+        </div>
+      </div>
+    </section>
+
     <section class="content-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>员工账号列表</h3>
+          <p>管理后台登录账号、启停状态和角色分配，敏感权限变更进入审计日志。</p>
+        </div>
+        <StatusChip tone="blue" dot>权限基础</StatusChip>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -32,13 +65,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="users"
         :size="tableSize"
         row-key="id"
-        empty-text="暂无用户"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无用户</strong>
+            <span>可以新增用户，或清空筛选后重新查看员工账号列表。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增用户</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('username')"
@@ -56,9 +99,9 @@
         />
         <el-table-column v-if="isColumnVisible('roles')" label="角色" min-width="220">
           <template #default="{ row }">
-            <el-tag v-for="role in row.roles" :key="role.id" class="tag-gap" size="small">
+            <StatusChip v-for="role in row.roles" :key="role.id" class="tag-gap" tone="blue">
               {{ role.name }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -69,9 +112,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
+            <StatusChip :tone="row.status === 'active' ? 'green' : 'neutral'" dot>
               {{ row.status === 'active' ? '启用' : '停用' }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -94,25 +137,77 @@
         </el-table-column>
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" text @click="openEdit(row)">编辑</el-button>
+            <div class="table-action-group">
+              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadUsers"
-          @size-change="loadUsers"
-        />
+      <div v-if="users.length" class="mobile-record-list" aria-label="用户管理移动列表">
+        <article v-for="user in users" :key="user.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ user.displayName }}</strong>
+              <span>{{ user.username }} · {{ user.email || user.phone || '未填写联系方式' }}</span>
+            </div>
+            <StatusChip :tone="user.status === 'active' ? 'green' : 'neutral'" dot>
+              {{ user.status === 'active' ? '启用' : '停用' }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>角色</span>
+              <strong>{{ user.roles.length }}</strong>
+            </div>
+            <div>
+              <span>最后登录</span>
+              <strong>{{ formatDate(user.lastLoginAt) }}</strong>
+            </div>
+            <div>
+              <span>更新时间</span>
+              <strong>{{ formatDate(user.updatedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip v-for="role in user.roles" :key="role.id" tone="blue">
+              {{ role.name }}
+            </StatusChip>
+            <StatusChip v-if="!user.roles.length" tone="orange">未分配角色</StatusChip>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openEdit(user)">编辑</AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无用户</strong>
+          <span>可以新增员工账号，或清空筛选后查看全部账号。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增用户</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadUsers"
+      />
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="editingUser ? '编辑用户' : '新增用户'" width="520px">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingUser ? '编辑用户' : '新增用户'"
+      width="min(520px, calc(100vw - 24px))"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item v-if="!editingUser" label="账号" prop="username">
           <el-input v-model.trim="form.username" />
@@ -145,8 +240,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveUser">保存</el-button>
+        <AppButton @click="dialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveUser">保存</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -157,7 +252,10 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { rolesApi, userTableViewsApi, usersApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { ManagedUser, Role, TableDensity, UserTableView } from '@/types/system';
 
@@ -216,6 +314,15 @@ const rules: FormRules<typeof form> = {
 
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const activeUserCount = computed(
+  () => users.value.filter((user) => user.status === 'active').length
+);
+const roleAssignedCount = computed(
+  () => users.value.filter((user) => user.roles.length > 0).length
+);
+const loggedInUserCount = computed(
+  () => users.value.filter((user) => Boolean(user.lastLoginAt)).length
 );
 
 function formatDate(value?: string | null) {

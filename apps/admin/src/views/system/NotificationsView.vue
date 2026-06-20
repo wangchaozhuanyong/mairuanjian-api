@@ -6,41 +6,49 @@
     description="集中管理站内通知、Telegram 配置、通知规则、通知模板和发送日志。"
   >
     <template #actions>
-      <el-button @click="refreshCurrentTab">刷新</el-button>
-      <el-button type="primary" @click="openPrimaryDialog">{{ primaryActionText }}</el-button>
+      <AppButton @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton variant="primary" @click="openPrimaryDialog">{{ primaryActionText }}</AppButton>
     </template>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard
-        label="启用规则"
-        :value="overview?.enabledRuleCount ?? '-'"
-        hint="当前启用的通知规则"
-        tone="blue"
-      />
-      <MetricCard
-        label="未读站内通知"
-        :value="overview?.unreadCount ?? '-'"
-        hint="当前用户可见"
-        tone="orange"
-      />
-      <MetricCard
-        label="失败通知"
-        :value="overview?.failedLogCount ?? '-'"
-        hint="需要重试或排查"
-        tone="red"
-      />
-      <MetricCard
-        label="Telegram 配置"
-        :value="overview?.telegramCount ?? '-'"
-        hint="已启用配置"
-        tone="green"
-      />
-    </div>
+    <section class="content-panel" aria-label="通知中心概览">
+      <div class="detail-note-grid">
+        <div class="detail-note-item">
+          <span>启用规则</span>
+          <strong>{{ overview?.enabledRuleCount ?? '-' }}</strong>
+          <span>当前启用的通知规则</span>
+        </div>
+        <div class="detail-note-item">
+          <span>未读站内通知</span>
+          <strong>{{ overview?.unreadCount ?? '-' }}</strong>
+          <span>当前用户可见</span>
+        </div>
+        <div class="detail-note-item">
+          <span>失败通知</span>
+          <strong>{{ overview?.failedLogCount ?? '-' }}</strong>
+          <span>需要重试或排查</span>
+        </div>
+        <div class="detail-note-item">
+          <span>Telegram 配置</span>
+          <strong>{{ overview?.telegramCount ?? '-' }}</strong>
+          <span>已启用配置</span>
+        </div>
+      </div>
+    </section>
 
     <section class="content-panel">
-      <el-tabs v-model="activeTab" @tab-change="refreshCurrentTab">
+      <div class="panel-title-row">
+        <div>
+          <h3>{{ activeTabMeta.title }}</h3>
+          <p>{{ activeTabMeta.description }}</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
+        </div>
+      </div>
+
+      <el-tabs v-model="activeTab" class="notification-tabs" @tab-change="refreshCurrentTab">
         <el-tab-pane label="通知总览" name="overview">
-          <el-table :data="overview?.recentLogs ?? []" row-key="id">
+          <el-table class="desktop-data-table" :data="overview?.recentLogs ?? []" row-key="id">
             <el-table-column label="事件" min-width="170">
               <template #default="{ row }">
                 {{ row.title }}
@@ -52,9 +60,9 @@
             </el-table-column>
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
-                <el-tag :type="getLogStatusType(row.status)" size="small" effect="light">
+                <StatusChip :tone="getLogStatusTone(row.status)" dot>
                   {{ getLogStatusLabel(row.status) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column label="内容摘要" min-width="260" prop="contentDigest" />
@@ -62,6 +70,46 @@
               <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </el-table-column>
           </el-table>
+
+          <div v-if="overview?.recentLogs?.length" class="mobile-record-list">
+            <article v-for="log in overview.recentLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.title }}</strong>
+                  <span>{{ log.eventCode }} · {{ getModuleLabel(log.module) }}</span>
+                </div>
+                <StatusChip :tone="getLogStatusTone(log.status)" dot>
+                  {{ getLogStatusLabel(log.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>渠道</span>
+                  <strong>{{ getChannelLabel(log.channel) }}</strong>
+                </div>
+                <div>
+                  <span>模块</span>
+                  <strong>{{ getModuleLabel(log.module) }}</strong>
+                </div>
+                <div>
+                  <span>时间</span>
+                  <strong>{{ formatDate(log.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>内容摘要</span>
+                  <strong>{{ log.contentDigest }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无最近通知</strong>
+              <span>通知发送后会在这里显示最近日志。</span>
+            </div>
+          </div>
         </el-tab-pane>
 
         <el-tab-pane label="通知规则" name="rules">
@@ -120,12 +168,22 @@
 
           <el-table
             v-loading="rulesLoading"
+            class="desktop-data-table"
             :data="rules"
             :size="ruleTableSize"
             row-key="id"
-            empty-text="暂无通知规则"
             @sort-change="handleRuleSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无通知规则</strong>
+                <span>可以新增规则，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearRuleFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openRuleDialog">新增通知规则</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isRuleColumnVisible('name')"
               label="规则"
@@ -157,16 +215,21 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag class="tag-gap" :type="getLevelType(row.level)" size="small" effect="light">
+                <StatusChip class="tag-gap" :tone="getLevelTone(row.level)" dot>
                   {{ getLevelLabel(row.level) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column v-if="isRuleColumnVisible('channels')" label="渠道" min-width="140">
               <template #default="{ row }">
-                <el-tag v-for="channel in row.channels" :key="channel" class="tag-gap" size="small">
+                <StatusChip
+                  v-for="channel in row.channels"
+                  :key="channel"
+                  class="tag-gap"
+                  tone="blue"
+                >
                   {{ getChannelLabel(channel) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -177,9 +240,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="light">
+                <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
                   {{ row.enabled ? '启用' : '停用' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -193,28 +256,71 @@
             </el-table-column>
             <el-table-column label="操作" width="210" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="editRule(row)">编辑</el-button>
-                <el-button
-                  text
-                  :type="row.enabled ? 'warning' : 'success'"
-                  @click="toggleRule(row)"
-                >
-                  {{ row.enabled ? '停用' : '启用' }}
-                </el-button>
-                <el-button text type="danger" @click="removeRule(row)">删除</el-button>
+                <div class="table-action-group">
+                  <AppButton size="small" variant="ghost" @click="editRule(row)">编辑</AppButton>
+                  <AppButton size="small" variant="soft" @click="toggleRule(row)">
+                    {{ row.enabled ? '停用' : '启用' }}
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="removeRule(row)">删除</AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
-          <div class="pagination-row">
-            <el-pagination
-              v-model:current-page="ruleQuery.page"
-              v-model:page-size="ruleQuery.pageSize"
-              :total="ruleTotal"
-              layout="total, sizes, prev, pager, next"
-              @current-change="loadRules"
-              @size-change="loadRules"
-            />
+          <div v-if="rules.length" class="mobile-record-list">
+            <article v-for="rule in rules" :key="rule.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ rule.name }}</strong>
+                  <span>{{ rule.eventCode }} · {{ getModuleLabel(rule.module) }}</span>
+                </div>
+                <StatusChip :tone="rule.enabled ? 'green' : 'neutral'" dot>
+                  {{ rule.enabled ? '启用' : '停用' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>模块</span>
+                  <strong>{{ getModuleLabel(rule.module) }}</strong>
+                </div>
+                <div>
+                  <span>级别</span>
+                  <strong>{{ getLevelLabel(rule.level) }}</strong>
+                </div>
+                <div>
+                  <span>最近触发</span>
+                  <strong>{{ formatDate(rule.lastTriggeredAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__chips">
+                <StatusChip v-for="channel in rule.channels" :key="channel" tone="blue">
+                  {{ getChannelLabel(channel) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="ghost" @click="editRule(rule)">编辑</AppButton>
+                <AppButton size="small" variant="soft" @click="toggleRule(rule)">
+                  {{ rule.enabled ? '停用' : '启用' }}
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="removeRule(rule)">删除</AppButton>
+              </div>
+            </article>
           </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无通知规则</strong>
+              <span>可以通过顶部主操作新增规则，或清空筛选后重新查看。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearRuleFilters">清空筛选</AppButton>
+                <AppButton variant="primary" @click="openRuleDialog">新增通知规则</AppButton>
+              </div>
+            </div>
+          </div>
+          <PaginationBar
+            v-model:page="ruleQuery.page"
+            v-model:page-size="ruleQuery.pageSize"
+            :total="ruleTotal"
+            @change="loadRules"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="消息模板" name="templates">
@@ -259,12 +365,22 @@
 
           <el-table
             v-loading="templatesLoading"
+            class="desktop-data-table"
             :data="templates"
             :size="templateTableSize"
             row-key="id"
-            empty-text="暂无消息模板"
             @sort-change="handleTemplateSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无消息模板</strong>
+                <span>可以新增模板，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearTemplateFilters">清空筛选</AppButton>
+                  <AppButton variant="primary" @click="openTemplateDialog">新增消息模板</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isTemplateColumnVisible('name')"
               label="模板"
@@ -309,32 +425,98 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="light">
+                <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
                   {{ row.enabled ? '启用' : '停用' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="editTemplate(row)">编辑</el-button>
-                <el-button text type="danger" @click="removeTemplate(row)">删除</el-button>
+                <div class="table-action-group">
+                  <AppButton size="small" variant="ghost" @click="editTemplate(row)"
+                    >编辑</AppButton
+                  >
+                  <AppButton size="small" variant="danger" @click="removeTemplate(row)">
+                    删除
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
-          <div class="pagination-row">
-            <el-pagination
-              v-model:current-page="templateQuery.page"
-              v-model:page-size="templateQuery.pageSize"
-              :total="templateTotal"
-              layout="total, sizes, prev, pager, next"
-              @current-change="loadTemplates"
-              @size-change="loadTemplates"
-            />
+          <div v-if="templates.length" class="mobile-record-list">
+            <article v-for="template in templates" :key="template.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ template.name }}</strong>
+                  <span>{{ template.eventCode }} · {{ getChannelLabel(template.channel) }}</span>
+                </div>
+                <StatusChip :tone="template.enabled ? 'green' : 'neutral'" dot>
+                  {{ template.enabled ? '启用' : '停用' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>标题</span>
+                  <strong>{{ template.title }}</strong>
+                </div>
+                <div>
+                  <span>内容</span>
+                  <strong>{{ template.content }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="ghost" @click="editTemplate(template)">
+                  编辑
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="removeTemplate(template)">
+                  删除
+                </AppButton>
+              </div>
+            </article>
           </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无消息模板</strong>
+              <span>可以新增模板，或清空筛选后重新查看。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearTemplateFilters">清空筛选</AppButton>
+                <AppButton variant="primary" @click="openTemplateDialog">新增消息模板</AppButton>
+              </div>
+            </div>
+          </div>
+          <PaginationBar
+            v-model:page="templateQuery.page"
+            v-model:page-size="templateQuery.pageSize"
+            :total="templateTotal"
+            @change="loadTemplates"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="Telegram 配置" name="telegram">
-          <el-table v-loading="telegramLoading" :data="telegramConfigs" row-key="id">
+          <div class="detail-note-grid notification-telegram-summary">
+            <div class="detail-note-item">
+              <span>配置数量</span>
+              <strong>{{ telegramConfigs.length }}</strong>
+            </div>
+            <div class="detail-note-item">
+              <span>启用配置</span>
+              <strong>{{ enabledTelegramCount }}</strong>
+            </div>
+            <div class="detail-note-item">
+              <span>已配置 Token</span>
+              <strong>{{ tokenConfiguredCount }}</strong>
+            </div>
+            <div class="detail-note-item">
+              <span>测试成功</span>
+              <strong>{{ successfulTelegramTests }}</strong>
+            </div>
+          </div>
+          <el-table
+            v-loading="telegramLoading"
+            class="desktop-data-table"
+            :data="telegramConfigs"
+            row-key="id"
+          >
             <el-table-column label="通知名称" min-width="170" prop="notificationName" />
             <el-table-column label="Chat ID" min-width="160" prop="chatId" />
             <el-table-column label="Token" width="110">
@@ -344,16 +526,16 @@
             </el-table-column>
             <el-table-column label="级别" width="100">
               <template #default="{ row }">
-                <el-tag :type="getLevelType(row.notificationLevel)" size="small" effect="light">
+                <StatusChip :tone="getLevelTone(row.notificationLevel)" dot>
                   {{ getLevelLabel(row.notificationLevel) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="light">
+                <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
                   {{ row.enabled ? '启用' : '停用' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column label="最近测试" min-width="170">
@@ -364,12 +546,77 @@
             </el-table-column>
             <el-table-column label="操作" width="220" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="editTelegram(row)">编辑</el-button>
-                <el-button text type="success" @click="testTelegram(row)">测试发送</el-button>
-                <el-button text type="danger" @click="removeTelegram(row)">删除</el-button>
+                <div class="table-action-group">
+                  <AppButton size="small" variant="ghost" @click="editTelegram(row)"
+                    >编辑</AppButton
+                  >
+                  <AppButton size="small" variant="success" @click="testTelegram(row)">
+                    测试发送
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="removeTelegram(row)">
+                    删除
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="telegramConfigs.length" class="mobile-record-list">
+            <article v-for="config in telegramConfigs" :key="config.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ config.notificationName }}</strong>
+                  <span>{{ config.chatId }}</span>
+                </div>
+                <StatusChip :tone="config.enabled ? 'green' : 'neutral'" dot>
+                  {{ config.enabled ? '启用' : '停用' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>Token</span>
+                  <strong>{{
+                    config.hasBotToken ? `****${config.botTokenTail ?? ''}` : '未配置'
+                  }}</strong>
+                </div>
+                <div>
+                  <span>级别</span>
+                  <strong>{{ getLevelLabel(config.notificationLevel) }}</strong>
+                </div>
+                <div>
+                  <span>最近测试</span>
+                  <strong>{{ getTelegramTestLabel(config.lastTestStatus) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>测试时间</span>
+                  <strong>{{ formatDate(config.lastTestAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="ghost" @click="editTelegram(config)">
+                  编辑
+                </AppButton>
+                <AppButton size="small" variant="success" @click="testTelegram(config)">
+                  测试发送
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="removeTelegram(config)">
+                  删除
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无 Telegram 配置</strong>
+              <span>新增配置后可以在这里测试发送和管理通知级别。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="primary" @click="openTelegramDialog"
+                  >新增 Telegram 配置</AppButton
+                >
+              </div>
+            </div>
+          </div>
         </el-tab-pane>
 
         <el-tab-pane label="通知日志" name="logs">
@@ -423,18 +670,27 @@
                   :value="item.value"
                 />
               </el-select>
-              <el-button @click="markAllRead">全部已读</el-button>
+              <AppButton @click="markAllRead">全部已读</AppButton>
             </template>
           </TableToolbar>
 
           <el-table
             v-loading="logsLoading"
+            class="desktop-data-table"
             :data="logs"
             :size="logTableSize"
             row-key="id"
-            empty-text="暂无通知日志"
             @sort-change="handleLogSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无通知日志</strong>
+                <span>可以清空筛选后重新查看，或等待通知任务生成日志。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearLogFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isLogColumnVisible('title')"
               label="通知"
@@ -476,9 +732,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="getLogStatusType(row.status)" size="small" effect="light">
+                <StatusChip :tone="getLogStatusTone(row.status)" dot>
                   {{ getLogStatusLabel(row.status) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -501,28 +757,97 @@
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button text :disabled="row.readAt" @click="markRead(row)">已读</el-button>
-                <el-button
-                  text
-                  type="primary"
-                  :disabled="!canRetryLog(row.status)"
-                  @click="retryLog(row)"
-                >
-                  重试
-                </el-button>
+                <div class="table-action-group">
+                  <AppButton
+                    size="small"
+                    variant="ghost"
+                    :disabled="row.readAt"
+                    @click="markRead(row)"
+                  >
+                    已读
+                  </AppButton>
+                  <AppButton
+                    size="small"
+                    variant="ghost"
+                    :disabled="!canRetryLog(row.status)"
+                    @click="retryLog(row)"
+                  >
+                    重试
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
-          <div class="pagination-row">
-            <el-pagination
-              v-model:current-page="logQuery.page"
-              v-model:page-size="logQuery.pageSize"
-              :total="logTotal"
-              layout="total, sizes, prev, pager, next"
-              @current-change="loadLogs"
-              @size-change="loadLogs"
-            />
+          <div v-if="logs.length" class="mobile-record-list">
+            <article v-for="log in logs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.title }}</strong>
+                  <span>{{ log.eventCode }} · {{ getModuleLabel(log.module) }}</span>
+                </div>
+                <StatusChip :tone="getLogStatusTone(log.status)" dot>
+                  {{ getLogStatusLabel(log.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>渠道</span>
+                  <strong>{{ getChannelLabel(log.channel) }}</strong>
+                </div>
+                <div>
+                  <span>接收人</span>
+                  <strong>{{ log.recipient || log.recipientUserId || '全部' }}</strong>
+                </div>
+                <div>
+                  <span>时间</span>
+                  <strong>{{ formatDate(log.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>内容摘要</span>
+                  <strong>{{ log.contentDigest }}</strong>
+                </div>
+                <div>
+                  <span>错误</span>
+                  <strong>{{ log.errorMessage || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton
+                  size="small"
+                  variant="ghost"
+                  :disabled="Boolean(log.readAt)"
+                  @click="markRead(log)"
+                >
+                  已读
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="ghost"
+                  :disabled="!canRetryLog(log.status)"
+                  @click="retryLog(log)"
+                >
+                  重试
+                </AppButton>
+              </div>
+            </article>
           </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无通知日志</strong>
+              <span>可以清空筛选后重新查看，或等待通知任务生成日志。</span>
+              <div class="apple-core-empty-state__actions">
+                <AppButton variant="soft" @click="clearLogFilters">清空筛选</AppButton>
+              </div>
+            </div>
+          </div>
+          <PaginationBar
+            v-model:page="logQuery.page"
+            v-model:page-size="logQuery.pageSize"
+            :total="logTotal"
+            @change="loadLogs"
+          />
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -530,7 +855,7 @@
     <el-dialog
       v-model="ruleDialogVisible"
       :title="editingRuleId ? '编辑通知规则' : '新增通知规则'"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-position="top">
         <el-form-item label="规则名称" required>
@@ -569,15 +894,15 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="ruleDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveRule">保存</el-button>
+        <AppButton @click="ruleDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveRule">保存</AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="templateDialogVisible"
       :title="editingTemplateId ? '编辑通知模板' : '新增通知模板'"
-      width="620px"
+      width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-position="top">
         <el-form-item label="模板名称" required>
@@ -603,23 +928,23 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="templateDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveTemplate">保存</el-button>
+        <AppButton @click="templateDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveTemplate">保存</AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="telegramDialogVisible"
       :title="editingTelegramId ? '编辑 Telegram 配置' : '新增 Telegram 配置'"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
     >
-      <el-alert
-        class="dialog-alert"
-        title="Bot Token 会加密保存，列表只显示尾号。"
-        type="info"
-        show-icon
-        :closable="false"
-      />
+      <div class="apple-core-alert apple-core-alert--blue dialog-alert" role="status">
+        <StatusChip tone="blue">加密保存</StatusChip>
+        <div>
+          <strong>Bot Token 会加密保存</strong>
+          <p>列表只显示尾号，查看和编辑仍按现有权限与审计流程执行。</p>
+        </div>
+      </div>
       <el-form label-position="top">
         <el-form-item label="通知名称" required>
           <el-input v-model="telegramForm.notificationName" />
@@ -659,8 +984,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="telegramDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveTelegram">保存</el-button>
+        <AppButton @click="telegramDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveTelegram">保存</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -676,8 +1001,10 @@ import {
   type NotificationRuleQuery,
   type NotificationTemplateQuery
 } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   NotificationLevel,
@@ -847,6 +1174,59 @@ const primaryActionText = computed(() => {
   if (activeTab.value === 'telegram') return '新增 Telegram';
   return '新增通知规则';
 });
+const activeTabMeta = computed(() => {
+  if (activeTab.value === 'rules') {
+    return {
+      title: '通知规则',
+      description: '按事件、模块、级别和渠道管理触发规则，启停动作会写入操作日志。',
+      badge: `${ruleTotal.value} 条规则`,
+      tone: 'blue' as const
+    };
+  }
+
+  if (activeTab.value === 'templates') {
+    return {
+      title: '消息模板',
+      description: '维护站内通知和 Telegram 的标题、正文和变量占位内容。',
+      badge: `${templateTotal.value} 个模板`,
+      tone: 'purple' as const
+    };
+  }
+
+  if (activeTab.value === 'telegram') {
+    return {
+      title: 'Telegram 配置',
+      description: 'Bot Token 加密保存，列表只展示尾号，测试发送用于验证配置可用性。',
+      badge: `${enabledTelegramCount.value} 个启用`,
+      tone: 'green' as const
+    };
+  }
+
+  if (activeTab.value === 'logs') {
+    return {
+      title: '通知日志',
+      description: '排查通知发送、跳过、失败和重试记录，失败项可在这里重新触发。',
+      badge: `${logTotal.value} 条日志`,
+      tone: 'orange' as const
+    };
+  }
+
+  return {
+    title: '通知总览',
+    description: '快速查看近期通知、未读站内消息、失败发送和 Telegram 配置状态。',
+    badge: `${overview.value?.recentLogs.length ?? 0} 条近期记录`,
+    tone: 'blue' as const
+  };
+});
+const enabledTelegramCount = computed(
+  () => telegramConfigs.value.filter((item) => item.enabled).length
+);
+const tokenConfiguredCount = computed(
+  () => telegramConfigs.value.filter((item) => item.hasBotToken).length
+);
+const successfulTelegramTests = computed(
+  () => telegramConfigs.value.filter((item) => item.lastTestStatus === 'success').length
+);
 const ruleTableSize = computed(() => getTableSize(ruleDensity.value));
 const templateTableSize = computed(() => getTableSize(templateDensity.value));
 const logTableSize = computed(() => getTableSize(logDensity.value));
@@ -1681,10 +2061,10 @@ function getLevelLabel(value: NotificationLevel) {
   return levelOptions.find((item) => item.value === value)?.label ?? value;
 }
 
-function getLevelType(value: NotificationLevel) {
-  if (value === 'critical' || value === 'error') return 'danger';
-  if (value === 'warning') return 'warning';
-  return 'info';
+function getLevelTone(value: NotificationLevel) {
+  if (value === 'critical' || value === 'error') return 'red';
+  if (value === 'warning') return 'orange';
+  return 'blue';
 }
 
 function getLogStatusLabel(value: NotificationLog['status']) {
@@ -1697,11 +2077,11 @@ function getLogStatusLabel(value: NotificationLog['status']) {
   return labels[value];
 }
 
-function getLogStatusType(value: NotificationLog['status']) {
-  if (value === 'sent') return 'success';
-  if (value === 'failed') return 'danger';
-  if (value === 'skipped') return 'info';
-  return 'warning';
+function getLogStatusTone(value: NotificationLog['status']) {
+  if (value === 'sent') return 'green';
+  if (value === 'failed') return 'red';
+  if (value === 'skipped') return 'neutral';
+  return 'orange';
 }
 
 function getTelegramTestLabel(value: TelegramConfig['lastTestStatus']) {

@@ -5,14 +5,66 @@
     phase="Phase 5"
     :description="pageCopy.description"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="任务数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="待处理" :value="pendingCount" hint="当前页未完成" tone="orange" />
-      <MetricCard label="紧急任务" :value="urgentCount" hint="当前页" tone="red" />
-      <MetricCard label="建议充值" :value="suggestedTopupSum" hint="当前页合计" tone="purple" />
+    <div class="renewal-kanban" aria-label="续费任务看板">
+      <section v-for="lane in renewalLanes" :key="lane.key" class="renewal-lane">
+        <header class="renewal-lane__head">
+          <div>
+            <strong>{{ lane.title }}</strong>
+            <p>{{ lane.description }}</p>
+          </div>
+          <StatusChip :tone="lane.tone">{{ lane.tasks.length }}</StatusChip>
+        </header>
+
+        <div class="renewal-lane__body">
+          <button
+            v-for="task in lane.tasks"
+            :key="task.id"
+            class="renewal-task-card"
+            type="button"
+            @click="openDetail(task)"
+          >
+            <span class="renewal-task-card__head">
+              <strong>{{ task.customer.name }} · {{ task.service.name }}</strong>
+              <StatusChip :tone="getPriorityTone(task.priority)">
+                {{ getPriorityLabel(task.priority) }}
+              </StatusChip>
+            </span>
+            <p>{{ task.requiredAction || getTaskTypeLabel(task.taskType) }}</p>
+            <span class="renewal-task-card__meta">
+              <StatusChip :tone="getStatusTone(task.status)" dot>
+                {{ getStatusLabel(task.status) }}
+              </StatusChip>
+              <em>{{ task.dueAt ? getDueText(task.dueAt) : '未设置截止' }}</em>
+            </span>
+          </button>
+
+          <div v-if="lane.tasks.length === 0" class="renewal-lane-empty">
+            <strong>暂无任务</strong>
+            <span>当前筛选条件下没有匹配项。</span>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <section class="content-panel">
+    <section class="content-panel apple-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>{{ pageCopy.panelTitle }}</h3>
+          <p>{{ pageCopy.panelDescription }}</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip :tone="pageCopy.tone" dot>{{ pageCopy.badge }}</StatusChip>
+          <StatusChip tone="blue">待办 {{ pendingCount }}</StatusChip>
+          <StatusChip :tone="urgentCount > 0 ? 'red' : 'green'">
+            {{ urgentCount > 0 ? `紧急 ${urgentCount}` : '暂无紧急' }}
+          </StatusChip>
+          <StatusChip tone="orange">高优先级 {{ highPriorityCount }}</StatusChip>
+          <StatusChip tone="red">取消 {{ cancelTaskCount }}</StatusChip>
+          <StatusChip tone="orange">充值 {{ topupTaskCount }}</StatusChip>
+          <StatusChip tone="green">自动续费 {{ autoRenewTaskCount }}</StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -83,25 +135,30 @@
               :value="item.value"
             />
           </el-select>
-          <el-select
-            v-model="quickDate"
-            class="table-toolbar__select"
-            clearable
-            placeholder="截止时间"
-            @change="applyQuickDate"
-          >
-            <el-option
+          <div class="quick-date renewal-due-shortcuts" role="group" aria-label="截止时间快捷筛选">
+            <button
+              type="button"
+              :class="{ active: quickDate === '' }"
+              @click="selectQuickDate('')"
+            >
+              全部
+            </button>
+            <button
               v-for="item in quickDateOptions"
               :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
+              type="button"
+              :class="{ active: quickDate === item.value }"
+              @click="selectQuickDate(item.value)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
         </template>
       </TableToolbar>
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="tasks"
         :size="tableSize"
         row-key="id"
@@ -109,6 +166,18 @@
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无续费任务</strong>
+            <span>可以生成到期任务，或调整筛选条件后重新查看。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+              <AppButton variant="primary" :loading="generating" @click="generateDueTasks">
+                生成到期任务
+              </AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('task')"
@@ -162,15 +231,9 @@
         >
           <template #default="{ row }">
             {{ formatDate(row.dueAt) }}
-            <el-tag
-              v-if="row.dueAt"
-              class="tag-gap"
-              size="small"
-              :type="getDueTagType(row.dueAt)"
-              effect="light"
-            >
+            <StatusChip v-if="row.dueAt" class="tag-gap" :tone="getDueTone(row.dueAt)">
               {{ getDueText(row.dueAt) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -181,9 +244,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag size="small" effect="light">{{
-              getCustomerDecisionLabel(row.customerDecision)
-            }}</el-tag>
+            <StatusChip :tone="getCustomerDecisionTone(row.customerDecision)">
+              {{ getCustomerDecisionLabel(row.customerDecision) }}
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -194,9 +257,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getPriorityType(row.priority)" size="small" effect="light">
+            <StatusChip :tone="getPriorityTone(row.priority)">
               {{ getPriorityLabel(row.priority) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -207,40 +270,125 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button
-              text
-              type="success"
-              :disabled="isFinalStatus(row.status)"
-              @click="completeTask(row)"
-            >
-              完成
-            </el-button>
-            <el-button text :disabled="isFinalStatus(row.status)" @click="postponeTask(row)">
-              延期
-            </el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton
+                size="small"
+                variant="success"
+                :disabled="isFinalStatus(row.status)"
+                @click="completeTask(row)"
+              >
+                完成
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="soft"
+                :disabled="isFinalStatus(row.status)"
+                @click="postponeTask(row)"
+              >
+                延期
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadTasks"
-          @size-change="loadTasks"
-        />
+      <div class="mobile-record-list" aria-label="续费任务移动列表">
+        <article v-for="task in tasks" :key="task.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ task.customer.name }} · {{ task.service.name }}</strong>
+              <span>{{ getTaskTypeLabel(task.taskType) }} · {{ task.order.orderNo }}</span>
+            </div>
+            <StatusChip :tone="getPriorityTone(task.priority)">
+              {{ getPriorityLabel(task.priority) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>Apple ID</span>
+              <strong>{{ task.appleAccount?.appleIdMasked ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>建议充值</span>
+              <strong>{{ task.suggestedTopupAmount }}</strong>
+            </div>
+            <div>
+              <span>截止时间</span>
+              <strong>{{ task.dueAt ? getDueText(task.dueAt) : '未设置' }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>余额 / 预计扣费</span>
+              <strong>{{ task.currentBalance }} / {{ task.expectedChargeAmount }}</strong>
+            </div>
+            <div>
+              <span>客户决定</span>
+              <strong>{{ getCustomerDecisionLabel(task.customerDecision) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip :tone="getStatusTone(task.status)" dot>
+              {{ getStatusLabel(task.status) }}
+            </StatusChip>
+            <StatusChip v-if="task.dueAt" :tone="getDueTone(task.dueAt)">
+              {{ formatDate(task.dueAt) }}
+            </StatusChip>
+            <StatusChip :tone="getCustomerDecisionTone(task.customerDecision)">
+              {{ getCustomerDecisionLabel(task.customerDecision) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(task)">详情</AppButton>
+            <AppButton
+              size="small"
+              variant="success"
+              :disabled="isFinalStatus(task.status)"
+              @click="completeTask(task)"
+            >
+              完成
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="soft"
+              :disabled="isFinalStatus(task.status)"
+              @click="postponeTask(task)"
+            >
+              延期
+            </AppButton>
+          </div>
+        </article>
+
+        <div v-if="!loading && tasks.length === 0" class="apple-core-empty-state">
+          <strong>暂无续费任务</strong>
+          <span>可以生成到期任务，或调整筛选条件后重新查看。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" :loading="generating" @click="generateDueTasks">
+              生成到期任务
+            </AppButton>
+          </div>
+        </div>
       </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadTasks"
+      />
     </section>
 
     <AppDrawer
@@ -270,126 +418,134 @@
         </div>
       </div>
 
-      <el-descriptions class="detail-descriptions" :column="1" border>
-        <el-descriptions-item label="任务类型">
-          {{ selectedTask ? getTaskTypeLabel(selectedTask.taskType) : '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="需要动作">
-          {{ selectedTask?.requiredAction ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="余额/扣费/建议充值">
-          {{ selectedTask?.currentBalance ?? '-' }} /
-          {{ selectedTask?.expectedChargeAmount ?? '-' }} /
-          {{ selectedTask?.suggestedTopupAmount ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="套餐">
-          {{ selectedTask?.currentPlan ?? '-' }} -> {{ selectedTask?.targetPlan ?? '-' }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div class="drawer-section">
+        <div class="drawer-section__title">任务明细</div>
+        <el-descriptions class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="任务类型">
+            {{ selectedTask ? getTaskTypeLabel(selectedTask.taskType) : '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="需要动作">
+            {{ selectedTask?.requiredAction ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="余额/扣费/建议充值">
+            {{ selectedTask?.currentBalance ?? '-' }} /
+            {{ selectedTask?.expectedChargeAmount ?? '-' }} /
+            {{ selectedTask?.suggestedTopupAmount ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="套餐">
+            {{ selectedTask?.currentPlan ?? '-' }} -> {{ selectedTask?.targetPlan ?? '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
 
-      <el-divider />
-
-      <el-form label-position="top">
-        <el-form-item label="状态">
-          <el-select v-model="form.status" class="full-width">
-            <el-option
-              v-for="item in statusOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="优先级">
-          <el-select v-model="form.priority" class="full-width">
-            <el-option
-              v-for="item in priorityOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="客户决定">
-          <el-select v-model="form.customerDecision" class="full-width">
-            <el-option
-              v-for="item in customerDecisionOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="任务备注">
-          <el-input
-            v-model="form.note"
-            type="textarea"
-            :rows="3"
-            placeholder="记录联系过程、客户反馈、风险说明"
-          />
-        </el-form-item>
-        <el-form-item label="处理结果">
-          <el-input
-            v-model="form.resultNote"
-            type="textarea"
-            :rows="3"
-            placeholder="完成、取消或延期时记录处理结果"
-          />
-        </el-form-item>
-        <el-form-item label="处理凭证">
-          <div class="evidence-box">
-            <div v-if="selectedTask?.evidenceAttachment" class="evidence-current">
-              <div>
-                <strong>{{ selectedTask.evidenceAttachment.originalName }}</strong>
-                <div class="muted-block">
-                  {{ selectedTask.evidenceAttachment.mimeType }} ·
-                  {{ formatSize(selectedTask.evidenceAttachment.sizeBytes) }} ·
-                  {{ formatDate(selectedTask.evidenceAttachment.createdAt) }}
-                </div>
-              </div>
-              <el-button
-                text
-                type="primary"
-                :disabled="evidenceUploading"
-                @click="downloadEvidenceAttachment"
-              >
-                下载
-              </el-button>
-            </div>
-            <input
-              ref="evidenceFileInputRef"
-              type="file"
-              :disabled="evidenceUploading"
-              @change="selectEvidenceFile"
-            />
-            <div v-if="evidenceFile" class="muted-block">待上传：{{ evidenceFile.name }}</div>
+      <div class="drawer-section">
+        <div class="drawer-section__title">处理信息</div>
+        <el-form label-position="top">
+          <div class="form-grid">
+            <el-form-item label="状态">
+              <el-select v-model="form.status" class="full-width">
+                <el-option
+                  v-for="item in statusOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="优先级">
+              <el-select v-model="form.priority" class="full-width">
+                <el-option
+                  v-for="item in priorityOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="客户决定">
+              <el-select v-model="form.customerDecision" class="full-width">
+                <el-option
+                  v-for="item in customerDecisionOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
           </div>
-        </el-form-item>
-      </el-form>
+          <el-form-item label="任务备注">
+            <el-input
+              v-model="form.note"
+              type="textarea"
+              :rows="3"
+              placeholder="记录联系过程、客户反馈、风险说明"
+            />
+          </el-form-item>
+          <el-form-item label="处理结果">
+            <el-input
+              v-model="form.resultNote"
+              type="textarea"
+              :rows="3"
+              placeholder="完成、取消或延期时记录处理结果"
+            />
+          </el-form-item>
+          <el-form-item label="处理凭证">
+            <div class="evidence-box">
+              <div v-if="selectedTask?.evidenceAttachment" class="evidence-current">
+                <div>
+                  <strong>{{ selectedTask.evidenceAttachment.originalName }}</strong>
+                  <div class="muted-block">
+                    {{ selectedTask.evidenceAttachment.mimeType }} ·
+                    {{ formatSize(selectedTask.evidenceAttachment.sizeBytes) }} ·
+                    {{ formatDate(selectedTask.evidenceAttachment.createdAt) }}
+                  </div>
+                </div>
+                <AppButton
+                  variant="ghost"
+                  :disabled="evidenceUploading"
+                  @click="downloadEvidenceAttachment"
+                >
+                  下载
+                </AppButton>
+              </div>
+              <input
+                ref="evidenceFileInputRef"
+                type="file"
+                :disabled="evidenceUploading"
+                @change="selectEvidenceFile"
+              />
+              <div v-if="evidenceFile" class="muted-block">待上传：{{ evidenceFile.name }}</div>
+            </div>
+          </el-form-item>
+        </el-form>
+      </div>
 
-      <div class="drawer-inline-actions">
-        <el-button
-          type="success"
-          :loading="evidenceUploading"
-          :disabled="!selectedTask || isFinalStatus(selectedTask.status)"
-          @click="completeSelectedTask"
-        >
-          标记完成
-        </el-button>
-        <el-button
-          :disabled="evidenceUploading || !selectedTask || isFinalStatus(selectedTask.status)"
-          @click="postponeSelectedTask"
-        >
-          延期1天
-        </el-button>
-        <el-button
-          type="danger"
-          plain
-          :disabled="evidenceUploading || !selectedTask || isFinalStatus(selectedTask.status)"
-          @click="cancelSelectedTask"
-        >
-          取消任务
-        </el-button>
+      <div class="drawer-section">
+        <div class="drawer-section__title">快捷处理</div>
+        <div class="drawer-inline-actions drawer-inline-actions--inside">
+          <AppButton
+            variant="success"
+            :loading="evidenceUploading"
+            :disabled="!selectedTask || isFinalStatus(selectedTask.status)"
+            @click="completeSelectedTask"
+          >
+            标记完成
+          </AppButton>
+          <AppButton
+            variant="soft"
+            :disabled="evidenceUploading || !selectedTask || isFinalStatus(selectedTask.status)"
+            @click="postponeSelectedTask"
+          >
+            延期1天
+          </AppButton>
+          <AppButton
+            variant="danger"
+            :disabled="evidenceUploading || !selectedTask || isFinalStatus(selectedTask.status)"
+            @click="cancelSelectedTask"
+          >
+            取消任务
+          </AppButton>
+        </div>
       </div>
     </AppDrawer>
   </PageScaffold>
@@ -405,9 +561,11 @@ import {
   userTableViewsApi,
   type RenewalTaskQuery
 } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { RenewalTask, TableDensity, UserTableView } from '@/types/system';
 
@@ -428,6 +586,15 @@ const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const evidenceFile = ref<File | null>(null);
 const evidenceFileInputRef = ref<HTMLInputElement>();
+type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+
+interface RenewalLane {
+  key: string;
+  title: string;
+  description: string;
+  tone: ChipTone;
+  tasks: RenewalTask[];
+}
 
 const renewalColumnOptions = [
   { label: '任务', value: 'task', required: true },
@@ -473,31 +640,54 @@ const tableKey = computed(() =>
   fixedTaskType.value ? `apple_renewal_tasks_${fixedTaskType.value}` : 'apple_renewal_tasks'
 );
 
-const pageCopy = computed(() => {
+const pageCopy = computed<{
+  title: string;
+  description: string;
+  panelTitle: string;
+  panelDescription: string;
+  badge: string;
+  tone: ChipTone;
+}>(() => {
   if (fixedTaskType.value === 'cancel_subscription') {
     return {
       title: '待取消订阅',
-      description: '集中处理客户确认不续费、需要取消自动订阅的 Apple ID 任务。'
+      description: '集中处理客户确认不续费、需要取消自动订阅的 Apple ID 任务。',
+      panelTitle: '待取消订阅任务',
+      panelDescription: '优先处理客户确认不续费但订阅仍未关闭的任务，降低误扣费风险。',
+      badge: '取消订阅',
+      tone: 'red'
     };
   }
 
   if (fixedTaskType.value === 'topup_apple_balance') {
     return {
       title: '待充值续费',
-      description: '集中处理余额不足、需要先充值才能续费的 Apple ID 任务。'
+      description: '集中处理余额不足、需要先充值才能续费的 Apple ID 任务。',
+      panelTitle: '待充值续费任务',
+      panelDescription: '按截止时间、建议充值和优先级处理余额不足的续费任务。',
+      badge: '充值续费',
+      tone: 'orange'
     };
   }
 
   if (fixedTaskType.value === 'wait_auto_renewal') {
     return {
       title: '等待自动续费',
-      description: '集中跟踪余额已足够、等待 Apple 自动扣费并检查结果的任务。'
+      description: '集中跟踪余额已足够、等待 Apple 自动扣费并检查结果的任务。',
+      panelTitle: '等待自动续费任务',
+      panelDescription: '跟踪余额已满足扣费条件的业务，自动续费后再回填结果。',
+      badge: '自动续费',
+      tone: 'green'
     };
   }
 
   return {
     title: '续费工作台',
-    description: '集中处理到期联系、客户确认、收款、取消订阅、充值续费和自动续费任务。'
+    description: '集中处理到期联系、客户确认、收款、取消订阅、充值续费和自动续费任务。',
+    panelTitle: '续费任务队列',
+    panelDescription: '把客户确认、收款、取消订阅、充值和自动续费任务集中在一个队列里处理。',
+    badge: '工作台',
+    tone: 'blue'
   };
 });
 
@@ -560,9 +750,38 @@ const pendingCount = computed(
   () => tasks.value.filter((task) => !isFinalStatus(task.status)).length
 );
 const urgentCount = computed(() => tasks.value.filter((task) => task.priority === 'urgent').length);
-const suggestedTopupSum = computed(() =>
-  tasks.value.reduce((sum, task) => sum + Number(task.suggestedTopupAmount || 0), 0).toFixed(2)
+const highPriorityCount = computed(
+  () => tasks.value.filter((task) => task.priority === 'high').length
 );
+const cancelTaskCount = computed(
+  () =>
+    tasks.value.filter(
+      (task) =>
+        task.taskType === 'cancel_subscription' || task.customerDecision === 'confirmed_no_renewal'
+    ).length
+);
+const topupTaskCount = computed(
+  () =>
+    tasks.value.filter(
+      (task) => task.taskType === 'topup_apple_balance' || Number(task.suggestedTopupAmount) > 0
+    ).length
+);
+const autoRenewTaskCount = computed(
+  () =>
+    tasks.value.filter(
+      (task) => task.taskType === 'wait_auto_renewal' || task.status === 'waiting_auto_renewal'
+    ).length
+);
+const renewalBoardTasks = computed(() =>
+  [...tasks.value]
+    .filter((task) => !isFinalStatus(task.status))
+    .sort((left, right) => {
+      const priorityDiff = getPriorityRank(right.priority) - getPriorityRank(left.priority);
+      if (priorityDiff !== 0) return priorityDiff;
+      return getTimeValue(left.dueAt) - getTimeValue(right.dueAt);
+    })
+);
+const renewalLanes = computed<RenewalLane[]>(() => getRenewalLanes());
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -674,6 +893,11 @@ function clearFilters() {
   sortConfig.value = {};
 }
 
+async function clearFiltersAndSearch() {
+  clearFilters();
+  await loadTasks();
+}
+
 function removeFilter(key: string) {
   if (key === 'taskType') {
     query.taskType = '';
@@ -688,6 +912,11 @@ function removeFilter(key: string) {
     quickDate.value = '';
     clearDueRange();
   }
+}
+
+function selectQuickDate(value: string) {
+  quickDate.value = value;
+  applyQuickDate();
 }
 
 function exportList() {
@@ -1063,6 +1292,172 @@ function addDaysIso(value: string, days: number) {
   return date.toISOString();
 }
 
+function getRenewalLanes(): RenewalLane[] {
+  if (fixedTaskType.value === 'cancel_subscription') {
+    return [
+      {
+        key: 'urgent-cancel',
+        title: '紧急取消',
+        description: '高优先级或紧急的不续费业务',
+        tone: 'red',
+        tasks: pickLaneTasks((task) => task.priority === 'urgent' || task.priority === 'high')
+      },
+      {
+        key: 'due-cancel',
+        title: '今日截止',
+        description: '今天或已逾期的取消订阅任务',
+        tone: 'orange',
+        tasks: pickLaneTasks((task) => isDueWithin(task, 0))
+      },
+      {
+        key: 'manual-cancel',
+        title: '人工验证',
+        description: '需要登录、截图或人工确认',
+        tone: 'purple',
+        tasks: pickLaneTasks(
+          (task) => task.status === 'waiting_manual_verify' || task.status === 'processing'
+        )
+      },
+      {
+        key: 'open-cancel',
+        title: '待完成',
+        description: '仍在队列中的取消动作',
+        tone: 'blue',
+        tasks: pickLaneTasks(() => true)
+      }
+    ];
+  }
+
+  if (fixedTaskType.value === 'topup_apple_balance') {
+    return [
+      {
+        key: 'urgent-topup',
+        title: '紧急充值',
+        description: '临近扣费且余额不足的任务',
+        tone: 'red',
+        tasks: pickLaneTasks((task) => task.priority === 'urgent' || isDueWithin(task, 0))
+      },
+      {
+        key: 'suggested-topup',
+        title: '建议充值',
+        description: '系统已计算建议充值金额',
+        tone: 'orange',
+        tasks: pickLaneTasks((task) => Number(task.suggestedTopupAmount || 0) > 0)
+      },
+      {
+        key: 'balance-check',
+        title: '核对余额',
+        description: '充值前后需要确认余额一致',
+        tone: 'purple',
+        tasks: pickLaneTasks(
+          (task) => task.taskType === 'check_balance' || task.status === 'waiting_manual_verify'
+        )
+      },
+      {
+        key: 'topup-open',
+        title: '待处理',
+        description: '仍未完成的充值续费任务',
+        tone: 'blue',
+        tasks: pickLaneTasks(() => true)
+      }
+    ];
+  }
+
+  if (fixedTaskType.value === 'wait_auto_renewal') {
+    return [
+      {
+        key: 'today-renewal',
+        title: '今日扣费',
+        description: '今天预计自动续费的业务',
+        tone: 'orange',
+        tasks: pickLaneTasks((task) => isDueWithin(task, 0))
+      },
+      {
+        key: 'waiting-renewal',
+        title: '等待扣费',
+        description: '余额充足，等待 Apple 自动扣费',
+        tone: 'green',
+        tasks: pickLaneTasks((task) => task.status === 'waiting_auto_renewal')
+      },
+      {
+        key: 'verify-renewal',
+        title: '人工验证',
+        description: '扣费失败或结果异常需要人工确认',
+        tone: 'purple',
+        tasks: pickLaneTasks(
+          (task) =>
+            task.status === 'waiting_manual_verify' ||
+            task.status === 'abnormal' ||
+            task.status === 'failed'
+        )
+      },
+      {
+        key: 'renewal-open',
+        title: '待回填',
+        description: '续费结果未最终回填的任务',
+        tone: 'blue',
+        tasks: pickLaneTasks(() => true)
+      }
+    ];
+  }
+
+  return [
+    {
+      key: 'contact',
+      title: '待联系',
+      description: '询问客户、催回复、确认是否续费',
+      tone: 'blue',
+      tasks: pickLaneTasks(
+        (task) =>
+          task.taskType === 'contact_customer' ||
+          task.taskType === 'remind_customer_reply' ||
+          task.customerDecision === 'not_contacted' ||
+          task.customerDecision === 'contacted_waiting_reply'
+      )
+    },
+    {
+      key: 'cancel',
+      title: '待取消',
+      description: '客户不续费，先取消订阅防误扣费',
+      tone: 'red',
+      tasks: pickLaneTasks(
+        (task) =>
+          task.taskType === 'cancel_subscription' ||
+          task.customerDecision === 'confirmed_no_renewal'
+      )
+    },
+    {
+      key: 'topup',
+      title: '待充值',
+      description: '余额不足，需要录入 Apple ID 充值',
+      tone: 'orange',
+      tasks: pickLaneTasks(
+        (task) =>
+          task.taskType === 'topup_apple_balance' ||
+          task.taskType === 'check_balance' ||
+          Number(task.suggestedTopupAmount || 0) > 0
+      )
+    },
+    {
+      key: 'auto-renewal',
+      title: '等待扣费',
+      description: '余额已满足，等待自动续费结果',
+      tone: 'green',
+      tasks: pickLaneTasks(
+        (task) => task.taskType === 'wait_auto_renewal' || task.status === 'waiting_auto_renewal'
+      )
+    }
+  ];
+}
+
+function pickLaneTasks(predicate: (task: RenewalTask) => boolean) {
+  return renewalBoardTasks.value.filter(predicate).slice(0, 3);
+}
+
+function isDueWithin(task: RenewalTask, maxDays: number) {
+  return Boolean(task.dueAt && getDueDiffDays(task.dueAt) <= maxDays);
+}
+
 function formatDate(value?: string | null) {
   if (!value) return '-';
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
@@ -1090,26 +1485,65 @@ function getPriorityLabel(value: RenewalTask['priority']) {
   return labels[value];
 }
 
-function getPriorityType(value: RenewalTask['priority']) {
-  if (value === 'urgent') return 'danger';
-  if (value === 'high') return 'warning';
-  if (value === 'medium') return 'primary';
-  return 'info';
+function getPriorityRank(value: RenewalTask['priority']) {
+  const ranks: Record<RenewalTask['priority'], number> = {
+    low: 1,
+    medium: 2,
+    high: 3,
+    urgent: 4
+  };
+  return ranks[value];
 }
 
-function getStatusType(value: RenewalTask['status']) {
-  if (value === 'completed') return 'success';
-  if (value === 'cancelled') return 'info';
-  if (value === 'failed' || value === 'abnormal') return 'danger';
-  if (value === 'waiting_auto_renewal' || value === 'waiting_payment') return 'warning';
-  return 'primary';
+function getTimeValue(value?: string | null) {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
 }
 
-function getDueTagType(value: string) {
+function getPriorityTone(value: RenewalTask['priority']) {
+  if (value === 'urgent') return 'red';
+  if (value === 'high') return 'orange';
+  if (value === 'medium') return 'blue';
+  return 'neutral';
+}
+
+function getStatusTone(value: RenewalTask['status']) {
+  if (value === 'completed') return 'green';
+  if (value === 'cancelled') return 'neutral';
+  if (value === 'failed' || value === 'abnormal') return 'red';
+  if (
+    value === 'waiting_auto_renewal' ||
+    value === 'waiting_payment' ||
+    value === 'waiting_manual_verify'
+  ) {
+    return 'orange';
+  }
+  if (value === 'processing') return 'purple';
+  return 'blue';
+}
+
+function getDueTone(value: string) {
   const diffDays = getDueDiffDays(value);
-  if (diffDays < 0) return 'danger';
-  if (diffDays <= 1) return 'warning';
-  return 'info';
+  if (diffDays < 0) return 'red';
+  if (diffDays <= 1) return 'orange';
+  return 'neutral';
+}
+
+function getCustomerDecisionTone(value: RenewalTask['customerDecision']) {
+  if (value === 'confirmed_renewal' || value === 'paid' || value === 'renewed_success') {
+    return 'green';
+  }
+  if (value === 'confirmed_no_renewal' || value === 'cancelled') {
+    return 'red';
+  }
+  if (value === 'unpaid' || value === 'abnormal') {
+    return 'orange';
+  }
+  if (value === 'change_plan' || value === 'considering') {
+    return 'purple';
+  }
+  return 'blue';
 }
 
 function getDueText(value: string) {

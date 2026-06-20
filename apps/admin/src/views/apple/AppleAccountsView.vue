@@ -6,17 +6,30 @@
     description="管理 Apple ID 基础资料、余额、余额人民币成本、移动加权平均成本、状态和手动锁定。敏感字段加密保存，列表默认脱敏。"
   >
     <template #actions>
-      <el-button @click="openImport">批量导入</el-button>
+      <AppButton @click="openImport">批量导入</AppButton>
     </template>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="账号数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="总余额" :value="totalBalance" hint="按当前页合计" tone="green" />
-      <MetricCard label="余额成本" :value="totalCost" hint="人民币成本，当前页合计" tone="orange" />
-      <MetricCard label="锁定账号" :value="lockedCount" hint="当前页手动锁定" tone="red" />
-    </div>
+    <section class="content-panel apple-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>Apple ID 资产列表</h3>
+          <p>支持模糊搜索、排序、分页、敏感字段脱敏、余额流水和充值/消费操作。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 个ID</StatusChip>
+          <StatusChip tone="green">可用 {{ normalAccountsCount }}</StatusChip>
+          <StatusChip :tone="attentionAccountsCount > 0 ? 'orange' : 'green'">
+            关注 {{ attentionAccountsCount }}
+          </StatusChip>
+          <StatusChip :tone="lockedCount > 0 ? 'red' : 'green'" dot>
+            {{ lockedCount > 0 ? `锁定 ${lockedCount}` : '锁定正常' }}
+          </StatusChip>
+          <StatusChip tone="purple">资料 {{ secretReadyCount }}</StatusChip>
+          <StatusChip tone="cyan">余额 {{ totalBalance }}</StatusChip>
+          <StatusChip tone="orange">成本 {{ totalCost }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -74,6 +87,7 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="accounts"
         :size="tableSize"
         row-key="id"
@@ -81,6 +95,16 @@
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无 Apple ID 账号</strong>
+            <span>可以新增账号、批量导入，或清空筛选后重新查看当前账号库。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增 Apple ID</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('appleId')"
@@ -129,17 +153,19 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('secrets')" label="敏感资料" min-width="180">
           <template #default="{ row }">
-            <el-tag v-if="row.hasPassword" class="tag-gap" size="small">密码</el-tag>
-            <el-tag v-if="row.hasSecurityInfo" class="tag-gap" size="small">密保</el-tag>
-            <el-tag v-if="row.hasPhone" class="tag-gap" size="small">手机</el-tag>
-            <el-tag v-if="row.hasRecoveryEmail" class="tag-gap" size="small">备用邮箱</el-tag>
+            <StatusChip v-if="row.hasPassword" class="tag-gap" tone="purple">密码</StatusChip>
+            <StatusChip v-if="row.hasSecurityInfo" class="tag-gap" tone="orange">密保</StatusChip>
+            <StatusChip v-if="row.hasPhone" class="tag-gap" tone="blue">手机</StatusChip>
+            <StatusChip v-if="row.hasRecoveryEmail" class="tag-gap" tone="cyan">
+              备用邮箱
+            </StatusChip>
             <span
               v-if="
                 !row.hasPassword && !row.hasSecurityInfo && !row.hasPhone && !row.hasRecoveryEmail
@@ -156,9 +182,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="row.isManuallyLocked ? 'danger' : 'success'" size="small">
+            <StatusChip :tone="row.isManuallyLocked ? 'red' : 'green'" dot>
               {{ row.isManuallyLocked ? '已锁定' : '正常' }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -172,43 +198,120 @@
         </el-table-column>
         <el-table-column label="操作" width="350" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button text type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button text type="primary" @click="openAccountSecret(row)">敏感</el-button>
-            <el-button text type="primary" @click="openStatusCheck(row)">检测</el-button>
-            <el-button text type="primary" @click="openTopup(row)">充值</el-button>
-            <el-button text @click="openConsumption(row)">消费</el-button>
-            <el-button text @click="openRecords(row)">流水</el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+              <AppButton size="small" variant="soft" @click="openAccountSecret(row)">
+                敏感
+              </AppButton>
+              <AppButton size="small" variant="ghost" @click="openStatusCheck(row)">检测</AppButton>
+              <AppButton size="small" variant="soft" @click="openTopup(row)">充值</AppButton>
+              <AppButton size="small" variant="ghost" @click="openConsumption(row)">消费</AppButton>
+              <AppButton size="small" variant="ghost" @click="openRecords(row)">流水</AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadAccounts"
-          @size-change="handlePageSizeChange"
-        />
+      <div v-if="accounts.length" class="mobile-record-list apple-account-mobile-list">
+        <article v-for="account in accounts" :key="account.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ account.appleIdMasked }}</strong>
+              <span>{{ account.region }} / {{ account.currency }}</span>
+            </div>
+            <StatusChip :tone="getStatusTone(account.status)" dot>
+              {{ getStatusLabel(account.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>余额</span>
+              <strong>{{ account.currentBalance }}</strong>
+            </div>
+            <div>
+              <span>余额成本</span>
+              <strong>{{ account.balanceCostAmount }}</strong>
+            </div>
+            <div>
+              <span>平均成本</span>
+              <strong>{{ account.averageCost }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>锁定状态</span>
+              <StatusChip :tone="account.isManuallyLocked ? 'red' : 'green'" dot>
+                {{ account.isManuallyLocked ? '已锁定' : '正常' }}
+              </StatusChip>
+            </div>
+            <div>
+              <span>敏感资料</span>
+              <div class="mobile-record-card__chips">
+                <StatusChip v-if="account.hasPassword" tone="purple">密码</StatusChip>
+                <StatusChip v-if="account.hasSecurityInfo" tone="orange">密保</StatusChip>
+                <StatusChip v-if="account.hasPhone" tone="blue">手机</StatusChip>
+                <StatusChip v-if="account.hasRecoveryEmail" tone="cyan">备用邮箱</StatusChip>
+                <em
+                  v-if="
+                    !account.hasPassword &&
+                    !account.hasSecurityInfo &&
+                    !account.hasPhone &&
+                    !account.hasRecoveryEmail
+                  "
+                >
+                  未保存
+                </em>
+              </div>
+            </div>
+            <div>
+              <span>更新时间</span>
+              <strong>{{ formatDate(account.updatedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(account)">详情</AppButton>
+            <AppButton size="small" variant="soft" @click="openTopup(account)">充值</AppButton>
+            <AppButton size="small" variant="ghost" @click="openRecords(account)">流水</AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list" aria-label="Apple ID 账号空状态">
+        <div class="apple-core-empty-state">
+          <strong>暂无 Apple ID 账号</strong>
+          <span>可以新增账号、批量导入，或清空筛选后重新查看当前账号库。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增 Apple ID</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadAccounts"
+      />
     </section>
 
     <el-dialog
       v-model="dialogVisible"
       :title="editingAccount ? '编辑 Apple ID' : '新增 Apple ID'"
-      width="720px"
+      width="min(720px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-alert
-          title="敏感字段会加密保存"
-          description="密码、密保、手机号、备用邮箱不会明文返回前端；编辑时留空表示不修改。"
-          type="info"
-          show-icon
-          :closable="false"
-        />
+        <div class="apple-core-alert apple-core-alert--blue">
+          <StatusChip tone="blue">加密</StatusChip>
+          <div>
+            <strong>敏感字段会加密保存</strong>
+            <p>密码、密保、手机号、备用邮箱不会明文返回前端；编辑时留空表示不修改。</p>
+          </div>
+        </div>
         <el-form-item v-if="!editingAccount" label="Apple ID" prop="appleId">
           <el-input v-model.trim="form.appleId" placeholder="example@icloud.com" />
         </el-form-item>
@@ -265,20 +368,24 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveAccount">保存</el-button>
+        <AppButton @click="dialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveAccount">保存</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialogVisible" title="批量导入 Apple ID" width="820px">
+    <el-dialog
+      v-model="importDialogVisible"
+      title="批量导入 Apple ID"
+      width="min(820px, calc(100vw - 24px))"
+    >
       <el-form ref="importFormRef" :model="importForm" :rules="importRules" label-position="top">
-        <el-alert
-          title="导入字段会按现有规则校验和加密"
-          description="密码、手机号、备用邮箱会加密保存；导入结果会逐行返回成功和失败原因。"
-          type="info"
-          show-icon
-          :closable="false"
-        />
+        <div class="apple-core-alert apple-core-alert--blue">
+          <StatusChip tone="blue">导入校验</StatusChip>
+          <div>
+            <strong>导入字段会按现有规则校验和加密</strong>
+            <p>密码、手机号、备用邮箱会加密保存；导入结果会逐行返回成功和失败原因。</p>
+          </div>
+        </div>
         <el-form-item label="导入内容" prop="accountsText">
           <el-input
             v-model="importForm.accountsText"
@@ -289,17 +396,29 @@
         </el-form-item>
       </el-form>
 
-      <el-alert
+      <div
         v-if="importResult"
         class="result-alert"
-        :title="`导入完成：成功 ${importResult.successCount} 条，失败 ${importResult.failedCount} 条`"
-        :type="importResult.failedCount ? 'warning' : 'success'"
-        show-icon
-        :closable="false"
-      />
+        :class="
+          importResult.failedCount
+            ? 'apple-core-alert apple-core-alert--orange'
+            : 'apple-core-alert apple-core-alert--green'
+        "
+      >
+        <StatusChip :tone="importResult.failedCount ? 'orange' : 'green'">
+          {{ importResult.failedCount ? '部分失败' : '导入完成' }}
+        </StatusChip>
+        <div>
+          <strong>
+            导入完成：成功 {{ importResult.successCount }} 条，失败
+            {{ importResult.failedCount }} 条
+          </strong>
+          <p>失败行会在下方展示原因，修正后可以再次导入。</p>
+        </div>
+      </div>
       <el-table
         v-if="importResult?.errors.length"
-        class="result-table"
+        class="result-table desktop-data-table"
         :data="importResult.errors"
         max-height="220"
       >
@@ -309,17 +428,40 @@
         </el-table-column>
         <el-table-column prop="reason" label="失败原因" />
       </el-table>
+      <div
+        v-if="importResult?.errors.length"
+        class="mobile-record-list"
+        aria-label="Apple ID 导入失败移动列表"
+      >
+        <article v-for="error in importResult.errors" :key="error.rowNo" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>第 {{ error.rowNo }} 行</strong>
+              <span>{{ error.appleId ?? '未识别 Apple ID' }}</span>
+            </div>
+            <StatusChip tone="red">失败</StatusChip>
+          </div>
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>失败原因</span>
+              <strong>{{ error.reason }}</strong>
+            </div>
+          </div>
+        </article>
+      </div>
 
       <template #footer>
-        <el-button @click="importDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="importing" @click="submitImport">开始导入</el-button>
+        <AppButton @click="importDialogVisible = false">关闭</AppButton>
+        <AppButton variant="primary" :loading="importing" @click="submitImport">
+          开始导入
+        </AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="topupDialogVisible"
       :title="`录入充值 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      width="620px"
+      width="min(620px, calc(100vw - 24px))"
     >
       <el-form ref="topupFormRef" :model="topupForm" :rules="topupRules" label-position="top">
         <div class="form-grid">
@@ -343,17 +485,17 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="topupDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingBalanceRecord" @click="saveTopup"
-          >保存充值</el-button
-        >
+        <AppButton @click="topupDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingBalanceRecord" @click="saveTopup">
+          保存充值
+        </AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="consumptionDialogVisible"
       :title="`录入消费 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      width="620px"
+      width="min(620px, calc(100vw - 24px))"
     >
       <el-form
         ref="consumptionFormRef"
@@ -375,17 +517,17 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="consumptionDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingBalanceRecord" @click="saveConsumption"
-          >保存消费</el-button
-        >
+        <AppButton @click="consumptionDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingBalanceRecord" @click="saveConsumption">
+          保存消费
+        </AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="statusCheckDialogVisible"
       :title="`录入状态检测 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      width="620px"
+      width="min(620px, calc(100vw - 24px))"
     >
       <el-form
         ref="statusCheckFormRef"
@@ -418,10 +560,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="statusCheckDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingStatusCheck" @click="saveStatusCheck">
+        <AppButton @click="statusCheckDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingStatusCheck" @click="saveStatusCheck">
           保存检测
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -446,62 +588,152 @@
         </div>
       </div>
 
-      <el-tabs class="balance-record-tabs">
-        <el-tab-pane label="充值记录">
-          <el-table v-loading="recordsLoading" :data="topups" size="small" row-key="id">
-            <el-table-column prop="faceValue" label="面值" width="90" />
-            <el-table-column prop="costAmount" label="成本" width="90" />
-            <el-table-column prop="avgCostAfter" label="充值后均价" width="120" />
-            <el-table-column label="礼品卡代码" width="190">
-              <template #default="{ row }">
-                <div v-if="row.hasGiftCardCode" class="inline-actions">
-                  <el-tag size="small" effect="light"
-                    >尾号 {{ row.giftCardCodeTail ?? '-' }}</el-tag
-                  >
-                  <el-button
-                    v-if="canRevealGiftCardCode"
-                    text
-                    type="primary"
-                    size="small"
-                    @click="openGiftCodeDialog(row)"
-                    >查看完整</el-button
-                  >
+      <div class="drawer-section">
+        <div class="drawer-section__title">余额流水</div>
+        <el-tabs class="system-tabs balance-record-tabs">
+          <el-tab-pane label="充值记录">
+            <el-table
+              v-loading="recordsLoading"
+              class="desktop-data-table"
+              :data="topups"
+              size="small"
+              row-key="id"
+            >
+              <el-table-column prop="faceValue" label="面值" width="90" />
+              <el-table-column prop="costAmount" label="成本" width="90" />
+              <el-table-column prop="avgCostAfter" label="充值后均价" width="120" />
+              <el-table-column label="礼品卡代码" width="190">
+                <template #default="{ row }">
+                  <div v-if="row.hasGiftCardCode" class="inline-actions">
+                    <StatusChip tone="purple">尾号 {{ row.giftCardCodeTail ?? '-' }}</StatusChip>
+                    <AppButton
+                      v-if="canRevealGiftCardCode"
+                      size="small"
+                      variant="ghost"
+                      @click="openGiftCodeDialog(row)"
+                    >
+                      查看完整
+                    </AppButton>
+                  </div>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="createdAt" label="时间" min-width="160">
+                <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+              </el-table-column>
+            </el-table>
+            <div v-if="topups.length" class="mobile-record-list" aria-label="充值流水移动列表">
+              <article v-for="topup in topups" :key="topup.id" class="mobile-record-card">
+                <div class="mobile-record-card__head">
+                  <div class="mobile-record-card__title">
+                    <strong>充值 {{ topup.faceValue }}</strong>
+                    <span>{{ formatDate(topup.createdAt) }}</span>
+                  </div>
+                  <StatusChip v-if="topup.hasGiftCardCode" tone="purple">
+                    尾号 {{ topup.giftCardCodeTail ?? '-' }}
+                  </StatusChip>
+                  <StatusChip v-else tone="neutral">无代码</StatusChip>
                 </div>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="createdAt" label="时间" min-width="160">
-              <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="消费记录">
-          <el-table v-loading="recordsLoading" :data="consumptions" size="small" row-key="id">
-            <el-table-column prop="amount" label="消费" width="90" />
-            <el-table-column prop="costAmount" label="成本" width="90" />
-            <el-table-column prop="avgUnitCost" label="消费均价" width="110" />
-            <el-table-column prop="balanceAfter" label="消费后余额" width="120" />
-            <el-table-column prop="createdAt" label="时间" min-width="160">
-              <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+                <div class="mobile-record-card__stats">
+                  <div>
+                    <span>成本</span>
+                    <strong>{{ topup.costAmount }}</strong>
+                  </div>
+                  <div>
+                    <span>充值后均价</span>
+                    <strong>{{ topup.avgCostAfter }}</strong>
+                  </div>
+                </div>
+                <div
+                  v-if="topup.hasGiftCardCode && canRevealGiftCardCode"
+                  class="mobile-record-card__actions"
+                >
+                  <AppButton size="small" variant="ghost" @click="openGiftCodeDialog(topup)">
+                    查看完整代码
+                  </AppButton>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="!recordsLoading" class="mobile-record-list" aria-label="充值流水空状态">
+              <div class="apple-core-empty-state">
+                <strong>暂无充值流水</strong>
+                <span>该 Apple ID 最近没有充值记录。</span>
+              </div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="消费记录">
+            <el-table
+              v-loading="recordsLoading"
+              class="desktop-data-table"
+              :data="consumptions"
+              size="small"
+              row-key="id"
+            >
+              <el-table-column prop="amount" label="消费" width="90" />
+              <el-table-column prop="costAmount" label="成本" width="90" />
+              <el-table-column prop="avgUnitCost" label="消费均价" width="110" />
+              <el-table-column prop="balanceAfter" label="消费后余额" width="120" />
+              <el-table-column prop="createdAt" label="时间" min-width="160">
+                <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+              </el-table-column>
+            </el-table>
+            <div
+              v-if="consumptions.length"
+              class="mobile-record-list"
+              aria-label="消费流水移动列表"
+            >
+              <article
+                v-for="consumption in consumptions"
+                :key="consumption.id"
+                class="mobile-record-card"
+              >
+                <div class="mobile-record-card__head">
+                  <div class="mobile-record-card__title">
+                    <strong>消费 {{ consumption.amount }}</strong>
+                    <span>{{ formatDate(consumption.createdAt) }}</span>
+                  </div>
+                  <StatusChip tone="orange">扣减</StatusChip>
+                </div>
+                <div class="mobile-record-card__stats">
+                  <div>
+                    <span>成本</span>
+                    <strong>{{ consumption.costAmount }}</strong>
+                  </div>
+                  <div>
+                    <span>消费均价</span>
+                    <strong>{{ consumption.avgUnitCost }}</strong>
+                  </div>
+                  <div>
+                    <span>消费后余额</span>
+                    <strong>{{ consumption.balanceAfter }}</strong>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="!recordsLoading" class="mobile-record-list" aria-label="消费流水空状态">
+              <div class="apple-core-empty-state">
+                <strong>暂无消费流水</strong>
+                <span>订单扣减余额后会显示消费成本记录。</span>
+              </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
     </AppDrawer>
 
     <el-dialog
       v-model="accountSecretDialogVisible"
       title="查看 Apple ID 敏感资料"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
       @closed="resetAccountSecretDialog"
     >
-      <el-alert
-        title="敏感字段查看会写入审计日志"
-        description="完整资料只用于必要的业务核对，不会出现在列表、导出和操作日志明文中。"
-        type="warning"
-        show-icon
-        :closable="false"
-      />
+      <div class="apple-core-alert apple-core-alert--orange">
+        <StatusChip tone="orange">审计</StatusChip>
+        <div>
+          <strong>敏感字段查看会写入审计日志</strong>
+          <p>完整资料只用于必要的业务核对，不会出现在列表、导出和操作日志明文中。</p>
+        </div>
+      </div>
       <el-form
         ref="accountSecretFormRef"
         class="sensitive-form"
@@ -539,26 +771,26 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="accountSecretDialogVisible = false">关闭</el-button>
-        <el-button type="warning" :loading="revealingAccountSecret" @click="revealAccountSecret">
+        <AppButton @click="accountSecretDialogVisible = false">关闭</AppButton>
+        <AppButton variant="danger" :loading="revealingAccountSecret" @click="revealAccountSecret">
           查看完整资料
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="giftCodeDialogVisible"
       title="查看完整礼品卡代码"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
       @closed="resetGiftCodeDialog"
     >
-      <el-alert
-        title="敏感字段查看会写入审计日志"
-        description="完整代码只用于核对充值记录，不会出现在列表、导出和操作日志明文中。"
-        type="warning"
-        show-icon
-        :closable="false"
-      />
+      <div class="apple-core-alert apple-core-alert--orange">
+        <StatusChip tone="orange">审计</StatusChip>
+        <div>
+          <strong>敏感字段查看会写入审计日志</strong>
+          <p>完整代码只用于核对充值记录，不会出现在列表、导出和操作日志明文中。</p>
+        </div>
+      </div>
       <el-form
         ref="giftCodeFormRef"
         class="sensitive-form"
@@ -582,10 +814,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="giftCodeDialogVisible = false">关闭</el-button>
-        <el-button type="warning" :loading="revealingGiftCode" @click="revealGiftCardCode">
+        <AppButton @click="giftCodeDialogVisible = false">关闭</AppButton>
+        <AppButton variant="danger" :loading="revealingGiftCode" @click="revealGiftCardCode">
           查看完整代码
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -597,9 +829,11 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { appleAccountsApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { useAuthStore } from '@/stores/auth';
 import type {
@@ -790,6 +1024,26 @@ const totalCost = computed(() =>
 const lockedCount = computed(
   () => accounts.value.filter((account) => account.isManuallyLocked).length
 );
+const normalAccountsCount = computed(
+  () =>
+    accounts.value.filter((account) => account.status === 'normal' && !account.isManuallyLocked)
+      .length
+);
+const attentionAccountsCount = computed(
+  () =>
+    accounts.value.filter((account) => account.status !== 'normal' || account.isManuallyLocked)
+      .length
+);
+const secretReadyCount = computed(
+  () =>
+    accounts.value.filter(
+      (account) =>
+        account.hasPassword ||
+        account.hasSecurityInfo ||
+        account.hasPhone ||
+        account.hasRecoveryEmail
+    ).length
+);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -857,8 +1111,13 @@ function getStatusLabel(status: AppleAccount['status']) {
   return statusOptions.find((item) => item.value === status)?.label ?? status;
 }
 
-function getStatusType(status: AppleAccount['status']) {
-  return statusOptions.find((item) => item.value === status)?.type ?? 'info';
+function getStatusTone(status: AppleAccount['status']) {
+  const type = statusOptions.find((item) => item.value === status)?.type ?? 'info';
+
+  if (type === 'success') return 'green';
+  if (type === 'warning') return 'orange';
+  if (type === 'danger') return 'red';
+  return 'neutral';
 }
 
 function isColumnVisible(column: string) {
@@ -905,6 +1164,11 @@ function clearFilters() {
   savedViewId.value = '';
 }
 
+function clearFiltersAndSearch() {
+  clearFilters();
+  loadAccounts();
+}
+
 function removeFilter(key: string) {
   if (key === 'region') {
     query.region = '';
@@ -915,11 +1179,6 @@ function removeFilter(key: string) {
   if (key === 'locked') {
     query.locked = '';
   }
-}
-
-function handlePageSizeChange() {
-  query.page = 1;
-  loadAccounts();
 }
 
 function handleSortChange(event: { prop?: string; order?: 'ascending' | 'descending' | null }) {

@@ -5,14 +5,25 @@
     phase="Phase 6"
     description="管理兑换码批次、尾号、面值、成本和库存状态。完整兑换码已加密保存，列表只显示尾号。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="库存记录" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="未售" :value="unsoldCount" hint="当前页" tone="green" />
-      <MetricCard label="锁定中" :value="lockedCount" hint="当前页" tone="orange" />
-      <MetricCard label="已发货" :value="deliveredCount" hint="当前页" tone="purple" />
-    </div>
+    <section class="content-panel code-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>兑换码库存池</h3>
+          <p>按批次、业务、面值、成本和发货状态管理库存，完整兑换码加密保存并默认只展示尾号。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 条库存</StatusChip>
+          <StatusChip tone="green">未售 {{ unsoldCount }}</StatusChip>
+          <StatusChip :tone="lockedCount > 0 ? 'orange' : 'green'" dot>
+            {{ lockedCount > 0 ? `锁定 ${lockedCount}` : '无锁定' }}
+          </StatusChip>
+          <StatusChip tone="purple">已发货 {{ deliveredCount }}</StatusChip>
+          <StatusChip :tone="failedInventoryCount > 0 ? 'red' : 'green'">
+            {{ failedInventoryCount > 0 ? `失败 ${failedInventoryCount}` : '库存正常' }}
+          </StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -58,13 +69,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="inventory"
         :size="tableSize"
         row-key="id"
-        empty-text="暂无兑换码库存"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无兑换码库存</strong>
+            <span>可以批量导入兑换码，或清空筛选后重新查看库存池。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openImport">批量导入兑换码</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('codeTail')"
@@ -74,7 +95,7 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag effect="light">尾号 {{ row.codeTail }}</el-tag>
+            <StatusChip tone="purple">尾号 {{ row.codeTail }}</StatusChip>
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('service')" label="业务" min-width="180">
@@ -104,9 +125,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('delivery')" label="发货信息" min-width="170">
@@ -136,28 +157,100 @@
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button v-if="canRevealCode" text type="warning" @click="openRevealDialog(row)">
-              查看完整码
-            </el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton v-if="canRevealCode" variant="soft" @click="openRevealDialog(row)">
+                查看完整码
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadInventory"
-          @size-change="loadInventory"
-        />
+      <div v-if="inventory.length" class="mobile-record-list">
+        <article v-for="code in inventory" :key="code.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>尾号 {{ code.codeTail }}</strong>
+              <span>{{ code.service.name }} · 面值 {{ code.faceValue }}</span>
+            </div>
+            <StatusChip :tone="getStatusTone(code.status)" dot>
+              {{ getStatusLabel(code.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>成本</span>
+              <strong>{{ code.cost }}</strong>
+            </div>
+            <div>
+              <span>批次</span>
+              <strong>{{ code.batch.batchNo }}</strong>
+            </div>
+            <div>
+              <span>有效期</span>
+              <strong>{{ formatDate(code.expireAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>发货信息</span>
+              <strong>
+                {{
+                  code.deliveredOrderId
+                    ? `订单 ${code.deliveredOrderId}`
+                    : code.lockedOrderId
+                      ? `锁定 ${code.lockedOrderId}`
+                      : '-'
+                }}
+              </strong>
+            </div>
+            <div>
+              <span>入库时间</span>
+              <strong>{{ formatDate(code.createdAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(code)">详情</AppButton>
+            <AppButton
+              v-if="canRevealCode"
+              size="small"
+              variant="soft"
+              @click="openRevealDialog(code)"
+            >
+              查看完整码
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无兑换码库存</strong>
+          <span>可以批量导入兑换码，或清空筛选后重新查看库存池。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openImport">批量导入兑换码</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadInventory"
+      />
     </section>
 
-    <el-dialog v-model="importDialogVisible" title="批量导入兑换码" width="760px">
+    <el-dialog
+      v-model="importDialogVisible"
+      title="批量导入兑换码"
+      width="min(760px, calc(100vw - 24px))"
+    >
       <el-form ref="importFormRef" :model="importForm" :rules="importRules" label-position="top">
         <div class="form-grid">
           <el-form-item label="兑换码业务" prop="serviceId">
@@ -201,17 +294,24 @@
         </el-form-item>
       </el-form>
 
-      <el-alert
+      <div
         v-if="importResult"
-        class="result-alert"
-        :title="`导入完成：成功 ${importResult.successCount} 条，失败 ${importResult.failedCount} 条`"
-        :type="importResult.failedCount ? 'warning' : 'success'"
-        show-icon
-        :closable="false"
-      />
+        class="apple-core-alert result-alert"
+        :class="importResult.failedCount ? 'apple-core-alert--orange' : 'apple-core-alert--green'"
+      >
+        <StatusChip :tone="importResult.failedCount ? 'orange' : 'green'">
+          {{ importResult.failedCount ? '部分失败' : '导入完成' }}
+        </StatusChip>
+        <div>
+          <strong>
+            成功 {{ importResult.successCount }} 条，失败 {{ importResult.failedCount }} 条
+          </strong>
+          <p>完整兑换码已加密保存，列表只显示后 4 位；失败明细请在下方核对。</p>
+        </div>
+      </div>
       <el-table
         v-if="importResult?.errors.length"
-        class="result-table"
+        class="result-table desktop-data-table"
         :data="importResult.errors"
         max-height="220"
       >
@@ -219,41 +319,70 @@
         <el-table-column prop="codeTail" label="尾号" width="110" />
         <el-table-column prop="reason" label="失败原因" />
       </el-table>
+      <div
+        v-if="importResult?.errors.length"
+        class="mobile-record-list"
+        aria-label="兑换码导入失败移动列表"
+      >
+        <article v-for="error in importResult.errors" :key="error.rowNo" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>第 {{ error.rowNo }} 行</strong>
+              <span>尾号 {{ error.codeTail ?? '-' }}</span>
+            </div>
+            <StatusChip tone="red">失败</StatusChip>
+          </div>
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>失败原因</span>
+              <strong>{{ error.reason }}</strong>
+            </div>
+          </div>
+        </article>
+      </div>
 
       <template #footer>
-        <el-button @click="importDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="importing" @click="submitImport">开始导入</el-button>
+        <AppButton @click="importDialogVisible = false">关闭</AppButton>
+        <AppButton variant="primary" :loading="importing" @click="submitImport">
+          开始导入
+        </AppButton>
       </template>
     </el-dialog>
 
     <AppDrawer v-model="detailVisible" :title="`兑换码库存 · 尾号 ${selectedCode?.codeTail ?? ''}`">
-      <el-descriptions v-if="selectedCode" :column="1" border>
-        <el-descriptions-item label="业务">{{ selectedCode.service.name }}</el-descriptions-item>
-        <el-descriptions-item label="批次">{{ selectedCode.batch.batchNo }}</el-descriptions-item>
-        <el-descriptions-item label="面值">{{ selectedCode.faceValue }}</el-descriptions-item>
-        <el-descriptions-item label="成本">{{ selectedCode.cost }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
-          {{ getStatusLabel(selectedCode.status) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="有效期">
-          {{ formatDate(selectedCode.expireAt) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="备注">{{ selectedCode.remark || '-' }}</el-descriptions-item>
-      </el-descriptions>
+      <div class="drawer-section">
+        <div class="drawer-section__title">库存信息</div>
+        <el-descriptions v-if="selectedCode" class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="业务">{{ selectedCode.service.name }}</el-descriptions-item>
+          <el-descriptions-item label="批次">{{ selectedCode.batch.batchNo }}</el-descriptions-item>
+          <el-descriptions-item label="面值">{{ selectedCode.faceValue }}</el-descriptions-item>
+          <el-descriptions-item label="成本">{{ selectedCode.cost }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <StatusChip :tone="getStatusTone(selectedCode.status)" dot>
+              {{ getStatusLabel(selectedCode.status) }}
+            </StatusChip>
+          </el-descriptions-item>
+          <el-descriptions-item label="有效期">
+            {{ formatDate(selectedCode.expireAt) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="备注">{{ selectedCode.remark || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
     </AppDrawer>
 
     <el-dialog
       v-model="revealDialogVisible"
       title="查看完整兑换码"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
       @closed="resetRevealDialog"
     >
-      <el-alert
-        title="完整兑换码属于敏感信息，查看原因会写入审计日志。"
-        type="warning"
-        show-icon
-        :closable="false"
-      />
+      <div class="apple-core-alert apple-core-alert--orange">
+        <StatusChip tone="orange">敏感</StatusChip>
+        <div>
+          <strong>完整兑换码属于敏感信息</strong>
+          <p>查看前必须填写原因，系统会写入敏感字段访问审计日志。</p>
+        </div>
+      </div>
       <el-form
         ref="revealFormRef"
         class="reveal-form"
@@ -277,8 +406,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="revealDialogVisible = false">关闭</el-button>
-        <el-button type="warning" :loading="revealing" @click="revealCode">查看完整码</el-button>
+        <AppButton @click="revealDialogVisible = false">关闭</AppButton>
+        <AppButton variant="soft" :loading="revealing" @click="revealCode">查看完整码</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -289,9 +418,11 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { codeServicesApi, redeemCodesApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { useAuthStore } from '@/stores/auth';
 import type {
@@ -387,6 +518,9 @@ const lockedCount = computed(
 const deliveredCount = computed(
   () => inventory.value.filter((item) => item.status === 'delivered').length
 );
+const failedInventoryCount = computed(
+  () => inventory.value.filter((item) => item.status === 'delivery_failed').length
+);
 const canRevealCode = computed(
   () =>
     authStore.user?.roles.includes('admin') ||
@@ -429,20 +563,20 @@ function getStatusLabel(status: RedeemCodeInventoryItem['status']) {
   return labels[status];
 }
 
-function getStatusType(status: RedeemCodeInventoryItem['status']) {
+function getStatusTone(status: RedeemCodeInventoryItem['status']) {
   if (status === 'unsold') {
-    return 'success';
+    return 'green';
   }
   if (status === 'locked') {
-    return 'warning';
+    return 'orange';
   }
   if (status === 'delivered' || status === 'reissued') {
-    return 'info';
+    return 'blue';
   }
   if (status === 'delivery_failed') {
-    return 'danger';
+    return 'red';
   }
-  return 'info';
+  return 'neutral';
 }
 
 function isColumnVisible(column: string) {
@@ -512,6 +646,11 @@ function clearFilters() {
   query.serviceId = '';
   savedViewId.value = '';
   sortConfig.value = {};
+}
+
+async function clearFiltersAndSearch() {
+  clearFilters();
+  await loadInventory();
 }
 
 function removeFilter(key: string) {
@@ -744,5 +883,22 @@ onMounted(initializePage);
 
 .reveal-form {
   margin-top: 16px;
+}
+
+.code-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.code-compact-list-panel .inline-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(620px, 100%);
+}
+
+@media (max-width: 840px) {
+  .code-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
 }
 </style>

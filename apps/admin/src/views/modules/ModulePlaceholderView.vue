@@ -6,25 +6,24 @@
     :description="moduleInfo.description"
   >
     <template #actions>
-      <el-tag :type="getStatusType(moduleInfo.status)" effect="light">
+      <StatusChip :tone="getModuleStatusTone(moduleInfo.status)" dot>
         {{ getStatusText(moduleInfo.status) }}
-      </el-tag>
-      <el-button @click="previewDrawerVisible = true">查看交互</el-button>
-      <el-button type="primary" @click="showPlannedMessage">
+      </StatusChip>
+      <AppButton @click="previewDrawerVisible = true">查看交互</AppButton>
+      <AppButton variant="primary" @click="showPlannedMessage">
         {{ moduleInfo.primaryAction ?? '新建记录' }}
-      </el-button>
+      </AppButton>
     </template>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard
-        v-for="metric in metrics"
-        :key="metric.label"
-        :label="metric.label"
-        :value="metric.value"
-        :hint="metric.hint"
-        :tone="metric.tone"
-      />
-    </div>
+    <section class="content-panel" aria-label="模块概览">
+      <div class="detail-note-grid">
+        <div v-for="metric in metrics" :key="metric.label" class="detail-note-item">
+          <span>{{ metric.label }}</span>
+          <strong>{{ metric.value }}</strong>
+          <span>{{ metric.hint }}</span>
+        </div>
+      </div>
+    </section>
 
     <section class="content-panel">
       <TableToolbar
@@ -51,6 +50,7 @@
       />
 
       <el-table
+        class="desktop-data-table"
         :data="sampleRows"
         :size="tableSize"
         row-key="id"
@@ -68,33 +68,59 @@
         >
           <template #default="{ row }">
             <span v-if="column === '状态' || column === '发货状态' || column === '启用'">
-              <el-tag
-                :type="row[column] === '正常' || row[column] === '已接入' ? 'success' : 'warning'"
-                size="small"
-              >
+              <StatusChip :tone="getSampleStatusTone(row[column])" dot>
                 {{ row[column] }}
-              </el-tag>
+              </StatusChip>
             </span>
             <span v-else>{{ row[column] }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default>
-            <el-button text type="primary" @click="previewDrawerVisible = true">详情</el-button>
-            <el-button text @click="showPlannedMessage">处理</el-button>
+            <AppButton size="small" variant="ghost" @click="previewDrawerVisible = true">
+              详情
+            </AppButton>
+            <AppButton size="small" variant="ghost" @click="showPlannedMessage">处理</AppButton>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="page"
-          v-model:page-size="pageSize"
-          :total="128"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-        />
+      <div class="mobile-record-list">
+        <article v-for="row in sampleRows" :key="row.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ moduleInfo.title }}记录 {{ row.id }}</strong>
+              <span>{{ moduleInfo.phase }} · {{ getStatusText(moduleInfo.status) }}</span>
+            </div>
+            <StatusChip :tone="getModuleStatusTone(moduleInfo.status)" dot>
+              {{ getStatusText(moduleInfo.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div v-for="column in displayColumns.slice(0, 3)" :key="column">
+              <span>{{ column }}</span>
+              <strong>{{ getSampleCell(row, column) }}</strong>
+            </div>
+          </div>
+
+          <div v-if="displayColumns.length > 3" class="mobile-record-card__meta">
+            <div v-for="column in displayColumns.slice(3, 5)" :key="column">
+              <span>{{ column }}</span>
+              <strong>{{ getSampleCell(row, column) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="previewDrawerVisible = true">
+              详情
+            </AppButton>
+            <AppButton size="small" variant="soft" @click="showPlannedMessage">处理</AppButton>
+          </div>
+        </article>
       </div>
+
+      <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="128" />
     </section>
 
     <section class="content-panel">
@@ -103,7 +129,7 @@
           <h3>模块能力</h3>
           <p>页面已完成设计占位，后续只替换真实数据和接口。</p>
         </div>
-        <el-tag type="info" effect="plain">不接假数据库</el-tag>
+        <StatusChip tone="neutral">不接假数据库</StatusChip>
       </div>
       <div class="feature-grid">
         <div v-for="feature in moduleInfo.features" :key="feature" class="feature-card">
@@ -135,14 +161,18 @@
         </div>
       </div>
 
-      <el-divider />
-      <el-alert
-        title="交互已预留"
-        description="右侧抽屉用于详情、编辑、审批、发货异常、任务处理等高频操作。后续接入业务时优先复用该交互。"
-        type="info"
-        show-icon
-        :closable="false"
-      />
+      <div class="drawer-section">
+        <div class="drawer-section__title">交互说明</div>
+        <div class="apple-core-alert apple-core-alert--blue">
+          <StatusChip tone="blue">预留</StatusChip>
+          <div>
+            <strong>交互已预留</strong>
+            <p>
+              右侧抽屉用于详情、编辑、审批、发货异常、任务处理等高频操作。后续接入业务时优先复用该交互。
+            </p>
+          </div>
+        </div>
+      </div>
     </AppDrawer>
   </PageScaffold>
 </template>
@@ -152,13 +182,17 @@ import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import ExperiencePreview from '@/components/ui/ExperiencePreview.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import { allModules, getModuleByKey, getStatusText, getStatusType } from '@/config/modules';
+import { allModules, getModuleByKey, getStatusText, type ModuleStatus } from '@/config/modules';
 import type { TableDensity, UserTableView } from '@/types/system';
+
+type SampleRow = { id: number } & Record<string, string | number>;
 
 const route = useRoute();
 const moduleKey = computed(() => String(route.meta.moduleKey ?? 'dashboard'));
@@ -212,23 +246,50 @@ const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
 
-const sampleRows = computed(() =>
-  Array.from({ length: 3 }, (_, index) =>
-    Object.fromEntries(
-      columns.value.map((column, columnIndex) => [
-        column,
-        column === '状态' || column === '发货状态' || column === '启用'
-          ? index === 0
-            ? '正常'
-            : '待接入'
-          : `${column}示例 ${index + 1}${columnIndex === 0 ? '' : ''}`
-      ])
-    )
-  ).map((row, index) => ({
-    id: index + 1,
-    ...row
-  }))
+const sampleRows = computed<SampleRow[]>(
+  () =>
+    Array.from({ length: 3 }, (_, index) =>
+      Object.fromEntries(
+        columns.value.map((column, columnIndex) => [
+          column,
+          column === '状态' || column === '发货状态' || column === '启用'
+            ? index === 0
+              ? '正常'
+              : '待接入'
+            : `${column}示例 ${index + 1}${columnIndex === 0 ? '' : ''}`
+        ])
+      )
+    ).map((row, index) => ({
+      id: index + 1,
+      ...row
+    })) as SampleRow[]
 );
+
+function getModuleStatusTone(status: ModuleStatus) {
+  const toneMap: Record<ModuleStatus, 'green' | 'blue' | 'orange' | 'neutral'> = {
+    ready: 'green',
+    'design-ready': 'blue',
+    planned: 'orange',
+    later: 'neutral'
+  };
+
+  return toneMap[status];
+}
+
+function getSampleStatusTone(value: unknown) {
+  return value === '正常' || value === '已接入' ? 'green' : 'orange';
+}
+
+function formatSampleCell(value: unknown) {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+  return String(value);
+}
+
+function getSampleCell(row: unknown, column: string) {
+  return formatSampleCell((row as Record<string, unknown>)[column]);
+}
 
 function showRefreshMessage() {
   ElMessage.success('设计预览已刷新');

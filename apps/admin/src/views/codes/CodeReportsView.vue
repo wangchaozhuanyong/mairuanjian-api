@@ -5,7 +5,7 @@
     phase="Phase 6"
     description="独立统计兑换码销售、成本、退款、售后损耗和净利润。"
   >
-    <div class="metric-grid metric-grid--four">
+    <div class="metric-grid metric-grid--four report-metric-grid">
       <MetricCard
         label="订单数"
         :value="report.summary.orderCount"
@@ -27,34 +27,107 @@
       />
     </div>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard
-        label="发货码数"
-        :value="report.summary.codeCount"
-        hint="已发/补发数量"
-        tone="purple"
-      />
-      <MetricCard
-        label="售后单"
-        :value="report.summary.afterSaleCount"
-        hint="补发记录数"
-        tone="orange"
-      />
-      <MetricCard
-        label="退款金额"
-        :value="report.summary.refundAmount"
-        hint="非拒绝退款"
-        tone="red"
-      />
-      <MetricCard
-        label="毛利率"
-        :value="`${report.summary.grossMarginRate}%`"
-        hint="净利润 / 销售额"
-        tone="green"
-      />
+    <div class="apple-core-board-grid">
+      <AppCard
+        title="兑换码利润口径"
+        subtitle="销售、发货、售后补发和退款都在兑换码业务域内独立核算。"
+        :tag="activeTabLabel"
+        tag-tone="blue"
+      >
+        <div class="apple-core-summary-list">
+          <div class="apple-core-summary-item">
+            <div>
+              <strong>当前维度</strong>
+              <span>表格、移动卡片和保存视图都跟随当前页签。</span>
+            </div>
+            <em>{{ activeTabLabel }}</em>
+          </div>
+          <div class="apple-core-summary-item">
+            <div>
+              <strong>可见记录</strong>
+              <span>当前筛选范围内可核对的聚合维度或最近订单。</span>
+            </div>
+            <em>{{ activeVisibleRecordCount }}</em>
+          </div>
+          <div class="apple-core-summary-item">
+            <div>
+              <strong>需关注</strong>
+              <span>低毛利维度、负净利订单或售后补发较多的记录。</span>
+            </div>
+            <em>{{ reportRiskCount }}</em>
+          </div>
+          <div class="apple-core-summary-item">
+            <div>
+              <strong>发货码数</strong>
+              <span>已发货和售后补发消耗的兑换码数量。</span>
+            </div>
+            <em>{{ report.summary.codeCount }}</em>
+          </div>
+          <div class="apple-core-summary-item">
+            <div>
+              <strong>毛利率</strong>
+              <span>净利润 / 销售额，用于判断当前筛选范围的整体质量。</span>
+            </div>
+            <em>{{ report.summary.grossMarginRate }}%</em>
+          </div>
+        </div>
+      </AppCard>
+
+      <AppCard
+        title="库存与售后边界"
+        subtitle="兑换码报表不读取 Apple ID 余额，也不生成 Apple ID 开通记录。"
+        :tag="reportRiskCount > 0 ? '需复核' : '口径稳定'"
+        :tag-tone="reportRiskCount > 0 ? 'orange' : 'green'"
+      >
+        <div class="apple-core-alert-stack">
+          <div class="apple-core-alert apple-core-alert--blue">
+            <StatusChip tone="blue">成本</StatusChip>
+            <div>
+              <strong>成本来自兑换码库存和补发损耗</strong>
+              <p>发货码、补发码和退款金额共同影响净利润，平台手续费保留在订单层。</p>
+            </div>
+          </div>
+          <div class="apple-core-alert apple-core-alert--purple">
+            <StatusChip tone="purple">隔离</StatusChip>
+            <div>
+              <strong>兑换码订单不触碰 Apple ID 业务域</strong>
+              <p>兑换码订单只消耗兑换码库存，不读取 Apple ID 成本、余额或续费任务。</p>
+            </div>
+          </div>
+          <div class="apple-core-alert apple-core-alert--orange">
+            <StatusChip tone="orange">售后</StatusChip>
+            <div>
+              <strong>
+                售后单 {{ report.summary.afterSaleCount }} / 退款 {{ report.summary.refundAmount }}
+              </strong>
+              <p>补发和退款只进入兑换码利润报表，不影响 Apple ID 余额和移动平均成本。</p>
+            </div>
+          </div>
+          <div
+            class="apple-core-alert"
+            :class="reportRiskCount > 0 ? 'apple-core-alert--orange' : 'apple-core-alert--green'"
+          >
+            <StatusChip :tone="reportRiskCount > 0 ? 'orange' : 'green'">
+              {{ reportRiskCount > 0 ? '关注' : '稳定' }}
+            </StatusChip>
+            <div>
+              <strong>{{ reportRiskTitle }}</strong>
+              <p>{{ reportRiskDescription }}</p>
+            </div>
+          </div>
+        </div>
+      </AppCard>
     </div>
 
     <section class="content-panel">
+      <div class="panel-title-row report-panel-title">
+        <div>
+          <h3>兑换码利润报表明细</h3>
+          <p>按当前筛选范围聚合发货、成本、售后补发、退款和净利润。</p>
+        </div>
+        <StatusChip tone="blue" dot>{{ activeTabLabel }}</StatusChip>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.deliveryStatus"
@@ -98,7 +171,7 @@
         </template>
       </TableToolbar>
 
-      <el-tabs v-model="activeTab">
+      <el-tabs v-model="activeTab" class="report-table-tabs">
         <el-tab-pane label="按日期" name="daily">
           <ReportTable
             :loading="loading"
@@ -107,6 +180,49 @@
             :visible-columns="reportVisibleColumns"
             first-label="日期"
           />
+          <div v-if="report.daily.length" class="mobile-record-list">
+            <article v-for="item in report.daily" :key="item.key" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ item.label }}</strong>
+                  <span>订单 {{ item.orderCount }} · 码数 {{ item.codeCount }}</span>
+                </div>
+                <StatusChip :tone="getMarginTone(item.grossMarginRate)" dot>
+                  毛利 {{ item.grossMarginRate }}%
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>销售额</span>
+                  <strong>{{ item.paidAmount }}</strong>
+                </div>
+                <div>
+                  <span>成本</span>
+                  <strong>{{ item.costAmount }}</strong>
+                </div>
+                <div>
+                  <span>净利润</span>
+                  <strong>{{ item.netProfitAmount }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>手续费 / 退款</span>
+                  <strong>{{ item.platformFee }} / {{ item.refundAmount }}</strong>
+                </div>
+                <div>
+                  <span>单均利润</span>
+                  <strong>{{ item.averageOrderProfit }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无按日期报表数据</strong>
+              <span>调整日期或筛选条件后刷新查看。</span>
+            </div>
+          </div>
         </el-tab-pane>
         <el-tab-pane label="按业务" name="service">
           <ReportTable
@@ -116,6 +232,49 @@
             :visible-columns="reportVisibleColumns"
             first-label="业务"
           />
+          <div v-if="report.byService.length" class="mobile-record-list">
+            <article v-for="item in report.byService" :key="item.key" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ item.label }}</strong>
+                  <span>订单 {{ item.orderCount }} · 码数 {{ item.codeCount }}</span>
+                </div>
+                <StatusChip :tone="getMarginTone(item.grossMarginRate)" dot>
+                  毛利 {{ item.grossMarginRate }}%
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>销售额</span>
+                  <strong>{{ item.paidAmount }}</strong>
+                </div>
+                <div>
+                  <span>成本</span>
+                  <strong>{{ item.costAmount }}</strong>
+                </div>
+                <div>
+                  <span>净利润</span>
+                  <strong>{{ item.netProfitAmount }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>手续费 / 退款</span>
+                  <strong>{{ item.platformFee }} / {{ item.refundAmount }}</strong>
+                </div>
+                <div>
+                  <span>单均利润</span>
+                  <strong>{{ item.averageOrderProfit }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无按业务报表数据</strong>
+              <span>调整业务、平台或日期筛选后刷新查看。</span>
+            </div>
+          </div>
         </el-tab-pane>
         <el-tab-pane label="按平台" name="platform">
           <ReportTable
@@ -125,15 +284,64 @@
             :visible-columns="reportVisibleColumns"
             first-label="平台"
           />
+          <div v-if="report.byPlatform.length" class="mobile-record-list">
+            <article v-for="item in report.byPlatform" :key="item.key" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ item.label }}</strong>
+                  <span>订单 {{ item.orderCount }} · 码数 {{ item.codeCount }}</span>
+                </div>
+                <StatusChip :tone="getMarginTone(item.grossMarginRate)" dot>
+                  毛利 {{ item.grossMarginRate }}%
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>销售额</span>
+                  <strong>{{ item.paidAmount }}</strong>
+                </div>
+                <div>
+                  <span>成本</span>
+                  <strong>{{ item.costAmount }}</strong>
+                </div>
+                <div>
+                  <span>净利润</span>
+                  <strong>{{ item.netProfitAmount }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>手续费 / 退款</span>
+                  <strong>{{ item.platformFee }} / {{ item.refundAmount }}</strong>
+                </div>
+                <div>
+                  <span>单均利润</span>
+                  <strong>{{ item.averageOrderProfit }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无按平台报表数据</strong>
+              <span>调整平台、日期或发货状态筛选后刷新查看。</span>
+            </div>
+          </div>
         </el-tab-pane>
         <el-tab-pane label="最近订单" name="recent">
           <el-table
             v-loading="loading"
+            class="desktop-data-table"
             :data="report.recentOrders"
             :size="tableSize"
             row-key="id"
-            empty-text="暂无最近订单"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无最近订单</strong>
+                <span>当前筛选范围内还没有可展示的兑换码订单。</span>
+              </div>
+            </template>
             <el-table-column v-if="isColumnVisible('recentOrder')" label="订单" min-width="170">
               <template #default="{ row }">
                 {{ row.externalOrderNo }}
@@ -186,12 +394,59 @@
               width="100"
             >
               <template #default="{ row }">
-                <el-tag :type="getDeliveryStatusType(row.deliveryStatus)" size="small">
+                <StatusChip :tone="getDeliveryStatusTone(row.deliveryStatus)" dot>
                   {{ getDeliveryStatusLabel(row.deliveryStatus) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="report.recentOrders.length" class="mobile-record-list">
+            <article
+              v-for="order in report.recentOrders"
+              :key="order.id"
+              class="mobile-record-card"
+            >
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ order.externalOrderNo }}</strong>
+                  <span>{{ formatDate(order.createdAt) }}</span>
+                </div>
+                <StatusChip :tone="getDeliveryStatusTone(order.deliveryStatus)" dot>
+                  {{ getDeliveryStatusLabel(order.deliveryStatus) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>销售额</span>
+                  <strong>{{ order.paidAmount }}</strong>
+                </div>
+                <div>
+                  <span>成本</span>
+                  <strong>{{ order.costAmount }}</strong>
+                </div>
+                <div>
+                  <span>净利润</span>
+                  <strong>{{ order.netProfitAmount }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>业务/平台</span>
+                  <strong>{{ order.serviceName ?? '-' }} · {{ order.platformName }}</strong>
+                </div>
+                <div>
+                  <span>手续费 / 退款</span>
+                  <strong>{{ order.platformFee }} / {{ order.refundAmount }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无最近订单</strong>
+              <span>当前筛选范围内还没有可展示的兑换码订单。</span>
+            </div>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -203,8 +458,10 @@ import { ElMessage, ElMessageBox, ElTable, ElTableColumn } from 'element-plus';
 import type { PropType } from 'vue';
 import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue';
 import { codeReportsApi, userTableViewsApi, type CodeProfitReportQuery } from '@/api/system';
+import AppCard from '@/components/ui/AppCard.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   CodePlatformOrder,
@@ -245,6 +502,7 @@ const ReportTable = defineComponent({
       h(
         ElTable,
         {
+          class: 'desktop-data-table',
           loading: props.loading,
           data: props.items,
           size: props.tableSize,
@@ -319,6 +577,56 @@ const report = ref<CodeProfitReport>(createEmptyReport());
 
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const activeTabLabel = computed(() => {
+  const labels: Record<typeof activeTab.value, string> = {
+    daily: '按日期',
+    service: '按业务',
+    platform: '按平台',
+    recent: '最近订单'
+  };
+  return labels[activeTab.value] ?? '按日期';
+});
+const activeGroupRows = computed<CodeProfitGroup[]>(() => {
+  if (activeTab.value === 'daily') {
+    return report.value.daily;
+  }
+
+  if (activeTab.value === 'service') {
+    return report.value.byService;
+  }
+
+  if (activeTab.value === 'platform') {
+    return report.value.byPlatform;
+  }
+
+  return [];
+});
+const activeVisibleRecordCount = computed(() =>
+  activeTab.value === 'recent' ? report.value.recentOrders.length : activeGroupRows.value.length
+);
+const reportRiskCount = computed(() => {
+  if (activeTab.value === 'recent') {
+    return report.value.recentOrders.filter((order) => {
+      const netProfit = Number(order.netProfitAmount);
+
+      return (!Number.isNaN(netProfit) && netProfit < 0) || order.afterSaleCount > 0;
+    }).length;
+  }
+
+  return activeGroupRows.value.filter((item) => {
+    const rate = Number(item.grossMarginRate);
+
+    return (!Number.isNaN(rate) && rate < 10) || item.afterSaleCount > 0;
+  }).length;
+});
+const reportRiskTitle = computed(() =>
+  reportRiskCount.value > 0 ? '存在低毛利、负净利或售后补发记录' : '当前筛选范围暂无明显利润风险'
+);
+const reportRiskDescription = computed(() =>
+  reportRiskCount.value > 0
+    ? '建议先核对兑换码成本、平台手续费、退款金额和补发记录，再决定是否进入售后复盘。'
+    : '可继续切换业务或平台维度，观察库存周转、退款和售后补发是否集中。'
 );
 const filterChips = computed(() => {
   if (quickDate.value !== 'custom' || (!query.dateFrom && !query.dateTo)) {
@@ -414,17 +722,34 @@ function getDeliveryStatusLabel(status: CodePlatformOrder['deliveryStatus']) {
   return labels[status];
 }
 
-function getDeliveryStatusType(status: CodePlatformOrder['deliveryStatus']) {
+function getDeliveryStatusTone(status: CodePlatformOrder['deliveryStatus']) {
   if (status === 'delivered') {
-    return 'success';
+    return 'green';
   }
   if (status === 'pending') {
-    return 'warning';
+    return 'orange';
   }
   if (status === 'failed') {
-    return 'danger';
+    return 'red';
   }
-  return 'info';
+  return 'neutral';
+}
+
+function getMarginTone(value: string) {
+  const rate = Number(value);
+  if (Number.isNaN(rate)) {
+    return 'neutral';
+  }
+  if (rate >= 30) {
+    return 'green';
+  }
+  if (rate >= 10) {
+    return 'blue';
+  }
+  if (rate >= 0) {
+    return 'orange';
+  }
+  return 'red';
 }
 
 function isColumnVisible(column: string) {

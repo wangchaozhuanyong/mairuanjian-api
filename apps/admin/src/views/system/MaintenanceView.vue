@@ -6,44 +6,43 @@
     description="集中管理系统公告、维护模式、版本信息、更新日志、功能开关、菜单配置、主题配置和系统参数。"
   >
     <template #actions>
-      <el-button @click="refreshCurrentTab">刷新</el-button>
-      <el-button type="primary" @click="openPrimaryDialog">{{ primaryActionText }}</el-button>
+      <AppButton @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton variant="primary" @click="openPrimaryDialog">{{ primaryActionText }}</AppButton>
     </template>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard
-        label="启用公告"
-        :value="overview?.enabledAnnouncementCount ?? '-'"
-        hint="当前对后台用户可见"
-        tone="blue"
-      />
-      <MetricCard
-        label="维护模式"
-        :value="overview?.maintenanceModeEnabled ? '开启' : '关闭'"
-        :hint="overview?.activeMaintenanceWindow.reason ?? '系统正常运行'"
-        :tone="overview?.maintenanceModeEnabled ? 'red' : 'green'"
-      />
-      <MetricCard
-        label="功能开关"
-        :value="overview?.enabledFeatureFlagCount ?? '-'"
-        hint="当前启用数量"
-        tone="orange"
-      />
-      <MetricCard
-        label="最新版本"
-        :value="overview?.latestVersion?.version ?? '-'"
-        :hint="overview?.latestVersion?.title ?? '暂无版本记录'"
-        tone="purple"
-      />
-    </div>
+    <section class="content-panel system-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>{{ activeTabMeta.title }}</h3>
+          <p>{{ activeTabMeta.description }}</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
+          <StatusChip tone="blue">公告 {{ overview?.enabledAnnouncementCount ?? '-' }}</StatusChip>
+          <StatusChip :tone="overview?.maintenanceModeEnabled ? 'red' : 'green'" dot>
+            维护{{ overview?.maintenanceModeEnabled ? '开启' : '关闭' }}
+          </StatusChip>
+          <StatusChip tone="orange"
+            >功能开关 {{ overview?.enabledFeatureFlagCount ?? '-' }}</StatusChip
+          >
+          <StatusChip tone="purple">版本 {{ overview?.latestVersion?.version ?? '-' }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
-      <el-tabs v-model="activeTab" @tab-change="refreshCurrentTab">
+      <el-tabs
+        v-model="activeTab"
+        class="system-tabs maintenance-tabs"
+        @tab-change="refreshCurrentTab"
+      >
         <el-tab-pane label="维护总览" name="overview">
           <div class="overview-grid">
             <div>
               <h3>最近公告</h3>
-              <el-table v-loading="overviewLoading" :data="overview?.recentAnnouncements ?? []">
+              <el-table
+                v-loading="overviewLoading"
+                class="desktop-data-table"
+                :data="overview?.recentAnnouncements ?? []"
+              >
                 <el-table-column label="公告" min-width="220">
                   <template #default="{ row }">
                     <strong>{{ row.title }}</strong>
@@ -57,19 +56,58 @@
                 </el-table-column>
                 <el-table-column label="状态" width="90">
                   <template #default="{ row }">
-                    <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="light">
+                    <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
                       {{ row.enabled ? '启用' : '停用' }}
-                    </el-tag>
+                    </StatusChip>
                   </template>
                 </el-table-column>
                 <el-table-column label="时间" width="170">
                   <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
                 </el-table-column>
               </el-table>
+              <div
+                v-if="overview?.recentAnnouncements.length"
+                class="mobile-record-list"
+                aria-label="最近公告移动列表"
+              >
+                <article
+                  v-for="announcement in overview.recentAnnouncements"
+                  :key="announcement.id"
+                  class="mobile-record-card"
+                >
+                  <div class="mobile-record-card__head">
+                    <div class="mobile-record-card__title">
+                      <strong>{{ announcement.title }}</strong>
+                      <span>{{ announcement.content }}</span>
+                    </div>
+                    <LevelTag :level="announcement.level" />
+                  </div>
+                  <div class="mobile-record-card__stats">
+                    <div>
+                      <span>状态</span>
+                      <strong>{{ announcement.enabled ? '启用' : '停用' }}</strong>
+                    </div>
+                    <div>
+                      <span>创建时间</span>
+                      <strong>{{ formatDate(announcement.createdAt) }}</strong>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="mobile-record-list">
+                <div class="apple-core-empty-state">
+                  <strong>暂无最近公告</strong>
+                  <span>发布系统公告后会在这里显示。</span>
+                </div>
+              </div>
             </div>
             <div>
               <h3>最近版本</h3>
-              <el-table v-loading="overviewLoading" :data="overview?.recentVersions ?? []">
+              <el-table
+                v-loading="overviewLoading"
+                class="desktop-data-table"
+                :data="overview?.recentVersions ?? []"
+              >
                 <el-table-column label="版本" width="120" prop="version" />
                 <el-table-column label="标题" min-width="180" prop="title" />
                 <el-table-column label="状态" width="100">
@@ -79,6 +117,41 @@
                   <template #default="{ row }">{{ formatDate(row.releasedAt) }}</template>
                 </el-table-column>
               </el-table>
+              <div
+                v-if="overview?.recentVersions.length"
+                class="mobile-record-list"
+                aria-label="最近版本移动列表"
+              >
+                <article
+                  v-for="version in overview.recentVersions"
+                  :key="version.id"
+                  class="mobile-record-card"
+                >
+                  <div class="mobile-record-card__head">
+                    <div class="mobile-record-card__title">
+                      <strong>{{ version.version }}</strong>
+                      <span>{{ version.title }}</span>
+                    </div>
+                    <VersionStatusTag :status="version.status" />
+                  </div>
+                  <div class="mobile-record-card__stats">
+                    <div>
+                      <span>发布时间</span>
+                      <strong>{{ formatDate(version.releasedAt) }}</strong>
+                    </div>
+                    <div>
+                      <span>影响模块</span>
+                      <strong>{{ version.impactModules.join(', ') || '-' }}</strong>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="mobile-record-list">
+                <div class="apple-core-empty-state">
+                  <strong>暂无版本记录</strong>
+                  <span>登记版本后会展示最新发布信息。</span>
+                </div>
+              </div>
             </div>
           </div>
         </el-tab-pane>
@@ -121,12 +194,21 @@
           </TableToolbar>
           <el-table
             v-loading="announcementsLoading"
+            class="desktop-data-table"
             :data="announcements"
             :size="announcementTableSize"
             row-key="id"
-            empty-text="暂无系统公告"
             @sort-change="handleAnnouncementSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无系统公告</strong>
+                <span>可以新增公告，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearAnnouncementFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isAnnouncementColumnVisible('announcement')"
               label="公告"
@@ -156,9 +238,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="light">
+                <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
                   {{ row.enabled ? '启用' : '停用' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -190,11 +272,68 @@
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="editAnnouncement(row)">编辑</el-button>
-                <el-button text type="danger" @click="removeAnnouncement(row)">删除</el-button>
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton size="small" variant="ghost" @click="editAnnouncement(row)">
+                    编辑
+                  </AppButton>
+                  <AppButton size="small" variant="danger" @click="removeAnnouncement(row)">
+                    删除
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="announcements.length" class="mobile-record-list" aria-label="系统公告移动列表">
+            <article
+              v-for="announcement in announcements"
+              :key="announcement.id"
+              class="mobile-record-card"
+            >
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ announcement.title }}</strong>
+                  <span>{{ announcement.content }}</span>
+                </div>
+                <LevelTag :level="announcement.level" />
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>状态</span>
+                  <strong>{{ announcement.enabled ? '启用' : '停用' }}</strong>
+                </div>
+                <div>
+                  <span>更新时间</span>
+                  <strong>{{ formatDate(announcement.updatedAt) }}</strong>
+                </div>
+                <div>
+                  <span>更新人</span>
+                  <strong>{{ announcement.updatedBy?.displayName ?? '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>展示时间</span>
+                  <strong>
+                    {{ formatDate(announcement.startAt) }} - {{ formatDate(announcement.endAt) }}
+                  </strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="ghost" @click="editAnnouncement(announcement)">
+                  编辑
+                </AppButton>
+                <AppButton size="small" variant="danger" @click="removeAnnouncement(announcement)">
+                  删除
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="!announcementsLoading" class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无系统公告</strong>
+              <span>发布公告后会同步显示在维护中心。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="announcementQuery.page"
             v-model:page-size="announcementQuery.pageSize"
@@ -247,9 +386,9 @@
                 />
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" :loading="modeSaving" @click="saveMode"
-                  >保存维护模式</el-button
-                >
+                <AppButton variant="primary" :loading="modeSaving" @click="saveMode">
+                  保存维护模式
+                </AppButton>
               </el-form-item>
             </el-form>
             <div class="settings-note">
@@ -287,12 +426,21 @@
           />
           <el-table
             v-loading="flagsLoading"
+            class="desktop-data-table"
             :data="featureFlags"
             :size="flagTableSize"
             row-key="id"
-            empty-text="暂无功能开关"
             @sort-change="handleFlagSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无功能开关</strong>
+                <span>可以新增功能开关，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearFlagFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isFlagColumnVisible('flag')"
               label="开关"
@@ -343,10 +491,61 @@
             </el-table-column>
             <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="editFeatureFlag(row)">编辑</el-button>
+                <div class="table-action-group">
+                  <AppButton size="small" variant="ghost" @click="editFeatureFlag(row)">
+                    编辑
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="featureFlags.length" class="mobile-record-list" aria-label="功能开关移动列表">
+            <article v-for="flag in featureFlags" :key="flag.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ flag.name }}</strong>
+                  <span>{{ flag.key }}</span>
+                </div>
+                <StatusChip :tone="flag.enabled ? 'green' : 'neutral'" dot>
+                  {{ flag.enabled ? '启用' : '停用' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>配置</span>
+                  <strong>{{ formatJson(flag.config ?? {}) }}</strong>
+                </div>
+                <div>
+                  <span>备注</span>
+                  <strong>{{ flag.remark || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>更新人</span>
+                  <strong>{{ flag.updatedBy?.displayName ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>更新时间</span>
+                  <strong>{{ formatDate(flag.updatedAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="soft" @click="toggleFeatureFlag(flag)">
+                  {{ flag.enabled ? '停用' : '启用' }}
+                </AppButton>
+                <AppButton size="small" variant="ghost" @click="editFeatureFlag(flag)">
+                  编辑
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="!flagsLoading" class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无功能开关</strong>
+              <span>新增功能开关后可在这里控制模块启停。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="flagQuery.page"
             v-model:page-size="flagQuery.pageSize"
@@ -377,12 +576,21 @@
           />
           <el-table
             v-loading="versionsLoading"
+            class="desktop-data-table"
             :data="appVersions"
             :size="versionTableSize"
             row-key="id"
-            empty-text="暂无版本记录"
             @sort-change="handleVersionSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无版本记录</strong>
+                <span>可以登记版本，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearVersionFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isVersionColumnVisible('version')"
               label="版本"
@@ -444,6 +652,47 @@
               <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </el-table-column>
           </el-table>
+          <div v-if="appVersions.length" class="mobile-record-list" aria-label="版本信息移动列表">
+            <article v-for="version in appVersions" :key="version.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ version.version }}</strong>
+                  <span>{{ version.title }}</span>
+                </div>
+                <VersionStatusTag :status="version.status" />
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>更新内容</span>
+                  <strong>{{ version.releaseNotes || '-' }}</strong>
+                </div>
+                <div>
+                  <span>影响模块</span>
+                  <strong>{{ version.impactModules.join(', ') || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>发布时间</span>
+                  <strong>{{ formatDate(version.releasedAt) }}</strong>
+                </div>
+                <div>
+                  <span>创建人</span>
+                  <strong>{{ version.createdBy?.displayName ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(version.createdAt) }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="!versionsLoading" class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无版本记录</strong>
+              <span>登记版本后可追踪发布时间和影响模块。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="versionQuery.page"
             v-model:page-size="versionQuery.pageSize"
@@ -474,12 +723,21 @@
           />
           <el-table
             v-loading="changelogLoading"
+            class="desktop-data-table"
             :data="changelogs"
             :size="changelogTableSize"
             row-key="id"
-            empty-text="暂无更新日志"
             @sort-change="handleChangelogSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无更新日志</strong>
+                <span>可以登记更新内容，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearChangelogFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isChangelogColumnVisible('version')"
               label="版本"
@@ -545,6 +803,47 @@
               <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </el-table-column>
           </el-table>
+          <div v-if="changelogs.length" class="mobile-record-list" aria-label="更新日志移动列表">
+            <article v-for="log in changelogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.version }}</strong>
+                  <span>{{ log.title }}</span>
+                </div>
+                <VersionStatusTag :status="log.status" />
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>更新内容</span>
+                  <strong>{{ log.releaseNotes || '-' }}</strong>
+                </div>
+                <div>
+                  <span>影响模块</span>
+                  <strong>{{ log.impactModules.join(', ') || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>发布时间</span>
+                  <strong>{{ formatDate(log.releasedAt) }}</strong>
+                </div>
+                <div>
+                  <span>创建人</span>
+                  <strong>{{ log.createdBy?.displayName ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(log.createdAt) }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="!changelogLoading" class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无更新日志</strong>
+              <span>发布记录会按时间展示在这里。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="changelogQuery.page"
             v-model:page-size="changelogQuery.pageSize"
@@ -596,12 +895,21 @@
           />
           <el-table
             v-loading="parametersLoading"
+            class="desktop-data-table"
             :data="systemParameters"
             :size="parameterTableSize"
             row-key="key"
-            empty-text="暂无系统参数"
             @sort-change="handleParameterSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无系统参数</strong>
+                <span>可以新增参数，或清空筛选后重新查看。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearParameterFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isParameterColumnVisible('key')"
               label="参数"
@@ -650,10 +958,64 @@
             </el-table-column>
             <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" @click="editSystemParameter(row)">编辑</el-button>
+                <div class="table-action-group">
+                  <AppButton size="small" variant="ghost" @click="editSystemParameter(row)">
+                    编辑
+                  </AppButton>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div
+            v-if="systemParameters.length"
+            class="mobile-record-list"
+            aria-label="系统参数移动列表"
+          >
+            <article
+              v-for="parameter in systemParameters"
+              :key="parameter.key"
+              class="mobile-record-card"
+            >
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ parameter.key }}</strong>
+                  <span>{{ parameter.remark || '暂无备注' }}</span>
+                </div>
+                <StatusChip tone="blue" dot>参数</StatusChip>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>值</span>
+                  <strong>{{ formatJson(parameter.value ?? {}) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>更新人</span>
+                  <strong>{{ parameter.updatedBy?.displayName ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>更新时间</span>
+                  <strong>{{ formatDate(parameter.updatedAt) }}</strong>
+                </div>
+                <div>
+                  <span>创建时间</span>
+                  <strong>{{ formatDate(parameter.createdAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__actions">
+                <AppButton size="small" variant="ghost" @click="editSystemParameter(parameter)">
+                  编辑
+                </AppButton>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="!parametersLoading" class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无系统参数</strong>
+              <span>新增参数后可集中管理维护配置。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="parameterQuery.page"
             v-model:page-size="parameterQuery.pageSize"
@@ -667,7 +1029,7 @@
     <el-dialog
       v-model="announcementDialogVisible"
       :title="announcementForm.id ? '编辑公告' : '发布公告'"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="90px">
         <el-form-item label="标题" required>
@@ -704,17 +1066,17 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="announcementDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="announcementSaving" @click="saveAnnouncement">
+        <AppButton @click="announcementDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="announcementSaving" @click="saveAnnouncement">
           保存
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="flagDialogVisible"
       :title="flagForm.id ? '编辑功能开关' : '新增功能开关'"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="90px">
         <el-form-item label="编码" required>
@@ -734,12 +1096,16 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="flagDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="flagSaving" @click="saveFeatureFlag">保存</el-button>
+        <AppButton @click="flagDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="flagSaving" @click="saveFeatureFlag">保存</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="versionDialogVisible" title="登记版本" width="620px">
+    <el-dialog
+      v-model="versionDialogVisible"
+      title="登记版本"
+      width="min(620px, calc(100vw - 24px))"
+    >
       <el-form label-width="100px">
         <el-form-item label="版本号" required>
           <el-input v-model="versionForm.version" placeholder="例如 0.1.1" />
@@ -770,15 +1136,17 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="versionDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="versionSaving" @click="saveAppVersion">保存</el-button>
+        <AppButton @click="versionDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="versionSaving" @click="saveAppVersion"
+          >保存</AppButton
+        >
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="parameterDialogVisible"
       :title="parameterForm.id ? '编辑系统参数' : '新增系统参数'"
-      width="620px"
+      width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-width="90px">
         <el-form-item label="参数 key" required>
@@ -792,10 +1160,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="parameterDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="parameterSaving" @click="saveSystemParameter">
+        <AppButton @click="parameterDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="parameterSaving" @click="saveSystemParameter">
           保存
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -807,8 +1175,10 @@ import { computed, defineComponent, h, reactive, ref, resolveComponent, watch } 
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
 import { maintenanceApi, userTableViewsApi } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   AppAnnouncement,
@@ -1020,6 +1390,73 @@ const primaryActionText = computed(() => {
   if (activeTab.value === 'parameters') return '新增参数';
   return '保存配置';
 });
+const activeTabMeta = computed(() => {
+  const metaMap: Record<
+    string,
+    {
+      title: string;
+      description: string;
+      badge: string;
+      tone: 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+    }
+  > = {
+    overview: {
+      title: '维护总览',
+      description: '查看公告、版本和维护模式概览，确认后台运行状态。',
+      badge: '总览',
+      tone: 'blue'
+    },
+    announcements: {
+      title: '系统公告',
+      description: '发布、停用和维护面向后台用户的系统公告。',
+      badge: '公告',
+      tone: 'cyan'
+    },
+    mode: {
+      title: '维护模式',
+      description: '维护模式会限制普通用户访问，修改必须记录原因和允许范围。',
+      badge: '维护',
+      tone: modeForm.enabled ? 'red' : 'green'
+    },
+    flags: {
+      title: '功能开关',
+      description: '管理功能启停和灰度配置，避免临时开关散落在代码里。',
+      badge: '开关',
+      tone: 'orange'
+    },
+    versions: {
+      title: '版本信息',
+      description: '登记版本号、发布状态、影响模块和发布时间。',
+      badge: '版本',
+      tone: 'purple'
+    },
+    changelog: {
+      title: '更新日志',
+      description: '沉淀每次更新内容，方便员工理解系统变化。',
+      badge: '日志',
+      tone: 'blue'
+    },
+    menu: {
+      title: '菜单配置',
+      description: '维护菜单配置 JSON，后续可接入可视化菜单管理。',
+      badge: '菜单',
+      tone: 'neutral'
+    },
+    theme: {
+      title: '主题配置',
+      description: '保存主题配置 JSON，保持视觉参数可控可追溯。',
+      badge: '主题',
+      tone: 'cyan'
+    },
+    parameters: {
+      title: '系统参数',
+      description: '集中维护系统级参数，参数值以 JSON 形式保存。',
+      badge: '参数',
+      tone: 'green'
+    }
+  };
+  return metaMap[activeTab.value] ?? metaMap.overview;
+});
 const announcementTableSize = computed(() => getTableSize(announcementDensity.value));
 const flagTableSize = computed(() => getTableSize(flagDensity.value));
 const versionTableSize = computed(() => getTableSize(versionDensity.value));
@@ -1041,20 +1478,9 @@ const LevelTag = defineComponent({
     }
   },
   setup(props) {
-    const ElTag = resolveComponent('ElTag');
     return () =>
-      h(
-        'span',
-        {},
-        h(
-          ElTag,
-          {
-            type: getLevelType(props.level as AppAnnouncementLevel),
-            size: 'small',
-            effect: 'light'
-          },
-          () => getLevelLabel(props.level as AppAnnouncementLevel)
-        )
+      h(StatusChip, { tone: getLevelTone(props.level as AppAnnouncementLevel), dot: true }, () =>
+        getLevelLabel(props.level as AppAnnouncementLevel)
       );
   }
 });
@@ -1067,61 +1493,11 @@ const VersionStatusTag = defineComponent({
     }
   },
   setup(props) {
-    const ElTag = resolveComponent('ElTag');
     return () =>
       h(
-        'span',
-        {},
-        h(
-          ElTag,
-          {
-            type: getVersionStatusType(props.status as AppVersionStatus),
-            size: 'small',
-            effect: 'light'
-          },
-          () => getVersionStatusLabel(props.status as AppVersionStatus)
-        )
-      );
-  }
-});
-
-const PaginationBar = defineComponent({
-  props: {
-    page: {
-      type: Number,
-      required: true
-    },
-    pageSize: {
-      type: Number,
-      required: true
-    },
-    total: {
-      type: Number,
-      required: true
-    }
-  },
-  emits: ['update:page', 'update:pageSize', 'change'],
-  setup(props, { emit }) {
-    const ElPagination = resolveComponent('ElPagination');
-    return () =>
-      h(
-        'div',
-        { class: 'pagination-row' },
-        h(ElPagination, {
-          currentPage: props.page,
-          pageSize: props.pageSize,
-          total: props.total,
-          layout: 'total, sizes, prev, pager, next',
-          onCurrentChange: (value: number) => {
-            emit('update:page', value);
-            emit('change');
-          },
-          onSizeChange: (value: number) => {
-            emit('update:pageSize', value);
-            emit('update:page', 1);
-            emit('change');
-          }
-        })
+        StatusChip,
+        { tone: getVersionStatusTone(props.status as AppVersionStatus), dot: true },
+        () => getVersionStatusLabel(props.status as AppVersionStatus)
       );
   }
 });
@@ -1148,7 +1524,6 @@ const ConfigEditor = defineComponent({
   emits: ['update:modelValue', 'save'],
   setup(props, { emit }) {
     const ElInput = resolveComponent('ElInput');
-    const ElButton = resolveComponent('ElButton');
     return () =>
       h('div', { class: 'config-editor' }, [
         h('div', { class: 'settings-note' }, [
@@ -1167,9 +1542,9 @@ const ConfigEditor = defineComponent({
           'div',
           { class: 'config-editor__footer' },
           h(
-            ElButton,
+            AppButton,
             {
-              type: 'primary',
+              variant: 'primary',
               loading: props.loading,
               onClick: () => emit('save')
             },
@@ -2243,10 +2618,10 @@ function getLevelLabel(level: AppAnnouncementLevel) {
   return labels[level] ?? level;
 }
 
-function getLevelType(level: AppAnnouncementLevel) {
-  if (level === 'warning') return 'warning';
-  if (level === 'error') return 'danger';
-  return 'info';
+function getLevelTone(level: AppAnnouncementLevel) {
+  if (level === 'warning') return 'orange';
+  if (level === 'error') return 'red';
+  return 'blue';
 }
 
 function getVersionStatusLabel(status: AppVersionStatus) {
@@ -2258,109 +2633,57 @@ function getVersionStatusLabel(status: AppVersionStatus) {
   return labels[status] ?? status;
 }
 
-function getVersionStatusType(status: AppVersionStatus) {
-  if (status === 'released') return 'success';
-  if (status === 'deprecated') return 'info';
-  return 'warning';
+function getVersionStatusTone(status: AppVersionStatus) {
+  if (status === 'released') return 'green';
+  if (status === 'deprecated') return 'neutral';
+  return 'orange';
 }
 </script>
 
 <style scoped>
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+.system-compact-list-panel .panel-title-row {
+  align-items: flex-start;
 }
 
-.overview-grid h3,
-.settings-note h3 {
-  margin: 0 0 12px;
-  color: var(--text-primary);
-  font-size: 16px;
-}
-
-.toolbar {
-  display: flex;
+.system-compact-list-panel .inline-actions {
+  max-width: min(640px, 100%);
+  justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
 }
 
-.toolbar-search {
-  width: min(360px, 100%);
-}
-
-.toolbar-select {
-  width: 150px;
-}
-
-.muted-block {
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.json-cell {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pagination-row {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 16px;
-}
-
-.settings-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 20px;
-}
-
-.settings-form {
-  max-width: 640px;
-}
-
-.settings-note {
-  align-self: start;
-  padding: 16px;
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  background: var(--bg-soft);
-  color: var(--text-secondary);
-  line-height: 1.7;
-}
-
-.settings-note p {
-  margin: 0 0 10px;
-}
-
-.config-editor {
-  display: grid;
-  gap: 14px;
-}
-
-.config-editor__footer {
-  display: flex;
-  justify-content: flex-end;
-}
-
-@media (max-width: 900px) {
-  .overview-grid,
-  .settings-layout {
-    grid-template-columns: 1fr;
+@media (max-width: 840px) {
+  .system-compact-list-panel .inline-actions {
+    justify-content: flex-start;
   }
 
-  .toolbar-search,
-  .toolbar-select {
+  .system-compact-list-panel :deep(.el-tabs__nav-wrap),
+  .system-compact-list-panel :deep(.el-tabs__nav-scroll) {
     width: 100%;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__nav) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    transform: none !important;
+    white-space: normal;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__item) {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 10px;
+    line-height: 32px;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__active-bar),
+  .system-compact-list-panel :deep(.el-tabs__nav-next),
+  .system-compact-list-panel :deep(.el-tabs__nav-prev) {
+    display: none;
   }
 }
 </style>

@@ -6,26 +6,31 @@
     :description="description"
   >
     <template #actions>
-      <el-button type="primary" :loading="syncingOrders" @click="syncOrders">同步订单</el-button>
-      <el-button :loading="syncingRefunds" @click="syncRefunds">同步退款</el-button>
+      <AppButton variant="primary" :loading="syncingOrders" @click="syncOrders">
+        同步订单
+      </AppButton>
+      <AppButton :loading="syncingRefunds" @click="syncRefunds">同步退款</AppButton>
     </template>
 
-    <el-alert
-      :title="`${platformTitle}开放平台真实接口尚未接入`"
-      description="当前页面已经接入统一平台适配层。同步接口会返回占位结果；自动发货会转入人工处理，后续拿到平台授权后只需要替换适配器。"
-      type="warning"
-      :closable="false"
-      show-icon
-    />
+    <section class="content-panel code-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>{{ platformTitle }}同步与发货队列</h3>
+          <p>查看平台订单同步、SKU 识别、兑换码锁定和发货状态，真实授权未接入时转人工处理。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>{{ platformTitle }} {{ total }} 单</StatusChip>
+          <StatusChip tone="cyan">店铺 {{ platforms.length }}</StatusChip>
+          <StatusChip :tone="pendingCount > 0 ? 'orange' : 'green'">
+            待发货 {{ pendingCount }}
+          </StatusChip>
+          <StatusChip :tone="manualCount > 0 ? 'orange' : 'green'" dot>
+            {{ manualCount > 0 ? `人工 ${manualCount}` : '自动链路稳定' }}
+          </StatusChip>
+          <StatusChip tone="green">已发货 {{ deliveredCount }}</StatusChip>
+        </div>
+      </div>
 
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="订单数" :value="total" hint="当前平台筛选结果" tone="blue" />
-      <MetricCard label="待发货" :value="pendingCount" hint="当前页" tone="orange" />
-      <MetricCard label="人工处理" :value="manualCount" hint="当前页" tone="purple" />
-      <MetricCard label="已发货" :value="deliveredCount" hint="当前页" tone="green" />
-    </div>
-
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.deliveryStatus"
@@ -68,20 +73,32 @@
         </template>
       </TableToolbar>
 
-      <el-empty
-        v-if="!platforms.length && !loading"
-        :description="`暂无启用的${platformTitle}来源平台，请先到来源平台设置添加。`"
-      />
+      <div v-if="!platforms.length && !loading" class="apple-core-empty-state">
+        <strong>暂无启用的{{ platformTitle }}来源平台</strong>
+        <span>请先到来源平台设置添加并启用店铺/账号，再同步平台订单。</span>
+      </div>
       <el-table
         v-else
         v-loading="loading"
+        class="desktop-data-table"
         :data="orders"
         :size="tableSize"
-        empty-text="暂无平台订单"
         row-key="id"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无{{ platformTitle }}订单</strong>
+            <span>可以同步平台订单，或清空筛选后重新查看当前平台发货队列。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" :loading="syncingOrders" @click="syncOrders">
+                同步{{ platformTitle }}订单
+              </AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('order')"
@@ -129,9 +146,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getDeliveryStatusType(row.deliveryStatus)" size="small" effect="light">
+            <StatusChip :tone="getDeliveryStatusTone(row.deliveryStatus)" dot>
               {{ getDeliveryStatusLabel(row.deliveryStatus) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -145,37 +162,108 @@
         </el-table-column>
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button
-              text
-              type="primary"
-              :disabled="row.deliveryStatus === 'delivered'"
-              @click="platformDeliver(row)"
-            >
-              平台发货
-            </el-button>
-            <el-button
-              text
-              type="warning"
-              :disabled="row.deliveryStatus === 'delivered' || row.deliveryStatus === 'manual'"
-              @click="markManual(row)"
-            >
-              转人工
-            </el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton
+                variant="success"
+                :disabled="row.deliveryStatus === 'delivered'"
+                @click="platformDeliver(row)"
+              >
+                平台发货
+              </AppButton>
+              <AppButton
+                variant="soft"
+                :disabled="row.deliveryStatus === 'delivered' || row.deliveryStatus === 'manual'"
+                @click="markManual(row)"
+              >
+                转人工
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadOrders"
-          @size-change="loadOrders"
-        />
+      <div v-if="platforms.length && orders.length" class="mobile-record-list">
+        <article v-for="order in orders" :key="order.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ order.externalOrderNo }}</strong>
+              <span>{{ order.platform.name }} · {{ order.itemTitle || order.itemId }}</span>
+            </div>
+            <StatusChip :tone="getDeliveryStatusTone(order.deliveryStatus)" dot>
+              {{ getDeliveryStatusLabel(order.deliveryStatus) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>实收</span>
+              <strong>{{ order.paidAmount }}</strong>
+            </div>
+            <div>
+              <span>利润</span>
+              <strong>{{ order.profitAmount }}</strong>
+            </div>
+            <div>
+              <span>数量</span>
+              <strong>{{ order.quantity }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>业务</span>
+              <strong>{{ order.service?.name ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>面值</span>
+              <strong>{{ order.faceValue ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>创建时间</span>
+              <strong>{{ formatDate(order.createdAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton
+              size="small"
+              variant="success"
+              :disabled="order.deliveryStatus === 'delivered'"
+              @click="platformDeliver(order)"
+            >
+              平台发货
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="soft"
+              :disabled="order.deliveryStatus === 'delivered' || order.deliveryStatus === 'manual'"
+              @click="markManual(order)"
+            >
+              转人工
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else-if="platforms.length" class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无{{ platformTitle }}订单</strong>
+          <span>可以同步平台订单，或清空筛选后重新查看当前平台发货队列。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" :loading="syncingOrders" @click="syncOrders">
+              同步{{ platformTitle }}订单
+            </AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadOrders"
+      />
     </section>
   </PageScaffold>
 </template>
@@ -190,8 +278,10 @@ import {
   userTableViewsApi,
   type PlatformSyncResult
 } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   CodePlatformOrder,
@@ -280,17 +370,17 @@ function getDeliveryStatusLabel(status: CodePlatformOrder['deliveryStatus']) {
   return labels[status];
 }
 
-function getDeliveryStatusType(status: CodePlatformOrder['deliveryStatus']) {
+function getDeliveryStatusTone(status: CodePlatformOrder['deliveryStatus']) {
   if (status === 'delivered') {
-    return 'success';
+    return 'green';
   }
   if (status === 'pending') {
-    return 'warning';
+    return 'orange';
   }
   if (status === 'failed') {
-    return 'danger';
+    return 'red';
   }
-  return 'info';
+  return 'neutral';
 }
 
 function isColumnVisible(column: string) {
@@ -530,7 +620,7 @@ async function syncRefunds() {
 async function platformDeliver(order: CodePlatformOrder) {
   try {
     await ElMessageBox.confirm(
-      `${props.platformTitle}真实发货接口当前是占位适配器，执行后会转入人工处理。`,
+      `${props.platformTitle}平台授权尚未完成，执行后会转入人工处理。`,
       '平台发货',
       {
         confirmButtonText: '继续',
@@ -579,3 +669,21 @@ async function initializePage() {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.code-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.code-compact-list-panel .inline-actions {
+  max-width: min(620px, 100%);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 840px) {
+  .code-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+  }
+}
+</style>

@@ -1,15 +1,24 @@
 <template>
-  <div class="table-toolbar">
+  <div
+    class="table-toolbar"
+    :class="{
+      'table-toolbar--has-selection': selectedCount > 0,
+      'table-toolbar--has-chips': activeChips.length > 0
+    }"
+    role="search"
+    aria-label="列表查询工具栏"
+  >
     <div v-if="selectedCount > 0" class="table-toolbar__batch">
-      <span>已选 {{ selectedCount }} 项</span>
-      <el-button
+      <span class="table-toolbar__batch-count">已选 {{ selectedCount }} 项</span>
+      <AppButton
         v-for="action in batchActions"
         :key="action.value"
         size="small"
+        variant="soft"
         @click="$emit('batchAction', action.value)"
       >
         {{ action.label }}
-      </el-button>
+      </AppButton>
     </div>
 
     <div class="table-toolbar__main">
@@ -43,6 +52,7 @@
           v-for="item in dateOptions"
           :key="item.value"
           :class="{ active: dateShortcutModel === item.value }"
+          :aria-pressed="dateShortcutModel === item.value"
           type="button"
           @click="selectDateShortcut(item.value)"
         >
@@ -57,7 +67,7 @@
         v-model="savedViewIdModel"
         class="table-toolbar__view-select"
         clearable
-        placeholder="保存视图"
+        placeholder="视图"
         @change="applySavedView"
       >
         <el-option
@@ -67,22 +77,49 @@
           :value="view.id"
         />
       </el-select>
-      <el-button :icon="Refresh" @click="$emit('refresh')">刷新</el-button>
-      <el-button v-if="showExport" :icon="Download" @click="$emit('export')">导出</el-button>
+      <AppButton
+        class="table-toolbar__op"
+        :icon="Refresh"
+        title="刷新列表"
+        @click="$emit('refresh')"
+      >
+        刷新
+      </AppButton>
+      <AppButton
+        v-if="showExport"
+        class="table-toolbar__op"
+        :icon="Download"
+        title="导出当前列表"
+        @click="$emit('export')"
+      >
+        导出
+      </AppButton>
       <el-dropdown trigger="click" :hide-on-click="false">
-        <el-button :icon="Setting">列显示</el-button>
+        <AppButton class="table-toolbar__op" :icon="Setting" title="配置表格列">列显示</AppButton>
         <template #dropdown>
           <el-dropdown-menu class="table-toolbar__columns-menu">
-            <el-checkbox-group v-model="selectedColumns">
-              <el-checkbox
-                v-for="column in effectiveColumnOptions"
-                :key="column.value"
-                :value="column.value"
-                :disabled="column.required"
-              >
-                {{ column.label }}
-              </el-checkbox>
-            </el-checkbox-group>
+            <div class="table-toolbar__columns-panel">
+              <div class="table-toolbar__columns-head">
+                <div>
+                  <strong>列显示</strong>
+                  <span>已显示 {{ selectedColumnCount }} / {{ allColumnValues.length }}</span>
+                </div>
+                <AppButton size="small" variant="ghost" @click.stop="showAllColumns">
+                  全部显示
+                </AppButton>
+              </div>
+              <el-checkbox-group v-model="selectedColumns" class="table-toolbar__columns-body">
+                <el-checkbox
+                  v-for="column in effectiveColumnOptions"
+                  :key="column.value"
+                  :value="column.value"
+                  :disabled="column.required"
+                >
+                  {{ column.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+              <div class="table-toolbar__columns-foot">必选列会自动保留</div>
+            </div>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -91,38 +128,62 @@
           {{ item.label }}
         </el-radio-button>
       </el-radio-group>
-      <el-button v-if="showSaveView" :icon="Collection" @click="$emit('saveView')">
+      <AppButton
+        v-if="showSaveView"
+        class="table-toolbar__op"
+        :icon="Collection"
+        title="保存当前筛选视图"
+        @click="$emit('saveView')"
+      >
         保存视图
-      </el-button>
-      <el-button
+      </AppButton>
+      <AppButton
         v-if="showPrimary"
-        type="primary"
+        class="table-toolbar__primary"
+        variant="primary"
         :loading="primaryLoading"
         :disabled="primaryDisabled"
         @click="$emit('primary')"
       >
         {{ primaryLabel }}
-      </el-button>
+      </AppButton>
     </div>
 
     <div v-if="activeChips.length" class="filter-chips table-toolbar__chips">
-      <el-tag
-        v-for="chip in activeChips"
-        :key="chip.key"
-        closable
-        effect="plain"
-        @close="removeChip(chip.key)"
+      <span v-for="chip in activeChips" :key="chip.key" class="filter-chip filter-chip--closable">
+        <span>
+          <b>{{ chip.label }}</b
+          >：{{ chip.value }}
+        </span>
+        <button
+          class="filter-chip__close"
+          type="button"
+          :aria-label="`移除${chip.label}筛选`"
+          @click="removeChip(chip.key)"
+        >
+          <el-icon>
+            <Close />
+          </el-icon>
+        </button>
+      </span>
+      <AppButton size="small" variant="ghost" @click="clearFilters">清空筛选</AppButton>
+    </div>
+
+    <div class="table-toolbar__meta" aria-live="polite">
+      <span>{{ filterSummaryText }}</span>
+      <span v-if="hasColumnOptions"
+        >显示列 {{ selectedColumnCount }}/{{ allColumnValues.length }}</span
       >
-        {{ chip.label }}：{{ chip.value }}
-      </el-tag>
-      <el-button text type="primary" @click="clearFilters">清空筛选</el-button>
+      <span>密度 {{ activeDensityLabel }}</span>
+      <span v-if="activeSavedViewLabel">视图 {{ activeSavedViewLabel }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Collection, Download, Refresh, Search, Setting } from '@element-plus/icons-vue';
+import { Close, Collection, Download, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import { computed, watch } from 'vue';
+import AppButton from '@/components/ui/AppButton.vue';
 import type { UserTableView } from '@/types/system';
 
 interface SelectOption {
@@ -218,10 +279,12 @@ const densityOptions: SelectOption[] = [
 const defaultStatusOptions: SelectOption[] = [
   { label: '已接入', value: 'ready' },
   { label: '设计完成', value: 'design-ready' },
-  { label: '待接入接口', value: 'planned' }
+  { label: '待完善', value: 'planned' }
 ];
 
-const effectiveStatusOptions = computed(() => props.statusOptions ?? defaultStatusOptions);
+const effectiveStatusOptions = computed(() =>
+  props.statusOptions?.length ? props.statusOptions : defaultStatusOptions
+);
 const savedViews = computed(() => props.savedViews ?? []);
 const batchActions = computed(() => props.batchActions ?? []);
 const extraFilterChips = computed(() => props.filterChips ?? []);
@@ -239,6 +302,7 @@ const allColumnValues = computed(() => effectiveColumnOptions.value.map((column)
 const requiredColumnValues = computed(() =>
   effectiveColumnOptions.value.filter((column) => column.required).map((column) => column.value)
 );
+const hasColumnOptions = computed(() => allColumnValues.value.length > 0);
 
 const selectedColumns = computed({
   get() {
@@ -250,6 +314,20 @@ const selectedColumns = computed({
       (column) => allowed.has(column)
     );
   }
+});
+const selectedColumnCount = computed(() => selectedColumns.value.length);
+const activeDensityLabel = computed(
+  () => densityOptions.find((option) => option.value === densityModel.value)?.label ?? '标准'
+);
+const activeSavedViewLabel = computed(
+  () => savedViews.value.find((view) => view.id === savedViewIdModel.value)?.viewName
+);
+const filterSummaryText = computed(() => {
+  if (activeChips.value.length) {
+    return `筛选 ${activeChips.value.length} 项`;
+  }
+
+  return '默认筛选';
 });
 
 const activeChips = computed(() => {
@@ -266,7 +344,8 @@ const activeChips = computed(() => {
     chips.push({ key: 'status', label: '状态', value: statusLabel });
   if (props.showDateShortcut && dateLabel)
     chips.push({ key: 'date', label: '日期', value: dateLabel });
-  if (densityLabel) chips.push({ key: 'density', label: '密度', value: densityLabel });
+  if (densityModel.value !== 'default' && densityLabel)
+    chips.push({ key: 'density', label: '密度', value: densityLabel });
   if (viewLabel) chips.push({ key: 'view', label: '视图', value: viewLabel });
 
   return [...chips, ...extraFilterChips.value];
@@ -301,6 +380,10 @@ function applySavedView(value: string) {
   if (value) {
     emit('applyView', value);
   }
+}
+
+function showAllColumns() {
+  visibleColumnsModel.value = [...allColumnValues.value];
 }
 
 function removeChip(key: string) {

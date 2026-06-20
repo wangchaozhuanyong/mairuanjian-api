@@ -31,9 +31,9 @@
             placeholder="未绑定 MFA 可留空"
           />
         </el-form-item>
-        <el-button type="primary" class="full-button" :loading="loading" @click="submit">
+        <AppButton variant="primary" class="full-button" :loading="loading" @click="submit">
           登录
-        </el-button>
+        </AppButton>
       </el-form>
     </section>
   </main>
@@ -44,6 +44,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import AppButton from '@/components/ui/AppButton.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const router = useRouter();

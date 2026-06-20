@@ -5,14 +5,29 @@
     phase="Phase 4"
     description="查看每笔 Apple ID 业务开通后的服务记录、到期时间、成本利润和续费状态。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="记录数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="开通中" :value="activeCount" hint="当前页" tone="green" />
-      <MetricCard label="7天内到期" :value="expiringSoonCount" hint="当前页" tone="orange" />
-      <MetricCard label="当前页利润" :value="sumProfit" hint="人民币" tone="red" />
-    </div>
+    <section class="content-panel apple-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>开通记录台账</h3>
+          <p>核对订单、客户、业务、Apple ID、到期时间和续费决定，支撑后续续费任务生成。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 条</StatusChip>
+          <StatusChip tone="green">开通中 {{ activeCount }}</StatusChip>
+          <StatusChip :tone="expiringSoonCount > 0 ? 'orange' : 'green'" dot>
+            {{ expiringSoonCount > 0 ? `7天内到期 ${expiringSoonCount}` : '近期稳定' }}
+          </StatusChip>
+          <StatusChip :tone="unconfirmedRenewalCount > 0 ? 'orange' : 'green'">
+            未确认 {{ unconfirmedRenewalCount }}
+          </StatusChip>
+          <StatusChip :tone="noRenewCount > 0 ? 'red' : 'green'">
+            不续费 {{ noRenewCount }}
+          </StatusChip>
+          <StatusChip tone="purple">换套餐 {{ changePlanCount }}</StatusChip>
+          <StatusChip tone="cyan">利润 {{ sumProfit }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -52,25 +67,30 @@
               :value="item.value"
             />
           </el-select>
-          <el-select
-            v-model="quickDate"
-            class="table-toolbar__select"
-            clearable
-            placeholder="到期时间"
-            @change="applyQuickDate"
-          >
-            <el-option
+          <div class="quick-date apple-core-quick-date" role="group" aria-label="到期时间快捷筛选">
+            <button
+              type="button"
+              :class="{ active: quickDate === '' }"
+              @click="selectQuickDate('')"
+            >
+              全部
+            </button>
+            <button
               v-for="item in quickDateOptions"
               :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
+              type="button"
+              :class="{ active: quickDate === item.value }"
+              @click="selectQuickDate(item.value)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
         </template>
       </TableToolbar>
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="activations"
         :size="tableSize"
         row-key="id"
@@ -78,6 +98,15 @@
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无 Apple ID 开通记录</strong>
+            <span>开通记录会由 Apple ID 订单生成，也可以清空筛选后查看完整台账。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column v-if="isColumnVisible('order')" label="订单/客户" min-width="190">
           <template #default="{ row }">
@@ -117,15 +146,14 @@
         >
           <template #default="{ row }">
             {{ formatDate(row.expireTime) }}
-            <el-tag
+            <StatusChip
               v-if="row.daysUntilExpire !== null && row.daysUntilExpire !== undefined"
               class="tag-gap"
-              :type="getExpireTagType(row.daysUntilExpire)"
-              size="small"
-              effect="light"
+              :tone="getExpireTone(row.daysUntilExpire)"
+              dot
             >
               {{ getExpireText(row.daysUntilExpire) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -136,9 +164,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag size="small" effect="light">{{
-              getRenewalDecisionLabel(row.renewalDecision)
-            }}</el-tag>
+            <StatusChip :tone="getRenewalDecisionTone(row.renewalDecision)" dot>
+              {{ getRenewalDecisionLabel(row.renewalDecision) }}
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -149,9 +177,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -165,22 +193,85 @@
         </el-table-column>
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadActivations"
-          @size-change="loadActivations"
-        />
+      <div
+        v-if="activations.length"
+        class="mobile-record-list"
+        aria-label="Apple ID 开通记录移动列表"
+      >
+        <article v-for="activation in activations" :key="activation.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ activation.order.orderNo }}</strong>
+              <span>{{ activation.customer.name }} · {{ activation.service.name }}</span>
+            </div>
+            <StatusChip :tone="getStatusTone(activation.status)" dot>
+              {{ getStatusLabel(activation.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>消耗</span>
+              <strong>{{ activation.consumedValue }} {{ activation.currency }}</strong>
+            </div>
+            <div>
+              <span>成本</span>
+              <strong>{{ activation.costRmb }}</strong>
+            </div>
+            <div>
+              <span>利润</span>
+              <strong>{{ activation.profitAmount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>Apple ID</span>
+              <strong>{{ activation.appleAccount?.appleIdMasked ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>续费决定</span>
+              <StatusChip :tone="getRenewalDecisionTone(activation.renewalDecision)" dot>
+                {{ getRenewalDecisionLabel(activation.renewalDecision) }}
+              </StatusChip>
+            </div>
+            <div>
+              <span>到期时间</span>
+              <strong>{{ formatDate(activation.expireTime) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(activation)">
+              详情
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list" aria-label="Apple ID 开通记录空状态">
+        <div class="apple-core-empty-state">
+          <strong>暂无 Apple ID 开通记录</strong>
+          <span>开通记录会由 Apple ID 订单生成，也可以清空筛选后查看完整台账。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadActivations"
+      />
     </section>
 
     <AppDrawer
@@ -221,45 +312,48 @@
         </div>
       </div>
 
-      <el-descriptions class="detail-descriptions" :column="1" border>
-        <el-descriptions-item label="开通记录 ID">
-          {{ selectedActivation?.id ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="订单号">
-          {{ selectedActivation?.order.orderNo ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="来源平台">
-          {{ selectedActivation?.sourcePlatform?.name ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="平台订单号">
-          {{ selectedActivation?.externalOrderNo ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="套餐">
-          {{ selectedActivation?.currentPlan ?? '-' }} ->
-          {{ selectedActivation?.targetPlan ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="开通/到期">
-          {{ formatDate(selectedActivation?.startTime) }} ->
-          {{ formatDate(selectedActivation?.expireTime) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="消费时平均成本">
-          {{ selectedActivation?.avgUnitCost ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="实收/手续费/损耗">
-          {{ selectedActivation?.paidAmount ?? '-' }} /
-          {{ selectedActivation?.platformFee ?? '-' }} /
-          {{ selectedActivation?.refundLoss ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="自动续费">
-          {{ getAutoRenewStatusLabel(selectedActivation?.autoRenewStatus) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="续费决定">
-          {{ getRenewalDecisionLabel(selectedActivation?.renewalDecision) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="续费备注">
-          {{ selectedActivation?.renewalNote ?? '-' }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div class="drawer-section">
+        <div class="drawer-section__title">开通信息</div>
+        <el-descriptions class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="开通记录 ID">
+            {{ selectedActivation?.id ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="订单号">
+            {{ selectedActivation?.order.orderNo ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="来源平台">
+            {{ selectedActivation?.sourcePlatform?.name ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="平台订单号">
+            {{ selectedActivation?.externalOrderNo ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="套餐">
+            {{ selectedActivation?.currentPlan ?? '-' }} ->
+            {{ selectedActivation?.targetPlan ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="开通/到期">
+            {{ formatDate(selectedActivation?.startTime) }} ->
+            {{ formatDate(selectedActivation?.expireTime) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="消费时平均成本">
+            {{ selectedActivation?.avgUnitCost ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="实收/手续费/损耗">
+            {{ selectedActivation?.paidAmount ?? '-' }} /
+            {{ selectedActivation?.platformFee ?? '-' }} /
+            {{ selectedActivation?.refundLoss ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="自动续费">
+            {{ getAutoRenewStatusLabel(selectedActivation?.autoRenewStatus) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="续费决定">
+            {{ getRenewalDecisionLabel(selectedActivation?.renewalDecision) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="续费备注">
+            {{ selectedActivation?.renewalNote ?? '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
     </AppDrawer>
   </PageScaffold>
 </template>
@@ -268,9 +362,11 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { appleActivationsApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { ServiceActivation, TableDensity, UserTableView } from '@/types/system';
 
@@ -348,6 +444,17 @@ const expiringSoonCount = computed(
         activation.daysUntilExpire <= 7
     ).length
 );
+const unconfirmedRenewalCount = computed(
+  () =>
+    activations.value.filter((activation) => activation.renewalDecision === 'unconfirmed').length
+);
+const noRenewCount = computed(
+  () => activations.value.filter((activation) => activation.renewalDecision === 'no_renew').length
+);
+const changePlanCount = computed(
+  () =>
+    activations.value.filter((activation) => activation.renewalDecision === 'change_plan').length
+);
 const sumProfit = computed(() =>
   activations.value.reduce((sum, activation) => sum + Number(activation.profitAmount), 0).toFixed(2)
 );
@@ -406,6 +513,11 @@ async function applyQuickDate() {
   await loadActivations();
 }
 
+function selectQuickDate(value: string) {
+  quickDate.value = value;
+  applyQuickDate();
+}
+
 function getStatusLabel(status?: ServiceActivation['status']) {
   if (!status) {
     return '-';
@@ -419,14 +531,14 @@ function getStatusLabel(status?: ServiceActivation['status']) {
   }[status];
 }
 
-function getStatusType(status: ServiceActivation['status']) {
+function getStatusTone(status: ServiceActivation['status']) {
   return status === 'active'
-    ? 'success'
+    ? 'green'
     : status === 'expired'
-      ? 'warning'
+      ? 'orange'
       : status === 'abnormal'
-        ? 'danger'
-        : 'info';
+        ? 'red'
+        : 'neutral';
 }
 
 function getRenewalDecisionLabel(value?: ServiceActivation['renewalDecision']) {
@@ -440,6 +552,22 @@ function getRenewalDecisionLabel(value?: ServiceActivation['renewalDecision']) {
     no_renew: '不续费',
     change_plan: '换套餐'
   }[value];
+}
+
+function getRenewalDecisionTone(value?: ServiceActivation['renewalDecision']) {
+  if (value === 'renew') {
+    return 'green';
+  }
+
+  if (value === 'no_renew') {
+    return 'orange';
+  }
+
+  if (value === 'change_plan') {
+    return 'blue';
+  }
+
+  return 'neutral';
 }
 
 function getAutoRenewStatusLabel(value?: ServiceActivation['autoRenewStatus']) {
@@ -466,12 +594,12 @@ function getExpireText(days: number) {
   return `${days} 天后`;
 }
 
-function getExpireTagType(days: number) {
+function getExpireTone(days: number) {
   if (days < 0) {
-    return 'danger';
+    return 'red';
   }
 
-  return days <= 7 ? 'warning' : 'info';
+  return days <= 7 ? 'orange' : 'neutral';
 }
 
 async function loadActivations() {
@@ -525,6 +653,11 @@ function clearFilters() {
   query.expireTo = '';
   savedViewId.value = '';
   sortConfig.value = {};
+}
+
+async function clearFiltersAndSearch() {
+  clearFilters();
+  await loadActivations();
 }
 
 function removeFilter(key: string) {

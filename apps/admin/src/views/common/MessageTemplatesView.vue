@@ -5,7 +5,20 @@
     phase="Phase 2"
     description="维护续费询问、发货、售后、通知等模板。模板变量使用 {{ variable }} 格式。"
   >
-    <section class="content-panel">
+    <section class="content-panel common-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>消息模板列表</h3>
+          <p>集中维护续费、发货、售后和通知话术，变量按模板配置展示。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>模板 {{ total }}</StatusChip>
+          <StatusChip tone="green">启用 {{ activeTemplateCount }}</StatusChip>
+          <StatusChip tone="purple">Telegram {{ telegramTemplateCount }}</StatusChip>
+          <StatusChip tone="orange">含变量 {{ variableTemplateCount }}</StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -65,13 +78,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="templates"
         :size="tableSize"
         row-key="id"
-        empty-text="暂无消息模板"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无消息模板</strong>
+            <span>可以新增模板，或清空筛选后重新查看模板列表。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增消息模板</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('name')"
@@ -107,9 +130,14 @@
         />
         <el-table-column v-if="isColumnVisible('variables')" label="变量" min-width="180">
           <template #default="{ row }">
-            <el-tag v-for="variable in row.variables" :key="variable" class="tag-gap" size="small">
+            <StatusChip
+              v-for="variable in row.variables"
+              :key="variable"
+              class="tag-gap"
+              tone="blue"
+            >
               {{ variable }}
-            </el-tag>
+            </StatusChip>
             <span v-if="!row.variables.length">-</span>
           </template>
         </el-table-column>
@@ -135,28 +163,81 @@
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openEdit(row)">编辑</el-button>
+            <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadTemplates"
-          @size-change="loadTemplates"
-        />
+      <div v-if="templates.length" class="mobile-record-list">
+        <article v-for="template in templates" :key="template.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ template.name }}</strong>
+              <span
+                >{{ getTypeLabel(template.type) }} · {{ getChannelLabel(template.channel) }}</span
+              >
+            </div>
+            <StatusTag :status="template.status" />
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>内容预览</span>
+              <strong>{{ template.content }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>类型</span>
+              <strong>{{ getTypeLabel(template.type) }}</strong>
+            </div>
+            <div>
+              <span>渠道</span>
+              <strong>{{ getChannelLabel(template.channel) }}</strong>
+            </div>
+            <div>
+              <span>更新时间</span>
+              <strong>{{ formatDate(template.updatedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip v-for="variable in template.variables" :key="variable" tone="blue">
+              {{ variable }}
+            </StatusChip>
+            <StatusChip v-if="!template.variables.length" tone="neutral">无变量</StatusChip>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openEdit(template)">编辑</AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无消息模板</strong>
+          <span>可以新增模板，或清空筛选后重新查看模板列表。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增消息模板</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadTemplates"
+      />
     </section>
 
     <el-dialog
       v-model="dialogVisible"
       :title="editingTemplate ? '编辑消息模板' : '新增消息模板'"
-      width="700px"
+      width="min(700px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="模板名称" prop="name">
@@ -213,8 +294,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveTemplate">保存</el-button>
+        <AppButton @click="dialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveTemplate">保存</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -225,7 +306,10 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { messageTemplatesApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { MessageTemplate, TableDensity, UserTableView } from '@/types/system';
@@ -303,6 +387,15 @@ const variableOptions = computed(() => [
 ]);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const activeTemplateCount = computed(
+  () => templates.value.filter((template) => template.status === 'active').length
+);
+const telegramTemplateCount = computed(
+  () => templates.value.filter((template) => template.channel === 'telegram').length
+);
+const variableTemplateCount = computed(
+  () => templates.value.filter((template) => template.variables.length > 0).length
 );
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
@@ -590,3 +683,22 @@ async function saveTemplate() {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.common-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.common-compact-list-panel .inline-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(680px, 100%);
+}
+
+@media (max-width: 840px) {
+  .common-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+</style>

@@ -306,9 +306,8 @@ const appleModules: AppModuleItem[] = [
     group: 'Apple ID 业务',
     phase: 'Phase 8',
     status: 'design-ready',
-    description:
-      '管理查询余额、检测状态、取消订阅、自动充值等自动化任务；真实 Worker 接入前转人工验证。',
-    features: ['任务队列', '失败转人工', '截图凭证', '结果回写', 'Worker 状态'],
+    description: '管理查询余额、检测状态、取消订阅、自动充值等自动化任务，高风险任务转人工验证。',
+    features: ['任务队列', '失败转人工', '截图凭证', '结果回写', '执行状态'],
     primaryAction: '创建自动化任务',
     tableColumns: ['任务', 'Apple ID', '关联业务', '状态', '结果', '创建时间']
   },
@@ -652,8 +651,8 @@ const systemModules: AppModuleItem[] = [
     group: '系统管理',
     phase: 'Phase 12',
     status: 'ready',
-    description: '监控 API、数据库、Redis、队列、定时任务、Worker、文件存储和磁盘。',
-    features: ['健康状态', '队列积压', '定时任务', 'Worker 状态', '最近错误'],
+    description: '监控 API、数据库、Redis、队列、定时任务、自动化服务、文件存储和磁盘。',
+    features: ['健康状态', '队列积压', '定时任务', '自动化服务状态', '最近错误'],
     primaryAction: '刷新监控',
     tableColumns: ['服务', '状态', '延迟', '错误率', '最近检查']
   },
@@ -768,9 +767,9 @@ const systemModules: AppModuleItem[] = [
     group: '系统管理',
     phase: 'Phase 14',
     status: 'ready',
-    description: '查看自动化 Worker 执行日志、截图凭证和失败原因。',
+    description: '查看自动化服务执行日志、截图凭证和失败原因。',
     features: ['任务日志', '截图凭证', '失败原因', '转人工记录', '重试'],
-    tableColumns: ['任务', 'Worker', '状态', '结果', '耗时', '时间']
+    tableColumns: ['任务', '执行器', '状态', '结果', '耗时', '时间']
   },
   {
     key: 'risk-control',
@@ -1033,7 +1032,7 @@ export function getStatusText(status: ModuleStatus) {
   const statusMap: Record<ModuleStatus, string> = {
     ready: '已接入',
     'design-ready': '设计完成',
-    planned: '待接入接口',
+    planned: '规划中',
     later: '后期增强'
   };
 

@@ -5,24 +5,33 @@
     phase="Phase 4"
     description="查看 Apple ID 订单、开通记录、余额消耗和利润。订单创建后会自动生成消费流水和开通记录。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="订单数量" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="当前页实收" :value="sumField('paidAmount')" hint="人民币" tone="green" />
-      <MetricCard
-        label="当前页成本"
-        :value="sumField('appleCostRmb')"
-        hint="Apple 余额成本"
-        tone="orange"
-      />
-      <MetricCard
-        label="当前页利润"
-        :value="sumField('profitAmount')"
-        hint="实收减成本费用"
-        tone="red"
-      />
-    </div>
+    <template #actions>
+      <AppButton variant="primary" @click="router.push('/apple/order-entry')">新建订单</AppButton>
+    </template>
 
-    <section class="content-panel">
+    <section class="content-panel apple-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>Apple ID 订单队列</h3>
+          <p>跟踪订单、客户、业务、Apple ID、余额消耗和利润，开通与消费流水保持分区独立。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 单</StatusChip>
+          <StatusChip :tone="pendingOrderCount > 0 ? 'orange' : 'green'">
+            待处理 {{ pendingOrderCount }}
+          </StatusChip>
+          <StatusChip tone="green">生效 {{ activeOrderCount }}</StatusChip>
+          <StatusChip :tone="abnormalOrderCount > 0 ? 'red' : 'green'" dot>
+            {{ abnormalOrderCount > 0 ? `异常 ${abnormalOrderCount}` : '无异常' }}
+          </StatusChip>
+          <StatusChip tone="cyan">实收 {{ sumField('paidAmount') }}</StatusChip>
+          <StatusChip tone="orange">成本 {{ sumField('appleCostRmb') }}</StatusChip>
+          <StatusChip :tone="Number(sumField('profitAmount')) >= 0 ? 'green' : 'red'">
+            利润 {{ sumField('profitAmount') }}
+          </StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -49,12 +58,25 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="orders"
         :size="tableSize"
         row-key="id"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无 Apple ID 订单</strong>
+            <span>可以新建订单录入业务，或清空筛选后重新查看订单队列。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+              <AppButton variant="primary" @click="router.push('/apple/order-entry')">
+                新建订单
+              </AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('orderNo')"
@@ -80,7 +102,19 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            {{ row.paidAmount }} / {{ row.appleCostRmb }} / {{ row.profitAmount }}
+            <div class="order-money-stack">
+              <div>
+                <span>实收</span>
+                <strong>{{ row.paidAmount }}</strong>
+              </div>
+              <div>
+                <span>成本</span>
+                <strong>{{ row.appleCostRmb }}</strong>
+              </div>
+              <StatusChip :tone="getProfitTone(row.profitAmount)">
+                利润 {{ row.profitAmount }}
+              </StatusChip>
+            </div>
           </template>
         </el-table-column>
         <el-table-column
@@ -111,9 +145,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -127,22 +161,80 @@
         </el-table-column>
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadOrders"
-          @size-change="loadOrders"
-        />
+      <div v-if="orders.length" class="mobile-record-list" aria-label="Apple ID 订单移动列表">
+        <article v-for="order in orders" :key="order.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ order.orderNo }}</strong>
+              <span>{{ order.customer.name }} · {{ order.service.name }}</span>
+            </div>
+            <StatusChip :tone="getStatusTone(order.status)" dot>
+              {{ getStatusLabel(order.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>客户实收</span>
+              <strong>{{ order.paidAmount }}</strong>
+            </div>
+            <div>
+              <span>Apple 成本</span>
+              <strong>{{ order.appleCostRmb }}</strong>
+            </div>
+            <div>
+              <span>利润</span>
+              <strong>{{ order.profitAmount }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>Apple ID</span>
+              <strong>{{ order.appleAccount?.appleIdMasked ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>消耗</span>
+              <strong>{{ order.appleCostValue }} {{ order.service.currency }}</strong>
+            </div>
+            <div>
+              <span>到期时间</span>
+              <strong>{{ formatDate(order.expireTime) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openDetail(order)">详情</AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list" aria-label="Apple ID 订单空状态">
+        <div class="apple-core-empty-state">
+          <strong>暂无 Apple ID 订单</strong>
+          <span>可以新建订单录入业务，或清空筛选后重新查看订单队列。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" @click="router.push('/apple/order-entry')">
+              新建订单
+            </AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadOrders"
+      />
     </section>
 
     <AppDrawer v-model="detailDrawerVisible" :title="selectedOrder?.orderNo ?? '订单详情'">
@@ -173,37 +265,41 @@
         </div>
       </div>
 
-      <el-descriptions class="detail-descriptions" :column="1" border>
-        <el-descriptions-item label="平台">
-          {{ selectedOrder?.sourcePlatform?.name ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="平台订单号">
-          {{ selectedOrder?.externalOrderNo ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="服务账号">
-          {{ selectedOrder?.serviceAccount ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="套餐">
-          {{ selectedOrder?.currentPlan ?? '-' }} -> {{ selectedOrder?.targetPlan ?? '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="开通/到期">
-          {{ formatDate(selectedOrder?.startTime) }} -> {{ formatDate(selectedOrder?.expireTime) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="开通记录 ID">
-          <el-button
-            v-if="selectedOrder?.activationId"
-            text
-            type="primary"
-            @click="router.push('/apple/activations')"
-          >
-            {{ selectedOrder.activationId }}
-          </el-button>
-          <span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="备注">
-          {{ selectedOrder?.remark ?? '-' }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div class="drawer-section">
+        <div class="drawer-section__title">订单信息</div>
+        <el-descriptions class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="平台">
+            {{ selectedOrder?.sourcePlatform?.name ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="平台订单号">
+            {{ selectedOrder?.externalOrderNo ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="服务账号">
+            {{ selectedOrder?.serviceAccount ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="套餐">
+            {{ selectedOrder?.currentPlan ?? '-' }} -> {{ selectedOrder?.targetPlan ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="开通/到期">
+            {{ formatDate(selectedOrder?.startTime) }} ->
+            {{ formatDate(selectedOrder?.expireTime) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="开通记录 ID">
+            <AppButton
+              v-if="selectedOrder?.activationId"
+              size="small"
+              variant="soft"
+              @click="router.push('/apple/activations')"
+            >
+              {{ selectedOrder.activationId }}
+            </AppButton>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="备注">
+            {{ selectedOrder?.remark ?? '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
     </AppDrawer>
   </PageScaffold>
 </template>
@@ -213,9 +309,11 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { appleOrdersApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { AppleOrder, TableDensity, UserTableView } from '@/types/system';
 
@@ -263,6 +361,15 @@ const query = reactive({
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
+const pendingOrderCount = computed(
+  () => orders.value.filter((order) => order.status === 'pending').length
+);
+const activeOrderCount = computed(
+  () => orders.value.filter((order) => order.status === 'active').length
+);
+const abnormalOrderCount = computed(
+  () => orders.value.filter((order) => order.status === 'abnormal').length
+);
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
@@ -282,14 +389,15 @@ function getStatusLabel(status: AppleOrder['status']) {
   }[status];
 }
 
-function getStatusType(status: AppleOrder['status']) {
-  return status === 'active'
-    ? 'success'
-    : status === 'pending'
-      ? 'warning'
-      : status === 'abnormal'
-        ? 'danger'
-        : 'info';
+function getStatusTone(status: AppleOrder['status']) {
+  if (status === 'active' || status === 'completed') return 'green';
+  if (status === 'pending') return 'orange';
+  if (status === 'abnormal') return 'red';
+  return 'neutral';
+}
+
+function getProfitTone(value: string) {
+  return Number(value) >= 0 ? 'green' : 'red';
 }
 
 function isColumnVisible(column: string) {
@@ -345,6 +453,11 @@ function clearFilters() {
   query.status = '';
   savedViewId.value = '';
   sortConfig.value = {};
+}
+
+async function clearFiltersAndSearch() {
+  clearFilters();
+  await loadOrders();
 }
 
 function exportList() {

@@ -5,14 +5,22 @@
     phase="Phase 6"
     description="处理已发货兑换码的售后补发，记录原码、新码、损耗成本和处理状态。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="售后单" :value="total" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="待处理" :value="pendingCount" hint="当前页" tone="orange" />
-      <MetricCard label="已补发" :value="reissuedCount" hint="当前页" tone="green" />
-      <MetricCard label="已完成" :value="completedCount" hint="当前页" tone="purple" />
-    </div>
+    <section class="content-panel code-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>售后补发队列</h3>
+          <p>核对原订单和原兑换码，记录补发新码、损耗成本、处理结果和售后责任链路。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>共 {{ total }} 个售后单</StatusChip>
+          <StatusChip :tone="pendingCount > 0 ? 'orange' : 'green'" dot>
+            {{ pendingCount > 0 ? `待处理 ${pendingCount}` : '无待处理' }}
+          </StatusChip>
+          <StatusChip tone="green">已补发 {{ reissuedCount }}</StatusChip>
+          <StatusChip tone="purple">已完成 {{ completedCount }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -40,13 +48,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="afterSales"
         :size="tableSize"
-        empty-text="暂无售后补发记录"
         row-key="id"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无售后补发记录</strong>
+            <span>可以新增售后单，或清空筛选后重新查看售后队列。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增售后单</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('afterSale')"
@@ -89,9 +107,9 @@
           sortable="custom"
         >
           <template #default="{ row }">
-            <el-tag :type="getAfterSaleStatusType(row.status)" size="small" effect="light">
+            <StatusChip :tone="getAfterSaleStatusTone(row.status)" dot>
               {{ getAfterSaleStatusLabel(row.status) }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -105,41 +123,114 @@
         </el-table-column>
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button
-              text
-              type="warning"
-              :disabled="row.status !== 'pending' || Boolean(row.newCodeId)"
-              @click="openReissue(row)"
-            >
-              补发
-            </el-button>
-            <el-button
-              text
-              type="success"
-              :disabled="row.status !== 'pending' || !row.newCodeId"
-              @click="completeAfterSale(row)"
-            >
-              完成
-            </el-button>
+            <div class="table-action-group table-action-group--wrap">
+              <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton
+                variant="soft"
+                :disabled="row.status !== 'pending' || Boolean(row.newCodeId)"
+                @click="openReissue(row)"
+              >
+                补发
+              </AppButton>
+              <AppButton
+                variant="success"
+                :disabled="row.status !== 'pending' || !row.newCodeId"
+                @click="completeAfterSale(row)"
+              >
+                完成
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadAfterSales"
-          @size-change="loadAfterSales"
-        />
+      <div v-if="afterSales.length" class="mobile-record-list">
+        <article v-for="afterSale in afterSales" :key="afterSale.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>售后单 {{ afterSale.id.slice(0, 8) }}</strong>
+              <span>
+                {{ afterSale.order.externalOrderNo }} · {{ afterSale.order.platform.name }}
+              </span>
+            </div>
+            <StatusChip :tone="getAfterSaleStatusTone(afterSale.status)" dot>
+              {{ getAfterSaleStatusLabel(afterSale.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>原码</span>
+              <strong>{{ afterSale.originalCode.codeTail }}</strong>
+            </div>
+            <div>
+              <span>新码</span>
+              <strong>{{ afterSale.newCode?.codeTail ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>损耗</span>
+              <strong>{{ afterSale.newCode?.cost ?? '0.00' }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>业务/面值</span>
+              <strong
+                >{{ afterSale.order.service?.name ?? '-' }} ·
+                {{ afterSale.originalCode.faceValue }}</strong
+              >
+            </div>
+            <div>
+              <span>完成时间</span>
+              <strong>{{ formatDate(afterSale.completedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton variant="ghost" @click="openDetail(afterSale)">详情</AppButton>
+            <AppButton
+              variant="soft"
+              :disabled="afterSale.status !== 'pending' || Boolean(afterSale.newCodeId)"
+              @click="openReissue(afterSale)"
+            >
+              补发
+            </AppButton>
+            <AppButton
+              variant="success"
+              :disabled="afterSale.status !== 'pending' || !afterSale.newCodeId"
+              @click="completeAfterSale(afterSale)"
+            >
+              完成
+            </AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无售后补发记录</strong>
+          <span>可以新增售后单，或清空筛选后重新查看售后队列。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增售后单</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadAfterSales"
+      />
     </section>
 
-    <el-dialog v-model="createDialogVisible" title="新增售后单" width="680px">
+    <el-dialog
+      v-model="createDialogVisible"
+      title="新增售后单"
+      width="min(680px, calc(100vw - 24px))"
+    >
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
         <el-form-item label="已发货订单" prop="orderId">
           <el-select
@@ -177,18 +268,23 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveAfterSale">保存</el-button>
+        <AppButton @click="createDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="saveAfterSale">保存</AppButton>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="reissueDialogVisible" title="售后补发" width="680px">
-      <el-alert
-        title="补发会自动选择同业务、同面值的未售兑换码，并把补发成本计入原订单利润。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
+    <el-dialog
+      v-model="reissueDialogVisible"
+      title="售后补发"
+      width="min(680px, calc(100vw - 24px))"
+    >
+      <div class="apple-core-alert apple-core-alert--orange">
+        <StatusChip tone="orange">补发</StatusChip>
+        <div>
+          <strong>补发会自动选择同业务、同面值的未售兑换码</strong>
+          <p>新兑换码成本会计入原订单利润，提交前请确认订单和客户反馈一致。</p>
+        </div>
+      </div>
       <el-form ref="reissueFormRef" :model="reissueForm" label-position="top">
         <el-form-item label="售后单">
           <el-input :model-value="selectedAfterSale?.order.externalOrderNo ?? '-'" disabled />
@@ -214,10 +310,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="reissueDialogVisible = false">关闭</el-button>
-        <el-button type="warning" :loading="reissuing" @click="reissueAfterSale">
+        <AppButton @click="reissueDialogVisible = false">关闭</AppButton>
+        <AppButton variant="soft" :loading="reissuing" @click="reissueAfterSale">
           确认补发
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -225,31 +321,36 @@
       v-model="detailVisible"
       :title="`售后单 · ${selectedAfterSale?.id.slice(0, 8) ?? ''}`"
     >
-      <el-descriptions v-if="selectedAfterSale" :column="1" border>
-        <el-descriptions-item label="订单号">
-          {{ selectedAfterSale.order.externalOrderNo }}
-        </el-descriptions-item>
-        <el-descriptions-item label="平台">
-          {{ selectedAfterSale.order.platform.name }}
-        </el-descriptions-item>
-        <el-descriptions-item label="原码">
-          尾号 {{ selectedAfterSale.originalCode.codeTail }} · 成本
-          {{ selectedAfterSale.originalCode.cost }}
-        </el-descriptions-item>
-        <el-descriptions-item label="新码">
-          <span v-if="selectedAfterSale.newCode">
-            尾号 {{ selectedAfterSale.newCode.codeTail }} · 成本
-            {{ selectedAfterSale.newCode.cost }}
-          </span>
-          <span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="状态">
-          {{ getAfterSaleStatusLabel(selectedAfterSale.status) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="原因">
-          {{ selectedAfterSale.reason }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div class="drawer-section">
+        <div class="drawer-section__title">售后信息</div>
+        <el-descriptions v-if="selectedAfterSale" class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="订单号">
+            {{ selectedAfterSale.order.externalOrderNo }}
+          </el-descriptions-item>
+          <el-descriptions-item label="平台">
+            {{ selectedAfterSale.order.platform.name }}
+          </el-descriptions-item>
+          <el-descriptions-item label="原码">
+            尾号 {{ selectedAfterSale.originalCode.codeTail }} · 成本
+            {{ selectedAfterSale.originalCode.cost }}
+          </el-descriptions-item>
+          <el-descriptions-item label="新码">
+            <span v-if="selectedAfterSale.newCode">
+              尾号 {{ selectedAfterSale.newCode.codeTail }} · 成本
+              {{ selectedAfterSale.newCode.cost }}
+            </span>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <StatusChip :tone="getAfterSaleStatusTone(selectedAfterSale.status)" dot>
+              {{ getAfterSaleStatusLabel(selectedAfterSale.status) }}
+            </StatusChip>
+          </el-descriptions-item>
+          <el-descriptions-item label="原因">
+            {{ selectedAfterSale.reason }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
     </AppDrawer>
   </PageScaffold>
 </template>
@@ -259,9 +360,11 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { codeAfterSalesApi, codeOrdersApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   CodeAfterSale,
@@ -355,14 +458,14 @@ function getAfterSaleStatusLabel(status: CodeAfterSale['status']) {
   return labels[status];
 }
 
-function getAfterSaleStatusType(status: CodeAfterSale['status']) {
+function getAfterSaleStatusTone(status: CodeAfterSale['status']) {
   if (status === 'pending') {
-    return 'warning';
+    return 'orange';
   }
   if (status === 'completed') {
-    return 'success';
+    return 'green';
   }
-  return 'danger';
+  return 'red';
 }
 
 function isColumnVisible(column: string) {
@@ -652,3 +755,22 @@ async function initializePage() {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.code-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.code-compact-list-panel .inline-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(620px, 100%);
+}
+
+@media (max-width: 840px) {
+  .code-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+</style>

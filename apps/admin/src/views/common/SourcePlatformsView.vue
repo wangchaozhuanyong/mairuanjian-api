@@ -5,7 +5,20 @@
     phase="Phase 2"
     description="配置淘宝、闲鱼、微信、手工等客户来源和平台能力。手续费字段会按 Decimal 字符串提交。"
   >
-    <section class="content-panel">
+    <section class="content-panel common-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>来源平台列表</h3>
+          <p>维护平台编码、手续费和同步/发货能力，供订单与客户模块共用。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>平台 {{ total }}</StatusChip>
+          <StatusChip tone="green">启用 {{ activePlatformCount }}</StatusChip>
+          <StatusChip tone="purple">支持同步 {{ syncPlatformCount }}</StatusChip>
+          <StatusChip tone="orange">支持发货 {{ deliveryPlatformCount }}</StatusChip>
+        </div>
+      </div>
+
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
@@ -51,12 +64,23 @@
 
       <el-table
         v-loading="loading"
+        class="desktop-data-table"
         :data="platforms"
         :size="tableSize"
         row-key="id"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <template #empty>
+          <div class="apple-core-empty-state">
+            <strong>暂无来源平台</strong>
+            <span>可以新增来源平台，或清空筛选后重新查看配置列表。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增来源平台</AppButton>
+            </div>
+          </div>
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column
           v-if="isColumnVisible('name')"
@@ -99,16 +123,16 @@
         />
         <el-table-column v-if="isColumnVisible('syncEnabled')" label="同步" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.syncEnabled ? 'success' : 'info'" size="small">
+            <StatusChip :tone="row.syncEnabled ? 'green' : 'neutral'" dot>
               {{ row.syncEnabled ? '支持' : '关闭' }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('deliveryEnabled')" label="发货" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.deliveryEnabled ? 'success' : 'info'" size="small">
+            <StatusChip :tone="row.deliveryEnabled ? 'green' : 'neutral'" dot>
               {{ row.deliveryEnabled ? '支持' : '关闭' }}
-            </el-tag>
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -133,28 +157,81 @@
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openEdit(row)">编辑</el-button>
+            <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadPlatforms"
-          @size-change="loadPlatforms"
-        />
+      <div v-if="platforms.length" class="mobile-record-list">
+        <article v-for="platform in platforms" :key="platform.id" class="mobile-record-card">
+          <div class="mobile-record-card__head">
+            <div class="mobile-record-card__title">
+              <strong>{{ platform.name }}</strong>
+              <span>{{ platform.code }} · {{ getTypeLabel(platform.type) }}</span>
+            </div>
+            <StatusTag :status="platform.status" />
+          </div>
+
+          <div class="mobile-record-card__stats">
+            <div>
+              <span>类型</span>
+              <strong>{{ getTypeLabel(platform.type) }}</strong>
+            </div>
+            <div>
+              <span>费率</span>
+              <strong>{{ platform.feeRate }}</strong>
+            </div>
+            <div>
+              <span>固定费用</span>
+              <strong>{{ platform.feeFixed }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__chips">
+            <StatusChip :tone="platform.syncEnabled ? 'green' : 'neutral'" dot>
+              {{ platform.syncEnabled ? '支持同步' : '同步关闭' }}
+            </StatusChip>
+            <StatusChip :tone="platform.deliveryEnabled ? 'green' : 'neutral'" dot>
+              {{ platform.deliveryEnabled ? '支持发货' : '发货关闭' }}
+            </StatusChip>
+          </div>
+
+          <div class="mobile-record-card__meta">
+            <div>
+              <span>更新时间</span>
+              <strong>{{ formatDate(platform.updatedAt) }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-record-card__actions">
+            <AppButton size="small" variant="ghost" @click="openEdit(platform)">编辑</AppButton>
+          </div>
+        </article>
       </div>
+
+      <div v-else class="mobile-record-list">
+        <div class="apple-core-empty-state">
+          <strong>暂无来源平台</strong>
+          <span>可以新增来源平台，或清空筛选后重新查看配置列表。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增来源平台</AppButton>
+          </div>
+        </div>
+      </div>
+
+      <PaginationBar
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        @change="loadPlatforms"
+      />
     </section>
 
     <el-dialog
       v-model="dialogVisible"
       :title="editingPlatform ? '编辑来源平台' : '新增来源平台'"
-      width="620px"
+      width="min(620px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="平台名称" prop="name">
@@ -194,8 +271,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="savePlatform">保存</el-button>
+        <AppButton @click="dialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="saving" @click="savePlatform">保存</AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -206,7 +283,10 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { sourcePlatformsApi, userTableViewsApi } from '@/api/system';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { SourcePlatform, TableDensity, UserTableView } from '@/types/system';
@@ -273,6 +353,15 @@ const form = reactive({
 
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
+);
+const activePlatformCount = computed(
+  () => platforms.value.filter((platform) => platform.status === 'active').length
+);
+const syncPlatformCount = computed(
+  () => platforms.value.filter((platform) => platform.syncEnabled).length
+);
+const deliveryPlatformCount = computed(
+  () => platforms.value.filter((platform) => platform.deliveryEnabled).length
 );
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
@@ -534,3 +623,22 @@ async function savePlatform() {
 
 onMounted(initializePage);
 </script>
+
+<style scoped>
+.common-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.common-compact-list-panel .inline-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(680px, 100%);
+}
+
+@media (max-width: 840px) {
+  .common-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+</style>

@@ -5,20 +5,28 @@
     phase="Phase 14"
     description="统一查看操作日志、敏感查看日志、登录日志、导出日志、权限变更日志、自动化任务日志和平台接口日志。"
   >
-    <div class="metric-grid metric-grid--four">
-      <MetricCard label="操作日志" :value="operationTotal" hint="当前筛选结果" tone="blue" />
-      <MetricCard label="敏感查看" :value="sensitiveTotal" hint="敏感字段访问记录" tone="orange" />
-      <MetricCard label="登录日志" :value="loginTotal" hint="登录成功、失败和异常" tone="green" />
-      <MetricCard
-        label="平台接口"
-        :value="platformTotal"
-        hint="同步、测试和授权记录"
-        tone="purple"
-      />
-    </div>
+    <section class="content-panel system-compact-list-panel">
+      <div class="panel-title-row">
+        <div>
+          <h3>审计日志工作台</h3>
+          <p>集中筛选操作、敏感查看、登录、导出、权限变更、自动化和平台接口日志。</p>
+        </div>
+        <div class="inline-actions">
+          <StatusChip tone="blue" dot>审计中心</StatusChip>
+          <StatusChip tone="blue">操作 {{ operationTotal }}</StatusChip>
+          <StatusChip :tone="sensitiveTotal > 0 ? 'orange' : 'green'" dot>
+            {{ sensitiveTotal > 0 ? `敏感查看 ${sensitiveTotal}` : '敏感查看正常' }}
+          </StatusChip>
+          <StatusChip tone="green">登录 {{ loginTotal }}</StatusChip>
+          <StatusChip tone="purple">平台 {{ platformTotal }}</StatusChip>
+        </div>
+      </div>
 
-    <section class="content-panel">
-      <el-tabs v-model="activeTab" @tab-change="refreshCurrentTab">
+      <el-tabs
+        v-model="activeTab"
+        class="system-tabs audit-log-tabs"
+        @tab-change="refreshCurrentTab"
+      >
         <el-tab-pane label="操作日志" name="operation">
           <TableToolbar
             v-model:keyword="operationQuery.keyword"
@@ -62,12 +70,21 @@
 
           <el-table
             v-loading="operationLoading"
+            class="desktop-data-table"
             :data="operationLogs"
             :size="operationTableSize"
             row-key="id"
-            empty-text="暂无操作日志"
             @sort-change="handleOperationSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无操作日志</strong>
+                <span>调整模块、动作或关键词后重新查询。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearOperationFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isOperationColumnVisible('createdAt')"
               prop="createdAt"
@@ -111,6 +128,43 @@
               show-overflow-tooltip
             />
           </el-table>
+          <div v-if="operationLogs.length" class="mobile-record-list" aria-label="操作日志移动列表">
+            <article v-for="log in operationLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.action }}</strong>
+                  <span>{{ formatDate(log.createdAt) }}</span>
+                </div>
+                <StatusChip tone="blue">{{ log.module }}</StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>用户</span>
+                  <strong>{{ log.user?.displayName ?? log.user?.username ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>对象</span>
+                  <strong>{{ log.objectType || '-' }}</strong>
+                </div>
+                <div>
+                  <span>IP</span>
+                  <strong>{{ log.ip || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>备注</span>
+                  <strong>{{ log.remark || '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无操作日志</strong>
+              <span>调整模块、动作或关键词后重新查询。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="operationQuery.page"
             v-model:page-size="operationQuery.pageSize"
@@ -163,12 +217,21 @@
 
           <el-table
             v-loading="sensitiveLoading"
+            class="desktop-data-table"
             :data="sensitiveLogs"
             :size="sensitiveTableSize"
             row-key="id"
-            empty-text="暂无敏感查看日志"
             @sort-change="handleSensitiveSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无敏感查看日志</strong>
+                <span>调整模块、字段或审批条件后重新查询。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearSensitiveFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isSensitiveColumnVisible('createdAt')"
               prop="createdAt"
@@ -216,9 +279,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="row.approved ? 'success' : 'warning'" size="small" effect="light">
+                <StatusChip :tone="row.approved ? 'green' : 'orange'" dot>
                   {{ row.approved ? '已审批' : '未审批' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -229,6 +292,53 @@
               show-overflow-tooltip
             />
           </el-table>
+          <div
+            v-if="sensitiveLogs.length"
+            class="mobile-record-list"
+            aria-label="敏感查看日志移动列表"
+          >
+            <article v-for="log in sensitiveLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.fieldName }}</strong>
+                  <span>{{ log.module }} · {{ formatDate(log.createdAt) }}</span>
+                </div>
+                <StatusChip :tone="log.approved ? 'green' : 'orange'" dot>
+                  {{ log.approved ? '已审批' : '未审批' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>用户</span>
+                  <strong>{{ log.user?.displayName ?? log.user?.username ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>对象</span>
+                  <strong>{{ log.objectType }}</strong>
+                </div>
+                <div>
+                  <span>IP</span>
+                  <strong>{{ log.ip || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>访问原因</span>
+                  <strong>{{ log.accessReason || '-' }}</strong>
+                </div>
+                <div>
+                  <span>对象 ID</span>
+                  <strong>{{ log.objectId || '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无敏感查看日志</strong>
+              <span>调整字段、模块或审批状态后重新查询。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="sensitiveQuery.page"
             v-model:page-size="sensitiveQuery.pageSize"
@@ -279,12 +389,21 @@
 
           <el-table
             v-loading="loginLoading"
+            class="desktop-data-table"
             :data="loginLogs"
             :size="loginTableSize"
             row-key="id"
-            empty-text="暂无登录日志"
             @sort-change="handleLoginSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无登录日志</strong>
+                <span>可以清空筛选后重新查看登录记录。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearLoginFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isLoginColumnVisible('createdAt')"
               label="时间"
@@ -309,9 +428,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="getLoginTagType(row.status)" size="small" effect="light">
+                <StatusChip :tone="getLoginTone(row.status)" dot>
                   {{ getLoginLabel(row.status) }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -339,6 +458,45 @@
               show-overflow-tooltip
             />
           </el-table>
+          <div v-if="loginLogs.length" class="mobile-record-list" aria-label="登录日志移动列表">
+            <article v-for="log in loginLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.username }}</strong>
+                  <span>{{ formatDate(log.createdAt) }}</span>
+                </div>
+                <StatusChip :tone="getLoginTone(log.status)" dot>
+                  {{ getLoginLabel(log.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>异常</span>
+                  <strong>{{ log.abnormal ? '是' : '否' }}</strong>
+                </div>
+                <div>
+                  <span>IP</span>
+                  <strong>{{ log.ip || '-' }}</strong>
+                </div>
+                <div>
+                  <span>位置</span>
+                  <strong>{{ log.location || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>失败原因</span>
+                  <strong>{{ log.failureReason || '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无登录日志</strong>
+              <span>调整账号、状态或异常筛选后重新查询。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="loginQuery.page"
             v-model:page-size="loginQuery.pageSize"
@@ -397,12 +555,21 @@
 
           <el-table
             v-loading="exportLoading"
+            class="desktop-data-table"
             :data="exportLogs"
             :size="exportTableSize"
             row-key="id"
-            empty-text="暂无导出日志"
             @sort-change="handleExportSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无导出日志</strong>
+                <span>调整导出模块、状态或敏感条件后重新查询。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearExportFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isExportColumnVisible('createdAt')"
               label="时间"
@@ -426,7 +593,11 @@
               prop="status"
               sortable="custom"
             >
-              <template #default="{ row }"><JobStatusTag :status="row.status" /></template>
+              <template #default="{ row }">
+                <StatusChip :tone="getJobStatusTone(row.status)" dot>
+                  {{ getJobLabel(row.status) }}
+                </StatusChip>
+              </template>
             </el-table-column>
             <el-table-column
               v-if="isExportColumnVisible('containsSensitive')"
@@ -457,6 +628,49 @@
               show-overflow-tooltip
             />
           </el-table>
+          <div v-if="exportLogs.length" class="mobile-record-list" aria-label="导出日志移动列表">
+            <article v-for="log in exportLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.module }}</strong>
+                  <span>{{ formatDate(log.createdAt) }}</span>
+                </div>
+                <StatusChip :tone="getJobStatusTone(log.status)" dot>
+                  {{ getJobLabel(log.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>敏感字段</span>
+                  <strong>{{ log.containsSensitive ? '是' : '否' }}</strong>
+                </div>
+                <div>
+                  <span>字段数</span>
+                  <strong>{{ log.fields.length }}</strong>
+                </div>
+                <div>
+                  <span>完成时间</span>
+                  <strong>{{ formatDate(log.finishedAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>文件</span>
+                  <strong>{{ log.filePath || '-' }}</strong>
+                </div>
+                <div>
+                  <span>失败原因</span>
+                  <strong>{{ log.errorMessage || '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无导出日志</strong>
+              <span>调整模块、状态或敏感筛选后重新查询。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="exportQuery.page"
             v-model:page-size="exportQuery.pageSize"
@@ -487,12 +701,21 @@
 
           <el-table
             v-loading="permissionLoading"
+            class="desktop-data-table"
             :data="permissionLogs"
             :size="permissionTableSize"
             row-key="id"
-            empty-text="暂无权限变更日志"
             @sort-change="handlePermissionSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无权限变更日志</strong>
+                <span>调整权限、角色或备注关键词后重新查询。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearPermissionFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isPermissionColumnVisible('createdAt')"
               prop="createdAt"
@@ -536,6 +759,47 @@
               show-overflow-tooltip
             />
           </el-table>
+          <div
+            v-if="permissionLogs.length"
+            class="mobile-record-list"
+            aria-label="权限变更日志移动列表"
+          >
+            <article v-for="log in permissionLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.action }}</strong>
+                  <span>{{ formatDate(log.createdAt) }}</span>
+                </div>
+                <StatusChip tone="purple">{{ log.module }}</StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>用户</span>
+                  <strong>{{ log.user?.displayName ?? log.user?.username ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>对象</span>
+                  <strong>{{ log.objectType || '-' }}</strong>
+                </div>
+                <div>
+                  <span>对象 ID</span>
+                  <strong>{{ log.objectId || '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>备注</span>
+                  <strong>{{ log.remark || '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无权限变更日志</strong>
+              <span>调整权限、角色或备注关键词后重新查询。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="permissionQuery.page"
             v-model:page-size="permissionQuery.pageSize"
@@ -567,12 +831,21 @@
 
           <el-table
             v-loading="automationLoading"
+            class="desktop-data-table"
             :data="automationLogs"
             :size="automationTableSize"
             row-key="id"
-            empty-text="暂无自动化任务日志"
             @sort-change="handleAutomationSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无自动化任务日志</strong>
+                <span>调整任务消息、级别或队列 ID 后重新查询。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearAutomationFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isAutomationColumnVisible('createdAt')"
               label="时间"
@@ -602,9 +875,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag :type="getAutomationTagType(row.level)" size="small" effect="light">
+                <StatusChip :tone="getAutomationTone(row.level)" dot>
                   {{ row.level }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column v-if="isAutomationColumnVisible('status')" label="状态" width="120">
@@ -635,6 +908,49 @@
               show-overflow-tooltip
             />
           </el-table>
+          <div
+            v-if="automationLogs.length"
+            class="mobile-record-list"
+            aria-label="自动化任务日志移动列表"
+          >
+            <article v-for="log in automationLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ log.task?.taskType ?? '自动化任务' }}</strong>
+                  <span>{{ formatDate(log.createdAt) }}</span>
+                </div>
+                <StatusChip :tone="getAutomationTone(log.level)" dot>
+                  {{ log.level }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>状态</span>
+                  <strong>{{ log.task?.status ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>队列 ID</span>
+                  <strong>{{ log.task?.queueJobId ?? '-' }}</strong>
+                </div>
+                <div>
+                  <span>错误码</span>
+                  <strong>{{ log.task?.errorCode ?? '-' }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>消息</span>
+                  <strong>{{ log.message }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无自动化任务日志</strong>
+              <span>调整级别或任务关键词后重新查询。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="automationQuery.page"
             v-model:page-size="automationQuery.pageSize"
@@ -685,12 +1001,21 @@
 
           <el-table
             v-loading="platformLoading"
+            class="desktop-data-table"
             :data="platformLogs"
             :size="platformTableSize"
             row-key="id"
-            empty-text="暂无平台接口日志"
             @sort-change="handlePlatformSortChange"
           >
+            <template #empty>
+              <div class="apple-core-empty-state">
+                <strong>暂无平台接口日志</strong>
+                <span>调整平台、状态或接口关键词后重新查询。</span>
+                <div class="apple-core-empty-state__actions">
+                  <AppButton variant="soft" @click="clearPlatformFilters">清空筛选</AppButton>
+                </div>
+              </div>
+            </template>
             <el-table-column
               v-if="isPlatformColumnVisible('finishedAt')"
               label="时间"
@@ -726,13 +1051,9 @@
               sortable="custom"
             >
               <template #default="{ row }">
-                <el-tag
-                  :type="row.status === 'success' ? 'success' : 'danger'"
-                  size="small"
-                  effect="light"
-                >
+                <StatusChip :tone="row.status === 'success' ? 'green' : 'red'" dot>
                   {{ row.status === 'success' ? '成功' : '失败' }}
-                </el-tag>
+                </StatusChip>
               </template>
             </el-table-column>
             <el-table-column
@@ -758,6 +1079,51 @@
               show-overflow-tooltip
             />
           </el-table>
+          <div
+            v-if="platformLogs.length"
+            class="mobile-record-list"
+            aria-label="平台接口日志移动列表"
+          >
+            <article v-for="log in platformLogs" :key="log.id" class="mobile-record-card">
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ getPlatformLabel(log.platform) }}</strong>
+                  <span
+                    >{{ log.syncType }} · {{ formatDate(log.finishedAt ?? log.createdAt) }}</span
+                  >
+                </div>
+                <StatusChip :tone="log.status === 'success' ? 'green' : 'red'" dot>
+                  {{ log.status === 'success' ? '成功' : '失败' }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>请求数</span>
+                  <strong>{{ log.requestCount }}</strong>
+                </div>
+                <div>
+                  <span>错误率</span>
+                  <strong>{{ log.errorRate }}</strong>
+                </div>
+                <div>
+                  <span>开始时间</span>
+                  <strong>{{ formatDate(log.startedAt) }}</strong>
+                </div>
+              </div>
+              <div class="mobile-record-card__meta">
+                <div>
+                  <span>失败原因</span>
+                  <strong>{{ log.errorMessage || '-' }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无平台接口日志</strong>
+              <span>调整平台、状态或接口关键词后重新查询。</span>
+            </div>
+          </div>
           <PaginationBar
             v-model:page="platformQuery.page"
             v-model:page-size="platformQuery.pageSize"
@@ -771,13 +1137,14 @@
 </template>
 
 <script setup lang="ts">
-/* eslint-disable vue/one-component-per-file */
-import { computed, defineComponent, h, reactive, ref, resolveComponent, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
 import { auditLogsApi, userTableViewsApi } from '@/api/system';
-import MetricCard from '@/components/ui/MetricCard.vue';
+import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PaginationBar from '@/components/ui/PaginationBar.vue';
+import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type {
   AuditLog,
@@ -1110,52 +1477,6 @@ const platformFilterChips = computed(() => {
     chips.push({ key: 'platform', label: '平台', value: platformLabel });
   }
   return chips;
-});
-
-const PaginationBar = defineComponent({
-  props: {
-    page: { type: Number, required: true },
-    pageSize: { type: Number, required: true },
-    total: { type: Number, required: true }
-  },
-  emits: ['update:page', 'update:pageSize', 'change'],
-  setup(props, { emit }) {
-    const ElPagination = resolveComponent('ElPagination');
-    return () =>
-      h(
-        'div',
-        { class: 'pagination-row' },
-        h(ElPagination, {
-          currentPage: props.page,
-          pageSize: props.pageSize,
-          total: props.total,
-          pageSizes: [10, 20, 50, 100],
-          layout: 'total, sizes, prev, pager, next',
-          onCurrentChange: (value: number) => {
-            emit('update:page', value);
-            emit('change');
-          },
-          onSizeChange: (value: number) => {
-            emit('update:pageSize', value);
-            emit('update:page', 1);
-            emit('change');
-          }
-        })
-      );
-  }
-});
-
-const JobStatusTag = defineComponent({
-  props: {
-    status: { type: String, required: true }
-  },
-  setup(props) {
-    const ElTag = resolveComponent('ElTag');
-    return () =>
-      h(ElTag, { type: getJobTagType(props.status), size: 'small', effect: 'light' }, () =>
-        getJobLabel(props.status)
-      );
-  }
 });
 
 watch(
@@ -2269,17 +2590,17 @@ function isLoginStatus(value: unknown): value is LoginLogStatus {
   return value === 'success' || value === 'failed' || value === 'blocked';
 }
 
-function getLoginTagType(status: LoginLogStatus) {
-  if (status === 'success') return 'success';
-  if (status === 'failed') return 'danger';
-  return 'warning';
+function getLoginTone(status: LoginLogStatus) {
+  if (status === 'success') return 'green';
+  if (status === 'failed') return 'red';
+  return 'orange';
 }
 
-function getAutomationTagType(level: AutomationTaskLog['level']) {
-  if (level === 'success') return 'success';
-  if (level === 'warning') return 'warning';
-  if (level === 'error') return 'danger';
-  return 'info';
+function getAutomationTone(level: AutomationTaskLog['level']) {
+  if (level === 'success') return 'green';
+  if (level === 'warning') return 'orange';
+  if (level === 'error') return 'red';
+  return 'neutral';
 }
 
 function isAutomationLogLevel(value: unknown): value is AutomationTaskLog['level'] {
@@ -2312,12 +2633,12 @@ function getJobLabel(status: string) {
   );
 }
 
-function getJobTagType(status: string) {
-  if (status === 'success') return 'success';
-  if (status === 'running') return 'primary';
-  if (status === 'failed') return 'danger';
-  if (status === 'cancelled') return 'info';
-  return 'warning';
+function getJobStatusTone(status: string) {
+  if (status === 'success') return 'green';
+  if (status === 'running') return 'blue';
+  if (status === 'failed') return 'red';
+  if (status === 'cancelled') return 'neutral';
+  return 'orange';
 }
 
 function getPlatformLabel(platform: string) {
@@ -2336,13 +2657,6 @@ function getPlatformLabel(platform: string) {
 </script>
 
 <style scoped>
-.content-panel {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--surface-color);
-}
-
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2353,22 +2667,62 @@ function getPlatformLabel(platform: string) {
 
 .toolbar-search {
   width: min(360px, 100%);
+  min-width: 0;
 }
 
 .toolbar-select {
-  width: 150px;
+  width: min(150px, 100%);
+  min-width: 0;
 }
 
-.pagination-row {
-  display: flex;
+.system-compact-list-panel .panel-title-row {
+  align-items: flex-start;
+}
+
+.system-compact-list-panel .inline-actions {
+  max-width: min(620px, 100%);
   justify-content: flex-end;
-  margin-top: 14px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 760px) {
   .toolbar-search,
   .toolbar-select {
     width: 100%;
+  }
+
+  .system-compact-list-panel .inline-actions {
+    justify-content: flex-start;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__nav-wrap),
+  .system-compact-list-panel :deep(.el-tabs__nav-scroll) {
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__nav) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    transform: none !important;
+    white-space: normal;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__item) {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 10px;
+    line-height: 32px;
+  }
+
+  .system-compact-list-panel :deep(.el-tabs__active-bar),
+  .system-compact-list-panel :deep(.el-tabs__nav-next),
+  .system-compact-list-panel :deep(.el-tabs__nav-prev) {
+    display: none;
   }
 }
 </style>
