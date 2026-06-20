@@ -13,6 +13,8 @@ import type {
 } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { CreateCodePlatformMappingDto } from './dto/create-code-platform-mapping.dto';
@@ -68,15 +70,28 @@ const CODE_SERVICE_SORT_FIELDS: Record<string, keyof Prisma.CodeServiceOrderByWi
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+const CODE_SERVICE_LIST_CACHE_TTL_MS = 120_000;
+const CODE_PLATFORM_MAPPING_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class CodeServicesService {
+  private readonly listCache = new TimedMemoryCache();
+  private readonly mappingListCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async list(query: ListCodeServicesQuery) {
+    return this.listCache.getOrSet(
+      getListCacheKey('code-services', query),
+      CODE_SERVICE_LIST_CACHE_TTL_MS,
+      () => this.listUncached(query)
+    );
+  }
+
+  private async listUncached(query: ListCodeServicesQuery) {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();
     const status = this.parseStatus(query.status, false);
@@ -138,6 +153,8 @@ export class CodeServicesService {
       remark: `Created code service ${service.name}`
     });
 
+    this.clearListCaches();
+
     return this.get(service.id);
   }
 
@@ -166,6 +183,8 @@ export class CodeServicesService {
       afterData: this.toAuditJson(dto),
       remark: `Updated code service ${existingService.name}`
     });
+
+    this.clearListCaches();
 
     return this.get(id);
   }
@@ -197,6 +216,8 @@ export class CodeServicesService {
       remark: `Deleted code service ${existingService.name}`
     });
 
+    this.clearListCaches();
+
     return { deleted: true };
   }
 
@@ -224,6 +245,14 @@ export class CodeServicesService {
   }
 
   async listPlatformMappings(query: ListCodePlatformMappingsQuery) {
+    return this.mappingListCache.getOrSet(
+      getListCacheKey('code-platform-mappings', query),
+      CODE_PLATFORM_MAPPING_LIST_CACHE_TTL_MS,
+      () => this.listPlatformMappingsUncached(query)
+    );
+  }
+
+  private async listPlatformMappingsUncached(query: ListCodePlatformMappingsQuery) {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();
     const where: Prisma.CodePlatformMappingWhereInput = {
@@ -285,6 +314,8 @@ export class CodeServicesService {
       remark: `Created code platform mapping ${mapping.id}`
     });
 
+    this.mappingListCache.clear();
+
     return this.toPlatformMappingResponse(mapping);
   }
 
@@ -333,6 +364,8 @@ export class CodeServicesService {
       remark: `Updated code platform mapping ${id}`
     });
 
+    this.mappingListCache.clear();
+
     return this.toPlatformMappingResponse(mapping);
   }
 
@@ -353,7 +386,14 @@ export class CodeServicesService {
       remark: `Deleted code platform mapping ${id}`
     });
 
+    this.mappingListCache.clear();
+
     return { deleted: true };
+  }
+
+  private clearListCaches() {
+    this.listCache.clear();
+    this.mappingListCache.clear();
   }
 
   private buildCreateData(dto: CreateCodeServiceDto, operator?: AuthenticatedUser) {

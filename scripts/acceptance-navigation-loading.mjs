@@ -40,7 +40,25 @@ const apiChecks = [
   { label: 'data overview', path: '/data/overview' },
   { label: 'maintenance overview', path: '/maintenance/overview' },
   { label: 'security overview', path: '/security/overview' },
-  { label: 'audit operation logs', path: '/audit-logs/operation?page=1&pageSize=5' }
+  { label: 'audit operation logs', path: '/audit-logs/operation?page=1&pageSize=5' },
+  {
+    label: 'table view config',
+    path: '/user-table-views?page=1&pageSize=100&tableKey=code_orders'
+  },
+  { label: 'active source platforms', path: '/source-platforms?page=1&pageSize=100&status=active' },
+  {
+    label: 'taobao source platforms',
+    path: '/source-platforms?page=1&pageSize=100&type=taobao&status=active'
+  },
+  { label: 'active customers', path: '/customers?page=1&pageSize=100&status=active' },
+  {
+    label: 'delivery message templates',
+    path: '/message-templates?page=1&pageSize=100&status=active&type=delivery'
+  },
+  { label: 'enabled apple services', path: '/apple/services?page=1&pageSize=100&status=enabled' },
+  { label: 'enabled code services', path: '/codes/services?page=1&pageSize=100&status=enabled' },
+  { label: 'roles', path: '/roles' },
+  { label: 'permissions', path: '/permissions' }
 ];
 
 function readEnvFile(filePath) {
@@ -259,7 +277,7 @@ async function checkInitialAssets(adminBaseUrl, assets) {
   return checks;
 }
 
-async function checkApi(apiBaseUrl, token) {
+async function checkApi(apiBaseUrl, token, pass = 'single') {
   const checks = [];
 
   for (const item of apiChecks) {
@@ -272,6 +290,7 @@ async function checkApi(apiBaseUrl, token) {
 
     checks.push({
       label: item.label,
+      pass,
       path: item.path,
       status: response.status,
       durationMs,
@@ -285,6 +304,24 @@ async function checkApi(apiBaseUrl, token) {
   }
 
   return checks;
+}
+
+function compareApiPasses(coldResults, hotResults) {
+  const coldByPath = new Map(coldResults.map((item) => [item.path, item]));
+
+  return hotResults.map((hot) => {
+    const cold = coldByPath.get(hot.path);
+    const coldDurationMs = cold?.durationMs ?? null;
+    const deltaMs = coldDurationMs === null ? null : hot.durationMs - coldDurationMs;
+
+    return {
+      label: hot.label,
+      path: hot.path,
+      coldDurationMs,
+      hotDurationMs: hot.durationMs,
+      deltaMs
+    };
+  });
 }
 
 function parseSseEvents(buffer) {
@@ -362,10 +399,10 @@ async function checkSse(apiBaseUrl, token) {
   throw new Error('Timed out waiting for SSE system.connected event.');
 }
 
-function summarizeWarnings(frontendChecks, apiResults) {
+function summarizeWarnings(frontendChecks, ...apiResultGroups) {
   return [
     ...frontendChecks.filter((item) => item.warning),
-    ...apiResults.filter((item) => item.warning)
+    ...apiResultGroups.flatMap((items) => items.filter((item) => item.warning))
   ];
 }
 
@@ -374,9 +411,11 @@ async function main() {
   const frontend = await checkFrontendRoutes(config.adminBaseUrl);
   const assetChecks = await checkInitialAssets(config.adminBaseUrl, frontend.assets);
   const token = await login(config.apiBaseUrl, config.username, config.password);
-  const apiResults = await checkApi(config.apiBaseUrl, token);
+  const coldApiResults = await checkApi(config.apiBaseUrl, token, 'cold');
+  const hotApiResults = await checkApi(config.apiBaseUrl, token, 'hot');
+  const apiComparison = compareApiPasses(coldApiResults, hotApiResults);
   const sse = await checkSse(config.apiBaseUrl, token);
-  const warnings = summarizeWarnings(frontend.checks, apiResults);
+  const warnings = summarizeWarnings(frontend.checks, coldApiResults, hotApiResults);
 
   console.log(
     JSON.stringify(
@@ -385,13 +424,15 @@ async function main() {
         apiBaseUrl: config.apiBaseUrl,
         frontendRoutes: frontend.checks,
         initialAssets: assetChecks,
-        apiChecks: apiResults,
+        coldApiChecks: coldApiResults,
+        hotApiChecks: hotApiResults,
+        apiComparison,
         sse,
         warnings,
         summary: {
           frontendRouteCount: frontend.checks.length,
           assetCount: assetChecks.length,
-          apiCheckCount: apiResults.length,
+          apiCheckCount: coldApiResults.length,
           warningCount: warnings.length
         }
       },

@@ -7,6 +7,8 @@ import type {
 } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { CreateMessageTemplateDto } from './dto/create-message-template.dto';
@@ -32,15 +34,26 @@ const MESSAGE_TEMPLATE_SORT_FIELDS: Record<
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+const MESSAGE_TEMPLATE_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class MessageTemplatesService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async list(query: ListMessageTemplatesQuery) {
+    return this.listCache.getOrSet(
+      getListCacheKey('message-templates', query),
+      MESSAGE_TEMPLATE_LIST_CACHE_TTL_MS,
+      () => this.listUncached(query)
+    );
+  }
+
+  private async listUncached(query: ListMessageTemplatesQuery) {
     const pagination = getPagination(query);
     const type = this.parseType(query.type, false);
     const channel = this.parseChannel(query.channel, false);
@@ -121,6 +134,8 @@ export class MessageTemplatesService {
       remark: `Created message template ${template.name}`
     });
 
+    this.listCache.clear();
+
     return this.get(template.id);
   }
 
@@ -198,6 +213,8 @@ export class MessageTemplatesService {
       remark: `Updated message template ${existingTemplate.name}`
     });
 
+    this.listCache.clear();
+
     return this.get(id);
   }
 
@@ -232,6 +249,8 @@ export class MessageTemplatesService {
       beforeData: existingTemplate,
       remark: `Deleted message template ${existingTemplate.name}`
     });
+
+    this.listCache.clear();
 
     return {
       deleted: true

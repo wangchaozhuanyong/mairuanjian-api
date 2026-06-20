@@ -14,7 +14,7 @@ ARG VITE_APP_TITLE="Apple ID 代充业务管理系统"
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_APP_TITLE=${VITE_APP_TITLE}
 RUN npm run build --workspace @apple-business/shared
-RUN npm run build --workspace @apple-business/admin
+RUN npm exec --workspace @apple-business/admin -- vite build
 
 FROM nginx:1.27-alpine AS runtime
 

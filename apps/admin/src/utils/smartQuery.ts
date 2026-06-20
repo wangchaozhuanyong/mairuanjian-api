@@ -20,6 +20,14 @@ interface RefreshSmartQueryOptions<TData> {
   staleMs?: number;
 }
 
+interface RefreshSmartQueryResourceOptions<TData> extends RefreshSmartQueryOptions<TData> {
+  apply: (data: TData) => void;
+  background?: boolean;
+  applyCached?: boolean;
+  isCurrent?: () => boolean;
+  setLoading?: (loading: boolean) => void;
+}
+
 type SmartQueryMatcher = string | RegExp | ((key: string) => boolean);
 interface InFlightSmartQuery<TData> {
   promise: Promise<SmartQueryResult<TData>>;
@@ -198,6 +206,38 @@ export async function refreshSmartQuery<TData>({
   });
 
   return promise;
+}
+
+export async function refreshSmartQueryResource<TData>({
+  apply,
+  background = false,
+  applyCached = true,
+  isCurrent,
+  setLoading,
+  ...queryOptions
+}: RefreshSmartQueryResourceOptions<TData>) {
+  const cached = applyCached ? getSmartQueryData<TData>(queryOptions.key) : undefined;
+  const isStillCurrent = () => isCurrent?.() ?? true;
+
+  if (cached !== undefined && isStillCurrent()) {
+    apply(cached);
+  }
+
+  setLoading?.(cached === undefined && !background);
+
+  try {
+    const result = await refreshSmartQuery(queryOptions);
+
+    if (isStillCurrent() && (result.changed || cached === undefined)) {
+      apply(result.data);
+    }
+
+    return result;
+  } finally {
+    if (isStillCurrent()) {
+      setLoading?.(false);
+    }
+  }
 }
 
 function matchesSmartQueryKey(key: string, matcher: SmartQueryMatcher) {

@@ -247,7 +247,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import { allModules, getStatusText, getStatusType, type ModuleStatus } from '@/config/modules';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleAccount, AppleOrder, CodePlatformOrder, RenewalTask } from '@/types/system';
-import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
+import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 type StatusTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 type NoticeType = 'success' | 'warning' | 'info' | 'danger';
@@ -635,80 +635,89 @@ async function goTo(route: string) {
 async function loadDashboardOverview(
   options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
 ) {
-  if (!options.silent || !dashboardDataReady.value) {
-    dashboardLoading.value = true;
-  }
   dashboardLoadFailed.value = false;
 
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key: createSmartQueryKey('dashboard-overview'),
-      fetcher: () =>
-        Promise.allSettled([
-          appleAccountsApi.list({ page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
-          appleOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
-          appleRenewalTasksApi.list({ page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' }),
-          codeOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
-          redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }),
-          redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }),
-          redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'delivery_failed' })
-        ]),
+      fetcher: loadDashboardOverviewData,
+      apply: applyDashboardOverview,
+      background: Boolean(options.silent && dashboardDataReady.value),
+      setLoading: (value) => {
+        dashboardLoading.value = value;
+      },
       force: options.force ?? true,
       dedupeMs: options.dedupeMs ?? 1_200
     });
-    const results = result.data;
-
-    const [
-      accountResult,
-      appleOrderResult,
-      renewalResult,
-      codeOrderResult,
-      unsoldResult,
-      lockedResult,
-      failedResult
-    ] = results;
-    dashboardLoadedPanels.value = results.filter((result) => result.status === 'fulfilled').length;
-    dashboardDataReady.value = dashboardLoadedPanels.value > 0;
-    dashboardLoadFailed.value = dashboardLoadedPanels.value === 0;
-
-    if (accountResult.status === 'fulfilled') {
-      appleAccountDataReady.value = true;
-      appleAccounts.value = accountResult.value.items;
-      appleAccountTotal.value = accountResult.value.total;
-    }
-
-    if (appleOrderResult.status === 'fulfilled') {
-      appleOrders.value = appleOrderResult.value.items;
-      appleOrderTotal.value = appleOrderResult.value.total;
-    }
-
-    if (renewalResult.status === 'fulfilled') {
-      renewalDataReady.value = true;
-      renewalTasks.value = renewalResult.value.items;
-      renewalTaskTotal.value = renewalResult.value.total;
-    }
-
-    if (codeOrderResult.status === 'fulfilled') {
-      codeOrderDataReady.value = true;
-      codeOrders.value = codeOrderResult.value.items;
-      codeOrderTotal.value = codeOrderResult.value.total;
-    }
-
-    if (unsoldResult.status === 'fulfilled') {
-      inventoryDataReady.value = true;
-      availableCodeTotal.value = unsoldResult.value.total;
-    }
-
-    if (lockedResult.status === 'fulfilled') {
-      lockedCodeTotal.value = lockedResult.value.total;
-    }
-
-    if (failedResult.status === 'fulfilled') {
-      failedCodeTotal.value = failedResult.value.total;
-    }
-  } finally {
-    dashboardLoading.value = false;
+  } catch {
+    dashboardLoadFailed.value = !dashboardDataReady.value;
   }
+}
+
+function applyDashboardOverview(
+  results: Awaited<ReturnType<typeof loadDashboardOverviewData>>
+) {
+  const [
+    accountResult,
+    appleOrderResult,
+    renewalResult,
+    codeOrderResult,
+    unsoldResult,
+    lockedResult,
+    failedResult
+  ] = results;
+
+  dashboardLoadedPanels.value = results.filter((result) => result.status === 'fulfilled').length;
+  dashboardDataReady.value = dashboardLoadedPanels.value > 0;
+  dashboardLoadFailed.value = dashboardLoadedPanels.value === 0;
+
+  if (accountResult.status === 'fulfilled') {
+    appleAccountDataReady.value = true;
+    appleAccounts.value = accountResult.value.items;
+    appleAccountTotal.value = accountResult.value.total;
+  }
+
+  if (appleOrderResult.status === 'fulfilled') {
+    appleOrders.value = appleOrderResult.value.items;
+    appleOrderTotal.value = appleOrderResult.value.total;
+  }
+
+  if (renewalResult.status === 'fulfilled') {
+    renewalDataReady.value = true;
+    renewalTasks.value = renewalResult.value.items;
+    renewalTaskTotal.value = renewalResult.value.total;
+  }
+
+  if (codeOrderResult.status === 'fulfilled') {
+    codeOrderDataReady.value = true;
+    codeOrders.value = codeOrderResult.value.items;
+    codeOrderTotal.value = codeOrderResult.value.total;
+  }
+
+  if (unsoldResult.status === 'fulfilled') {
+    inventoryDataReady.value = true;
+    availableCodeTotal.value = unsoldResult.value.total;
+  }
+
+  if (lockedResult.status === 'fulfilled') {
+    lockedCodeTotal.value = lockedResult.value.total;
+  }
+
+  if (failedResult.status === 'fulfilled') {
+    failedCodeTotal.value = failedResult.value.total;
+  }
+}
+
+function loadDashboardOverviewData() {
+  return Promise.allSettled([
+    appleAccountsApi.list({ page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
+    appleOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
+    appleRenewalTasksApi.list({ page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' }),
+    codeOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
+    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }),
+    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }),
+    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'delivery_failed' })
+  ]);
 }
 
 function getModuleStatusTone(status: ModuleStatus): StatusTone {

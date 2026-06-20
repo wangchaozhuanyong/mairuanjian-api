@@ -12,6 +12,8 @@ import type {
 } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { CreateSourcePlatformDto } from './dto/create-source-platform.dto';
@@ -38,15 +40,26 @@ const SOURCE_PLATFORM_SORT_FIELDS: Record<
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+const SOURCE_PLATFORM_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class SourcePlatformsService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async list(query: ListSourcePlatformsQuery) {
+    return this.listCache.getOrSet(
+      getListCacheKey('source-platforms', query),
+      SOURCE_PLATFORM_LIST_CACHE_TTL_MS,
+      () => this.listUncached(query)
+    );
+  }
+
+  private async listUncached(query: ListSourcePlatformsQuery) {
     const pagination = getPagination(query);
     const type = this.parseType(query.type, false);
     const status = this.parseStatus(query.status, false);
@@ -130,6 +143,8 @@ export class SourcePlatformsService {
       remark: `Created source platform ${sourcePlatform.code}`
     });
 
+    this.listCache.clear();
+
     return this.get(sourcePlatform.id);
   }
 
@@ -212,6 +227,8 @@ export class SourcePlatformsService {
       remark: `Updated source platform ${existingSourcePlatform.code}`
     });
 
+    this.listCache.clear();
+
     return this.get(id);
   }
 
@@ -246,6 +263,8 @@ export class SourcePlatformsService {
       beforeData: this.toResponse(existingSourcePlatform),
       remark: `Deleted source platform ${existingSourcePlatform.code}`
     });
+
+    this.listCache.clear();
 
     return {
       deleted: true

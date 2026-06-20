@@ -750,11 +750,14 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
       key,
       fetcher: async () => {
         const [platformData, serviceData] = await Promise.all([
-          loadSmartSourcePlatforms({
-            page: 1,
-            pageSize: 100,
-            status: 'active'
-          }, options),
+          loadSmartSourcePlatforms(
+            {
+              page: 1,
+              pageSize: 100,
+              status: 'active'
+            },
+            options
+          ),
           codeServicesApi.list({
             page: 1,
             pageSize: 100,

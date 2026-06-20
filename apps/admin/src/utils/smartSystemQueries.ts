@@ -1,5 +1,7 @@
 import {
   appleAccountsApi,
+  appleServicesApi,
+  codeServicesApi,
   customersApi,
   messageTemplatesApi,
   rolesApi,
@@ -8,6 +10,8 @@ import {
 } from '@/api/system';
 import type {
   AppleAccountQuery,
+  AppleServiceQuery,
+  CodeServiceQuery,
   CustomerQuery,
   MessageTemplateQuery,
   SourcePlatformQuery,
@@ -15,6 +19,8 @@ import type {
 } from '@/api/system';
 import type {
   AppleAccount,
+  AppleService,
+  CodeService,
   Customer,
   MessageTemplate,
   PageResult,
@@ -84,6 +90,27 @@ export function loadSmartAppleAccounts(
     'apple-accounts',
     params,
     () => appleAccountsApi.list(params),
+    options
+  );
+}
+
+export function loadSmartAppleServices(
+  params: AppleServiceQuery,
+  options: SmartSystemQueryOptions = {}
+) {
+  return loadSmartSystemQuery<PageResult<AppleService>>(
+    'apple-services',
+    params,
+    () => appleServicesApi.list(params),
+    options
+  );
+}
+
+export function loadSmartCodeServices(params: CodeServiceQuery, options: SmartSystemQueryOptions = {}) {
+  return loadSmartSystemQuery<PageResult<CodeService>>(
+    'code-services',
+    params,
+    () => codeServicesApi.list(params),
     options
   );
 }

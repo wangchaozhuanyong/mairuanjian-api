@@ -1,17 +1,26 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
 
+const ROLE_CACHE_TTL_MS = 120_000;
+
 @Injectable()
 export class RolesService {
+  private readonly cache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   listRoles() {
+    return this.cache.getOrSet('roles:list', ROLE_CACHE_TTL_MS, () => this.listRolesUncached());
+  }
+
+  private listRolesUncached() {
     return this.prisma.role.findMany({
       orderBy: {
         createdAt: 'asc'
@@ -32,9 +41,11 @@ export class RolesService {
   }
 
   listPermissions() {
-    return this.prisma.permission.findMany({
-      orderBy: [{ module: 'asc' }, { action: 'asc' }, { code: 'asc' }]
-    });
+    return this.cache.getOrSet('permissions:list', ROLE_CACHE_TTL_MS, () =>
+      this.prisma.permission.findMany({
+        orderBy: [{ module: 'asc' }, { action: 'asc' }, { code: 'asc' }]
+      })
+    );
   }
 
   async updateRolePermissions(
@@ -103,6 +114,8 @@ export class RolesService {
       },
       remark: `Updated permissions for role ${role.code}`
     });
+
+    this.cache.clear();
 
     return this.prisma.role.findUnique({
       where: {

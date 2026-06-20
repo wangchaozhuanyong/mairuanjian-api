@@ -7,6 +7,8 @@ import {
 import type { Prisma, UserTableView } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 
@@ -29,6 +31,7 @@ export interface SaveUserTableViewInput {
 type TableDensity = 'compact' | 'default' | 'loose';
 
 const DENSITIES = new Set<TableDensity>(['compact', 'default', 'loose']);
+const USER_TABLE_VIEW_LIST_CACHE_TTL_MS = 120_000;
 
 interface ParsedTableViewInput {
   tableKey?: string;
@@ -43,12 +46,22 @@ interface ParsedTableViewInput {
 
 @Injectable()
 export class UserTableViewsService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async listViews(user: AuthenticatedUser, query: ListUserTableViewsQuery) {
+    return this.listCache.getOrSet(
+      getListCacheKey('user-table-views', { userId: user.id, ...query }),
+      USER_TABLE_VIEW_LIST_CACHE_TTL_MS,
+      () => this.listViewsUncached(user, query)
+    );
+  }
+
+  private async listViewsUncached(user: AuthenticatedUser, query: ListUserTableViewsQuery) {
     const pagination = getPagination(query);
     const tableKey = this.normalizeOptionalString(query.tableKey);
     const keyword = this.normalizeOptionalString(query.keyword);
@@ -122,6 +135,8 @@ export class UserTableViewsService {
       remark: `Created table view ${view.tableKey}/${view.viewName}`
     });
 
+    this.listCache.clear();
+
     return this.toResponse(view);
   }
 
@@ -165,6 +180,8 @@ export class UserTableViewsService {
       remark: `Updated table view ${view.tableKey}/${view.viewName}`
     });
 
+    this.listCache.clear();
+
     return this.toResponse(view);
   }
 
@@ -184,6 +201,8 @@ export class UserTableViewsService {
       beforeData: this.toAuditJson(this.toResponse(current)),
       remark: `Deleted table view ${current.tableKey}/${current.viewName}`
     });
+
+    this.listCache.clear();
 
     return {
       deleted: true
@@ -225,6 +244,8 @@ export class UserTableViewsService {
       afterData: this.toAuditJson(this.toResponse(view)),
       remark: `Set default table view ${view.tableKey}/${view.viewName}`
     });
+
+    this.listCache.clear();
 
     return this.toResponse(view);
   }

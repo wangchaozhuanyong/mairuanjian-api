@@ -16,6 +16,8 @@ import type {
 } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { CreateAppleServiceDto } from './dto/create-apple-service.dto';
@@ -57,15 +59,28 @@ const APPLE_SERVICE_SORT_FIELDS: Record<string, keyof Prisma.AppleServiceOrderBy
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
   };
+const APPLE_SERVICE_LIST_CACHE_TTL_MS = 120_000;
+const APPLE_SERVICE_PLATFORM_MAPPING_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class AppleServicesService {
+  private readonly listCache = new TimedMemoryCache();
+  private readonly mappingListCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async list(query: ListAppleServicesQuery) {
+    return this.listCache.getOrSet(
+      getListCacheKey('apple-services', query),
+      APPLE_SERVICE_LIST_CACHE_TTL_MS,
+      () => this.listUncached(query)
+    );
+  }
+
+  private async listUncached(query: ListAppleServicesQuery) {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();
     const status = this.parseStatus(query.status, false);
@@ -129,6 +144,8 @@ export class AppleServicesService {
       remark: `Created Apple service ${service.name}`
     });
 
+    this.clearListCaches();
+
     return this.get(service.id);
   }
 
@@ -157,6 +174,8 @@ export class AppleServicesService {
       afterData: this.toAuditJson(dto),
       remark: `Updated Apple service ${existingService.name}`
     });
+
+    this.clearListCaches();
 
     return this.get(id);
   }
@@ -188,10 +207,20 @@ export class AppleServicesService {
       remark: `Deleted Apple service ${existingService.name}`
     });
 
+    this.clearListCaches();
+
     return { deleted: true };
   }
 
   async listPlatformMappings(serviceId: string) {
+    return this.mappingListCache.getOrSet(
+      getListCacheKey('apple-service-platform-mappings', { serviceId }),
+      APPLE_SERVICE_PLATFORM_MAPPING_CACHE_TTL_MS,
+      () => this.listPlatformMappingsUncached(serviceId)
+    );
+  }
+
+  private async listPlatformMappingsUncached(serviceId: string) {
     await this.assertServiceExists(serviceId);
     const mappings = await this.prisma.appleServicePlatformMapping.findMany({
       where: { serviceId },
@@ -233,6 +262,8 @@ export class AppleServicesService {
       afterData: this.toAuditJson(this.toPlatformMappingResponse(mapping)),
       remark: `Created Apple service platform mapping ${mapping.id}`
     });
+
+    this.mappingListCache.clear();
 
     return this.toPlatformMappingResponse(mapping);
   }
@@ -282,6 +313,8 @@ export class AppleServicesService {
       remark: `Updated Apple service platform mapping ${id}`
     });
 
+    this.mappingListCache.clear();
+
     return this.toPlatformMappingResponse(mapping);
   }
 
@@ -302,7 +335,14 @@ export class AppleServicesService {
       remark: `Deleted Apple service platform mapping ${id}`
     });
 
+    this.mappingListCache.clear();
+
     return { deleted: true };
+  }
+
+  private clearListCaches() {
+    this.listCache.clear();
+    this.mappingListCache.clear();
   }
 
   private buildOrderBy(
