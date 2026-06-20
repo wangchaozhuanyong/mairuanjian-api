@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser, Public, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import type {
   SaveAnnouncementInput,
   SaveAppVersionInput,
@@ -13,7 +14,10 @@ import { MaintenanceService } from './maintenance.service';
 
 @Controller('maintenance')
 export class MaintenanceController {
-  constructor(private readonly maintenanceService: MaintenanceService) {}
+  constructor(
+    private readonly maintenanceService: MaintenanceService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get('overview')
   @RequirePermissions('maintenance.announcement.view')
@@ -45,27 +49,38 @@ export class MaintenanceController {
 
   @Post('announcements')
   @RequirePermissions('maintenance.announcement.manage')
-  createAnnouncement(
+  async createAnnouncement(
     @Body() dto: SaveAnnouncementInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.createAnnouncement(dto, operator);
+    const announcement = await this.maintenanceService.createAnnouncement(dto, operator);
+    this.publishMaintenanceEvent(
+      'maintenance.announcement.created',
+      'announcement',
+      'created',
+      announcement.id
+    );
+    return announcement;
   }
 
   @Patch('announcements/:id')
   @RequirePermissions('maintenance.announcement.manage')
-  updateAnnouncement(
+  async updateAnnouncement(
     @Param('id') id: string,
     @Body() dto: Partial<SaveAnnouncementInput>,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.updateAnnouncement(id, dto, operator);
+    const announcement = await this.maintenanceService.updateAnnouncement(id, dto, operator);
+    this.publishMaintenanceEvent('maintenance.announcement.updated', 'announcement', 'updated', id);
+    return announcement;
   }
 
   @Delete('announcements/:id')
   @RequirePermissions('maintenance.announcement.manage')
-  removeAnnouncement(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.maintenanceService.removeAnnouncement(id, operator);
+  async removeAnnouncement(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.maintenanceService.removeAnnouncement(id, operator);
+    this.publishMaintenanceEvent('maintenance.announcement.deleted', 'announcement', 'deleted', id);
+    return result;
   }
 
   @Get('mode')
@@ -82,8 +97,13 @@ export class MaintenanceController {
 
   @Patch('mode')
   @RequirePermissions('maintenance.mode.manage')
-  saveMode(@Body() dto: SaveMaintenanceModeInput, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.maintenanceService.saveMaintenanceMode(dto, operator);
+  async saveMode(
+    @Body() dto: SaveMaintenanceModeInput,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const mode = await this.maintenanceService.saveMaintenanceMode(dto, operator);
+    this.publishMaintenanceEvent('maintenance.mode.updated', 'maintenance_mode', 'updated');
+    return mode;
   }
 
   @Get('app-versions')
@@ -108,8 +128,18 @@ export class MaintenanceController {
 
   @Post('app-versions')
   @RequirePermissions('maintenance.version.manage')
-  createAppVersion(@Body() dto: SaveAppVersionInput, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.maintenanceService.createAppVersion(dto, operator);
+  async createAppVersion(
+    @Body() dto: SaveAppVersionInput,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const version = await this.maintenanceService.createAppVersion(dto, operator);
+    this.publishMaintenanceEvent(
+      'maintenance.app_version.created',
+      'app_version',
+      'created',
+      version.id
+    );
+    return version;
   }
 
   @Get('changelogs')
@@ -154,21 +184,30 @@ export class MaintenanceController {
 
   @Post('feature-flags')
   @RequirePermissions('maintenance.feature_flag.manage')
-  createFeatureFlag(
+  async createFeatureFlag(
     @Body() dto: SaveFeatureFlagInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.createFeatureFlag(dto, operator);
+    const flag = await this.maintenanceService.createFeatureFlag(dto, operator);
+    this.publishMaintenanceEvent(
+      'maintenance.feature_flag.created',
+      'feature_flag',
+      'created',
+      flag.id
+    );
+    return flag;
   }
 
   @Patch('feature-flags/:id')
   @RequirePermissions('maintenance.feature_flag.manage')
-  updateFeatureFlag(
+  async updateFeatureFlag(
     @Param('id') id: string,
     @Body() dto: Partial<SaveFeatureFlagInput>,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.updateFeatureFlag(id, dto, operator);
+    const flag = await this.maintenanceService.updateFeatureFlag(id, dto, operator);
+    this.publishMaintenanceEvent('maintenance.feature_flag.updated', 'feature_flag', 'updated', id);
+    return flag;
   }
 
   @Get('menu-config')
@@ -179,11 +218,17 @@ export class MaintenanceController {
 
   @Patch('menu-config')
   @RequirePermissions('maintenance.menu_config.manage')
-  saveMenuConfig(
+  async saveMenuConfig(
     @Body() dto: SaveMaintenanceParameterInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.saveConfig('maintenance_menu_config', dto, operator);
+    const config = await this.maintenanceService.saveConfig(
+      'maintenance_menu_config',
+      dto,
+      operator
+    );
+    this.publishMaintenanceEvent('maintenance.menu_config.updated', 'menu_config', 'updated');
+    return config;
   }
 
   @Get('theme-config')
@@ -194,11 +239,17 @@ export class MaintenanceController {
 
   @Patch('theme-config')
   @RequirePermissions('maintenance.theme_config.manage')
-  saveThemeConfig(
+  async saveThemeConfig(
     @Body() dto: SaveMaintenanceParameterInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.saveConfig('maintenance_theme_config', dto, operator);
+    const config = await this.maintenanceService.saveConfig(
+      'maintenance_theme_config',
+      dto,
+      operator
+    );
+    this.publishMaintenanceEvent('maintenance.theme_config.updated', 'theme_config', 'updated');
+    return config;
   }
 
   @Get('launch-checklist')
@@ -209,11 +260,17 @@ export class MaintenanceController {
 
   @Patch('launch-checklist')
   @RequirePermissions('maintenance.system_parameter.manage')
-  saveLaunchChecklist(
+  async saveLaunchChecklist(
     @Body() dto: SaveLaunchChecklistInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.saveLaunchChecklist(dto, operator);
+    const checklist = await this.maintenanceService.saveLaunchChecklist(dto, operator);
+    this.publishMaintenanceEvent(
+      'maintenance.launch_checklist.updated',
+      'launch_checklist',
+      'updated'
+    );
+    return checklist;
   }
 
   @Get('system-parameters')
@@ -236,20 +293,49 @@ export class MaintenanceController {
 
   @Post('system-parameters')
   @RequirePermissions('maintenance.system_parameter.manage')
-  createSystemParameter(
+  async createSystemParameter(
     @Body() dto: SaveMaintenanceParameterInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.createSystemParameter(dto, operator);
+    const parameter = await this.maintenanceService.createSystemParameter(dto, operator);
+    this.publishMaintenanceEvent(
+      'maintenance.system_parameter.created',
+      'system_parameter',
+      'created',
+      parameter.id
+    );
+    return parameter;
   }
 
   @Patch('system-parameters/:id')
   @RequirePermissions('maintenance.system_parameter.manage')
-  updateSystemParameter(
+  async updateSystemParameter(
     @Param('id') id: string,
     @Body() dto: Partial<SaveMaintenanceParameterInput>,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.maintenanceService.updateSystemParameter(id, dto, operator);
+    const parameter = await this.maintenanceService.updateSystemParameter(id, dto, operator);
+    this.publishMaintenanceEvent(
+      'maintenance.system_parameter.updated',
+      'system_parameter',
+      'updated',
+      id
+    );
+    return parameter;
+  }
+
+  private publishMaintenanceEvent(
+    type: string,
+    entity: string,
+    action: string,
+    resourceId?: string | null
+  ) {
+    this.realtimeService.publish({
+      type,
+      module: 'maintenance',
+      entity,
+      action,
+      resourceId: resourceId ?? null
+    });
   }
 }

@@ -77,6 +77,43 @@
           :value="view.id"
         />
       </el-select>
+      <el-dropdown
+        v-if="showSaveView && savedViews.length"
+        trigger="click"
+        @command="handleSavedViewCommand"
+      >
+        <AppButton
+          class="table-toolbar__op table-toolbar__view-manage"
+          :disabled="!activeSavedView || managingView"
+          :loading="managingView"
+          title="管理当前保存视图"
+        >
+          管理视图
+        </AppButton>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item
+              v-if="showOverwriteView"
+              command="overwrite"
+              :disabled="!activeSavedView"
+            >
+              覆盖当前视图
+            </el-dropdown-item>
+            <el-dropdown-item command="rename" :disabled="!activeSavedView">
+              重命名当前视图
+            </el-dropdown-item>
+            <el-dropdown-item
+              command="setDefault"
+              :disabled="!activeSavedView || activeSavedView.isDefault"
+            >
+              设为默认视图
+            </el-dropdown-item>
+            <el-dropdown-item command="delete" divided :disabled="!activeSavedView">
+              删除当前视图
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <AppButton
         class="table-toolbar__op"
         :icon="Refresh"
@@ -182,7 +219,9 @@
 
 <script setup lang="ts">
 import { Close, Collection, Download, Refresh, Search, Setting } from '@element-plus/icons-vue';
-import { computed, watch } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { computed, ref, watch } from 'vue';
+import { userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import type { UserTableView } from '@/types/system';
 
@@ -202,6 +241,7 @@ interface FilterChip {
 }
 
 type BuiltInChipKey = 'keyword' | 'status' | 'date' | 'density' | 'view';
+type SavedViewCommand = 'overwrite' | 'rename' | 'setDefault' | 'delete';
 
 const props = withDefaults(
   defineProps<{
@@ -218,6 +258,7 @@ const props = withDefaults(
     showDateShortcut?: boolean;
     showExport?: boolean;
     showSaveView?: boolean;
+    showOverwriteView?: boolean;
     showPrimary?: boolean;
     primaryLoading?: boolean;
     primaryDisabled?: boolean;
@@ -235,6 +276,7 @@ const props = withDefaults(
     showDateShortcut: true,
     showExport: true,
     showSaveView: true,
+    showOverwriteView: false,
     showPrimary: true,
     primaryLoading: false,
     primaryDisabled: false
@@ -249,6 +291,8 @@ const emit = defineEmits<{
   saveView: [];
   export: [];
   applyView: [id: string];
+  overwriteView: [id: string];
+  viewChanged: [action: SavedViewCommand, view: UserTableView | null];
   batchAction: [action: string];
   removeFilter: [key: string];
 }>();
@@ -270,6 +314,10 @@ const dateOptions: SelectOption[] = [
   { label: '自定义', value: 'custom' }
 ];
 
+const removedViewIds = ref<string[]>([]);
+const viewOverrides = ref<Record<string, Partial<UserTableView>>>({});
+const managingView = ref(false);
+
 const densityOptions: SelectOption[] = [
   { label: '紧凑', value: 'compact' },
   { label: '标准', value: 'default' },
@@ -285,7 +333,14 @@ const defaultStatusOptions: SelectOption[] = [
 const effectiveStatusOptions = computed(() =>
   props.statusOptions?.length ? props.statusOptions : defaultStatusOptions
 );
-const savedViews = computed(() => props.savedViews ?? []);
+const savedViews = computed(() =>
+  (props.savedViews ?? [])
+    .filter((view) => !removedViewIds.value.includes(view.id))
+    .map((view) => ({
+      ...view,
+      ...viewOverrides.value[view.id]
+    }))
+);
 const batchActions = computed(() => props.batchActions ?? []);
 const extraFilterChips = computed(() => props.filterChips ?? []);
 const effectiveColumnOptions = computed<ColumnOption[]>(() => {
@@ -321,6 +376,9 @@ const activeDensityLabel = computed(
 );
 const activeSavedViewLabel = computed(
   () => savedViews.value.find((view) => view.id === savedViewIdModel.value)?.viewName
+);
+const activeSavedView = computed(() =>
+  savedViews.value.find((view) => view.id === savedViewIdModel.value)
 );
 const filterSummaryText = computed(() => {
   if (activeChips.value.length) {
@@ -382,6 +440,130 @@ function applySavedView(value: string) {
   }
 }
 
+async function handleSavedViewCommand(command: string | number | object) {
+  if (typeof command !== 'string' || !isSavedViewCommand(command)) return;
+
+  const view = activeSavedView.value;
+  if (!view) {
+    ElMessage.warning('请先选择一个保存视图');
+    return;
+  }
+
+  if (command === 'rename') {
+    await renameSavedView(view);
+    return;
+  }
+
+  if (command === 'overwrite') {
+    emit('overwriteView', view.id);
+    return;
+  }
+
+  if (command === 'setDefault') {
+    await setDefaultSavedView(view);
+    return;
+  }
+
+  await deleteSavedView(view);
+}
+
+async function renameSavedView(view: UserTableView) {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的视图名称', '重命名保存视图', {
+      inputValue: view.viewName,
+      inputPattern: /^.{1,60}$/,
+      inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
+      confirmButtonText: '保存',
+      cancelButtonText: '取消'
+    });
+    const viewName = value.trim();
+
+    if (viewName === view.viewName) return;
+
+    managingView.value = true;
+    const updated = await userTableViewsApi.update(view.id, { viewName });
+    patchView(updated);
+    emit('viewChanged', 'rename', updated);
+    ElMessage.success('保存视图名称已更新');
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    ElMessage.error(error instanceof Error ? error.message : '重命名保存视图失败');
+  } finally {
+    managingView.value = false;
+  }
+}
+
+async function setDefaultSavedView(view: UserTableView) {
+  try {
+    managingView.value = true;
+    const updated = await userTableViewsApi.setDefault(view.id);
+    const nextOverrides = { ...viewOverrides.value };
+
+    for (const item of props.savedViews ?? []) {
+      nextOverrides[item.id] = {
+        ...nextOverrides[item.id],
+        isDefault: item.id === updated.id
+      };
+    }
+
+    nextOverrides[updated.id] = {
+      ...nextOverrides[updated.id],
+      ...updated,
+      isDefault: true
+    };
+    viewOverrides.value = nextOverrides;
+    emit('viewChanged', 'setDefault', updated);
+    ElMessage.success('已设为默认视图');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '设置默认视图失败');
+  } finally {
+    managingView.value = false;
+  }
+}
+
+async function deleteSavedView(view: UserTableView) {
+  try {
+    await ElMessageBox.confirm(
+      `删除后不会影响当前列表筛选，但该视图无法恢复。确认删除“${view.viewName}”？`,
+      '删除保存视图',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    );
+
+    managingView.value = true;
+    await userTableViewsApi.remove(view.id);
+    removedViewIds.value = [...removedViewIds.value, view.id];
+    const nextOverrides = { ...viewOverrides.value };
+    delete nextOverrides[view.id];
+    viewOverrides.value = nextOverrides;
+
+    if (savedViewIdModel.value === view.id) {
+      savedViewIdModel.value = '';
+    }
+
+    emit('viewChanged', 'delete', null);
+    ElMessage.success('保存视图已删除');
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    ElMessage.error(error instanceof Error ? error.message : '删除保存视图失败');
+  } finally {
+    managingView.value = false;
+  }
+}
+
+function patchView(view: UserTableView) {
+  viewOverrides.value = {
+    ...viewOverrides.value,
+    [view.id]: {
+      ...viewOverrides.value[view.id],
+      ...view
+    }
+  };
+}
+
 function showAllColumns() {
   visibleColumnsModel.value = [...allColumnValues.value];
 }
@@ -408,5 +590,9 @@ function clearFilters() {
 
 function isBuiltInChipKey(key: string): key is BuiltInChipKey {
   return ['keyword', 'status', 'date', 'density', 'view'].includes(key);
+}
+
+function isSavedViewCommand(command: string): command is SavedViewCommand {
+  return ['overwrite', 'rename', 'setDefault', 'delete'].includes(command);
 }
 </script>

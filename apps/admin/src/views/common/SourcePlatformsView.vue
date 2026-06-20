@@ -41,7 +41,7 @@
         primary-label="新增来源平台"
         placeholder="搜索平台名称、编码、备注"
         @search="handleSearch"
-        @refresh="loadPlatforms"
+        @refresh="() => loadPlatforms()"
         @primary="openCreate"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
@@ -257,7 +257,7 @@
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @change="loadPlatforms"
+        @change="() => loadPlatforms()"
       />
     </section>
 
@@ -314,8 +314,9 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { sourcePlatformsApi, userTableViewsApi } from '@/api/system';
+import type { SourcePlatformQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
@@ -323,7 +324,9 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { SourcePlatform, TableDensity, UserTableView } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { PageResult, SourcePlatform, TableDensity, UserTableView } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const platformTypes: Array<{ label: string; value: SourcePlatform['type'] }> = [
   { label: '淘宝', value: 'taobao' },
@@ -364,6 +367,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const activePlatformsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -423,24 +427,58 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadPlatforms() {
-  loading.value = true;
+function buildPlatformParams(): SourcePlatformQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    type: query.type || undefined,
+    sortBy: sortConfig.value.prop,
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyPlatformResult(data: PageResult<SourcePlatform>) {
+  platforms.value = data.items;
+  total.value = data.total;
+}
+
+async function loadPlatforms(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildPlatformParams();
+  const key = createSmartQueryKey('source-platforms', params);
+  const cached = getSmartQueryData<PageResult<SourcePlatform>>(key);
+
+  activePlatformsQueryKey.value = key;
+
+  if (cached) {
+    applyPlatformResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const data = await sourcePlatformsApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      type: query.type || undefined,
-      sortBy: sortConfig.value.prop,
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => sourcePlatformsApi.list(params),
+      force: options.force ?? true
     });
-    platforms.value = data.items;
-    total.value = data.total;
+
+    if (activePlatformsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyPlatformResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载来源平台失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载来源平台失败');
+    }
   } finally {
-    loading.value = false;
+    if (activePlatformsQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -584,7 +622,7 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadPlatforms();
+  await loadPlatforms({ force: false });
 }
 
 function resetForm() {
@@ -647,7 +685,7 @@ async function savePlatform() {
 
     ElMessage.success('来源平台已保存');
     dialogVisible.value = false;
-    await loadPlatforms();
+    await loadPlatforms({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存来源平台失败');
   } finally {
@@ -656,6 +694,15 @@ async function savePlatform() {
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['source-platforms'], () => {
+  void loadPlatforms({
+    background: platforms.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

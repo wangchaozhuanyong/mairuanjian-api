@@ -46,7 +46,7 @@
         primary-label="手工导入订单"
         placeholder="搜索订单号、买家、商品、SKU、业务"
         @search="handleSearch"
-        @refresh="reloadAll"
+        @refresh="() => reloadAll()"
         @primary="openCreate"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
@@ -286,7 +286,7 @@
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @change="loadOrders"
+        @change="() => loadOrders()"
       />
     </section>
 
@@ -543,13 +543,9 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
-import {
-  codeOrdersApi,
-  codeServicesApi,
-  sourcePlatformsApi,
-  userTableViewsApi
-} from '@/api/system';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { codeOrdersApi, codeServicesApi, userTableViewsApi } from '@/api/system';
+import type { CodeOrderQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
@@ -557,14 +553,18 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodeDeliveryLog,
   CodePlatformOrder,
   CodeService,
+  PageResult,
   SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
 const tableKey = 'code_orders';
 const deliveryStatusOptions = [
@@ -608,6 +608,8 @@ const total = ref(0);
 const formRef = ref<FormInstance>();
 const generateFormRef = ref<FormInstance>();
 const deliverFormRef = ref<FormInstance>();
+const activeOrdersQueryKey = ref('');
+const activeDependenciesQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -722,41 +724,118 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadDependencies() {
-  const [platformData, serviceData] = await Promise.all([
-    sourcePlatformsApi.list({
-      page: 1,
-      pageSize: 100,
-      status: 'active'
-    }),
-    codeServicesApi.list({
-      page: 1,
-      pageSize: 100,
-      status: 'enabled'
-    })
-  ]);
-  platforms.value = platformData.items;
-  services.value = serviceData.items;
+function applyDependenciesResult(data: {
+  platforms: PageResult<SourcePlatform>;
+  services: PageResult<CodeService>;
+}) {
+  platforms.value = data.platforms.items;
+  services.value = data.services.items;
 }
 
-async function loadOrders() {
-  loading.value = true;
+async function loadDependencies(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('code-order-dependencies');
+  const cached = getSmartQueryData<{
+    platforms: PageResult<SourcePlatform>;
+    services: PageResult<CodeService>;
+  }>(key);
+
+  activeDependenciesQueryKey.value = key;
+
+  if (cached) {
+    applyDependenciesResult(cached);
+  }
+
   try {
-    const data = await codeOrdersApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      platformId: query.platformId || undefined,
-      deliveryStatus: query.deliveryStatus || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: async () => {
+        const [platformData, serviceData] = await Promise.all([
+          loadSmartSourcePlatforms({
+            page: 1,
+            pageSize: 100,
+            status: 'active'
+          }, options),
+          codeServicesApi.list({
+            page: 1,
+            pageSize: 100,
+            status: 'enabled'
+          })
+        ]);
+
+        return {
+          platforms: platformData,
+          services: serviceData
+        };
+      },
+      force: options.force ?? true
     });
-    orders.value = data.items;
-    total.value = data.total;
+
+    if (activeDependenciesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyDependenciesResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单依赖失败');
+    }
+  }
+}
+
+function buildOrderParams(): CodeOrderQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    platformId: query.platformId || undefined,
+    deliveryStatus: query.deliveryStatus || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyOrderResult(data: PageResult<CodePlatformOrder>) {
+  orders.value = data.items;
+  total.value = data.total;
+}
+
+async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildOrderParams();
+  const key = createSmartQueryKey('code-orders', params);
+  const cached = getSmartQueryData<PageResult<CodePlatformOrder>>(key);
+
+  activeOrdersQueryKey.value = key;
+
+  if (cached) {
+    applyOrderResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => codeOrdersApi.list(params),
+      force: options.force ?? true
+    });
+
+    if (activeOrdersQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyOrderResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeOrdersQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -778,11 +857,19 @@ function handleSelectionChange(rows: CodePlatformOrder[]) {
   selectedOrders.value = rows;
 }
 
-async function reloadAll() {
+async function reloadAll(options: { background?: boolean; force?: boolean } = {}) {
   try {
-    await Promise.all([loadDependencies(), loadOrders()]);
+    await Promise.all([
+      loadDependencies(options),
+      loadOrders(options),
+      selectedOrder.value && detailVisible.value
+        ? loadDeliveryLogs(selectedOrder.value.id)
+        : Promise.resolve()
+    ]);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '刷新兑换码订单失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '刷新兑换码订单失败');
+    }
   }
 }
 
@@ -1078,15 +1165,27 @@ async function confirmDelivery() {
 
 async function initializePage() {
   try {
-    await loadDependencies();
-    await loadTableViews(true);
-    await loadOrders();
+    await Promise.all([loadDependencies({ force: false }), loadTableViews(true)]);
+    await loadOrders({ force: false });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单失败');
   }
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['code-orders', 'code-services', 'code-order-dependencies'],
+  () => {
+    void reloadAll({
+      background:
+        orders.value.length > 0 || platforms.value.length > 0 || services.value.length > 0,
+      force: true
+    });
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

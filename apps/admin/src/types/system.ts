@@ -169,6 +169,45 @@ export interface NotificationLog {
   createdAt: string;
 }
 
+export interface NavigationNotificationBadge {
+  sectionKey: string;
+  label: string;
+  count: number;
+  todoCount: number;
+  failedCount: number;
+}
+
+export interface NavigationNotificationBadges {
+  totalCount: number;
+  todoCount: number;
+  failedCount: number;
+  items: NavigationNotificationBadge[];
+  generatedAt: string;
+}
+
+export type NavigationItemBadgeTone =
+  | 'blue'
+  | 'green'
+  | 'orange'
+  | 'red'
+  | 'purple'
+  | 'cyan'
+  | 'neutral';
+
+export interface NavigationItemBadge {
+  itemKey: string;
+  label: string;
+  count: number;
+  tone: NavigationItemBadgeTone;
+  description: string;
+}
+
+export interface NavigationItemBadges {
+  totalCount: number;
+  items: NavigationItemBadge[];
+  generatedAt: string;
+}
+
 export interface TelegramConfig {
   id: string;
   notificationName: string;

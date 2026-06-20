@@ -17,6 +17,7 @@ import { createReadStream, existsSync, mkdirSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import { AttachmentsService } from './attachments.service';
 import type { CreateAttachmentMetadataDto } from './dto/create-attachment-metadata.dto';
 import type { UploadedFile as UploadedAttachmentFile } from './attachments.types';
@@ -30,7 +31,10 @@ interface DownloadResponse {
 
 @Controller('attachments')
 export class AttachmentsController {
-  constructor(private readonly attachmentsService: AttachmentsService) {}
+  constructor(
+    private readonly attachmentsService: AttachmentsService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get()
   @RequirePermissions('attachment.view')
@@ -68,7 +72,7 @@ export class AttachmentsController {
       }
     })
   )
-  upload(
+  async upload(
     @UploadedFile() file: UploadedAttachmentFile | undefined,
     @Body() metadata: CreateAttachmentMetadataDto,
     @CurrentUser() operator?: AuthenticatedUser
@@ -77,7 +81,15 @@ export class AttachmentsController {
       throw new BadRequestException('file is required');
     }
 
-    return this.attachmentsService.createWithMetadata(file, metadata, operator);
+    const attachment = await this.attachmentsService.createWithMetadata(file, metadata, operator);
+    this.realtimeService.publish({
+      type: 'common.attachment.created',
+      module: 'common',
+      entity: 'attachment',
+      action: 'created',
+      resourceId: attachment.id
+    });
+    return attachment;
   }
 
   @Get(':id')

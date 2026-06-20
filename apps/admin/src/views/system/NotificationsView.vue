@@ -993,7 +993,7 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
   notificationsApi,
   userTableViewsApi,
@@ -1016,6 +1016,13 @@ import type {
   TelegramConfig,
   UserTableView
 } from '@/types/system';
+import {
+  createSmartQueryKey,
+  getSmartQueryData,
+  invalidateSmartQueries,
+  refreshSmartQuery
+} from '@/utils/smartQuery';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 
 const activeTab = ref('overview');
 const overview = ref<NotificationOverview | null>(null);
@@ -1046,6 +1053,12 @@ const logSavedViewId = ref('');
 const ruleSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const templateSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const logSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
+const activeOverviewQueryKey = ref('');
+const activeRulesQueryKey = ref('');
+const activeTemplatesQueryKey = ref('');
+const activeTelegramQueryKey = ref('');
+const activeLogsQueryKey = ref('');
+const activatedOnce = ref(false);
 const ruleViewsLoaded = ref(false);
 const templateViewsLoaded = ref(false);
 const logViewsLoaded = ref(false);
@@ -1055,6 +1068,11 @@ const telegramDialogVisible = ref(false);
 const editingRuleId = ref('');
 const editingTemplateId = ref('');
 const editingTelegramId = ref('');
+
+type NotificationRulePage = Awaited<ReturnType<typeof notificationsApi.listRules>>;
+type NotificationTemplatePage = Awaited<ReturnType<typeof notificationsApi.listTemplates>>;
+type NotificationLogPage = Awaited<ReturnType<typeof notificationsApi.listLogs>>;
+type TelegramConfigPage = Awaited<ReturnType<typeof notificationsApi.listTelegramConfigs>>;
 
 const levelOptions: Array<{ label: string; value: NotificationLevel }> = [
   { label: '普通', value: 'info' },
@@ -1255,20 +1273,96 @@ const logFilterChips = computed(() => {
 
 onMounted(async () => {
   await Promise.all([
-    loadOverview(),
-    loadRulesWithViews(),
-    loadTemplatesWithViews(),
-    loadTelegramConfigs(),
-    loadLogsWithViews()
+    loadOverview({ force: false }),
+    loadRulesWithViews({ force: false }),
+    loadTemplatesWithViews({ force: false }),
+    loadTelegramConfigs({ force: false }),
+    loadLogsWithViews({ force: false })
   ]);
 });
 
+onActivated(() => {
+  if (!activatedOnce.value) {
+    activatedOnce.value = true;
+    return;
+  }
+
+  const requests: Array<Promise<void>> = [
+    loadOverview({
+      background: Boolean(overview.value),
+      force: false
+    })
+  ];
+
+  if (activeTab.value !== 'overview') {
+    requests.push(refreshActiveNotificationData({ background: true, force: false }));
+  }
+
+  void Promise.all(requests);
+});
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  [
+    'notification-overview',
+    'notification-rules',
+    'notification-templates',
+    'notification-telegram',
+    'notification-logs'
+  ],
+  ({ scopes }) => {
+    const scopeSet = new Set(scopes);
+    const requests: Array<Promise<void>> = [];
+
+    if (scopeSet.has('notification-overview')) {
+      requests.push(loadOverview({ background: Boolean(overview.value), force: true }));
+    }
+
+    if (activeTab.value === 'rules' && scopeSet.has('notification-rules')) {
+      requests.push(loadRules({ background: rules.value.length > 0, force: true }));
+    }
+
+    if (activeTab.value === 'templates' && scopeSet.has('notification-templates')) {
+      requests.push(loadTemplates({ background: templates.value.length > 0, force: true }));
+    }
+
+    if (activeTab.value === 'telegram' && scopeSet.has('notification-telegram')) {
+      requests.push(
+        loadTelegramConfigs({ background: telegramConfigs.value.length > 0, force: true })
+      );
+    }
+
+    if (activeTab.value === 'logs' && scopeSet.has('notification-logs')) {
+      requests.push(loadLogs({ background: logs.value.length > 0, force: true }));
+    }
+
+    void Promise.all(requests);
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
+
 async function refreshCurrentTab() {
-  if (activeTab.value === 'overview') await loadOverview();
-  if (activeTab.value === 'rules') await loadRulesWithViews();
-  if (activeTab.value === 'templates') await loadTemplatesWithViews();
-  if (activeTab.value === 'telegram') await loadTelegramConfigs();
-  if (activeTab.value === 'logs') await loadLogsWithViews();
+  await refreshActiveNotificationData({ force: true });
+}
+
+async function refreshActiveNotificationData(
+  options: { background?: boolean; force?: boolean } = {}
+) {
+  if (activeTab.value === 'overview') {
+    await loadOverview(options);
+  }
+  if (activeTab.value === 'rules') {
+    await loadRulesWithViews(options);
+  }
+  if (activeTab.value === 'templates') {
+    await loadTemplatesWithViews(options);
+  }
+  if (activeTab.value === 'telegram') {
+    await loadTelegramConfigs(options);
+  }
+  if (activeTab.value === 'logs') {
+    await loadLogsWithViews(options);
+  }
 }
 
 function openPrimaryDialog() {
@@ -1283,103 +1377,253 @@ function openPrimaryDialog() {
   openRuleDialog();
 }
 
-async function loadOverview() {
-  try {
-    overview.value = await notificationsApi.overview();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载通知总览失败');
-  }
-}
+async function loadOverview(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('notification-overview');
+  const cached = getSmartQueryData<NotificationOverview>(key);
 
-async function loadRules() {
-  rulesLoading.value = true;
+  activeOverviewQueryKey.value = key;
+
+  if (cached) {
+    overview.value = cached;
+  }
+
   try {
-    const result = await notificationsApi.listRules({
-      ...ruleQuery,
-      keyword: ruleQuery.keyword || undefined,
-      module: ruleQuery.module || undefined,
-      level: ruleQuery.level || undefined,
-      enabled: ruleQuery.enabled || undefined,
-      sortBy: ruleSortConfig.value.prop,
-      sortOrder: mapSortOrder(ruleSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => notificationsApi.overview(),
+      force: options.force ?? true
     });
-    rules.value = result.items;
-    ruleTotal.value = result.total;
+
+    if (activeOverviewQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      overview.value = result.data;
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载通知规则失败');
-  } finally {
-    rulesLoading.value = false;
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载通知总览失败');
+    }
   }
 }
 
-async function loadTemplates() {
-  templatesLoading.value = true;
+async function loadRules(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildRuleListParams();
+  const key = createSmartQueryKey('notification-rules', params);
+  const cached = getSmartQueryData<NotificationRulePage>(key);
+
+  activeRulesQueryKey.value = key;
+
+  if (cached) {
+    applyRuleListResult(cached);
+  }
+
+  rulesLoading.value = !cached && !options.background;
+
   try {
-    const result = await notificationsApi.listTemplates({
-      ...templateQuery,
-      keyword: templateQuery.keyword || undefined,
-      eventCode: templateQuery.eventCode || undefined,
-      channel: templateQuery.channel || undefined,
-      enabled: templateQuery.enabled || undefined,
-      sortBy: templateSortConfig.value.prop,
-      sortOrder: mapSortOrder(templateSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => notificationsApi.listRules(params),
+      force: options.force ?? true
     });
-    templates.value = result.items;
-    templateTotal.value = result.total;
+
+    if (activeRulesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyRuleListResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载通知模板失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载通知规则失败');
+    }
   } finally {
-    templatesLoading.value = false;
+    if (activeRulesQueryKey.value === key) {
+      rulesLoading.value = false;
+    }
   }
 }
 
-async function loadTelegramConfigs() {
-  telegramLoading.value = true;
-  try {
-    const result = await notificationsApi.listTelegramConfigs();
-    telegramConfigs.value = result.items;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载 Telegram 配置失败');
-  } finally {
-    telegramLoading.value = false;
-  }
-}
+async function loadTemplates(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildTemplateListParams();
+  const key = createSmartQueryKey('notification-templates', params);
+  const cached = getSmartQueryData<NotificationTemplatePage>(key);
 
-async function loadLogs() {
-  logsLoading.value = true;
+  activeTemplatesQueryKey.value = key;
+
+  if (cached) {
+    applyTemplateListResult(cached);
+  }
+
+  templatesLoading.value = !cached && !options.background;
+
   try {
-    const result = await notificationsApi.listLogs({
-      ...logQuery,
-      keyword: logQuery.keyword || undefined,
-      module: logQuery.module || undefined,
-      eventCode: logQuery.eventCode || undefined,
-      channel: logQuery.channel || undefined,
-      status: logQuery.status || undefined,
-      sortBy: logSortConfig.value.prop,
-      sortOrder: mapSortOrder(logSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => notificationsApi.listTemplates(params),
+      force: options.force ?? true
     });
-    logs.value = result.items;
-    logTotal.value = result.total;
+
+    if (activeTemplatesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyTemplateListResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载通知日志失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载通知模板失败');
+    }
   } finally {
-    logsLoading.value = false;
+    if (activeTemplatesQueryKey.value === key) {
+      templatesLoading.value = false;
+    }
   }
 }
 
-async function loadRulesWithViews() {
+async function loadTelegramConfigs(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('notification-telegram');
+  const cached = getSmartQueryData<TelegramConfigPage>(key);
+
+  activeTelegramQueryKey.value = key;
+
+  if (cached) {
+    telegramConfigs.value = cached.items;
+  }
+
+  telegramLoading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => notificationsApi.listTelegramConfigs(),
+      force: options.force ?? true
+    });
+
+    if (activeTelegramQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      telegramConfigs.value = result.data.items;
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载 Telegram 配置失败');
+    }
+  } finally {
+    if (activeTelegramQueryKey.value === key) {
+      telegramLoading.value = false;
+    }
+  }
+}
+
+async function loadLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildLogListParams();
+  const key = createSmartQueryKey('notification-logs', params);
+  const cached = getSmartQueryData<NotificationLogPage>(key);
+
+  activeLogsQueryKey.value = key;
+
+  if (cached) {
+    applyLogListResult(cached);
+  }
+
+  logsLoading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => notificationsApi.listLogs(params),
+      force: options.force ?? true
+    });
+
+    if (activeLogsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyLogListResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载通知日志失败');
+    }
+  } finally {
+    if (activeLogsQueryKey.value === key) {
+      logsLoading.value = false;
+    }
+  }
+}
+
+function buildRuleListParams(): NotificationRuleQuery {
+  return {
+    ...ruleQuery,
+    keyword: ruleQuery.keyword || undefined,
+    module: ruleQuery.module || undefined,
+    level: ruleQuery.level || undefined,
+    enabled: ruleQuery.enabled || undefined,
+    sortBy: ruleSortConfig.value.prop,
+    sortOrder: mapSortOrder(ruleSortConfig.value.order)
+  };
+}
+
+function buildTemplateListParams(): NotificationTemplateQuery {
+  return {
+    ...templateQuery,
+    keyword: templateQuery.keyword || undefined,
+    eventCode: templateQuery.eventCode || undefined,
+    channel: templateQuery.channel || undefined,
+    enabled: templateQuery.enabled || undefined,
+    sortBy: templateSortConfig.value.prop,
+    sortOrder: mapSortOrder(templateSortConfig.value.order)
+  };
+}
+
+function buildLogListParams(): NotificationLogQuery {
+  return {
+    ...logQuery,
+    keyword: logQuery.keyword || undefined,
+    module: logQuery.module || undefined,
+    eventCode: logQuery.eventCode || undefined,
+    channel: logQuery.channel || undefined,
+    status: logQuery.status || undefined,
+    sortBy: logSortConfig.value.prop,
+    sortOrder: mapSortOrder(logSortConfig.value.order)
+  };
+}
+
+function applyRuleListResult(result: NotificationRulePage) {
+  rules.value = result.items;
+  ruleTotal.value = result.total;
+}
+
+function applyTemplateListResult(result: NotificationTemplatePage) {
+  templates.value = result.items;
+  templateTotal.value = result.total;
+}
+
+function applyLogListResult(result: NotificationLogPage) {
+  logs.value = result.items;
+  logTotal.value = result.total;
+}
+
+async function loadRulesWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureRuleTableViews();
-  await loadRules();
+  await loadRules(options);
 }
 
-async function loadTemplatesWithViews() {
+async function loadTemplatesWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureTemplateTableViews();
-  await loadTemplates();
+  await loadTemplates(options);
 }
 
-async function loadLogsWithViews() {
+async function loadLogsWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureLogTableViews();
-  await loadLogs();
+  await loadLogs(options);
 }
 
 async function handleRuleSearch() {
@@ -1759,6 +2003,8 @@ async function saveRule() {
     }
     ElMessage.success('通知规则已保存');
     ruleDialogVisible.value = false;
+    invalidateSmartQueries('notification-rules');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadRules(), loadOverview()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存通知规则失败');
@@ -1776,6 +2022,8 @@ async function toggleRule(row: NotificationRule) {
       await notificationsApi.enableRule(row.id);
       ElMessage.success('通知规则已启用');
     }
+    invalidateSmartQueries('notification-rules');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadRules(), loadOverview()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '切换通知规则失败');
@@ -1791,6 +2039,8 @@ async function removeRule(row: NotificationRule) {
     });
     await notificationsApi.removeRule(row.id);
     ElMessage.success('通知规则已删除');
+    invalidateSmartQueries('notification-rules');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadRules(), loadOverview()]);
   } catch (error) {
     if (error !== 'cancel') {
@@ -1836,6 +2086,7 @@ async function saveTemplate() {
     }
     ElMessage.success('通知模板已保存');
     templateDialogVisible.value = false;
+    invalidateSmartQueries('notification-templates');
     await loadTemplates();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存通知模板失败');
@@ -1853,6 +2104,7 @@ async function removeTemplate(row: NotificationTemplate) {
     });
     await notificationsApi.removeTemplate(row.id);
     ElMessage.success('通知模板已删除');
+    invalidateSmartQueries('notification-templates');
     await loadTemplates();
   } catch (error) {
     if (error !== 'cancel') {
@@ -1911,6 +2163,8 @@ async function saveTelegram() {
     }
     ElMessage.success('Telegram 配置已保存');
     telegramDialogVisible.value = false;
+    invalidateSmartQueries('notification-telegram');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadTelegramConfigs(), loadOverview()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存 Telegram 配置失败');
@@ -1931,6 +2185,9 @@ async function testTelegram(row: TelegramConfig) {
     } else {
       ElMessage.warning(result.errorMessage || 'Telegram 测试发送失败');
     }
+    invalidateSmartQueries('notification-telegram');
+    invalidateSmartQueries('notification-logs');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadTelegramConfigs(), loadLogs(), loadOverview()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : 'Telegram 测试发送失败');
@@ -1946,6 +2203,8 @@ async function removeTelegram(row: TelegramConfig) {
     });
     await notificationsApi.removeTelegramConfig(row.id);
     ElMessage.success('Telegram 配置已删除');
+    invalidateSmartQueries('notification-telegram');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadTelegramConfigs(), loadOverview()]);
   } catch (error) {
     if (error !== 'cancel') {
@@ -1957,6 +2216,8 @@ async function removeTelegram(row: TelegramConfig) {
 async function markRead(row: NotificationLog) {
   try {
     await notificationsApi.markRead(row.id);
+    invalidateSmartQueries('notification-logs');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadLogs(), loadOverview()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '标记已读失败');
@@ -1967,6 +2228,8 @@ async function markAllRead() {
   try {
     const result = await notificationsApi.markAllRead();
     ElMessage.success(`已标记 ${result.updatedCount} 条通知为已读`);
+    invalidateSmartQueries('notification-logs');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadLogs(), loadOverview()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '全部已读失败');
@@ -1977,6 +2240,8 @@ async function retryLog(row: NotificationLog) {
   try {
     await notificationsApi.retryLog(row.id);
     ElMessage.success('通知已重试');
+    invalidateSmartQueries('notification-logs');
+    invalidateSmartQueries('notification-overview');
     await Promise.all([loadLogs(), loadOverview()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '重试通知失败');

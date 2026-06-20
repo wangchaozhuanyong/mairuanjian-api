@@ -3,14 +3,14 @@
     title="Apple ID 详情"
     group="Apple ID 业务"
     phase="Phase 3"
-    description="聚合单个 Apple ID 的余额成本、充值消费、订单、开通记录、续费任务和操作计划。"
+    description="聚合单个 Apple ID 的汇率成本、充值消费、订单、开通记录、续费任务和操作计划。"
   >
     <template #actions>
       <StatusChip :tone="account ? getAccountStatusTone(account.status) : 'neutral'" dot>
         {{ account ? getAccountStatusLabel(account.status) : '待选择账号' }}
       </StatusChip>
       <AppButton @click="goBack">返回列表</AppButton>
-      <AppButton :disabled="!accountId" :loading="accountLoading" @click="loadDetail">
+      <AppButton :disabled="!accountId" :loading="accountLoading" @click="() => loadDetail()">
         刷新
       </AppButton>
     </template>
@@ -20,7 +20,7 @@
       empty
       state-compact
       empty-title="请先选择 Apple ID"
-      empty-description="从 Apple ID 管理列表进入详情页后，可以查看余额成本、敏感资料和关联业务。"
+      empty-description="从 Apple ID 管理列表进入详情页后，可以查看汇率成本、敏感资料和关联业务。"
     >
       <template #state-actions>
         <AppButton variant="primary" @click="goBack">去选择 Apple ID</AppButton>
@@ -30,7 +30,7 @@
     <AppCard v-else-if="loadError" :error="loadError" state-compact error-title="加载失败">
       <template #state-actions>
         <AppButton @click="goBack">返回列表</AppButton>
-        <AppButton variant="primary" @click="loadDetail">重新加载</AppButton>
+        <AppButton variant="primary" @click="() => loadDetail()">重新加载</AppButton>
       </template>
     </AppCard>
 
@@ -51,8 +51,8 @@
           </div>
           <div class="inline-actions">
             <StatusChip tone="green">余额 {{ account.currentBalance }}</StatusChip>
-            <StatusChip tone="orange">成本 {{ account.balanceCostAmount }}</StatusChip>
-            <StatusChip tone="blue">均价 {{ account.averageCost }}</StatusChip>
+            <StatusChip tone="orange">汇率 {{ getAccountExchangeRateCost(account) }}</StatusChip>
+            <StatusChip tone="blue">均价 {{ getAccountExchangeRateCost(account) }}</StatusChip>
             <StatusChip :tone="account.isManuallyLocked ? 'red' : 'purple'">
               关联业务 {{ activationTotal }}
             </StatusChip>
@@ -120,12 +120,12 @@
             <strong>{{ account.currentBalance }}</strong>
           </div>
           <div>
-            <span>余额成本</span>
-            <strong>{{ account.balanceCostAmount }}</strong>
+            <span>汇率成本</span>
+            <strong>{{ getAccountExchangeRateCost(account) }}</strong>
           </div>
           <div>
             <span>平均成本</span>
-            <strong>{{ account.averageCost }}</strong>
+            <strong>{{ getAccountExchangeRateCost(account) }}</strong>
           </div>
           <div>
             <span>锁定原因</span>
@@ -180,7 +180,12 @@
           <el-tab-pane :label="`充值记录 ${topupTotal}`" name="topups">
             <el-table class="desktop-data-table" :data="topups" row-key="id">
               <el-table-column prop="faceValue" label="面值" width="100" />
-              <el-table-column prop="costAmount" label="成本" width="100" />
+              <el-table-column label="汇率成本" width="110">
+                <template #default="{ row }">{{ getTopupExchangeRateCost(row) }}</template>
+              </el-table-column>
+              <el-table-column label="人民币总成本" width="120">
+                <template #default="{ row }">{{ getTopupTotalCostAmountFromRecord(row) }}</template>
+              </el-table-column>
               <el-table-column prop="balanceAfter" label="充值后余额" width="130" />
               <el-table-column prop="avgCostAfter" label="充值后均价" width="130" />
               <el-table-column label="礼品卡代码" width="150">
@@ -212,8 +217,12 @@
                 </div>
                 <div class="mobile-record-card__stats">
                   <div>
-                    <span>成本</span>
-                    <strong>{{ topup.costAmount }}</strong>
+                    <span>汇率成本</span>
+                    <strong>{{ getTopupExchangeRateCost(topup) }}</strong>
+                  </div>
+                  <div>
+                    <span>总成本</span>
+                    <strong>{{ getTopupTotalCostAmountFromRecord(topup) }}</strong>
                   </div>
                   <div>
                     <span>充值后余额</span>
@@ -780,7 +789,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   appleAccountsApi,
@@ -793,6 +802,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleAccount,
   AppleAccountStatusCheck,
@@ -804,11 +814,19 @@ import type {
   RenewalTask,
   ServiceActivation
 } from '@/types/system';
+import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 type ChipTone = 'green' | 'orange' | 'red' | 'neutral' | 'blue' | 'purple';
 
 const route = useRoute();
 const router = useRouter();
+const DETAIL_REALTIME_SCOPES = [
+  'apple-accounts',
+  'apple-orders',
+  'apple-activations',
+  'apple-renewal-tasks',
+  'apple-action-plans'
+];
 const account = ref<AppleAccount | null>(null);
 const accountLoading = ref(false);
 const relatedLoading = ref(false);
@@ -964,6 +982,14 @@ watch(
   }
 );
 
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(DETAIL_REALTIME_SCOPES, () => {
+  void loadDetail({ silent: true, dedupeMs: 0 });
+});
+
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
+});
+
 function normalizeRouteId(value: unknown) {
   if (Array.isArray(value)) {
     return value[0] ? String(value[0]) : '';
@@ -991,19 +1017,28 @@ function resetRelatedData() {
   actionPlanTotal.value = 0;
 }
 
-async function loadDetail() {
+async function loadDetail(options: { silent?: boolean; dedupeMs?: number } = {}) {
   loadError.value = '';
-  resetRelatedData();
+  if (!options.silent) {
+    resetRelatedData();
+  }
 
   if (!accountId.value) {
     account.value = null;
     return;
   }
 
-  accountLoading.value = true;
+  if (!options.silent || !account.value) {
+    accountLoading.value = true;
+  }
   try {
-    account.value = await appleAccountsApi.get(accountId.value);
-    await loadRelatedData(accountId.value);
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey('apple-account-detail', { id: accountId.value }),
+      fetcher: () => appleAccountsApi.get(accountId.value),
+      dedupeMs: options.dedupeMs ?? 1_200
+    });
+    account.value = result.data;
+    await loadRelatedData(accountId.value, options);
   } catch (error) {
     account.value = null;
     loadError.value = getAccountDetailErrorMessage(error);
@@ -1023,9 +1058,26 @@ function getAccountDetailErrorMessage(error: unknown) {
   return message || '加载 Apple ID 详情失败，请稍后重试。';
 }
 
-async function loadRelatedData(id: string) {
-  relatedLoading.value = true;
+async function loadRelatedData(id: string, options: { silent?: boolean; dedupeMs?: number } = {}) {
+  if (!options.silent) {
+    relatedLoading.value = true;
+  }
   try {
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey('apple-account-related', { id }),
+      fetcher: () =>
+        Promise.all([
+          appleAccountsApi.listTopups(id, { page: 1, pageSize: 8 }),
+          appleAccountsApi.listConsumptions(id, { page: 1, pageSize: 8 }),
+          appleAccountsApi.listBalanceAdjustments(id, { page: 1, pageSize: 8 }),
+          appleAccountsApi.listStatusChecks(id, { page: 1, pageSize: 8 }),
+          appleOrdersApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
+          appleActivationsApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
+          appleRenewalTasksApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
+          appleActionPlansApi.list({ page: 1, pageSize: 8, appleAccountId: id })
+        ]),
+      dedupeMs: options.dedupeMs ?? 1_200
+    });
     const [
       topupData,
       consumptionData,
@@ -1035,16 +1087,7 @@ async function loadRelatedData(id: string) {
       activationData,
       renewalTaskData,
       actionPlanData
-    ] = await Promise.all([
-      appleAccountsApi.listTopups(id, { page: 1, pageSize: 8 }),
-      appleAccountsApi.listConsumptions(id, { page: 1, pageSize: 8 }),
-      appleAccountsApi.listBalanceAdjustments(id, { page: 1, pageSize: 8 }),
-      appleAccountsApi.listStatusChecks(id, { page: 1, pageSize: 8 }),
-      appleOrdersApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
-      appleActivationsApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
-      appleRenewalTasksApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
-      appleActionPlansApi.list({ page: 1, pageSize: 8, appleAccountId: id })
-    ]);
+    ] = result.data;
 
     topups.value = topupData.items;
     consumptions.value = consumptionData.items;
@@ -1080,6 +1123,89 @@ function formatDate(value?: string | null, dateOnly = false) {
 
   const date = new Date(value);
   return dateOnly ? date.toLocaleDateString('zh-CN') : date.toLocaleString('zh-CN');
+}
+
+function parseDecimalInput(value?: string | null) {
+  const numberValue = Number(String(value ?? '').trim());
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function formatDecimalInput(value: number, maximumFractionDigits = 8) {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+
+  return Number(value.toFixed(maximumFractionDigits)).toString();
+}
+
+function divideDecimalInputs(numerator: string, denominator: string, maximumFractionDigits = 8) {
+  const denominatorValue = parseDecimalInput(denominator);
+
+  if (denominatorValue <= 0) {
+    return '0';
+  }
+
+  return formatDecimalInput(parseDecimalInput(numerator) / denominatorValue, maximumFractionDigits);
+}
+
+function multiplyDecimalInputs(left: string, right: string, maximumFractionDigits = 8) {
+  return formatDecimalInput(
+    parseDecimalInput(left) * parseDecimalInput(right),
+    maximumFractionDigits
+  );
+}
+
+function isLikelyLegacyRateCost(currentAccount: AppleAccount) {
+  const balance = parseDecimalInput(currentAccount.currentBalance);
+  const storedCost = parseDecimalInput(currentAccount.balanceCostAmount);
+  const averageCost = parseDecimalInput(currentAccount.averageCost);
+
+  return (
+    currentAccount.currency !== 'CNY' &&
+    balance > 1 &&
+    storedCost >= 1 &&
+    averageCost > 0 &&
+    averageCost < 1
+  );
+}
+
+function getAccountExchangeRateCost(currentAccount: AppleAccount) {
+  if (isLikelyLegacyRateCost(currentAccount)) {
+    return formatDecimalInput(parseDecimalInput(currentAccount.balanceCostAmount), 4);
+  }
+
+  return formatDecimalInput(parseDecimalInput(currentAccount.averageCost), 4);
+}
+
+function isLikelyLegacyTopupRateCost(topup: AppleBalanceTopup) {
+  const faceValue = parseDecimalInput(topup.faceValue);
+  const storedCost = parseDecimalInput(topup.costAmount);
+  const exchangeRateCost = faceValue > 0 ? storedCost / faceValue : 0;
+  const currency = account.value?.currency ?? '';
+
+  return (
+    currency !== 'CNY' &&
+    faceValue > 1 &&
+    storedCost >= 1 &&
+    exchangeRateCost > 0 &&
+    exchangeRateCost < 1
+  );
+}
+
+function getTopupExchangeRateCost(topup: AppleBalanceTopup) {
+  if (isLikelyLegacyTopupRateCost(topup)) {
+    return formatDecimalInput(parseDecimalInput(topup.costAmount), 4);
+  }
+
+  return divideDecimalInputs(topup.costAmount, topup.faceValue, 4);
+}
+
+function getTopupTotalCostAmountFromRecord(topup: AppleBalanceTopup) {
+  if (isLikelyLegacyTopupRateCost(topup)) {
+    return multiplyDecimalInputs(topup.faceValue, topup.costAmount, 4);
+  }
+
+  return topup.costAmount;
 }
 
 function getAccountStatusLabel(status: AppleAccount['status']) {

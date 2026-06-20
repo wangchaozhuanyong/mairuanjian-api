@@ -20,6 +20,8 @@ import type {
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -86,10 +88,12 @@ const CODE_ORDER_SORT_FIELDS: Record<
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+const CODE_ORDER_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class CodeOrdersService {
   private readonly lowInventoryThreshold = 5;
+  private readonly listCache = new TimedMemoryCache();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -99,47 +103,53 @@ export class CodeOrdersService {
   ) {}
 
   async list(query: ListCodeOrdersQuery) {
-    const pagination = getPagination(query);
-    const keyword = query.keyword?.trim();
-    const deliveryStatus = this.parseDeliveryStatus(query.deliveryStatus, false);
-    const refundStatus = this.parseRefundStatus(query.refundStatus, false);
-    const where: Prisma.CodePlatformOrderWhereInput = {
-      platformId: this.normalizeOptionalUuid(query.platformId, 'platformId') ?? undefined,
-      serviceId: this.normalizeOptionalUuid(query.serviceId, 'serviceId') ?? undefined,
-      deliveryStatus: deliveryStatus ?? undefined,
-      refundStatus: refundStatus ?? undefined,
-      OR: keyword
-        ? [
-            { externalOrderNo: { contains: keyword, mode: 'insensitive' } },
-            { buyerId: { contains: keyword, mode: 'insensitive' } },
-            { buyerNameMasked: { contains: keyword, mode: 'insensitive' } },
-            { itemId: { contains: keyword, mode: 'insensitive' } },
-            { skuId: { contains: keyword, mode: 'insensitive' } },
-            { itemTitle: { contains: keyword, mode: 'insensitive' } },
-            { skuName: { contains: keyword, mode: 'insensitive' } },
-            { service: { name: { contains: keyword, mode: 'insensitive' } } },
-            { platform: { name: { contains: keyword, mode: 'insensitive' } } }
-          ]
-        : undefined
-    };
+    return this.listCache.getOrSet(
+      getListCacheKey('code-orders', query),
+      CODE_ORDER_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const keyword = query.keyword?.trim();
+        const deliveryStatus = this.parseDeliveryStatus(query.deliveryStatus, false);
+        const refundStatus = this.parseRefundStatus(query.refundStatus, false);
+        const where: Prisma.CodePlatformOrderWhereInput = {
+          platformId: this.normalizeOptionalUuid(query.platformId, 'platformId') ?? undefined,
+          serviceId: this.normalizeOptionalUuid(query.serviceId, 'serviceId') ?? undefined,
+          deliveryStatus: deliveryStatus ?? undefined,
+          refundStatus: refundStatus ?? undefined,
+          OR: keyword
+            ? [
+                { externalOrderNo: { contains: keyword, mode: 'insensitive' } },
+                { buyerId: { contains: keyword, mode: 'insensitive' } },
+                { buyerNameMasked: { contains: keyword, mode: 'insensitive' } },
+                { itemId: { contains: keyword, mode: 'insensitive' } },
+                { skuId: { contains: keyword, mode: 'insensitive' } },
+                { itemTitle: { contains: keyword, mode: 'insensitive' } },
+                { skuName: { contains: keyword, mode: 'insensitive' } },
+                { service: { name: { contains: keyword, mode: 'insensitive' } } },
+                { platform: { name: { contains: keyword, mode: 'insensitive' } } }
+              ]
+            : undefined
+        };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.codePlatformOrder.findMany({
-        where,
-        include: this.getOrderInclude(),
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: this.buildOrderBy(query)
-      }),
-      this.prisma.codePlatformOrder.count({ where })
-    ]);
+        const [items, total] = await Promise.all([
+          this.prisma.codePlatformOrder.findMany({
+            where,
+            include: this.getOrderInclude(),
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: this.buildOrderBy(query)
+          }),
+          this.prisma.codePlatformOrder.count({ where })
+        ]);
 
-    return {
-      items: items.map((order) => this.toResponse(order)),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items: items.map((order) => this.toResponse(order)),
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   async get(id: string) {
@@ -199,6 +209,7 @@ export class CodeOrdersService {
       include: this.getOrderInclude()
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'code_order',
@@ -282,6 +293,7 @@ export class CodeOrdersService {
 
     const order = await this.findOrderOrThrow(existingOrder.id);
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'code_order',
@@ -476,6 +488,7 @@ export class CodeOrdersService {
 
     const deliveredOrder = await this.findOrderOrThrow(order.id);
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'code_order',
@@ -515,6 +528,7 @@ export class CodeOrdersService {
       include: this.getOrderInclude()
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'code_order',
@@ -553,7 +567,7 @@ export class CodeOrdersService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.codeDeliveryLog.findMany({
         where,
         include: this.getDeliveryLogInclude(),

@@ -3,7 +3,7 @@
     title="Apple ID 余额对账"
     group="Apple ID 业务"
     phase="Phase 3"
-    description="处理人工或自动查询发现的余额差异，支持只修余额、按当前均价修正和手动成本修正。"
+    description="处理人工或自动查询发现的余额差异，支持只修余额、按当前均价修正和手动总成本修正。"
   >
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
@@ -15,12 +15,12 @@
               text="这里不是给 ID 充值，而是当你实际查到的余额和系统里记的不一样时，用来把账改准。"
             />
           </h3>
-          <p>核对系统余额、实际余额和人民币成本，所有修正记录单独留痕并进入审计链路。</p>
+          <p>核对系统余额、实际余额和人民币总成本，所有修正记录单独留痕并进入审计链路。</p>
         </div>
         <div class="inline-actions">
           <StatusChip tone="blue" dot>账号 {{ total }}</StatusChip>
           <StatusChip tone="green">余额 {{ totalBalance }}</StatusChip>
-          <StatusChip tone="orange">成本 {{ totalCost }}</StatusChip>
+          <StatusChip tone="orange">总成本 {{ totalCost }}</StatusChip>
           <StatusChip tone="purple">均价 {{ averageCostPreview }}</StatusChip>
           <StatusChip tone="green">可对账 {{ reconcilableCount }}</StatusChip>
           <StatusChip :tone="lockedCount > 0 ? 'red' : 'green'" dot>
@@ -135,18 +135,19 @@
         <el-table-column
           v-if="isColumnVisible('balanceCostAmount')"
           prop="balanceCostAmount"
-          label="余额成本"
+          label="人民币总成本"
           width="130"
           sortable="custom"
         >
           <template #header>
             <span class="help-label">
-              余额成本
+              人民币总成本
               <FeatureHelp
-                text="系统认为这些剩余余额对应的人民币成本。修正余额时要注意别把成本也改乱。"
+                text="系统认为这些剩余余额一共对应多少人民币成本。这里不是填汇率，是总金额。"
               />
             </span>
           </template>
+          <template #default="{ row }">{{ getAccountTotalCostAmount(row) }}</template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('averageCost')"
@@ -158,9 +159,12 @@
           <template #header>
             <span class="help-label">
               平均成本
-              <FeatureHelp text="每 1 元 Apple 余额大概对应多少人民币成本。算订单利润会用到它。" />
+              <FeatureHelp
+                text="每 1 美元 Apple 余额大概对应多少人民币成本。算订单利润会用到它。"
+              />
             </span>
           </template>
+          <template #default="{ row }">{{ getAccountExchangeRateCostAmount(row) }}</template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('status')"
@@ -203,16 +207,12 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column label="操作" width="96" fixed="right">
           <template #default="{ row }">
-            <div class="table-action-group table-action-group--wrap">
-              <AppButton size="small" variant="soft" @click="openAdjustDialog(row)">
-                修正余额
+            <div class="account-operation-cell">
+              <AppButton size="small" variant="soft" @click="openReconciliationActions(row)">
+                操作
               </AppButton>
-              <AppButton size="small" variant="ghost" @click="openAdjustmentRecords(row)">
-                修正记录
-              </AppButton>
-              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
             </div>
           </template>
         </el-table-column>
@@ -236,12 +236,12 @@
               <strong>{{ account.currentBalance }}</strong>
             </div>
             <div>
-              <span>余额成本</span>
-              <strong>{{ account.balanceCostAmount }}</strong>
+              <span>人民币总成本</span>
+              <strong>{{ getAccountTotalCostAmount(account) }}</strong>
             </div>
             <div>
               <span>平均成本</span>
-              <strong>{{ account.averageCost }}</strong>
+              <strong>{{ getAccountExchangeRateCostAmount(account) }}</strong>
             </div>
           </div>
 
@@ -259,13 +259,9 @@
           </div>
 
           <div class="mobile-record-card__actions">
-            <AppButton size="small" variant="soft" @click="openAdjustDialog(account)">
-              修正余额
+            <AppButton size="small" variant="soft" @click="openReconciliationActions(account)">
+              打开操作
             </AppButton>
-            <AppButton size="small" variant="ghost" @click="openAdjustmentRecords(account)">
-              修正记录
-            </AppButton>
-            <AppButton size="small" variant="ghost" @click="openDetail(account)">详情</AppButton>
           </div>
         </article>
       </div>
@@ -291,17 +287,151 @@
       />
     </section>
 
-    <el-dialog
+    <AppDrawer
+      v-model="actionDrawerVisible"
+      :title="`余额对账操作 · ${selectedAccount?.appleIdMasked ?? ''}`"
+      description="先看账号当前余额和成本，再选择要修正、查记录或查看详情。"
+      eyebrow="余额对账"
+      size="520px"
+      :show-confirm="false"
+    >
+      <div v-if="selectedAccount" class="account-action-panel">
+        <div class="account-action-summary">
+          <div class="account-action-summary__head">
+            <div>
+              <span>当前账号</span>
+              <strong>{{ selectedAccount.appleIdMasked }}</strong>
+              <p>{{ selectedAccount.region }} / {{ selectedAccount.currency }}</p>
+            </div>
+            <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
+              {{ getStatusLabel(selectedAccount.status) }}
+            </StatusChip>
+          </div>
+
+          <div class="account-action-summary__metrics">
+            <div>
+              <span>系统余额</span>
+              <strong>{{ selectedAccount.currentBalance }}</strong>
+            </div>
+            <div>
+              <span>总成本</span>
+              <strong>{{ getAccountTotalCostAmount(selectedAccount) }}</strong>
+            </div>
+            <div>
+              <span>均价</span>
+              <strong>{{ getAccountExchangeRateCostAmount(selectedAccount) }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="account-action-section">
+          <span class="account-action-section__title">对账处理</span>
+          <div class="account-action-grid">
+            <button
+              type="button"
+              class="account-action-card account-action-card--orange"
+              @click="openAdjustDialog(selectedAccount)"
+            >
+              <strong>修正余额</strong>
+              <span>按实际查到的余额改准系统记录，同时处理人民币总成本。</span>
+            </button>
+            <button
+              type="button"
+              class="account-action-card"
+              @click="openAdjustmentRecords(selectedAccount)"
+            >
+              <strong>修正记录</strong>
+              <span>查看每一次余额和成本变化，方便追溯谁改了什么。</span>
+            </button>
+            <button type="button" class="account-action-card" @click="openDetail(selectedAccount)">
+              <strong>详情</strong>
+              <span>先在右侧快速看账号信息，需要完整内容再打开详情页。</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </AppDrawer>
+
+    <AppDrawer
+      v-model="detailDrawerVisible"
+      :title="`账号详情 · ${selectedAccount?.appleIdMasked ?? ''}`"
+      description="这里展示对账最常用的信息，需要完整业务历史时再打开详情页。"
+      eyebrow="详情预览"
+      size="620px"
+      confirm-text="打开完整详情页"
+      @confirm="openSelectedDetailPage"
+    >
+      <div v-if="selectedAccount" class="account-detail-drawer">
+        <div class="drawer-detail-grid">
+          <div>
+            <span>Apple ID</span>
+            <strong>{{ selectedAccount.appleIdMasked }}</strong>
+          </div>
+          <div>
+            <span>系统余额</span>
+            <strong>{{ selectedAccount.currentBalance }}</strong>
+          </div>
+          <div>
+            <span>人民币总成本</span>
+            <strong>{{ getAccountTotalCostAmount(selectedAccount) }}</strong>
+          </div>
+          <div>
+            <span>平均成本</span>
+            <strong>{{ getAccountExchangeRateCostAmount(selectedAccount) }}</strong>
+          </div>
+          <div>
+            <span>锁定状态</span>
+            <strong>{{ selectedAccount.isManuallyLocked ? '已锁定' : '正常' }}</strong>
+          </div>
+          <div>
+            <span>更新时间</span>
+            <strong>{{ formatDate(selectedAccount.updatedAt) }}</strong>
+          </div>
+        </div>
+
+        <div class="drawer-section">
+          <div class="drawer-section__title">账号信息</div>
+          <el-descriptions class="detail-descriptions" :column="1" border>
+            <el-descriptions-item label="地区/币种">
+              {{ selectedAccount.region }} / {{ selectedAccount.currency }}
+            </el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
+                {{ getStatusLabel(selectedAccount.status) }}
+              </StatusChip>
+            </el-descriptions-item>
+            <el-descriptions-item label="备注">
+              {{ selectedAccount.remark || '-' }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <div class="account-detail-actions">
+          <AppButton variant="soft" @click="openAdjustDialog(selectedAccount)">修正余额</AppButton>
+          <AppButton variant="ghost" @click="openAdjustmentRecords(selectedAccount)">
+            修正记录
+          </AppButton>
+        </div>
+      </div>
+    </AppDrawer>
+
+    <AppDrawer
       v-model="adjustDialogVisible"
       :title="`修正余额 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      width="min(720px, calc(100vw - 24px))"
+      description="确认实际余额、成本处理方式和修正原因，保存后会写入审计记录。"
+      eyebrow="余额修正"
+      size="620px"
+      confirm-text="保存修正"
+      :confirm-loading="saving"
+      @confirm="saveAdjustment"
     >
       <div class="apple-core-alert apple-core-alert--orange">
         <StatusChip tone="orange">审计</StatusChip>
         <div>
           <strong>余额修正会写入审计日志</strong>
           <p>
-            该操作会更新 Apple ID 当前余额、余额成本和移动平均成本，请只在人工或自动查询确认后使用。
+            该操作会更新 Apple ID
+            当前余额、人民币总成本和移动平均成本，请只在人工或自动查询确认后使用。
           </p>
         </div>
       </div>
@@ -312,12 +442,14 @@
           <strong>{{ selectedAccount?.currentBalance ?? '-' }}</strong>
         </div>
         <div>
-          <span>原成本</span>
-          <strong>{{ selectedAccount?.balanceCostAmount ?? '-' }}</strong>
+          <span>原总成本</span>
+          <strong>{{ selectedAccount ? getAccountTotalCostAmount(selectedAccount) : '-' }}</strong>
         </div>
         <div>
           <span>原均价</span>
-          <strong>{{ selectedAccount?.averageCost ?? '-' }}</strong>
+          <strong>{{
+            selectedAccount ? getAccountExchangeRateCostAmount(selectedAccount) : '-'
+          }}</strong>
         </div>
       </div>
 
@@ -342,10 +474,10 @@
         </div>
         <el-form-item
           v-if="form.costAdjustMethod === 'manual'"
-          label="新余额成本"
+          label="新人民币总成本"
           prop="newCostRmb"
         >
-          <el-input v-model.trim="form.newCostRmb" placeholder="手动确认后的人民币成本" />
+          <el-input v-model.trim="form.newCostRmb" placeholder="手动确认后的人民币总成本" />
         </el-form-item>
         <el-form-item label="修正原因" prop="reason">
           <el-input
@@ -371,14 +503,7 @@
           <strong>{{ previewCostChange }}</strong>
         </div>
       </div>
-
-      <template #footer>
-        <AppButton @click="adjustDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="saving" @click="saveAdjustment">
-          保存修正
-        </AppButton>
-      </template>
-    </el-dialog>
+    </AppDrawer>
 
     <AppDrawer
       v-model="recordsDrawerVisible"
@@ -433,11 +558,11 @@
             </div>
             <div class="mobile-record-card__stats">
               <div>
-                <span>原成本</span>
+                <span>原总成本</span>
                 <strong>{{ record.oldCostRmb }}</strong>
               </div>
               <div>
-                <span>新成本</span>
+                <span>新总成本</span>
                 <strong>{{ record.newCostRmb }}</strong>
               </div>
               <div>
@@ -481,7 +606,7 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { appleAccountsApi, userTableViewsApi, type AppleAccountQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -491,20 +616,23 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleAccount,
   AppleBalanceAdjustment,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 const router = useRouter();
 const tableKey = 'apple_balance_reconciliation';
+const ACCOUNT_SCOPE = 'apple-accounts';
 const accountColumnOptions = [
   { label: 'Apple ID', value: 'appleId', required: true },
   { label: '地区/币种', value: 'region' },
   { label: '系统余额', value: 'currentBalance' },
-  { label: '余额成本', value: 'balanceCostAmount' },
+  { label: '人民币总成本', value: 'balanceCostAmount' },
   { label: '平均成本', value: 'averageCost' },
   { label: '状态', value: 'status' },
   { label: '锁定', value: 'isManuallyLocked' },
@@ -529,8 +657,10 @@ const accountSortFieldMap: Record<string, string> = {
 const loading = ref(false);
 const saving = ref(false);
 const recordsLoading = ref(false);
+const actionDrawerVisible = ref(false);
 const adjustDialogVisible = ref(false);
 const recordsDrawerVisible = ref(false);
+const detailDrawerVisible = ref(false);
 const selectedAccount = ref<AppleAccount | null>(null);
 const formRef = ref<FormInstance>();
 const accounts = ref<AppleAccount[]>([]);
@@ -593,16 +723,14 @@ const statusOptions: Array<{
 const costAdjustMethodLabels: Record<AppleBalanceAdjustment['costAdjustMethod'], string> = {
   none: '只修余额',
   current_avg: '按当前均价',
-  manual: '手动成本'
+  manual: '手动总成本'
 };
 
 const totalBalance = computed(() =>
   accounts.value.reduce((sum, account) => sum + Number(account.currentBalance || 0), 0).toFixed(2)
 );
 const totalCost = computed(() =>
-  accounts.value
-    .reduce((sum, account) => sum + Number(account.balanceCostAmount || 0), 0)
-    .toFixed(2)
+  accounts.value.reduce((sum, account) => sum + getAccountTotalCostNumber(account), 0).toFixed(2)
 );
 const lockedCount = computed(
   () => accounts.value.filter((account) => account.isManuallyLocked).length
@@ -645,10 +773,10 @@ const previewDifference = computed(() => {
 });
 const previewNewCost = computed(() => {
   if (!selectedAccount.value || !form.newBalance) return '-';
-  const oldCost = Number(selectedAccount.value.balanceCostAmount);
+  const oldCost = getAccountTotalCostNumber(selectedAccount.value);
   const oldBalance = Number(selectedAccount.value.currentBalance);
   const newBalance = Number(form.newBalance);
-  const averageCost = Number(selectedAccount.value.averageCost);
+  const averageCost = getAccountExchangeRateCostNumber(selectedAccount.value);
 
   if (Number.isNaN(newBalance)) return '-';
   if (form.costAdjustMethod === 'none') return oldCost.toFixed(4);
@@ -659,17 +787,72 @@ const previewNewCost = computed(() => {
 });
 const previewCostChange = computed(() => {
   if (!selectedAccount.value || previewNewCost.value === '-') return '-';
-  return (Number(previewNewCost.value) - Number(selectedAccount.value.balanceCostAmount)).toFixed(
+  return (Number(previewNewCost.value) - getAccountTotalCostNumber(selectedAccount.value)).toFixed(
     4
   );
 });
 
+function parseDecimalInput(value?: string | number | null) {
+  const numberValue = Number(String(value ?? '').trim());
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function isLikelyLegacyRateCost(account: AppleAccount) {
+  const balance = parseDecimalInput(account.currentBalance);
+  const storedCost = parseDecimalInput(account.balanceCostAmount);
+  const averageCost = parseDecimalInput(account.averageCost);
+
+  return (
+    account.currency !== 'CNY' &&
+    balance > 1 &&
+    storedCost >= 1 &&
+    averageCost > 0 &&
+    averageCost < 1
+  );
+}
+
+function getAccountExchangeRateCostNumber(account: AppleAccount) {
+  if (isLikelyLegacyRateCost(account)) {
+    return parseDecimalInput(account.balanceCostAmount);
+  }
+
+  return parseDecimalInput(account.averageCost);
+}
+
+function getAccountExchangeRateCostAmount(account: AppleAccount) {
+  return getAccountExchangeRateCostNumber(account).toFixed(4);
+}
+
+function getAccountTotalCostNumber(account: AppleAccount) {
+  if (isLikelyLegacyRateCost(account)) {
+    return parseDecimalInput(account.currentBalance) * parseDecimalInput(account.balanceCostAmount);
+  }
+
+  return parseDecimalInput(account.balanceCostAmount);
+}
+
+function getAccountTotalCostAmount(account: AppleAccount) {
+  return getAccountTotalCostNumber(account).toFixed(4);
+}
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated([ACCOUNT_SCOPE], () => {
+  void loadAccounts({ silent: true, dedupeMs: 0 });
+});
+
 onMounted(initializePage);
 
-async function loadAccounts() {
-  loading.value = true;
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
+});
+
+async function loadAccounts(
+  options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
+) {
+  if (!options.silent || !accounts.value.length) {
+    loading.value = true;
+  }
   try {
-    const data = await appleAccountsApi.list({
+    const params = {
       ...query,
       keyword: query.keyword || undefined,
       status: query.status || undefined,
@@ -677,9 +860,15 @@ async function loadAccounts() {
       locked: query.locked || undefined,
       sortBy: query.sortBy || undefined,
       sortOrder: query.sortOrder || undefined
+    };
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey(ACCOUNT_SCOPE, params),
+      fetcher: () => appleAccountsApi.list(params),
+      force: options.force ?? true,
+      dedupeMs: options.dedupeMs ?? 1_200
     });
-    accounts.value = data.items;
-    total.value = data.total;
+    accounts.value = result.data.items;
+    total.value = result.data.total;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 失败');
   } finally {
@@ -840,12 +1029,31 @@ function applySortConfig(value: Record<string, unknown>) {
   query.sortOrder = order;
 }
 
-function openAdjustDialog(account: AppleAccount) {
+function closeActionSurfaces() {
+  actionDrawerVisible.value = false;
+  detailDrawerVisible.value = false;
+}
+
+function openReconciliationActions(account: AppleAccount) {
   selectedAccount.value = account;
-  form.newBalance = account.currentBalance;
+  detailDrawerVisible.value = false;
+  actionDrawerVisible.value = true;
+}
+
+function openAdjustDialog(account?: AppleAccount) {
+  if (account) {
+    selectedAccount.value = account;
+  }
+
+  if (!selectedAccount.value) {
+    return;
+  }
+
+  form.newBalance = selectedAccount.value.currentBalance;
   form.costAdjustMethod = 'current_avg';
-  form.newCostRmb = account.balanceCostAmount;
+  form.newCostRmb = getAccountTotalCostAmount(selectedAccount.value);
   form.reason = '';
+  closeActionSurfaces();
   adjustDialogVisible.value = true;
 }
 
@@ -854,7 +1062,16 @@ async function saveAdjustment() {
   if (!valid || !selectedAccount.value) return;
 
   if (form.costAdjustMethod === 'manual' && !form.newCostRmb) {
-    ElMessage.error('手动成本修正需要填写新余额成本');
+    ElMessage.error('手动成本修正需要填写新人民币总成本');
+    return;
+  }
+
+  const shouldNormalizeLegacyCost =
+    form.costAdjustMethod === 'current_avg' && isLikelyLegacyRateCost(selectedAccount.value);
+  const newCostRmb = shouldNormalizeLegacyCost ? previewNewCost.value : form.newCostRmb;
+
+  if (shouldNormalizeLegacyCost && newCostRmb === '-') {
+    ElMessage.error('当前账号成本口径需要先修正，请填写新余额后再保存');
     return;
   }
 
@@ -862,8 +1079,9 @@ async function saveAdjustment() {
   try {
     await appleAccountsApi.createBalanceAdjustment(selectedAccount.value.id, {
       newBalance: form.newBalance,
-      costAdjustMethod: form.costAdjustMethod,
-      newCostRmb: form.costAdjustMethod === 'manual' ? form.newCostRmb : null,
+      costAdjustMethod: shouldNormalizeLegacyCost ? 'manual' : form.costAdjustMethod,
+      newCostRmb:
+        form.costAdjustMethod === 'manual' || shouldNormalizeLegacyCost ? newCostRmb : null,
       reason: form.reason
     });
     ElMessage.success('余额修正已保存');
@@ -877,9 +1095,17 @@ async function saveAdjustment() {
   }
 }
 
-async function openAdjustmentRecords(account: AppleAccount) {
-  selectedAccount.value = account;
+async function openAdjustmentRecords(account?: AppleAccount) {
+  if (account) {
+    selectedAccount.value = account;
+  }
+
+  if (!selectedAccount.value) {
+    return;
+  }
+
   recordsQuery.page = 1;
+  closeActionSurfaces();
   recordsDrawerVisible.value = true;
   await loadAdjustmentRecords();
 }
@@ -903,9 +1129,19 @@ async function loadAdjustmentRecords() {
 }
 
 function openDetail(account: AppleAccount) {
+  selectedAccount.value = account;
+  actionDrawerVisible.value = false;
+  detailDrawerVisible.value = true;
+}
+
+function openSelectedDetailPage() {
+  if (!selectedAccount.value) {
+    return;
+  }
+
   router.push({
     path: '/apple/accounts/detail',
-    query: { id: account.id }
+    query: { id: selectedAccount.value.id }
   });
 }
 
@@ -932,6 +1168,6 @@ function getCostAdjustMethodLabel(method: AppleBalanceAdjustment['costAdjustMeth
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadAccounts();
+  await loadAccounts({ force: false });
 }
 </script>

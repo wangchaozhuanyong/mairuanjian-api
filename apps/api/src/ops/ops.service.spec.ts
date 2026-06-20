@@ -112,7 +112,14 @@ describe('OpsService', () => {
           type: 'taobao',
           syncEnabled: true,
           deliveryEnabled: false
-        })
+        }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            type: 'taobao',
+            syncEnabled: true,
+            deliveryEnabled: false
+          }
+        ])
       },
       telegramConfig: {
         count: jest.fn().mockResolvedValue(0)
@@ -122,6 +129,7 @@ describe('OpsService', () => {
       },
       systemParameter: {
         findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({
           id: '77777777-7777-4777-8777-777777777777',
           key: 'platform_oauth_state_taobao_hash-state-123',
@@ -489,6 +497,7 @@ describe('OpsService', () => {
     jest.spyOn(prisma.sourcePlatform, 'findFirst').mockResolvedValue(null);
 
     const result = await service.platformStatus('taobao');
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(result.authorizationStatus).toBe('not_configured');
     expect(notificationsService.triggerEvent).toHaveBeenCalledWith(
@@ -519,6 +528,7 @@ describe('OpsService', () => {
     });
 
     const result = await service.platformStatus('taobao');
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(result.authorizationStatus).toBe('expiring');
     expect(result.tokenExpiresAt).toBe('2026-06-22T00:00:00.000Z');

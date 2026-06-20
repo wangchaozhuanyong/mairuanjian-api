@@ -14,6 +14,7 @@ import type {
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -51,6 +52,114 @@ interface ListLogsQuery extends PaginationQuery {
   sortBy?: string;
   sortOrder?: string;
 }
+
+type NavBadgeSectionKey =
+  | 'workspace'
+  | 'common'
+  | 'id-business'
+  | 'codes'
+  | 'security'
+  | 'data-audit'
+  | 'ops-platform'
+  | 'system-config';
+
+const NAV_BADGE_SECTION_LABELS: Record<NavBadgeSectionKey, string> = {
+  workspace: '工作台',
+  common: '客户与公共资料',
+  'id-business': 'ID 业务',
+  codes: '兑换码业务',
+  security: '安全与权限',
+  'data-audit': '数据与审计',
+  'ops-platform': '运维与平台',
+  'system-config': '系统配置'
+};
+
+const NAV_BADGE_MODULE_SECTION_MAP: Record<string, NavBadgeSectionKey> = {
+  attachment: 'common',
+  customer: 'common',
+  customers: 'common',
+  message_template: 'common',
+  notification: 'common',
+  source_platform: 'common',
+
+  apple: 'id-business',
+  apple_account: 'id-business',
+  apple_action_plan: 'id-business',
+  apple_automation_task: 'id-business',
+  apple_balance: 'id-business',
+  apple_order: 'id-business',
+  apple_service: 'id-business',
+
+  code: 'codes',
+  code_after_sale: 'codes',
+  code_order: 'codes',
+  code_platform_mapping: 'codes',
+  code_service: 'codes',
+  redeem_code: 'codes',
+
+  auth: 'security',
+  security: 'security',
+
+  audit_log: 'data-audit',
+  data: 'data-audit',
+
+  ops: 'ops-platform',
+  platform: 'ops-platform',
+
+  maintenance: 'system-config',
+  system: 'system-config',
+  table_view: 'system-config'
+};
+
+const NAV_BADGE_SECTION_MODULES = Object.entries(NAV_BADGE_MODULE_SECTION_MAP).reduce(
+  (sections, [module, section]) => {
+    sections[section].push(module);
+    return sections;
+  },
+  {
+    workspace: [],
+    common: [],
+    'id-business': [],
+    codes: [],
+    security: [],
+    'data-audit': [],
+    'ops-platform': [],
+    'system-config': []
+  } as Record<NavBadgeSectionKey, string[]>
+);
+
+const NAV_BADGE_ACTIONABLE_STATUSES = new Set<NotificationLogStatus>(['pending', 'failed']);
+const NOTIFICATION_OVERVIEW_CACHE_TTL_MS = 120_000;
+const NOTIFICATION_NAV_BADGE_CACHE_TTL_MS = 120_000;
+
+type NavItemBadgeTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+
+interface NavItemBadgeInput {
+  itemKey: string;
+  label: string;
+  count: number;
+  tone?: NavItemBadgeTone;
+  description?: string;
+}
+
+interface NavBadgeAggregateRow {
+  sectionKey: NavBadgeSectionKey;
+  status: NotificationLogStatus;
+  count: bigint | number | string;
+}
+
+const OPEN_RENEWAL_TASK_STATUSES = [
+  'pending',
+  'processing',
+  'waiting_customer',
+  'waiting_payment',
+  'waiting_auto_renewal',
+  'waiting_manual_verify',
+  'failed',
+  'abnormal'
+] as const;
+
+const OPEN_DATA_JOB_STATUSES = ['pending', 'running', 'failed'] as const;
 
 const NOTIFICATION_RULE_SORT_FIELDS: Record<
   string,
@@ -109,6 +218,10 @@ export interface TriggerNotificationEventInput {
 
 @Injectable()
 export class NotificationsService {
+  private readonly responseCache = new TimedMemoryCache();
+  private defaultChannelsEnsured = false;
+  private defaultChannelsEnsurePromise?: Promise<void>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -116,35 +229,424 @@ export class NotificationsService {
   ) {}
 
   async overview(operator?: AuthenticatedUser) {
-    await this.ensureDefaultChannels();
+    return this.responseCache.getOrSet(
+      this.getOperatorCacheKey('overview', operator),
+      NOTIFICATION_OVERVIEW_CACHE_TTL_MS,
+      async () => {
+        this.ensureDefaultChannelsInBackground();
 
-    const [enabledRuleCount, failedLogCount, unreadCount, telegramCount, recentLogs] =
-      await this.prisma.$transaction([
-        this.prisma.notificationRule.count({
-          where: { deletedAt: null, enabled: true }
-        }),
-        this.prisma.notificationLog.count({
-          where: { status: 'failed' }
-        }),
-        this.prisma.notificationLog.count({
-          where: this.getInAppWhere({ unread: 'true' }, operator)
-        }),
-        this.prisma.telegramConfig.count({
-          where: { deletedAt: null, enabled: true }
-        }),
-        this.prisma.notificationLog.findMany({
-          take: 8,
-          orderBy: { createdAt: 'desc' }
-        })
-      ]);
+        const [enabledRuleCount, failedLogCount, unreadCount, telegramCount, recentLogs] =
+          await Promise.all([
+            this.prisma.notificationRule.count({
+              where: { deletedAt: null, enabled: true }
+            }),
+            this.prisma.notificationLog.count({
+              where: { status: 'failed' }
+            }),
+            this.prisma.notificationLog.count({
+              where: this.getInAppWhere({ unread: 'true' }, operator)
+            }),
+            this.prisma.telegramConfig.count({
+              where: { deletedAt: null, enabled: true }
+            }),
+            this.prisma.notificationLog.findMany({
+              take: 8,
+              orderBy: { createdAt: 'desc' }
+            })
+          ]);
 
-    return {
-      enabledRuleCount,
-      failedLogCount,
-      unreadCount,
-      telegramCount,
-      recentLogs: recentLogs.map((log) => this.toLogResponse(log))
-    };
+        return {
+          enabledRuleCount,
+          failedLogCount,
+          unreadCount,
+          telegramCount,
+          recentLogs: recentLogs.map((log) => this.toLogResponse(log))
+        };
+      }
+    );
+  }
+
+  async navBadges(operator?: AuthenticatedUser) {
+    return this.responseCache.getOrSet(
+      this.getOperatorCacheKey('nav-badges', operator),
+      NOTIFICATION_NAV_BADGE_CACHE_TTL_MS,
+      async () => {
+        const rows = await this.getNavBadgeAggregateRows(operator);
+
+        const itemMap = new Map(
+          Object.entries(NAV_BADGE_SECTION_LABELS).map(([sectionKey, label]) => [
+            sectionKey,
+            {
+              sectionKey,
+              label,
+              count: 0,
+              todoCount: 0,
+              failedCount: 0
+            }
+          ])
+        );
+
+        for (const row of rows) {
+          const item = itemMap.get(row.sectionKey);
+
+          if (!item) {
+            continue;
+          }
+
+          const count = Number(row.count);
+          item.count += count;
+
+          if (NAV_BADGE_ACTIONABLE_STATUSES.has(row.status)) {
+            item.todoCount += count;
+          }
+
+          if (row.status === 'failed') {
+            item.failedCount += count;
+          }
+        }
+
+        const items = [...itemMap.values()].filter((item) => item.count > 0);
+
+        return {
+          totalCount: items.reduce((sum, item) => sum + item.count, 0),
+          todoCount: items.reduce((sum, item) => sum + item.todoCount, 0),
+          failedCount: items.reduce((sum, item) => sum + item.failedCount, 0),
+          items,
+          generatedAt: new Date().toISOString()
+        };
+      }
+    );
+  }
+
+  async navItemBadges(operator?: AuthenticatedUser) {
+    return this.responseCache.getOrSet(
+      this.getOperatorCacheKey('nav-item-badges', operator),
+      NOTIFICATION_NAV_BADGE_CACHE_TTL_MS,
+      async () => {
+        const now = new Date();
+        const recentSince = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const openRenewalWhere: Prisma.RenewalTaskWhereInput = {
+          status: { in: [...OPEN_RENEWAL_TASK_STATUSES] }
+        };
+        const pendingOrFailedNotificationWhere: Prisma.NotificationLogWhereInput = {
+          ...this.getInAppWhere({ unread: 'true' }, operator),
+          status: { in: ['pending', 'sent', 'failed'] }
+        };
+
+        const [
+          renewal,
+          renewalCancel,
+          renewalTopup,
+          renewalWaitingAuto,
+          actionPlans,
+          appleAccounts,
+          appleOrders,
+          appleAutomation,
+          codeOrders,
+          deliveryExceptions,
+          taobaoOrders,
+          xianyuOrders,
+          afterSales,
+          notifications,
+          sensitiveApprovals,
+          backupJobs,
+          restoreJobs,
+          importJobs,
+          exportJobs,
+          cleanupJobs,
+          duplicateMergeJobs,
+          queueIncidents,
+          cronIncidents,
+          errorIncidents,
+          healthIncidents,
+          platformIncidents,
+          launchChecklistParameter
+        ] = await Promise.all([
+          this.prisma.renewalTask.count({ where: openRenewalWhere }),
+          this.prisma.renewalTask.count({
+            where: {
+              ...openRenewalWhere,
+              OR: [
+                { taskType: 'cancel_subscription' },
+                { customerDecision: 'confirmed_no_renewal' }
+              ]
+            }
+          }),
+          this.prisma.renewalTask.count({
+            where: {
+              ...openRenewalWhere,
+              taskType: 'topup_apple_balance'
+            }
+          }),
+          this.prisma.renewalTask.count({
+            where: {
+              ...openRenewalWhere,
+              OR: [
+                { taskType: { in: ['wait_auto_renewal', 'check_renewal_result'] } },
+                { status: 'waiting_auto_renewal' }
+              ]
+            }
+          }),
+          this.prisma.appleAccountActionPlan.count({
+            where: { status: { in: ['pending', 'processing', 'abnormal'] } }
+          }),
+          this.prisma.appleAccount.count({
+            where: {
+              deletedAt: null,
+              OR: [
+                { status: { in: ['need_verify', 'locked', 'password_error', 'risk'] } },
+                { isManuallyLocked: true }
+              ]
+            }
+          }),
+          this.prisma.appleOrder.count({
+            where: { status: { in: ['pending', 'abnormal'] } }
+          }),
+          this.prisma.automationTask.count({
+            where: {
+              OR: [
+                { manualRequired: true },
+                { status: { in: ['failed', 'need_review', 'waiting_manual_verify'] } }
+              ]
+            }
+          }),
+          this.prisma.codePlatformOrder.count({
+            where: { deliveryStatus: 'pending' }
+          }),
+          this.prisma.codePlatformOrder.count({
+            where: { deliveryStatus: { in: ['failed', 'manual'] } }
+          }),
+          this.prisma.codePlatformOrder.count({
+            where: {
+              platform: { type: 'taobao' },
+              deliveryStatus: { in: ['pending', 'failed', 'manual'] }
+            }
+          }),
+          this.prisma.codePlatformOrder.count({
+            where: {
+              platform: { type: 'xianyu' },
+              deliveryStatus: { in: ['pending', 'failed', 'manual'] }
+            }
+          }),
+          this.prisma.codeAfterSale.count({
+            where: { status: 'pending' }
+          }),
+          this.prisma.notificationLog.count({
+            where: pendingOrFailedNotificationWhere
+          }),
+          this.prisma.sensitiveAccessApproval.count({
+            where: {
+              status: 'pending',
+              OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
+            }
+          }),
+          this.prisma.backupJob.count({ where: { status: { in: [...OPEN_DATA_JOB_STATUSES] } } }),
+          this.prisma.restoreJob.count({ where: { status: { in: [...OPEN_DATA_JOB_STATUSES] } } }),
+          this.prisma.dataImportJob.count({
+            where: { status: { in: [...OPEN_DATA_JOB_STATUSES] } }
+          }),
+          this.prisma.dataExportJob.count({
+            where: { status: { in: [...OPEN_DATA_JOB_STATUSES] } }
+          }),
+          this.prisma.dataCleanupJob.count({
+            where: { status: { in: [...OPEN_DATA_JOB_STATUSES] } }
+          }),
+          this.prisma.duplicateMergeJob.count({
+            where: { status: { in: [...OPEN_DATA_JOB_STATUSES] } }
+          }),
+          this.prisma.queueStatusLog.count({
+            where: {
+              status: { in: ['warning', 'error', 'critical'] },
+              checkedAt: { gte: recentSince }
+            }
+          }),
+          this.prisma.cronJobLog.count({
+            where: { status: 'failed', createdAt: { gte: recentSince } }
+          }),
+          this.prisma.errorLog.count({
+            where: { level: { in: ['error', 'fatal'] }, occurredAt: { gte: recentSince } }
+          }),
+          this.prisma.systemHealthSnapshot.count({
+            where: {
+              checkedAt: { gte: recentSince },
+              OR: [
+                { apiStatus: { in: ['warning', 'error', 'critical'] } },
+                { dbStatus: { in: ['warning', 'error', 'critical'] } },
+                { redisStatus: { in: ['warning', 'error', 'critical'] } },
+                { storageStatus: { in: ['warning', 'error', 'critical'] } },
+                { queueStatus: { in: ['warning', 'error', 'critical'] } },
+                { workerStatus: { in: ['warning', 'error', 'critical'] } }
+              ]
+            }
+          }),
+          this.prisma.platformSyncLog.count({
+            where: { status: 'failed', createdAt: { gte: recentSince } }
+          }),
+          this.prisma.systemParameter.findUnique({
+            where: { key: 'maintenance_launch_checklist' }
+          })
+        ]);
+
+        const dataCenter = backupJobs + restoreJobs + cleanupJobs + duplicateMergeJobs;
+        const opsMonitor = queueIncidents + cronIncidents + errorIncidents + healthIncidents;
+        const launchAudit = this.countLaunchChecklistOpenItems(launchChecklistParameter?.value);
+        const items = [
+          this.createNavItemBadge({
+            itemKey: 'renewal',
+            label: '续费工作台',
+            count: renewal,
+            tone: renewal > 0 ? 'orange' : 'neutral',
+            description: '未完成续费任务'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'renewal-cancel',
+            label: '待取消订阅',
+            count: renewalCancel,
+            tone: renewalCancel > 0 ? 'red' : 'neutral',
+            description: '需要取消订阅的任务'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'renewal-topup',
+            label: '待充值续费',
+            count: renewalTopup,
+            tone: renewalTopup > 0 ? 'orange' : 'neutral',
+            description: '需要充值后处理的续费任务'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'renewal-waiting-auto',
+            label: '等待自动续费',
+            count: renewalWaitingAuto,
+            tone: renewalWaitingAuto > 0 ? 'orange' : 'neutral',
+            description: '等待自动扣费或续费结果检查'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'action-plans',
+            label: 'ID 操作计划',
+            count: actionPlans,
+            tone: actionPlans > 0 ? 'orange' : 'neutral',
+            description: '未完成或异常的 ID 操作计划'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'launch-audit',
+            label: '上线检查清单',
+            count: launchAudit,
+            tone: launchAudit > 0 ? 'red' : 'neutral',
+            description: '未通过、阻塞或待确认的上线检查项'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'apple-list',
+            label: 'Apple ID 管理',
+            count: appleAccounts,
+            tone: appleAccounts > 0 ? 'red' : 'neutral',
+            description: '需要验证、锁定、密码错误或风险状态的 Apple ID'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'apple-orders',
+            label: 'ID 订单管理',
+            count: appleOrders,
+            tone: appleOrders > 0 ? 'red' : 'neutral',
+            description: '待处理或异常的 Apple ID 订单'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'apple-automation',
+            label: 'ID 自动化任务',
+            count: appleAutomation,
+            tone: appleAutomation > 0 ? 'red' : 'neutral',
+            description: '失败、需复核或等待人工验证的自动化任务'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'code-orders',
+            label: '兑换码订单',
+            count: codeOrders,
+            tone: codeOrders > 0 ? 'orange' : 'neutral',
+            description: '待发货的兑换码订单'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'delivery-exceptions',
+            label: '发货异常',
+            count: deliveryExceptions,
+            tone: deliveryExceptions > 0 ? 'red' : 'neutral',
+            description: '发货失败或已转人工的兑换码订单'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'taobao-orders',
+            label: '淘宝订单',
+            count: taobaoOrders,
+            tone: taobaoOrders > 0 ? 'orange' : 'neutral',
+            description: '淘宝待发货、失败或人工处理订单'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'xianyu-orders',
+            label: '闲鱼订单',
+            count: xianyuOrders,
+            tone: xianyuOrders > 0 ? 'orange' : 'neutral',
+            description: '闲鱼待发货、失败或人工处理订单'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'after-sales',
+            label: '售后补发',
+            count: afterSales,
+            tone: afterSales > 0 ? 'red' : 'neutral',
+            description: '待处理售后补发'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'notifications',
+            label: '通知中心',
+            count: notifications,
+            tone: notifications > 0 ? 'orange' : 'neutral',
+            description: '未读、待发送或失败通知'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'sensitive-approvals',
+            label: '敏感审批',
+            count: sensitiveApprovals,
+            tone: sensitiveApprovals > 0 ? 'red' : 'neutral',
+            description: '待审批敏感信息查看请求'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'data-center',
+            label: '数据中心',
+            count: dataCenter,
+            tone: dataCenter > 0 ? 'orange' : 'neutral',
+            description: '备份、恢复、清理或合并任务待处理'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'data-imports',
+            label: '数据导入',
+            count: importJobs,
+            tone: importJobs > 0 ? 'orange' : 'neutral',
+            description: '导入任务待处理、执行中或失败'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'data-exports',
+            label: '数据导出',
+            count: exportJobs,
+            tone: exportJobs > 0 ? 'orange' : 'neutral',
+            description: '导出任务待处理、执行中或失败'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'ops-monitor',
+            label: '运维监控',
+            count: opsMonitor,
+            tone: opsMonitor > 0 ? 'red' : 'neutral',
+            description: '近 24 小时队列、定时任务、错误或健康检查异常'
+          }),
+          this.createNavItemBadge({
+            itemKey: 'platform-status',
+            label: '平台接口状态',
+            count: platformIncidents,
+            tone: platformIncidents > 0 ? 'red' : 'neutral',
+            description: '近 24 小时平台同步失败'
+          })
+        ].filter((item) => item.count > 0);
+
+        return {
+          totalCount: items.reduce((sum, item) => sum + item.count, 0),
+          items,
+          generatedAt: new Date().toISOString()
+        };
+      }
+    );
   }
 
   async listInApp(query: ListLogsQuery, operator?: AuthenticatedUser) {
@@ -183,6 +685,7 @@ export class NotificationsService {
       }
     });
 
+    this.responseCache.clear();
     return this.toLogResponse(updated);
   }
 
@@ -196,6 +699,7 @@ export class NotificationsService {
       }
     });
 
+    this.responseCache.clear();
     return {
       updatedCount: result.count
     };
@@ -1111,6 +1615,7 @@ export class NotificationsService {
         }
       });
 
+      this.responseCache.clear();
       await this.auditLogsService.create({
         userId: operator?.id,
         module: 'notification',
@@ -1133,6 +1638,7 @@ export class NotificationsService {
         }
       });
 
+      this.responseCache.clear();
       return this.toLogResponse(updated);
     }
   }
@@ -1180,7 +1686,7 @@ export class NotificationsService {
     errorMessage?: string | null;
     payload?: Record<string, unknown> | Prisma.InputJsonValue | null;
   }) {
-    return this.prisma.notificationLog.create({
+    const log = await this.prisma.notificationLog.create({
       data: {
         ruleId: input.ruleId,
         eventCode: input.eventCode,
@@ -1196,6 +1702,13 @@ export class NotificationsService {
         sentAt: input.status === 'sent' ? new Date() : undefined
       }
     });
+
+    this.responseCache.clear();
+    return log;
+  }
+
+  private getOperatorCacheKey(namespace: string, operator?: AuthenticatedUser) {
+    return `${namespace}:${operator?.id ?? 'anonymous'}`;
   }
 
   private getInAppWhere(query: ListLogsQuery, operator?: AuthenticatedUser) {
@@ -1229,6 +1742,121 @@ export class NotificationsService {
     } satisfies Prisma.NotificationLogWhereInput;
   }
 
+  private getNavBadgeAggregateRows(operator?: AuthenticatedUser) {
+    if (typeof this.prisma.$queryRaw !== 'function') {
+      return this.getNavBadgeAggregateRowsWithPrisma(operator);
+    }
+
+    const recipientFilter = operator?.id
+      ? PrismaNamespace.sql`(recipient_user_id = ${operator.id}::uuid OR recipient_user_id IS NULL)`
+      : PrismaNamespace.sql`recipient_user_id IS NULL`;
+
+    return this.prisma.$queryRaw<NavBadgeAggregateRow[]>`
+      SELECT
+        CASE
+          WHEN event_code LIKE 'apple.renewal.%' THEN 'workspace'
+          WHEN module IN (${PrismaNamespace.join(NAV_BADGE_SECTION_MODULES.common)}) THEN 'common'
+          WHEN module IN (${PrismaNamespace.join(NAV_BADGE_SECTION_MODULES['id-business'])}) THEN 'id-business'
+          WHEN module IN (${PrismaNamespace.join(NAV_BADGE_SECTION_MODULES.codes)}) THEN 'codes'
+          WHEN module IN (${PrismaNamespace.join(NAV_BADGE_SECTION_MODULES.security)}) THEN 'security'
+          WHEN module IN (${PrismaNamespace.join(NAV_BADGE_SECTION_MODULES['data-audit'])}) THEN 'data-audit'
+          WHEN module IN (${PrismaNamespace.join(NAV_BADGE_SECTION_MODULES['ops-platform'])}) THEN 'ops-platform'
+          WHEN module IN (${PrismaNamespace.join(NAV_BADGE_SECTION_MODULES['system-config'])}) THEN 'system-config'
+          ELSE 'system-config'
+        END AS "sectionKey",
+        status::text AS status,
+        COUNT(*) AS count
+      FROM notification_logs
+      WHERE channel = 'system'
+        AND read_at IS NULL
+        AND status::text IN ('pending', 'sent', 'failed')
+        AND ${recipientFilter}
+      GROUP BY 1, 2
+    `;
+  }
+
+  private async getNavBadgeAggregateRowsWithPrisma(
+    operator?: AuthenticatedUser
+  ): Promise<NavBadgeAggregateRow[]> {
+    const rows = await this.prisma.notificationLog.groupBy({
+      by: ['module', 'status', 'eventCode'],
+      where: {
+        ...this.getInAppWhere({ unread: 'true' }, operator),
+        status: { in: ['pending', 'sent', 'failed'] }
+      },
+      _count: { _all: true }
+    });
+
+    const aggregate = new Map<string, NavBadgeAggregateRow>();
+
+    for (const row of rows) {
+      const sectionKey = this.resolveNavBadgeSection(row.module, row.eventCode);
+      const key = `${sectionKey}:${row.status}`;
+      const current = aggregate.get(key);
+      const count = row._count._all;
+
+      if (current) {
+        current.count = Number(current.count) + count;
+        continue;
+      }
+
+      aggregate.set(key, {
+        sectionKey,
+        status: row.status,
+        count
+      });
+    }
+
+    return [...aggregate.values()];
+  }
+
+  private resolveNavBadgeSection(module: string, eventCode: string): NavBadgeSectionKey {
+    if (eventCode.startsWith('apple.renewal.')) {
+      return 'workspace';
+    }
+
+    return NAV_BADGE_MODULE_SECTION_MAP[module] ?? 'system-config';
+  }
+
+  private createNavItemBadge(input: NavItemBadgeInput) {
+    const count = Math.max(0, Math.trunc(Number.isFinite(input.count) ? input.count : 0));
+
+    return {
+      itemKey: input.itemKey,
+      label: input.label,
+      count,
+      tone: input.tone ?? 'orange',
+      description: input.description ?? ''
+    };
+  }
+
+  private countLaunchChecklistOpenItems(value: unknown) {
+    const items = this.resolveLaunchChecklistItems(value);
+    const openStatuses = new Set(['pending', 'in_progress', 'blocked']);
+
+    return items.filter((item) => {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      const status = (item as { status?: unknown }).status;
+      return typeof status === 'string' && openStatuses.has(status);
+    }).length;
+  }
+
+  private resolveLaunchChecklistItems(value: unknown) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (!value || typeof value !== 'object') {
+      return [];
+    }
+
+    const items = (value as { items?: unknown }).items;
+    return Array.isArray(items) ? items : [];
+  }
+
   private async ensureDefaultChannels() {
     await this.prisma.$transaction([
       this.prisma.notificationChannel.upsert({
@@ -1254,6 +1882,21 @@ export class NotificationsService {
         }
       })
     ]);
+  }
+
+  private ensureDefaultChannelsInBackground() {
+    if (this.defaultChannelsEnsured || this.defaultChannelsEnsurePromise) {
+      return;
+    }
+
+    this.defaultChannelsEnsurePromise = this.ensureDefaultChannels()
+      .then(() => {
+        this.defaultChannelsEnsured = true;
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.defaultChannelsEnsurePromise = undefined;
+      });
   }
 
   private async findLogOrThrow(id: string) {

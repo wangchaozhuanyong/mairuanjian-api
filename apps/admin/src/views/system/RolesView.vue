@@ -66,7 +66,7 @@
           :show-primary="false"
           placeholder="搜索角色名称、编码、描述"
           @search="handleRoleSearch"
-          @refresh="loadData"
+          @refresh="() => loadData()"
           @clear-filters="clearRoleFilters"
           @save-view="saveTableView"
           @apply-view="applySavedView"
@@ -251,13 +251,15 @@
 <script setup lang="ts">
 import type { ElTree } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { rolesApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { Permission, Role, TableDensity, UserTableView } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 interface PermissionTreeNode {
   id: string;
@@ -286,6 +288,7 @@ const visibleColumns = ref<string[]>([]);
 const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
+const activeRolesQueryKey = ref('');
 
 const permissionTree = computed<PermissionTreeNode[]>(() => {
   const modules = new Map<string, PermissionTreeNode>();
@@ -343,24 +346,60 @@ const filteredRoles = computed(() => {
   });
 });
 
-async function loadData() {
-  loading.value = true;
-  try {
-    const [roleData, permissionData] = await Promise.all([
-      rolesApi.listRoles(),
-      rolesApi.listPermissions()
-    ]);
-    roles.value = roleData;
-    permissions.value = permissionData;
+function applyRoleData(data: { roles: Role[]; permissions: Permission[] }) {
+  roles.value = data.roles;
+  permissions.value = data.permissions;
 
-    if (selectedRole.value) {
-      selectedRole.value = roles.value.find((role) => role.id === selectedRole.value?.id) ?? null;
-      syncCheckedPermissions();
+  if (selectedRole.value) {
+    selectedRole.value = roles.value.find((role) => role.id === selectedRole.value?.id) ?? null;
+    syncCheckedPermissions();
+  }
+}
+
+async function loadData(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('system-roles');
+  const cached = getSmartQueryData<{ roles: Role[]; permissions: Permission[] }>(key);
+
+  activeRolesQueryKey.value = key;
+
+  if (cached) {
+    applyRoleData(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: async () => {
+        const [roleData, permissionData] = await Promise.all([
+          rolesApi.listRoles(),
+          rolesApi.listPermissions()
+        ]);
+
+        return {
+          roles: roleData,
+          permissions: permissionData
+        };
+      },
+      force: options.force ?? true
+    });
+
+    if (activeRolesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyRoleData(result.data);
     }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载角色权限失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载角色权限失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeRolesQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -515,7 +554,7 @@ async function savePermissions() {
   try {
     await rolesApi.updatePermissions(selectedRole.value.id, permissionIds);
     ElMessage.success('权限已保存');
-    await loadData();
+    await loadData({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存失败');
   } finally {
@@ -525,8 +564,17 @@ async function savePermissions() {
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadData();
+  await loadData({ force: false });
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['system-roles'], () => {
+  void loadData({
+    background: roles.value.length > 0 || permissions.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>

@@ -545,7 +545,7 @@ describe('SecurityService', () => {
     const status = await service.getMyMfaStatus(authenticatedUser);
 
     await expect(service.verifyUserMfaCode(userId, result.recoveryCodes[0])).rejects.toThrow(
-      'MFA code is invalid'
+      '动态验证码或恢复码错误，请重新输入。'
     );
     expect(verification.method).toBe('recovery_code');
     expect(status.recoveryCodeCount).toBe(9);

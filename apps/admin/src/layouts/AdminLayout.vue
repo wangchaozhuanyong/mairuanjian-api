@@ -20,6 +20,8 @@
           <button
             class="nav-section-toggle"
             :class="{ active: isSectionActive(section) }"
+            :aria-label="getSectionToggleLabel(section)"
+            :title="getSectionNotificationTitle(section)"
             type="button"
             @focus="prefetchMenuSection(section)"
             @mouseenter="prefetchMenuSection(section)"
@@ -32,6 +34,13 @@
                 </el-icon>
               </span>
               <span>{{ section.title }}</span>
+            </span>
+            <span
+              v-if="getSectionNotificationBadge(section)"
+              class="nav-section-alert"
+              :class="`is-${getSectionNotificationTone(section)}`"
+            >
+              {{ getSectionNotificationBadgeLabel(section) }}
             </span>
             <span class="nav-section-toggle__meta">
               <span class="nav-count">{{ getSectionItemCount(section) }}</span>
@@ -53,7 +62,14 @@
             >
               <span class="nav-mark">{{ item.mark }}</span>
               <span class="nav-title">{{ getMenuItemTitle(item) }}</span>
-              <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
+              <span
+                v-if="getMenuItemBadge(item)"
+                class="nav-badge"
+                :class="`is-${getMenuItemBadgeTone(item)}`"
+                :title="getMenuItemBadgeTitle(item)"
+              >
+                {{ getMenuItemBadgeLabel(item) }}
+              </span>
             </RouterLink>
           </div>
         </section>
@@ -160,7 +176,11 @@
               <Refresh />
             </el-icon>
           </AppButton>
-          <el-badge value="6" class="notification-badge">
+          <el-badge
+            :value="formatNotificationCount(notificationBadgeTotal)"
+            :hidden="notificationBadgeTotal === 0"
+            class="notification-badge"
+          >
             <AppButton
               class="topbar-action"
               icon-only
@@ -303,17 +323,21 @@
         <div class="notification-feed">
           <div class="notification-feed__head">
             <strong>最近提醒</strong>
-            <span>按处理优先级排列</span>
+            <span>按主导航模块归类</span>
           </div>
 
-          <div v-for="item in notificationItems" :key="item.title" class="notification-feed-item">
-            <span class="notification-feed-item__mark" :class="`is-${item.tone}`" />
-            <div>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.description }}</p>
+          <template v-if="notificationItems.length">
+            <div v-for="item in notificationItems" :key="item.title" class="notification-feed-item">
+              <span class="notification-feed-item__mark" :class="`is-${item.tone}`" />
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.description }}</p>
+              </div>
+              <StatusChip :tone="item.tone" dot>{{ item.level }}</StatusChip>
             </div>
-            <StatusChip :tone="item.tone" dot>{{ item.level }}</StatusChip>
-          </div>
+          </template>
+
+          <p v-else class="notification-feed-empty">暂无消息提醒</p>
         </div>
       </div>
     </AppDrawer>
@@ -321,7 +345,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, type Component } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue';
 import { ElMessage } from 'element-plus';
 import {
   Bell,
@@ -362,13 +386,47 @@ import {
   prefetchRouteComponents
 } from '@/router';
 import { useAuthStore } from '@/stores/auth';
+import {
+  NAVIGATION_ITEM_BADGES_CHANGED_EVENT,
+  NAVIGATION_NOTIFICATION_BADGES_CHANGED_EVENT,
+  notificationsApi
+} from '@/api/system';
+import {
+  REALTIME_CONNECTION_STATUS_CHANGED_EVENT,
+  getRealtimeSnapshot,
+  type RealtimeConnectionStatusDetail
+} from '@/realtime/realtimeClient';
+import { notifyRealtimeScopesInvalidated } from '@/realtime/realtimeQueryEvents';
+import { getRealtimeFallbackScopesForModule } from '@/realtime/realtimeRouteScopes';
+import type { NavigationItemBadge, NavigationNotificationBadge } from '@/types/system';
 
 const NAV_OPEN_STORAGE_KEY = 'apple_business_sidebar_open_keys';
 const WORKSPACE_TABS_STORAGE_KEY = 'apple_business_workspace_tabs';
+const NOTIFICATION_BADGE_REFRESH_MS = 45_000;
+const REALTIME_FALLBACK_POLL_MS = 24_000;
 const WORKSPACE_TABS_PER_ROW = 6;
 const WORKSPACE_TABS_ROWS = 2;
 const WORKSPACE_TABS_LIMIT = WORKSPACE_TABS_PER_ROW * WORKSPACE_TABS_ROWS;
 const WORKSPACE_CACHE_LIMIT = WORKSPACE_TABS_LIMIT;
+const STARTUP_BADGE_REFRESH_DELAY_MS = 900;
+const STARTUP_ROUTE_PREFETCH_DELAY_MS = 1_800;
+const SECURITY_CENTER_ROUTE = '/system/security';
+const SYSTEM_CONFIG_ROUTE = '/system/maintenance';
+const SECURITY_CENTER_ROUTES = new Set([
+  SECURITY_CENTER_ROUTE,
+  '/system/login-logs',
+  '/system/sessions',
+  '/system/mfa',
+  '/system/ip-whitelist',
+  '/system/sensitive-approvals'
+]);
+const SYSTEM_CONFIG_ROUTES = new Set([
+  SYSTEM_CONFIG_ROUTE,
+  '/system/feature-flags',
+  '/system/versions',
+  '/system/changelog',
+  '/system/parameters'
+]);
 
 interface WorkspaceTab {
   fullPath: string;
@@ -385,6 +443,13 @@ const globalKeyword = ref('');
 const notificationDrawerVisible = ref(false);
 const openMenuKeys = ref(readStoredOpenMenuKeys());
 const workspaceCacheVersion = ref(0);
+const navigationNotificationBadges = ref<Record<string, NavigationNotificationBadge>>({});
+const navigationItemBadges = ref<Record<string, NavigationItemBadge>>({});
+const realtimeStatus = ref(getRealtimeSnapshot().status);
+let notificationBadgeTimer: number | undefined;
+let startupBadgeRefreshTimer: number | undefined;
+let startupRoutePrefetchTimer: number | undefined;
+let realtimeFallbackTimer: number | undefined;
 const globalSearchScopes = [
   {
     mark: 'CU',
@@ -402,48 +467,6 @@ const globalSearchScopes = [
     description: '库存、发货、售后补发'
   }
 ];
-const notificationSummary = [
-  {
-    label: '紧急',
-    value: '2',
-    description: '需优先处理'
-  },
-  {
-    label: '重要',
-    value: '3',
-    description: '今日关注'
-  },
-  {
-    label: '系统',
-    value: '1',
-    description: '接口状态'
-  }
-];
-const notificationItems: Array<{
-  title: string;
-  description: string;
-  level: string;
-  tone: 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
-}> = [
-  {
-    title: 'Apple ID 余额不足',
-    description: '存在续费任务需要确认可用余额。',
-    level: '重要',
-    tone: 'orange'
-  },
-  {
-    title: '兑换码低库存',
-    description: '部分面值库存低于预警线。',
-    level: '紧急',
-    tone: 'red'
-  },
-  {
-    title: '平台接口异常',
-    description: '淘宝/闲鱼同步需要检查授权状态。',
-    level: '待处理',
-    tone: 'blue'
-  }
-];
 const sectionIconMap = {
   workspace: House,
   common: UserFilled,
@@ -459,14 +482,69 @@ const activePath = computed(() => route.path);
 const routeTitle = computed(() => String(route.meta.title ?? '后台管理'));
 const routeDescription = computed(() => String(route.meta.description ?? ''));
 const routeGroup = computed(() => String(route.meta.group ?? '工作台'));
+const routeModuleKey = computed(() => String(route.meta.moduleKey ?? ''));
 const hasRouteHelp = computed(() => Boolean(routeDescription.value));
 const activeWorkspaceTabPath = computed(() => route.fullPath);
 const globalKeywordTrimmed = computed(() => globalKeyword.value.trim());
-const sessionStatusText = computed(() => (authStore.userRefreshing ? '验证登录中' : '在线'));
+const sessionStatusText = computed(() => {
+  if (authStore.userRefreshing) {
+    return '验证登录中';
+  }
+
+  if (realtimeStatus.value === 'connected') {
+    return '实时同步';
+  }
+
+  if (realtimeStatus.value === 'connecting' || realtimeStatus.value === 'error') {
+    return '实时重连中';
+  }
+
+  return '在线';
+});
 const workspaceTabs = ref<WorkspaceTab[]>(readStoredWorkspaceTabs());
 const workspaceRouteRefreshVersions = ref<Record<string, number>>({});
 const activeWorkspaceTab = computed(() =>
   workspaceTabs.value.find((tab) => tab.fullPath === activeWorkspaceTabPath.value)
+);
+const navigationNotificationBadgeList = computed(() =>
+  Object.values(navigationNotificationBadges.value).sort((left, right) => {
+    if (right.todoCount !== left.todoCount) return right.todoCount - left.todoCount;
+    return right.count - left.count;
+  })
+);
+const notificationBadgeTotal = computed(() =>
+  navigationNotificationBadgeList.value.reduce((sum, item) => sum + item.count, 0)
+);
+const notificationTodoTotal = computed(() =>
+  navigationNotificationBadgeList.value.reduce((sum, item) => sum + item.todoCount, 0)
+);
+const notificationFailedTotal = computed(() =>
+  navigationNotificationBadgeList.value.reduce((sum, item) => sum + item.failedCount, 0)
+);
+const notificationSummary = computed(() => [
+  {
+    label: '全部',
+    value: formatNotificationCount(notificationBadgeTotal.value),
+    description: '未读提醒'
+  },
+  {
+    label: '待处理',
+    value: formatNotificationCount(notificationTodoTotal.value),
+    description: '需要处理'
+  },
+  {
+    label: '异常',
+    value: formatNotificationCount(notificationFailedTotal.value),
+    description: '失败提醒'
+  }
+]);
+const notificationItems = computed(() =>
+  navigationNotificationBadgeList.value.map((item) => ({
+    title: item.label,
+    description: getNotificationItemDescription(item),
+    level: item.todoCount > 0 ? '待处理' : '未读',
+    tone: getNotificationItemTone(item)
+  }))
 );
 const visibleSections = computed(() =>
   menuSections
@@ -507,6 +585,14 @@ watch(activePath, () => {
 watch(activeWorkspaceTabPath, () => addCurrentWorkspaceTab(), { immediate: true });
 
 watch(
+  [realtimeStatus, routeModuleKey, () => authStore.isAuthenticated],
+  () => {
+    syncRealtimeFallbackPolling();
+  },
+  { immediate: true }
+);
+
+watch(
   workspaceTabs,
   (tabs) => {
     window.localStorage.setItem(WORKSPACE_TABS_STORAGE_KEY, JSON.stringify(tabs));
@@ -515,7 +601,44 @@ watch(
 );
 
 onMounted(() => {
-  prefetchReadyRouteComponents(getInitialPrefetchRoutes());
+  startupRoutePrefetchTimer = window.setTimeout(() => {
+    prefetchReadyRouteComponents(getInitialPrefetchRoutes());
+  }, STARTUP_ROUTE_PREFETCH_DELAY_MS);
+
+  startupBadgeRefreshTimer = window.setTimeout(() => {
+    void refreshNavigationBadges();
+  }, STARTUP_BADGE_REFRESH_DELAY_MS);
+
+  notificationBadgeTimer = window.setInterval(
+    () => void refreshNavigationBadges({ silent: true }),
+    NOTIFICATION_BADGE_REFRESH_MS
+  );
+  window.addEventListener(
+    NAVIGATION_NOTIFICATION_BADGES_CHANGED_EVENT,
+    handleNavigationNotificationBadgesChanged
+  );
+  window.addEventListener(NAVIGATION_ITEM_BADGES_CHANGED_EVENT, handleNavigationItemBadgesChanged);
+  window.addEventListener(REALTIME_CONNECTION_STATUS_CHANGED_EVENT, handleRealtimeStatusChanged);
+});
+
+onBeforeUnmount(() => {
+  window.clearTimeout(startupBadgeRefreshTimer);
+  window.clearTimeout(startupRoutePrefetchTimer);
+
+  if (notificationBadgeTimer) {
+    window.clearInterval(notificationBadgeTimer);
+  }
+
+  window.removeEventListener(
+    NAVIGATION_NOTIFICATION_BADGES_CHANGED_EVENT,
+    handleNavigationNotificationBadgesChanged
+  );
+  window.removeEventListener(
+    NAVIGATION_ITEM_BADGES_CHANGED_EVENT,
+    handleNavigationItemBadgesChanged
+  );
+  window.removeEventListener(REALTIME_CONNECTION_STATUS_CHANGED_EVENT, handleRealtimeStatusChanged);
+  stopRealtimeFallbackPolling();
 });
 
 function readStoredOpenMenuKeys() {
@@ -673,6 +796,29 @@ function getMenuItemTitle(item: AppModuleItem) {
   return getModuleDisplayTitle(item);
 }
 
+function getMenuItemBadge(item: AppModuleItem) {
+  return navigationItemBadges.value[item.key];
+}
+
+function getMenuItemBadgeLabel(item: AppModuleItem) {
+  const badge = getMenuItemBadge(item);
+  return badge ? formatNotificationCount(badge.count) : '';
+}
+
+function getMenuItemBadgeTone(item: AppModuleItem) {
+  return getMenuItemBadge(item)?.tone ?? 'orange';
+}
+
+function getMenuItemBadgeTitle(item: AppModuleItem) {
+  const badge = getMenuItemBadge(item);
+
+  if (!badge) {
+    return getMenuItemTitle(item);
+  }
+
+  return `${getMenuItemTitle(item)}，${badge.count} 条待处理：${badge.description}`;
+}
+
 function handleMenuItemClick(item: AppModuleItem) {
   sidebarOpen.value = false;
   prefetchWorkspaceRoute(item.route);
@@ -698,20 +844,165 @@ function getSectionRoutes(sectionKey: string | undefined) {
 }
 
 function getInitialPrefetchRoutes() {
-  return [
-    route.path,
-    '/dashboard',
-    '/workspace/renewal',
-    '/apple/accounts',
-    '/apple/order-entry',
-    '/codes/inventory',
-    '/codes/orders',
-    ...getSectionRoutes(getActiveSectionKey())
-  ];
+  const activeSectionRoutes = getSectionRoutes(getActiveSectionKey()).filter(
+    (routePath) => routePath !== route.path
+  );
+
+  return [route.path, ...activeSectionRoutes.slice(0, 2)];
 }
 
 function getSectionItemCount(section: MenuSection) {
   return section.items.length;
+}
+
+function getSectionNotificationBadge(section: MenuSection) {
+  return navigationNotificationBadges.value[section.key];
+}
+
+function getSectionNotificationBadgeLabel(section: MenuSection) {
+  const badge = getSectionNotificationBadge(section);
+
+  if (!badge) {
+    return '';
+  }
+
+  const count = badge.todoCount || badge.count;
+  const suffix = badge.todoCount ? '待办' : '条';
+  return `${formatNotificationCount(count)}${suffix}`;
+}
+
+function getSectionNotificationTone(section: MenuSection) {
+  const badge = getSectionNotificationBadge(section);
+
+  if (!badge) {
+    return 'orange';
+  }
+
+  return badge.failedCount > 0 || badge.todoCount > 0 ? 'red' : 'orange';
+}
+
+function getSectionNotificationTitle(section: MenuSection) {
+  const badge = getSectionNotificationBadge(section);
+  const base = `${section.title}，${getSectionItemCount(section)} 个子导航`;
+
+  if (!badge) {
+    return base;
+  }
+
+  return `${base}，有 ${badge.count} 条消息提醒，其中 ${badge.todoCount} 条需要处理`;
+}
+
+function getSectionToggleLabel(section: MenuSection) {
+  const badge = getSectionNotificationBadge(section);
+
+  if (!badge) {
+    return `${section.title}，${getSectionItemCount(section)} 个子导航`;
+  }
+
+  return `${section.title}，${getSectionItemCount(section)} 个子导航，${badge.count} 条消息提醒`;
+}
+
+function formatNotificationCount(count: number) {
+  return count > 99 ? '99+' : String(count);
+}
+
+function getNotificationItemDescription(item: NavigationNotificationBadge) {
+  if (item.todoCount > 0) {
+    return `${item.count} 条未读提醒，其中 ${item.todoCount} 条需要处理。`;
+  }
+
+  return `${item.count} 条未读提醒。`;
+}
+
+function getNotificationItemTone(
+  item: NavigationNotificationBadge
+): 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral' {
+  if (item.failedCount > 0 || item.todoCount > 0) {
+    return 'red';
+  }
+
+  return 'orange';
+}
+
+async function loadNavigationNotificationBadges(options: { silent?: boolean } = {}) {
+  if (!authStore.isAuthenticated) {
+    navigationNotificationBadges.value = {};
+    return;
+  }
+
+  try {
+    const data = await notificationsApi.navBadges();
+    navigationNotificationBadges.value = Object.fromEntries(
+      data.items.map((item) => [item.sectionKey, item])
+    );
+  } catch {
+    if (!options.silent) {
+      navigationNotificationBadges.value = {};
+    }
+  }
+}
+
+async function loadNavigationItemBadges(options: { silent?: boolean } = {}) {
+  if (!authStore.isAuthenticated) {
+    navigationItemBadges.value = {};
+    return;
+  }
+
+  try {
+    const data = await notificationsApi.navItemBadges();
+    navigationItemBadges.value = Object.fromEntries(data.items.map((item) => [item.itemKey, item]));
+  } catch {
+    if (!options.silent) {
+      navigationItemBadges.value = {};
+    }
+  }
+}
+
+async function refreshNavigationBadges(options: { silent?: boolean } = {}) {
+  await Promise.all([loadNavigationNotificationBadges(options), loadNavigationItemBadges(options)]);
+}
+
+function handleNavigationNotificationBadgesChanged() {
+  void loadNavigationNotificationBadges({ silent: true });
+}
+
+function handleNavigationItemBadgesChanged() {
+  void loadNavigationItemBadges({ silent: true });
+}
+
+function handleRealtimeStatusChanged(rawEvent: Event) {
+  const event = rawEvent as CustomEvent<RealtimeConnectionStatusDetail>;
+  realtimeStatus.value = event.detail.status;
+}
+
+function syncRealtimeFallbackPolling() {
+  stopRealtimeFallbackPolling();
+
+  if (!authStore.isAuthenticated || realtimeStatus.value === 'connected') {
+    return;
+  }
+
+  const scopes = getRealtimeFallbackScopesForModule(routeModuleKey.value);
+  if (!scopes.length) {
+    return;
+  }
+
+  realtimeFallbackTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return;
+    }
+
+    notifyRealtimeScopesInvalidated(scopes, 'fallback-poll');
+  }, REALTIME_FALLBACK_POLL_MS);
+}
+
+function stopRealtimeFallbackPolling() {
+  if (!realtimeFallbackTimer) {
+    return;
+  }
+
+  window.clearInterval(realtimeFallbackTimer);
+  realtimeFallbackTimer = undefined;
 }
 
 function isMenuSectionKey(key: unknown) {
@@ -719,11 +1010,18 @@ function isMenuSectionKey(key: unknown) {
 }
 
 function getActiveSectionKey() {
-  return menuSections.find((section) => section.items.some((item) => item.route === route.path))
-    ?.key;
+  return menuSections.find((section) => section.items.some(isItemActive))?.key;
 }
 
 function isItemActive(item: AppModuleItem) {
+  if (item.route === SECURITY_CENTER_ROUTE) {
+    return SECURITY_CENTER_ROUTES.has(activePath.value);
+  }
+
+  if (item.route === SYSTEM_CONFIG_ROUTE) {
+    return SYSTEM_CONFIG_ROUTES.has(activePath.value);
+  }
+
   return activePath.value === item.route;
 }
 

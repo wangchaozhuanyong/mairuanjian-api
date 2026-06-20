@@ -2,6 +2,10 @@
 import { randomBytes, scrypt as scryptCallback } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
+import {
+  assertLocalAcceptanceDatabase,
+  cleanupLocalAcceptanceData
+} from './lib/development-data-cleanup.mjs';
 
 const scrypt = promisify(scryptCallback);
 const API_BASE_URL = process.env.ACCEPTANCE_API_BASE_URL ?? 'http://localhost:3000/api';
@@ -420,6 +424,7 @@ async function updateLaunchChecklist(api, evidence) {
 
 async function main() {
   loadDotEnv();
+  assertLocalAcceptanceDatabase(API_BASE_URL, process.env.DATABASE_URL);
   const { PrismaClient } = await import('@prisma/client');
   const prisma = new PrismaClient();
   let acceptanceUserId = null;
@@ -437,10 +442,12 @@ async function main() {
     const apple = await runAppleWorkflow(api, suffix);
     const code = await runCodeWorkflow(api, suffix);
 
-    await updateLaunchChecklist(api, {
-      apple: `scripts/acceptance-business-workflows.mjs apple ${apple.appleOrderId}`,
-      code: `scripts/acceptance-business-workflows.mjs code ${code.codeOrderId}`
-    });
+    if (process.env.ACCEPTANCE_UPDATE_CHECKLIST === '1') {
+      await updateLaunchChecklist(api, {
+        apple: `scripts/acceptance-business-workflows.mjs apple ${apple.appleOrderId}`,
+        code: `scripts/acceptance-business-workflows.mjs code ${code.codeOrderId}`
+      });
+    }
 
     console.log(
       JSON.stringify(
@@ -457,6 +464,10 @@ async function main() {
     );
   } finally {
     await disableAcceptanceUser(prisma, acceptanceUserId);
+    const cleanup = await cleanupLocalAcceptanceData(prisma, API_BASE_URL);
+    if (!cleanup.skipped) {
+      console.error('Local acceptance data was cleaned after business workflow.');
+    }
     await prisma.$disconnect();
   }
 }

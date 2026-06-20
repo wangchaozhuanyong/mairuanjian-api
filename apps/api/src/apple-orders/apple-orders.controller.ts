@@ -1,12 +1,16 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import { AppleOrdersService } from './apple-orders.service';
 import type { CreateAppleOrderDto } from './dto/create-apple-order.dto';
 
 @Controller('apple/orders')
 export class AppleOrdersController {
-  constructor(private readonly appleOrdersService: AppleOrdersService) {}
+  constructor(
+    private readonly appleOrdersService: AppleOrdersService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get()
   @RequirePermissions('apple.order.view')
@@ -44,8 +48,20 @@ export class AppleOrdersController {
 
   @Post()
   @RequirePermissions('apple.order.create')
-  create(@Body() dto: CreateAppleOrderDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.appleOrdersService.create(dto, operator);
+  async create(@Body() dto: CreateAppleOrderDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const order = await this.appleOrdersService.create(dto, operator);
+    this.realtimeService.publish({
+      type: 'apple.order.created',
+      module: 'apple',
+      entity: 'order',
+      action: 'created',
+      resourceId: order.id,
+      scope: {
+        appleAccountId: order.appleAccountId,
+        customerId: order.customerId
+      }
+    });
+    return order;
   }
 }
 

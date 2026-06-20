@@ -6,7 +6,7 @@
     :description="activeTabMeta.description"
   >
     <template #actions>
-      <AppButton @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton @click="() => refreshCurrentTab()">刷新</AppButton>
       <AppButton v-if="activeTab === 'ip'" variant="primary" @click="openIpDialog()">
         新增 IP 规则
       </AppButton>
@@ -48,7 +48,7 @@
       <el-tabs
         v-model="activeTab"
         class="system-tabs security-tabs"
-        @tab-change="refreshCurrentTab"
+        @tab-change="() => refreshCurrentTab()"
       >
         <el-tab-pane label="总览" name="overview">
           <el-table class="desktop-data-table" :data="overview?.recentLoginLogs ?? []" row-key="id">
@@ -112,7 +112,7 @@
             :show-primary="false"
             placeholder="搜索账号、IP、失败原因"
             @search="handleLoginSearch"
-            @refresh="loadLoginLogs"
+            @refresh="() => loadLoginLogs()"
             @clear-filters="clearLoginFilters"
             @remove-filter="removeLoginFilter"
             @save-view="saveLoginTableView"
@@ -257,7 +257,7 @@
             v-model:page="loginQuery.page"
             v-model:page-size="loginQuery.pageSize"
             :total="loginTotal"
-            @change="loadLoginLogs"
+            @change="() => loadLoginLogs()"
           />
         </el-tab-pane>
 
@@ -276,7 +276,7 @@
             :show-primary="false"
             placeholder="搜索用户、IP、User-Agent"
             @search="handleSessionSearch"
-            @refresh="loadSessions"
+            @refresh="() => loadSessions()"
             @clear-filters="clearSessionFilters"
             @remove-filter="removeSessionFilter"
             @save-view="saveSessionTableView"
@@ -422,7 +422,7 @@
             v-model:page="sessionQuery.page"
             v-model:page-size="sessionQuery.pageSize"
             :total="sessionTotal"
-            @change="loadSessions"
+            @change="() => loadSessions()"
           />
         </el-tab-pane>
 
@@ -565,7 +565,7 @@
             :show-primary="false"
             placeholder="搜索 IP/CIDR 或备注"
             @search="handleIpSearch"
-            @refresh="loadIpWhitelists"
+            @refresh="() => loadIpWhitelists()"
             @clear-filters="clearIpFilters"
             @remove-filter="removeIpFilter"
             @save-view="saveIpTableView"
@@ -702,7 +702,7 @@
             v-model:page="ipQuery.page"
             v-model:page-size="ipQuery.pageSize"
             :total="ipTotal"
-            @change="loadIpWhitelists"
+            @change="() => loadIpWhitelists()"
           />
         </el-tab-pane>
 
@@ -721,7 +721,7 @@
             :show-primary="false"
             placeholder="搜索模块、字段、对象、原因"
             @search="handleApprovalSearch"
-            @refresh="loadApprovals"
+            @refresh="() => loadApprovals()"
             @clear-filters="clearApprovalFilters"
             @remove-filter="removeApprovalFilter"
             @save-view="saveApprovalTableView"
@@ -900,7 +900,7 @@
             v-model:page="approvalQuery.page"
             v-model:page-size="approvalQuery.pageSize"
             :total="approvalTotal"
-            @change="loadApprovals"
+            @change="() => loadApprovals()"
           />
         </el-tab-pane>
 
@@ -919,7 +919,7 @@
             :show-primary="false"
             placeholder="搜索模块、字段、对象、原因"
             @search="handleAccessLogSearch"
-            @refresh="loadAccessLogs"
+            @refresh="() => loadAccessLogs()"
             @clear-filters="clearAccessLogFilters"
             @remove-filter="removeAccessLogFilter"
             @save-view="saveAccessLogTableView"
@@ -1058,7 +1058,7 @@
             v-model:page="accessLogQuery.page"
             v-model:page-size="accessLogQuery.pageSize"
             :total="accessLogTotal"
-            @change="loadAccessLogs"
+            @change="() => loadAccessLogs()"
           />
         </el-tab-pane>
       </el-tabs>
@@ -1121,14 +1121,22 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { securityApi, userTableViewsApi } from '@/api/system';
+import type {
+  ActiveSessionQuery,
+  IpWhitelistQuery,
+  LoginLogQuery,
+  SensitiveAccessApprovalQuery,
+  SensitiveAccessLogQuery
+} from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   ActiveSession,
   IpWhitelist,
@@ -1138,13 +1146,16 @@ import type {
   MyMfaEnableResult,
   MyMfaSetup,
   MyMfaStatus,
+  PageResult,
   SecurityOverview,
+  SecuritySetting,
   SensitiveAccessApproval,
   SensitiveAccessApprovalStatus,
   SensitiveAccessLog,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const route = useRoute();
 const activeTab = ref(getInitialTab());
@@ -1223,6 +1234,7 @@ const accessLogColumnOptions = [
   { label: 'IP', value: 'ip' },
   { label: '时间', value: 'createdAt' }
 ];
+const activeOverviewQueryKey = ref('');
 
 const loginLogs = ref<LoginLog[]>([]);
 const loginTotal = ref(0);
@@ -1240,6 +1252,7 @@ const loginSavedViews = ref<UserTableView[]>([]);
 const loginSavedViewId = ref('');
 const loginSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const loginViewsLoaded = ref(false);
+const activeLoginQueryKey = ref('');
 
 const sessions = ref<ActiveSession[]>([]);
 const sessionTotal = ref(0);
@@ -1251,6 +1264,7 @@ const sessionSavedViews = ref<UserTableView[]>([]);
 const sessionSavedViewId = ref('');
 const sessionSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const sessionViewsLoaded = ref(false);
+const activeSessionQueryKey = ref('');
 
 const ipWhitelists = ref<IpWhitelist[]>([]);
 const ipTotal = ref(0);
@@ -1268,6 +1282,7 @@ const ipSavedViews = ref<UserTableView[]>([]);
 const ipSavedViewId = ref('');
 const ipSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const ipViewsLoaded = ref(false);
+const activeIpQueryKey = ref('');
 
 const approvals = ref<SensitiveAccessApproval[]>([]);
 const approvalTotal = ref(0);
@@ -1285,6 +1300,7 @@ const approvalSavedViews = ref<UserTableView[]>([]);
 const approvalSavedViewId = ref('');
 const approvalSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const approvalViewsLoaded = ref(false);
+const activeApprovalQueryKey = ref('');
 
 const accessLogs = ref<SensitiveAccessLog[]>([]);
 const accessLogTotal = ref(0);
@@ -1303,6 +1319,8 @@ const accessLogSavedViews = ref<UserTableView[]>([]);
 const accessLogSavedViewId = ref('');
 const accessLogSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const accessLogViewsLoaded = ref(false);
+const activeAccessLogQueryKey = ref('');
+const activeSettingsQueryKey = ref('');
 
 const passwordPolicy = reactive({
   minLength: 8,
@@ -1433,8 +1451,7 @@ const activeTabMeta = computed(() => {
 });
 
 onMounted(() => {
-  void loadOverview();
-  void refreshCurrentTab();
+  void refreshCurrentTab({ force: false });
 });
 
 watch(
@@ -1447,103 +1464,349 @@ watch(
     }
 
     activeTab.value = nextTab;
-    await refreshCurrentTab();
+    await refreshCurrentTab({ force: false });
   }
 );
 
-async function loadOverview() {
-  overview.value = await securityApi.overview();
-}
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  [
+    'security-overview',
+    'security-login-logs',
+    'security-sessions',
+    'security-settings',
+    'security-ip-whitelists',
+    'security-approvals',
+    'security-access-logs'
+  ],
+  ({ scopes }) => {
+    if (scopes.includes('security-overview')) {
+      void loadOverview({
+        background: Boolean(overview.value),
+        force: true
+      });
+    }
 
-async function refreshCurrentTab() {
-  await loadOverview();
-  if (activeTab.value === 'loginLogs') await loadLoginLogsWithViews();
-  if (activeTab.value === 'sessions') await loadSessionsWithViews();
-  if (activeTab.value === 'settings') await loadSettings();
-  if (activeTab.value === 'ip') await loadIpWhitelistsWithViews();
-  if (activeTab.value === 'approvals') await loadApprovalsWithViews();
-  if (activeTab.value === 'accessLogs') await loadAccessLogsWithViews();
-}
+    if (activeTab.value === 'loginLogs' && scopes.includes('security-login-logs')) {
+      void loadLoginLogs({
+        background: loginLogs.value.length > 0,
+        force: true
+      });
+    }
 
-async function loadLoginLogs() {
-  loginLoading.value = true;
+    if (activeTab.value === 'sessions' && scopes.includes('security-sessions')) {
+      void loadSessions({
+        background: sessions.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'settings' && scopes.includes('security-settings')) {
+      void loadSettings({
+        background: Boolean(myMfaStatus.value),
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'ip' && scopes.includes('security-ip-whitelists')) {
+      void loadIpWhitelists({
+        background: ipWhitelists.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'approvals' && scopes.includes('security-approvals')) {
+      void loadApprovals({
+        background: approvals.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'accessLogs' && scopes.includes('security-access-logs')) {
+      void loadAccessLogs({
+        background: accessLogs.value.length > 0,
+        force: true
+      });
+    }
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
+
+async function loadOverview(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('security-overview');
+  const cached = getSmartQueryData<SecurityOverview>(key);
+
+  activeOverviewQueryKey.value = key;
+
+  if (cached) {
+    overview.value = cached;
+  }
+
   try {
-    const result = await securityApi.listLoginLogs({
-      ...loginQuery,
-      sortBy: loginSortConfig.value.prop,
-      sortOrder: mapSortOrder(loginSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => securityApi.overview(),
+      force: options.force ?? true
     });
-    loginLogs.value = result.items;
-    loginTotal.value = result.total;
-  } finally {
-    loginLoading.value = false;
+
+    if (activeOverviewQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      overview.value = result.data;
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载安全总览失败');
+    }
   }
 }
 
-async function loadSessions() {
-  sessionLoading.value = true;
+async function refreshCurrentTab(options: { background?: boolean; force?: boolean } = {}) {
+  await loadOverview(options);
+  if (activeTab.value === 'loginLogs') await loadLoginLogsWithViews(options);
+  if (activeTab.value === 'sessions') await loadSessionsWithViews(options);
+  if (activeTab.value === 'settings') await loadSettings(options);
+  if (activeTab.value === 'ip') await loadIpWhitelistsWithViews(options);
+  if (activeTab.value === 'approvals') await loadApprovalsWithViews(options);
+  if (activeTab.value === 'accessLogs') await loadAccessLogsWithViews(options);
+}
+
+function buildLoginParams(): LoginLogQuery {
+  return {
+    ...loginQuery,
+    sortBy: loginSortConfig.value.prop,
+    sortOrder: mapSortOrder(loginSortConfig.value.order)
+  };
+}
+
+function applyLoginLogsResult(result: PageResult<LoginLog>) {
+  loginLogs.value = result.items;
+  loginTotal.value = result.total;
+}
+
+async function loadLoginLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildLoginParams();
+  const key = createSmartQueryKey('security-login-logs', params);
+  const cached = getSmartQueryData<PageResult<LoginLog>>(key);
+
+  activeLoginQueryKey.value = key;
+
+  if (cached) {
+    applyLoginLogsResult(cached);
+  }
+
+  loginLoading.value = !cached && !options.background;
+
   try {
-    const result = await securityApi.listActiveSessions({
-      ...sessionQuery,
-      sortBy: sessionSortConfig.value.prop,
-      sortOrder: mapSortOrder(sessionSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => securityApi.listLoginLogs(params),
+      force: options.force ?? true
     });
-    sessions.value = result.items;
-    sessionTotal.value = result.total;
+
+    if (activeLoginQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyLoginLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载登录日志失败');
+    }
   } finally {
-    sessionLoading.value = false;
+    if (activeLoginQueryKey.value === key) {
+      loginLoading.value = false;
+    }
   }
 }
 
-async function loadSettings() {
-  const [password, mfa, myMfa] = await Promise.all([
-    securityApi.getPasswordPolicy(),
-    securityApi.getMfaSettings(),
-    securityApi.getMyMfaStatus()
-  ]);
+function buildSessionParams(): ActiveSessionQuery {
+  return {
+    ...sessionQuery,
+    sortBy: sessionSortConfig.value.prop,
+    sortOrder: mapSortOrder(sessionSortConfig.value.order)
+  };
+}
+
+function applySessionsResult(result: PageResult<ActiveSession>) {
+  sessions.value = result.items;
+  sessionTotal.value = result.total;
+}
+
+async function loadSessions(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildSessionParams();
+  const key = createSmartQueryKey('security-sessions', params);
+  const cached = getSmartQueryData<PageResult<ActiveSession>>(key);
+
+  activeSessionQueryKey.value = key;
+
+  if (cached) {
+    applySessionsResult(cached);
+  }
+
+  sessionLoading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => securityApi.listActiveSessions(params),
+      force: options.force ?? true
+    });
+
+    if (activeSessionQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applySessionsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载在线会话失败');
+    }
+  } finally {
+    if (activeSessionQueryKey.value === key) {
+      sessionLoading.value = false;
+    }
+  }
+}
+
+function applySettingsResult(data: {
+  password: SecuritySetting;
+  mfa: SecuritySetting;
+  myMfa: MyMfaStatus;
+}) {
+  const { password, mfa, myMfa } = data;
   Object.assign(passwordPolicy, password.value);
   Object.assign(mfaSettings, mfa.value);
   myMfaStatus.value = myMfa;
 }
 
-async function loadIpWhitelists() {
-  ipLoading.value = true;
+async function loadSettings(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('security-settings');
+  const cached = getSmartQueryData<{
+    password: SecuritySetting;
+    mfa: SecuritySetting;
+    myMfa: MyMfaStatus;
+  }>(key);
+
+  activeSettingsQueryKey.value = key;
+
+  if (cached) {
+    applySettingsResult(cached);
+  }
+
   try {
-    const result = await securityApi.listIpWhitelists({
-      ...ipQuery,
-      sortBy: ipSortConfig.value.prop,
-      sortOrder: mapSortOrder(ipSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: async () => {
+        const [password, mfa, myMfa] = await Promise.all([
+          securityApi.getPasswordPolicy(),
+          securityApi.getMfaSettings(),
+          securityApi.getMyMfaStatus()
+        ]);
+
+        return {
+          password,
+          mfa,
+          myMfa
+        };
+      },
+      force: options.force ?? true
     });
-    ipWhitelists.value = result.items;
-    ipTotal.value = result.total;
-  } finally {
-    ipLoading.value = false;
+
+    if (activeSettingsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applySettingsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载安全设置失败');
+    }
   }
 }
 
-async function loadLoginLogsWithViews() {
+function buildIpParams(): IpWhitelistQuery {
+  return {
+    ...ipQuery,
+    sortBy: ipSortConfig.value.prop,
+    sortOrder: mapSortOrder(ipSortConfig.value.order)
+  };
+}
+
+function applyIpWhitelistsResult(result: PageResult<IpWhitelist>) {
+  ipWhitelists.value = result.items;
+  ipTotal.value = result.total;
+}
+
+async function loadIpWhitelists(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildIpParams();
+  const key = createSmartQueryKey('security-ip-whitelists', params);
+  const cached = getSmartQueryData<PageResult<IpWhitelist>>(key);
+
+  activeIpQueryKey.value = key;
+
+  if (cached) {
+    applyIpWhitelistsResult(cached);
+  }
+
+  ipLoading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => securityApi.listIpWhitelists(params),
+      force: options.force ?? true
+    });
+
+    if (activeIpQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyIpWhitelistsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载 IP 白名单失败');
+    }
+  } finally {
+    if (activeIpQueryKey.value === key) {
+      ipLoading.value = false;
+    }
+  }
+}
+
+async function loadLoginLogsWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureLoginTableViews();
-  await loadLoginLogs();
+  await loadLoginLogs(options);
 }
 
-async function loadSessionsWithViews() {
+async function loadSessionsWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureSessionTableViews();
-  await loadSessions();
+  await loadSessions(options);
 }
 
-async function loadIpWhitelistsWithViews() {
+async function loadIpWhitelistsWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureIpTableViews();
-  await loadIpWhitelists();
+  await loadIpWhitelists(options);
 }
 
-async function loadApprovalsWithViews() {
+async function loadApprovalsWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureApprovalTableViews();
-  await loadApprovals();
+  await loadApprovals(options);
 }
 
-async function loadAccessLogsWithViews() {
+async function loadAccessLogsWithViews(options: { background?: boolean; force?: boolean } = {}) {
   await ensureAccessLogTableViews();
-  await loadAccessLogs();
+  await loadAccessLogs(options);
 }
 
 async function handleLoginSearch() {
@@ -2085,43 +2348,117 @@ function applyAccessLogView(view: UserTableView) {
   accessLogSavedViewId.value = view.id;
 }
 
-async function loadApprovals() {
-  approvalLoading.value = true;
+function buildApprovalParams(): SensitiveAccessApprovalQuery {
+  return {
+    ...approvalQuery,
+    sortBy: approvalSortConfig.value.prop,
+    sortOrder: mapSortOrder(approvalSortConfig.value.order)
+  };
+}
+
+function applyApprovalsResult(result: PageResult<SensitiveAccessApproval>) {
+  approvals.value = result.items;
+  approvalTotal.value = result.total;
+}
+
+async function loadApprovals(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildApprovalParams();
+  const key = createSmartQueryKey('security-approvals', params);
+  const cached = getSmartQueryData<PageResult<SensitiveAccessApproval>>(key);
+
+  activeApprovalQueryKey.value = key;
+
+  if (cached) {
+    applyApprovalsResult(cached);
+  }
+
+  approvalLoading.value = !cached && !options.background;
+
   try {
-    const result = await securityApi.listSensitiveApprovals({
-      ...approvalQuery,
-      sortBy: approvalSortConfig.value.prop,
-      sortOrder: mapSortOrder(approvalSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => securityApi.listSensitiveApprovals(params),
+      force: options.force ?? true
     });
-    approvals.value = result.items;
-    approvalTotal.value = result.total;
+
+    if (activeApprovalQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyApprovalsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载敏感字段审批失败');
+    }
   } finally {
-    approvalLoading.value = false;
+    if (activeApprovalQueryKey.value === key) {
+      approvalLoading.value = false;
+    }
   }
 }
 
-async function loadAccessLogs() {
-  accessLogLoading.value = true;
+function buildAccessLogParams(): SensitiveAccessLogQuery {
+  return {
+    ...accessLogQuery,
+    sortBy: accessLogSortConfig.value.prop,
+    sortOrder: mapSortOrder(accessLogSortConfig.value.order)
+  };
+}
+
+function applyAccessLogsResult(result: PageResult<SensitiveAccessLog>) {
+  accessLogs.value = result.items;
+  accessLogTotal.value = result.total;
+}
+
+async function loadAccessLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildAccessLogParams();
+  const key = createSmartQueryKey('security-access-logs', params);
+  const cached = getSmartQueryData<PageResult<SensitiveAccessLog>>(key);
+
+  activeAccessLogQueryKey.value = key;
+
+  if (cached) {
+    applyAccessLogsResult(cached);
+  }
+
+  accessLogLoading.value = !cached && !options.background;
+
   try {
-    const result = await securityApi.listSensitiveAccessLogs({
-      ...accessLogQuery,
-      sortBy: accessLogSortConfig.value.prop,
-      sortOrder: mapSortOrder(accessLogSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => securityApi.listSensitiveAccessLogs(params),
+      force: options.force ?? true
     });
-    accessLogs.value = result.items;
-    accessLogTotal.value = result.total;
+
+    if (activeAccessLogQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyAccessLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载敏感字段访问日志失败');
+    }
   } finally {
-    accessLogLoading.value = false;
+    if (activeAccessLogQueryKey.value === key) {
+      accessLogLoading.value = false;
+    }
   }
 }
 
 async function savePasswordPolicy() {
   await securityApi.updatePasswordPolicy({ ...passwordPolicy });
+  await loadSettings({ force: true });
   ElMessage.success('密码策略已保存');
 }
 
 async function saveMfaSettings() {
   await securityApi.updateMfaSettings({ ...mfaSettings });
+  await loadSettings({ force: true });
   ElMessage.success('MFA 设置已保存');
 }
 
@@ -2146,6 +2483,7 @@ async function enableMyMfa() {
   try {
     const result = await securityApi.enableMyMfa(mfaVerifyCode.value);
     applyMfaResult(result);
+    await loadSettings({ force: true, background: true });
     mfaSetup.value = null;
     mfaVerifyCode.value = '';
     ElMessage.success('MFA 已启用');
@@ -2167,6 +2505,7 @@ async function regenerateMfaRecoveryCodes() {
   try {
     const result = await securityApi.regenerateMyMfaRecoveryCodes(mfaVerifyCode.value);
     applyMfaResult(result);
+    await loadSettings({ force: true, background: true });
     mfaVerifyCode.value = '';
     ElMessage.success('恢复码已重新生成');
   } finally {
@@ -2193,6 +2532,7 @@ async function disableMyMfa() {
     mfaRecoveryCodes.value = [];
     mfaVerifyCode.value = '';
     mfaDisableReason.value = '';
+    await loadSettings({ force: true, background: true });
     ElMessage.success('MFA 已停用');
   } finally {
     mfaActionLoading.value = false;
@@ -2225,8 +2565,8 @@ async function saveIp() {
     }
     ElMessage.success('IP 规则已保存');
     ipDialogVisible.value = false;
-    await loadIpWhitelists();
-    await loadOverview();
+    await loadIpWhitelists({ force: true });
+    await loadOverview({ force: true });
   } finally {
     savingIp.value = false;
   }
@@ -2238,8 +2578,8 @@ async function removeIp(id: string) {
   });
   await securityApi.removeIpWhitelist(id);
   ElMessage.success('IP 规则已删除');
-  await loadIpWhitelists();
-  await loadOverview();
+  await loadIpWhitelists({ force: true });
+  await loadOverview({ force: true });
 }
 
 function openApprovalDialog() {
@@ -2262,8 +2602,8 @@ async function createApproval() {
     });
     ElMessage.success('审批申请已提交');
     approvalDialogVisible.value = false;
-    await loadApprovals();
-    await loadOverview();
+    await loadApprovals({ force: true });
+    await loadOverview({ force: true });
   } finally {
     savingApproval.value = false;
   }
@@ -2272,15 +2612,15 @@ async function createApproval() {
 async function approve(id: string) {
   await securityApi.approveSensitiveApproval(id, { decisionNote: '后台批准' });
   ElMessage.success('已批准');
-  await loadApprovals();
-  await loadOverview();
+  await loadApprovals({ force: true });
+  await loadOverview({ force: true });
 }
 
 async function reject(id: string) {
   await securityApi.rejectSensitiveApproval(id, { decisionNote: '后台拒绝' });
   ElMessage.success('已拒绝');
-  await loadApprovals();
-  await loadOverview();
+  await loadApprovals({ force: true });
+  await loadOverview({ force: true });
 }
 
 async function revoke(id: string) {
@@ -2289,8 +2629,8 @@ async function revoke(id: string) {
   });
   await securityApi.revokeSession(id);
   ElMessage.success('会话已下线');
-  await loadSessions();
-  await loadOverview();
+  await loadSessions({ force: true });
+  await loadOverview({ force: true });
 }
 
 function getInitialTab() {

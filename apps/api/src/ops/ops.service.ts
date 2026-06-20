@@ -19,6 +19,7 @@ import { promisify } from 'node:util';
 import Redis from 'ioredis';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -29,6 +30,8 @@ const PLATFORM_STATS_WINDOW_DAYS = 30;
 const PLATFORM_AUTH_PARAMETER_PREFIX = 'platform_auth_';
 const PLATFORM_OAUTH_STATE_PARAMETER_PREFIX = 'platform_oauth_state_';
 const PLATFORM_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const OPS_STATUS_CACHE_TTL_MS = 120_000;
+const OPS_REDIS_HEALTH_TIMEOUT_MS = 250;
 
 interface ListQueueStatusQuery extends PaginationQuery {
   queueName?: string;
@@ -195,6 +198,16 @@ interface PlatformLogStats {
   errorRate: string;
 }
 
+interface PlatformLogStatsRow {
+  platform: string;
+  requestCount: bigint | number | string | null;
+  failedRequestCount: bigint | number | string | null;
+  failureLogCount: bigint | number | string | null;
+  lastFailureAt: Date | null;
+  retryLogCount: bigint | number | string | null;
+  lastRetryAt: Date | null;
+}
+
 interface PlatformDefinition {
   platform: string;
   displayName: string;
@@ -223,6 +236,8 @@ interface PlatformAuthorizationValue {
 
 @Injectable()
 export class OpsService {
+  private readonly statusCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -231,36 +246,38 @@ export class OpsService {
   ) {}
 
   async overview() {
-    const [api, database, redis, fileStorage, disk, queue, workers, recentErrors, cron, platform] =
-      await Promise.all([
-        this.apiStatus(),
-        this.databaseStatus(),
-        this.redisStatus(),
-        this.fileStorageStatus(),
-        this.diskSpace(),
-        this.getCurrentQueueStatus(),
-        this.automationWorkers(),
-        this.getRecentErrors(),
-        this.getLatestCronJobs(),
-        this.getPlatformCurrentStatus()
-      ]);
+    return this.statusCache.getOrSet('overview', OPS_STATUS_CACHE_TTL_MS, async () => {
+      const [api, database, redis, fileStorage, disk, queue, recentErrors, cron, platform] =
+        await Promise.all([
+          this.apiStatus(),
+          this.databaseStatus(),
+          this.redisStatus(),
+          this.fileStorageStatus(),
+          this.diskSpace(),
+          this.getCurrentQueueStatus(),
+          this.getRecentErrors(),
+          this.getLatestCronJobs(),
+          this.getPlatformCurrentStatus()
+        ]);
+      const workers = this.toAutomationWorkerStatusFromQueue(queue);
 
-    return {
-      components: [
-        api,
-        database,
-        redis,
-        fileStorage,
-        this.toComponentFromQueue(queue),
+      return {
+        components: [
+          api,
+          database,
+          redis,
+          fileStorage,
+          this.toComponentFromQueue(queue),
+          workers,
+          disk
+        ],
+        queue,
         workers,
-        disk
-      ],
-      queue,
-      workers,
-      cronJobs: cron,
-      platformSync: platform,
-      recentErrors
-    };
+        cronJobs: cron,
+        platformSync: platform,
+        recentErrors
+      };
+    });
   }
 
   apiStatus(): ComponentStatus {
@@ -307,7 +324,8 @@ export class OpsService {
       port: Number(process.env.REDIS_PORT ?? 6379),
       password: process.env.REDIS_PASSWORD || undefined,
       lazyConnect: true,
-      connectTimeout: 1000,
+      connectTimeout: OPS_REDIS_HEALTH_TIMEOUT_MS,
+      commandTimeout: OPS_REDIS_HEALTH_TIMEOUT_MS,
       maxRetriesPerRequest: 0,
       enableOfflineQueue: false
     });
@@ -479,17 +497,17 @@ export class OpsService {
   }
 
   async platformStatuses() {
-    const platforms = this.getPlatformDefinitions();
-    const items = await Promise.all(
-      platforms.map((platform) => this.buildPlatformStatus(platform))
-    );
-    await this.notifyPlatformAuthorizationIncidents(items);
-    return { items };
+    return this.statusCache.getOrSet('platform-statuses', OPS_STATUS_CACHE_TTL_MS, async () => {
+      const platforms = this.getPlatformDefinitions();
+      const items = await this.buildPlatformStatuses(platforms);
+      this.emitPlatformAuthorizationIncidents(items);
+      return { items };
+    });
   }
 
   async platformStatus(platform: string) {
     const status = await this.buildPlatformStatus(this.getPlatformDefinition(platform));
-    await this.notifyPlatformAuthorizationIncidents([status]);
+    this.emitPlatformAuthorizationIncidents([status]);
     return status;
   }
 
@@ -1175,25 +1193,17 @@ export class OpsService {
     const platforms = this.getPlatformDefinitions();
     const aliases = platforms.flatMap((platform) => platform.logAliases);
     const statsWindowStart = this.getPlatformStatsWindowStart();
-    const [latestLogs, statsLogs] = await Promise.all([
+    const [latestLogs, statsByAlias] = await Promise.all([
       this.prisma.platformSyncLog.findMany({
         where: { platform: { in: aliases } },
         take: 50,
         orderBy: [{ finishedAt: 'desc' }, { createdAt: 'desc' }]
       }),
-      this.prisma.platformSyncLog.findMany({
-        where: {
-          platform: { in: aliases },
-          createdAt: { gte: statsWindowStart }
-        },
-        orderBy: [{ finishedAt: 'desc' }, { createdAt: 'desc' }]
-      })
+      this.getPlatformStatsByAlias(aliases, statsWindowStart)
     ]);
     return platforms.map((platform) => {
       const latest = latestLogs.find((log) => platform.logAliases.includes(log.platform));
-      const stats = this.calculatePlatformLogStats(
-        statsLogs.filter((log) => platform.logAliases.includes(log.platform))
-      );
+      const stats = this.getPlatformStatsForDefinition(statsByAlias, platform);
       if (!latest) {
         return {
           platform: platform.platform,
@@ -1242,6 +1252,35 @@ export class OpsService {
         activeCount: queue.activeCount,
         failedCount: queue.failedCount,
         delayedCount: queue.delayedCount
+      }
+    };
+  }
+
+  private toAutomationWorkerStatusFromQueue(
+    queue: Awaited<ReturnType<OpsService['getCurrentQueueStatus']>>
+  ): ComponentStatus {
+    const waitingCount = queue.waitingCount;
+    const runningCount = queue.activeCount;
+    const failedCount = queue.failedCount;
+    const manualCount = queue.delayedCount;
+    const status =
+      failedCount > 0 ? 'error' : waitingCount + runningCount > 0 ? 'warning' : 'normal';
+
+    return {
+      name: '自动化 Worker',
+      status,
+      latencyMs: null,
+      message:
+        status === 'normal'
+          ? 'No pending automation workload'
+          : '真实 Apple ID 自动化 Worker 尚未接入，请关注待处理任务',
+      checkedAt: queue.checkedAt,
+      metrics: {
+        waitingCount,
+        runningCount,
+        failedCount,
+        manualCount,
+        workerMode: 'placeholder'
       }
     };
   }
@@ -1515,7 +1554,7 @@ export class OpsService {
     const [
       latestLog,
       latestFailure,
-      statsLogs,
+      statsByAlias,
       componentStatus,
       baseAuthorizationStatus,
       platformAuthorization
@@ -1528,20 +1567,14 @@ export class OpsService {
         where: { platform: { in: definition.logAliases }, status: 'failed' },
         orderBy: [{ finishedAt: 'desc' }, { createdAt: 'desc' }]
       }),
-      this.prisma.platformSyncLog.findMany({
-        where: {
-          platform: { in: definition.logAliases },
-          createdAt: { gte: statsWindowStart }
-        },
-        orderBy: [{ finishedAt: 'desc' }, { createdAt: 'desc' }]
-      }),
+      this.getPlatformStatsByAlias(definition.logAliases, statsWindowStart),
       this.getPlatformLiveComponentStatus(definition),
       this.getPlatformAuthorizationStatus(definition),
       definition.authorizationStatus === 'not_required'
         ? Promise.resolve(null)
         : this.getPlatformAuthorizationResponse(definition)
     ]);
-    const stats = this.calculatePlatformLogStats(statsLogs);
+    const stats = this.getPlatformStatsForDefinition(statsByAlias, definition);
 
     const tokenExpiresAtDate =
       this.extractTokenExpiresAt(latestLog?.metadata) ??
@@ -1586,6 +1619,206 @@ export class OpsService {
     };
   }
 
+  private async buildPlatformStatuses(
+    definitions: PlatformDefinition[]
+  ): Promise<PlatformInterfaceStatus[]> {
+    const aliases = definitions.flatMap((definition) => definition.logAliases);
+    const statsWindowStart = this.getPlatformStatsWindowStart();
+    const authorizationKeys = definitions
+      .filter((definition) => definition.authorizationStatus !== 'not_required')
+      .map((definition) => this.getPlatformAuthorizationParameterKey(definition.platform));
+
+    const [
+      latestLogs,
+      latestFailures,
+      statsByAlias,
+      authorizationParameters,
+      sourcePlatforms,
+      telegramEnabledCount,
+      fileStorageStatus,
+      automationWorkerStatus
+    ] = await Promise.all([
+      this.prisma.platformSyncLog.findMany({
+        where: { platform: { in: aliases } },
+        take: 50,
+        orderBy: [{ finishedAt: 'desc' }, { createdAt: 'desc' }]
+      }),
+      this.prisma.platformSyncLog.findMany({
+        where: { platform: { in: aliases }, status: 'failed' },
+        take: 50,
+        orderBy: [{ finishedAt: 'desc' }, { createdAt: 'desc' }]
+      }),
+      this.getPlatformStatsByAlias(aliases, statsWindowStart),
+      authorizationKeys.length
+        ? this.prisma.systemParameter.findMany({
+            where: { key: { in: authorizationKeys } }
+          })
+        : Promise.resolve([]),
+      this.prisma.sourcePlatform.findMany({
+        where: {
+          type: { in: ['taobao', 'xianyu'] },
+          deletedAt: null
+        },
+        select: {
+          type: true,
+          syncEnabled: true,
+          deliveryEnabled: true
+        }
+      }),
+      this.prisma.telegramConfig.count({
+        where: { enabled: true, deletedAt: null }
+      }),
+      this.fileStorageStatus(),
+      this.automationWorkers()
+    ]);
+
+    const authorizationParameterByKey = new Map(
+      authorizationParameters.map((parameter) => [parameter.key, parameter])
+    );
+    const sourcePlatformByType = new Map(sourcePlatforms.map((item) => [item.type, item]));
+    const componentStatusByPlatform = new Map<string, ComponentStatus>([
+      [
+        'telegram',
+        {
+          name: 'Telegram',
+          status: telegramEnabledCount > 0 ? 'normal' : 'warning',
+          latencyMs: null,
+          message: telegramEnabledCount > 0 ? 'Telegram 配置已启用' : '未启用 Telegram 配置',
+          checkedAt: new Date().toISOString()
+        }
+      ],
+      ['file-storage', fileStorageStatus],
+      ['automation-service', automationWorkerStatus]
+    ]);
+
+    return definitions.map((definition) =>
+      this.buildPlatformStatusFromSnapshot({
+        definition,
+        latestLogs,
+        latestFailures,
+        statsByAlias,
+        authorizationParameterByKey,
+        sourcePlatformByType,
+        telegramEnabledCount,
+        componentStatusByPlatform
+      })
+    );
+  }
+
+  private buildPlatformStatusFromSnapshot(input: {
+    definition: PlatformDefinition;
+    latestLogs: PlatformSyncLog[];
+    latestFailures: PlatformSyncLog[];
+    statsByAlias: Map<string, PlatformLogStats>;
+    authorizationParameterByKey: Map<string, { value: Prisma.JsonValue; updatedAt: Date }>;
+    sourcePlatformByType: Map<string, { syncEnabled: boolean; deliveryEnabled: boolean }>;
+    telegramEnabledCount: number;
+    componentStatusByPlatform: Map<string, ComponentStatus>;
+  }): PlatformInterfaceStatus {
+    const {
+      definition,
+      latestLogs,
+      latestFailures,
+      statsByAlias,
+      authorizationParameterByKey,
+      sourcePlatformByType,
+      telegramEnabledCount,
+      componentStatusByPlatform
+    } = input;
+    const latestLog = latestLogs.find((log) => definition.logAliases.includes(log.platform));
+    const latestFailure = latestFailures.find((log) =>
+      definition.logAliases.includes(log.platform)
+    );
+    const stats = this.getPlatformStatsForDefinition(statsByAlias, definition);
+    const authorizationParameter = authorizationParameterByKey.get(
+      this.getPlatformAuthorizationParameterKey(definition.platform)
+    );
+    const platformAuthorization =
+      definition.authorizationStatus === 'not_required'
+        ? null
+        : this.toPlatformAuthorizationResponse(
+            definition,
+            this.normalizePlatformAuthorizationValue(authorizationParameter?.value),
+            authorizationParameter?.updatedAt ?? null
+          );
+    const baseAuthorizationStatus = this.getPlatformAuthorizationStatusFromSnapshot({
+      definition,
+      authorization: platformAuthorization,
+      sourcePlatform: sourcePlatformByType.get(definition.platform),
+      telegramEnabledCount
+    });
+    const componentStatus = componentStatusByPlatform.get(definition.platform) ?? {
+      name: definition.displayName,
+      status: 'unknown' as OpsHealthStatus,
+      latencyMs: null,
+      message: `${definition.displayName} 真实开放平台授权尚未接入`,
+      checkedAt: new Date().toISOString()
+    };
+    const tokenExpiresAtDate =
+      this.extractTokenExpiresAt(latestLog?.metadata) ??
+      this.parseOptionalDate(platformAuthorization?.tokenExpiresAt, 'tokenExpiresAt');
+    const authorizationStatus = this.applyTokenAuthorizationStatus(
+      baseAuthorizationStatus,
+      tokenExpiresAtDate
+    );
+    const rawStatus = latestLog
+      ? latestLog.status === 'success'
+        ? 'normal'
+        : 'error'
+      : componentStatus.status;
+    const status =
+      authorizationStatus === 'expired'
+        ? 'error'
+        : authorizationStatus === 'expiring' && rawStatus === 'normal'
+          ? 'warning'
+          : rawStatus;
+    const authorizationMessage = this.getAuthorizationMessage(definition, authorizationStatus);
+    const message = authorizationMessage ?? latestLog?.errorMessage ?? componentStatus.message;
+
+    return {
+      platform: definition.platform,
+      displayName: definition.displayName,
+      status,
+      authorizationStatus,
+      tokenExpiresAt: tokenExpiresAtDate?.toISOString() ?? null,
+      lastSyncAt: latestLog?.finishedAt ?? latestLog?.createdAt ?? null,
+      lastFailureReason: latestFailure?.errorMessage ?? null,
+      requestCount: stats.requestCount,
+      failedRequestCount: stats.failedRequestCount,
+      failureLogCount: stats.failureLogCount,
+      lastFailureAt: stats.lastFailureAt,
+      retryLogCount: stats.retryLogCount,
+      lastRetryAt: stats.lastRetryAt,
+      errorRate: stats.errorRate,
+      canReauthorize: definition.authorizationStatus !== 'not_required',
+      canTestConnection: true,
+      latestLog: latestLog ? this.toPlatformSyncResponse(latestLog) : null,
+      message
+    };
+  }
+
+  private getPlatformAuthorizationStatusFromSnapshot(input: {
+    definition: PlatformDefinition;
+    authorization: PlatformAuthorizationResponse | null;
+    sourcePlatform?: { syncEnabled: boolean; deliveryEnabled: boolean };
+    telegramEnabledCount: number;
+  }): PlatformInterfaceStatus['authorizationStatus'] {
+    const { definition, authorization, sourcePlatform, telegramEnabledCount } = input;
+
+    if (definition.authorizationStatus === 'not_required') return 'not_required';
+    if (definition.platform === 'telegram') {
+      return telegramEnabledCount > 0 ? 'configured' : 'not_configured';
+    }
+    if (definition.platform === 'taobao' || definition.platform === 'xianyu') {
+      if (authorization?.configured) return 'configured';
+      if (!sourcePlatform) return 'not_configured';
+      return sourcePlatform.syncEnabled || sourcePlatform.deliveryEnabled
+        ? 'configured'
+        : 'not_configured';
+    }
+    return 'unknown';
+  }
+
   private async notifyPlatformAuthorizationIncidents(statuses: PlatformInterfaceStatus[]) {
     const invalidPlatforms = statuses.filter(
       (status) =>
@@ -1609,6 +1842,10 @@ export class OpsService {
       content: this.formatPlatformAuthorizationContent(expiringPlatforms, '授权将在 7 天内过期'),
       platforms: expiringPlatforms
     });
+  }
+
+  private emitPlatformAuthorizationIncidents(statuses: PlatformInterfaceStatus[]) {
+    void this.notifyPlatformAuthorizationIncidents(statuses).catch(() => undefined);
   }
 
   private async triggerPlatformAuthorizationNotification(input: {
@@ -1741,6 +1978,145 @@ export class OpsService {
 
   private getPlatformStatsWindowStart() {
     return new Date(Date.now() - PLATFORM_STATS_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  }
+
+  private async getPlatformStatsByAlias(aliases: string[], statsWindowStart: Date) {
+    if (!aliases.length) return new Map<string, PlatformLogStats>();
+    if (typeof this.prisma.$queryRaw !== 'function') {
+      return this.getPlatformStatsByAliasWithPrisma(aliases, statsWindowStart);
+    }
+
+    try {
+      const retryCondition = PrismaNamespace.sql`(
+        lower(sync_type) LIKE '%retry%'
+        OR lower(COALESCE(metadata->>'action', '')) = 'retry'
+        OR COALESCE(metadata->>'retry', '') = 'true'
+        OR (
+          COALESCE(metadata->>'retryCount', '') ~ '^[0-9]+$'
+          AND (metadata->>'retryCount')::int > 0
+        )
+        OR (
+          COALESCE(metadata->>'retry_count', '') ~ '^[0-9]+$'
+          AND (metadata->>'retry_count')::int > 0
+        )
+        OR (
+          COALESCE(metadata->>'attempt', '') ~ '^[0-9]+$'
+          AND (metadata->>'attempt')::int > 1
+        )
+        OR (
+          COALESCE(metadata->>'attemptNo', '') ~ '^[0-9]+$'
+          AND (metadata->>'attemptNo')::int > 1
+        )
+        OR (
+          COALESCE(metadata->>'attempt_no', '') ~ '^[0-9]+$'
+          AND (metadata->>'attempt_no')::int > 1
+        )
+      )`;
+      const rows = await this.prisma.$queryRaw<PlatformLogStatsRow[]>`
+        SELECT
+          platform,
+          COALESCE(SUM(GREATEST(request_count, 0)), 0) AS "requestCount",
+          COALESCE(
+            SUM(
+              CASE
+                WHEN request_count <= 0 THEN 0
+                WHEN ROUND(request_count * LEAST(GREATEST(error_rate::numeric, 0), 1)) > 0
+                  THEN ROUND(request_count * LEAST(GREATEST(error_rate::numeric, 0), 1))::int
+                WHEN status::text = 'failed' THEN request_count
+                ELSE 0
+              END
+            ),
+            0
+          ) AS "failedRequestCount",
+          COUNT(*) FILTER (WHERE status::text = 'failed') AS "failureLogCount",
+          MAX(CASE WHEN status::text = 'failed' THEN COALESCE(finished_at, created_at) END) AS "lastFailureAt",
+          COUNT(*) FILTER (WHERE ${retryCondition}) AS "retryLogCount",
+          MAX(CASE WHEN ${retryCondition} THEN COALESCE(finished_at, created_at) END) AS "lastRetryAt"
+        FROM platform_sync_logs
+        WHERE platform IN (${PrismaNamespace.join(aliases)})
+          AND created_at >= ${statsWindowStart}
+        GROUP BY platform
+      `;
+      if (!Array.isArray(rows) || rows.some((row) => typeof row.platform !== 'string')) {
+        throw new Error('Unexpected platform stats row shape');
+      }
+      return new Map(rows.map((row) => [row.platform, this.toPlatformLogStatsFromRow(row)]));
+    } catch {
+      return this.getPlatformStatsByAliasWithPrisma(aliases, statsWindowStart);
+    }
+  }
+
+  private async getPlatformStatsByAliasWithPrisma(aliases: string[], statsWindowStart: Date) {
+    const logs = await this.prisma.platformSyncLog.findMany({
+      where: {
+        platform: { in: aliases },
+        createdAt: { gte: statsWindowStart }
+      },
+      orderBy: [{ finishedAt: 'desc' }, { createdAt: 'desc' }]
+    });
+    return this.buildPlatformStatsByAliasFromLogs(logs);
+  }
+
+  private buildPlatformStatsByAliasFromLogs(logs: PlatformSyncLog[]) {
+    const logsByAlias = new Map<string, PlatformSyncLog[]>();
+    for (const log of logs) {
+      const items = logsByAlias.get(log.platform) ?? [];
+      items.push(log);
+      logsByAlias.set(log.platform, items);
+    }
+    return new Map(
+      Array.from(logsByAlias.entries()).map(([alias, items]) => [
+        alias,
+        this.calculatePlatformLogStats(items)
+      ])
+    );
+  }
+
+  private getPlatformStatsForDefinition(
+    statsByAlias: Map<string, PlatformLogStats>,
+    definition: PlatformDefinition
+  ): PlatformLogStats {
+    let requestCount = 0;
+    let failedRequestCount = 0;
+    let failureLogCount = 0;
+    let lastFailureAt: Date | null = null;
+    let retryLogCount = 0;
+    let lastRetryAt: Date | null = null;
+
+    for (const alias of definition.logAliases) {
+      const stats = statsByAlias.get(alias);
+      if (!stats) continue;
+      requestCount += stats.requestCount;
+      failedRequestCount += stats.failedRequestCount;
+      failureLogCount += stats.failureLogCount;
+      lastFailureAt = this.pickLatestDate(lastFailureAt, stats.lastFailureAt);
+      retryLogCount += stats.retryLogCount;
+      lastRetryAt = this.pickLatestDate(lastRetryAt, stats.lastRetryAt);
+    }
+
+    return {
+      requestCount,
+      failedRequestCount,
+      failureLogCount,
+      lastFailureAt,
+      retryLogCount,
+      lastRetryAt,
+      errorRate: this.formatRatio(requestCount === 0 ? 0 : failedRequestCount / requestCount)
+    };
+  }
+
+  private toPlatformLogStatsFromRow(row: PlatformLogStatsRow): PlatformLogStats {
+    const requestCount = this.getCountNumber(row.requestCount);
+    const failedRequestCount = this.getCountNumber(row.failedRequestCount);
+    return {
+      requestCount,
+      failedRequestCount,
+      failureLogCount: this.getCountNumber(row.failureLogCount),
+      lastFailureAt: row.lastFailureAt,
+      retryLogCount: this.getCountNumber(row.retryLogCount),
+      lastRetryAt: row.lastRetryAt,
+      errorRate: this.formatRatio(requestCount === 0 ? 0 : failedRequestCount / requestCount)
+    };
   }
 
   private calculatePlatformLogStats(logs: PlatformSyncLog[]): PlatformLogStats {
@@ -1977,6 +2353,12 @@ export class OpsService {
   private getMetricNumber(value: unknown) {
     const numberValue = Number(value);
     return Number.isFinite(numberValue) ? numberValue : null;
+  }
+
+  private getCountNumber(value: bigint | number | string | null) {
+    const numberValue = typeof value === 'bigint' ? Number(value) : Number(value ?? 0);
+    if (!Number.isFinite(numberValue)) return 0;
+    return Math.max(0, Math.trunc(numberValue));
   }
 
   private toNullableJson(value: unknown) {

@@ -69,7 +69,7 @@ export function getAppleAccountRegionLabel(region: string | null | undefined) {
 }
 
 export function getCurrencyForRegion(region: string | null | undefined) {
-  return getAppleAccountRegionOption(region)?.currency ?? 'USD';
+  return getAppleAccountRegionOption(region)?.currency ?? 'CNY';
 }
 
 export function formatCurrencyLabel(currency: string | null | undefined) {

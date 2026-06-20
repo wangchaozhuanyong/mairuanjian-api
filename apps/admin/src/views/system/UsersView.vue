@@ -54,7 +54,7 @@
         primary-label="新增用户"
         placeholder="搜索账号、姓名、手机号、邮箱"
         @search="handleSearch"
-        @refresh="loadUsers"
+        @refresh="() => loadUsers()"
         @primary="openCreate"
         @clear-filters="clearFilters"
         @save-view="saveTableView"
@@ -199,7 +199,7 @@
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @change="loadUsers"
+        @change="() => loadUsers()"
       />
     </section>
 
@@ -250,14 +250,17 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { rolesApi, userTableViewsApi, usersApi } from '@/api/system';
+import type { UserQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { ManagedUser, Role, TableDensity, UserTableView } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { ManagedUser, PageResult, Role, TableDensity, UserTableView } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'system_users';
 const statusOptions = [
@@ -288,6 +291,8 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const activeUsersQueryKey = ref('');
+const activeRolesQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -329,27 +334,92 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
 }
 
-async function loadRoles() {
-  roles.value = await rolesApi.listRoles();
+function applyRolesResult(data: Role[]) {
+  roles.value = data;
 }
 
-async function loadUsers() {
-  loading.value = true;
+async function loadRoles(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('system-user-roles');
+  const cached = getSmartQueryData<Role[]>(key);
+
+  activeRolesQueryKey.value = key;
+
+  if (cached) {
+    applyRolesResult(cached);
+  }
+
   try {
-    const data = await usersApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      sortBy: sortConfig.value.prop,
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => rolesApi.listRoles(),
+      force: options.force ?? true
     });
-    users.value = data.items;
-    total.value = data.total;
+
+    if (activeRolesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyRolesResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载用户失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载角色失败');
+    }
+  }
+}
+
+function buildUserParams(): UserQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    sortBy: sortConfig.value.prop,
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyUsersResult(data: PageResult<ManagedUser>) {
+  users.value = data.items;
+  total.value = data.total;
+}
+
+async function loadUsers(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildUserParams();
+  const key = createSmartQueryKey('system-users', params);
+  const cached = getSmartQueryData<PageResult<ManagedUser>>(key);
+
+  activeUsersQueryKey.value = key;
+
+  if (cached) {
+    applyUsersResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => usersApi.list(params),
+      force: options.force ?? true
+    });
+
+    if (activeUsersQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyUsersResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载用户失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeUsersQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -491,7 +561,7 @@ function isUserStatus(value: unknown): value is ManagedUser['status'] | '' {
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadUsers();
+  await loadUsers({ force: false });
 }
 
 function resetForm() {
@@ -548,7 +618,7 @@ async function saveUser() {
 
     ElMessage.success('已保存');
     dialogVisible.value = false;
-    await loadUsers();
+    await loadUsers({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存失败');
   } finally {
@@ -557,8 +627,26 @@ async function saveUser() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadRoles(), initializePage()]);
+  await Promise.all([loadRoles({ force: false }), initializePage()]);
 });
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['system-users', 'system-user-roles'],
+  () => {
+    void Promise.all([
+      loadRoles({
+        background: roles.value.length > 0,
+        force: true
+      }),
+      loadUsers({
+        background: users.value.length > 0,
+        force: true
+      })
+    ]);
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

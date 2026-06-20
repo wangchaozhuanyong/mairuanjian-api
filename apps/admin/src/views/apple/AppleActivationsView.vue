@@ -360,15 +360,18 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { appleActivationsApi, userTableViewsApi } from '@/api/system';
+import type { ServiceActivationQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { ServiceActivation, TableDensity, UserTableView } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { PageResult, ServiceActivation, TableDensity, UserTableView } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const loading = ref(false);
 const detailDrawerVisible = ref(false);
@@ -383,6 +386,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const tableKey = 'apple_activations';
+const activeActivationsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -602,26 +606,60 @@ function getExpireTone(days: number) {
   return days <= 7 ? 'orange' : 'neutral';
 }
 
-async function loadActivations() {
-  loading.value = true;
+function buildActivationParams(): ServiceActivationQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    renewalDecision: query.renewalDecision || undefined,
+    expireFrom: query.expireFrom || undefined,
+    expireTo: query.expireTo || undefined,
+    sortBy: sortConfig.value.prop,
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyActivationResult(data: PageResult<ServiceActivation>) {
+  activations.value = data.items;
+  total.value = data.total;
+}
+
+async function loadActivations(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildActivationParams();
+  const key = createSmartQueryKey('apple-activations', params);
+  const cached = getSmartQueryData<PageResult<ServiceActivation>>(key);
+
+  activeActivationsQueryKey.value = key;
+
+  if (cached) {
+    applyActivationResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const data = await appleActivationsApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      renewalDecision: query.renewalDecision || undefined,
-      expireFrom: query.expireFrom || undefined,
-      expireTo: query.expireTo || undefined,
-      sortBy: sortConfig.value.prop,
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => appleActivationsApi.list(params),
+      force: options.force ?? true
     });
-    activations.value = data.items;
-    total.value = data.total;
+
+    if (activeActivationsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyActivationResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载开通记录失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载开通记录失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeActivationsQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -807,8 +845,17 @@ async function refreshDetail() {
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadActivations();
+  await loadActivations({ force: false });
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-activations'], () => {
+  void loadActivations({
+    background: activations.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>

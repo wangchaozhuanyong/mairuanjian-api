@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import { AppleAccountsService } from './apple-accounts.service';
 import type { CreateAppleAccountDto } from './dto/create-apple-account.dto';
 import type { ImportAppleAccountsDto } from './dto/import-apple-accounts.dto';
@@ -25,7 +26,10 @@ interface RequestWithAuditMeta {
 
 @Controller('apple/accounts')
 export class AppleAccountsController {
-  constructor(private readonly appleAccountsService: AppleAccountsService) {}
+  constructor(
+    private readonly appleAccountsService: AppleAccountsService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get()
   @RequirePermissions('apple.account.view')
@@ -61,24 +65,42 @@ export class AppleAccountsController {
 
   @Post()
   @RequirePermissions('apple.account.create')
-  create(@Body() dto: CreateAppleAccountDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.appleAccountsService.create(dto, operator);
+  async create(@Body() dto: CreateAppleAccountDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const account = await this.appleAccountsService.create(dto, operator);
+    this.publishAppleAccountEvent('apple.account.created', 'created', account.id);
+    return account;
   }
 
   @Post('import')
   @RequirePermissions('apple.account.import')
-  importAccounts(@Body() dto: ImportAppleAccountsDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.appleAccountsService.importAccounts(dto, operator);
+  async importAccounts(
+    @Body() dto: ImportAppleAccountsDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.appleAccountsService.importAccounts(dto, operator);
+    this.realtimeService.publish({
+      type: 'apple.account.imported',
+      module: 'apple',
+      entity: 'account',
+      action: 'imported',
+      scope: {
+        successCount: result.successCount,
+        failedCount: result.failedCount
+      }
+    });
+    return result;
   }
 
   @Patch(':id')
   @RequirePermissions('apple.account.update')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateAppleAccountDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleAccountsService.update(id, dto, operator);
+    const account = await this.appleAccountsService.update(id, dto, operator);
+    this.publishAppleAccountEvent('apple.account.updated', 'updated', account.id);
+    return account;
   }
 
   @Post(':id/reveal-secret')
@@ -99,11 +121,26 @@ export class AppleAccountsController {
 
   @Delete(':id')
   @RequirePermissions('apple.account.delete')
-  remove(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.appleAccountsService.remove(id, operator);
+  async remove(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.appleAccountsService.remove(id, operator);
+    this.publishAppleAccountEvent('apple.account.deleted', 'deleted', id);
+    return result;
   }
 
   private getHeaderValue(value: string | string[] | undefined) {
     return Array.isArray(value) ? value.join(', ') : value;
+  }
+
+  private publishAppleAccountEvent(type: string, action: string, accountId: string) {
+    this.realtimeService.publish({
+      type,
+      module: 'apple',
+      entity: 'account',
+      action,
+      resourceId: accountId,
+      scope: {
+        appleAccountId: accountId
+      }
+    });
   }
 }

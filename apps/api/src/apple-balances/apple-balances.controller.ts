@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Header, Param, Post, Query, Req } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import { AppleBalancesService } from './apple-balances.service';
 import type { CreateAppleBalanceAdjustmentDto } from './dto/create-apple-balance-adjustment.dto';
 import type { CreateAppleBalanceConsumptionDto } from './dto/create-apple-balance-consumption.dto';
@@ -14,7 +15,10 @@ interface RequestWithAuditMeta {
 
 @Controller('apple/accounts/:accountId')
 export class AppleBalancesController {
-  constructor(private readonly appleBalancesService: AppleBalancesService) {}
+  constructor(
+    private readonly appleBalancesService: AppleBalancesService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get('topups')
   @RequirePermissions('apple.balance.view')
@@ -28,12 +32,14 @@ export class AppleBalancesController {
 
   @Post('topups')
   @RequirePermissions('apple.balance.topup')
-  createTopup(
+  async createTopup(
     @Param('accountId') accountId: string,
     @Body() dto: CreateAppleBalanceTopupDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleBalancesService.createTopup(accountId, dto, operator);
+    const topup = await this.appleBalancesService.createTopup(accountId, dto, operator);
+    this.publishAppleBalanceEvent('apple.topup.created', 'topup', 'created', accountId, topup.id);
+    return topup;
   }
 
   @Get('consumptions')
@@ -48,12 +54,20 @@ export class AppleBalancesController {
 
   @Post('consumptions')
   @RequirePermissions('apple.balance.adjust')
-  createConsumption(
+  async createConsumption(
     @Param('accountId') accountId: string,
     @Body() dto: CreateAppleBalanceConsumptionDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleBalancesService.createConsumption(accountId, dto, operator);
+    const consumption = await this.appleBalancesService.createConsumption(accountId, dto, operator);
+    this.publishAppleBalanceEvent(
+      'apple.consumption.created',
+      'consumption',
+      'created',
+      accountId,
+      consumption.id
+    );
+    return consumption;
   }
 
   @Get('balance-adjustments')
@@ -68,12 +82,43 @@ export class AppleBalancesController {
 
   @Post('balance-adjustments')
   @RequirePermissions('apple.balance.adjust')
-  createBalanceAdjustment(
+  async createBalanceAdjustment(
     @Param('accountId') accountId: string,
     @Body() dto: CreateAppleBalanceAdjustmentDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleBalancesService.createBalanceAdjustment(accountId, dto, operator);
+    const adjustment = await this.appleBalancesService.createBalanceAdjustment(
+      accountId,
+      dto,
+      operator
+    );
+    this.publishAppleBalanceEvent(
+      'apple.balance_adjustment.created',
+      'balance_adjustment',
+      'created',
+      accountId,
+      adjustment.id
+    );
+    return adjustment;
+  }
+
+  private publishAppleBalanceEvent(
+    type: string,
+    entity: string,
+    action: string,
+    accountId: string,
+    recordId: string
+  ) {
+    this.realtimeService.publish({
+      type,
+      module: 'apple',
+      entity,
+      action,
+      resourceId: recordId,
+      scope: {
+        appleAccountId: accountId
+      }
+    });
   }
 }
 

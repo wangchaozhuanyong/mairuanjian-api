@@ -37,7 +37,7 @@
         primary-label="新增兑换码业务"
         placeholder="搜索业务名称、面值、备注"
         @search="handleSearch"
-        @refresh="loadServices"
+        @refresh="() => loadServices()"
         @primary="openCreate"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
@@ -233,7 +233,7 @@
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @change="loadServices"
+        @change="() => loadServices()"
       />
     </section>
 
@@ -297,7 +297,7 @@
       <div class="drawer-section drawer-section--flush">
         <div class="drawer-section__title">
           <span>平台商品/SKU 映射</span>
-          <AppButton @click="loadMappings">刷新</AppButton>
+          <AppButton @click="() => loadMappings()">刷新</AppButton>
         </div>
         <p class="drawer-section__description">
           用于后续淘宝、闲鱼订单同步时识别兑换码业务，不和 Apple ID 平台映射混用。
@@ -464,27 +464,27 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
-import {
-  codeServicesApi,
-  messageTemplatesApi,
-  sourcePlatformsApi,
-  userTableViewsApi
-} from '@/api/system';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { codeServicesApi, userTableViewsApi } from '@/api/system';
+import type { CodePlatformMappingQuery, CodeServiceQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodePlatformMapping,
   CodeService,
   MessageTemplate,
+  PageResult,
   SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { loadSmartMessageTemplates, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
 const tableKey = 'code_services';
 const statusOptions = [
@@ -532,6 +532,8 @@ const visibleColumns = ref<string[]>([]);
 const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
+const activeServicesQueryKey = ref('');
+const activeMappingsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -634,24 +636,58 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadServices() {
-  loading.value = true;
+function buildServiceParams(): CodeServiceQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    deliveryMode: query.deliveryMode || undefined,
+    sortBy: sortConfig.value.prop,
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyServiceResult(data: PageResult<CodeService>) {
+  services.value = data.items;
+  total.value = data.total;
+}
+
+async function loadServices(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildServiceParams();
+  const key = createSmartQueryKey('code-services', params);
+  const cached = getSmartQueryData<PageResult<CodeService>>(key);
+
+  activeServicesQueryKey.value = key;
+
+  if (cached) {
+    applyServiceResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const data = await codeServicesApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      deliveryMode: query.deliveryMode || undefined,
-      sortBy: sortConfig.value.prop,
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => codeServicesApi.list(params),
+      force: options.force ?? true
     });
-    services.value = data.items;
-    total.value = data.total;
+
+    if (activeServicesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyServiceResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载兑换码业务失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载兑换码业务失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeServicesQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -803,17 +839,17 @@ function isDeliveryMode(value: unknown): value is CodeService['deliveryMode'] | 
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadServices();
+  await loadServices({ force: false });
 }
 
 async function loadMappingDependencies() {
   const [platformData, templateData] = await Promise.all([
-    sourcePlatformsApi.list({
+    loadSmartSourcePlatforms({
       page: 1,
       pageSize: 100,
       status: 'active'
     }),
-    messageTemplatesApi.list({
+    loadSmartMessageTemplates({
       page: 1,
       pageSize: 100,
       status: 'active',
@@ -824,23 +860,62 @@ async function loadMappingDependencies() {
   deliveryTemplates.value = templateData.items;
 }
 
-async function loadMappings() {
+function buildMappingParams(): CodePlatformMappingQuery | null {
   if (!selectedService.value) {
+    return null;
+  }
+
+  return {
+    page: 1,
+    pageSize: 100,
+    serviceId: selectedService.value.id
+  };
+}
+
+function applyMappingResult(data: PageResult<CodePlatformMapping>) {
+  mappings.value = data.items;
+}
+
+async function loadMappings(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildMappingParams();
+
+  if (!params) {
     return;
   }
 
-  mappingLoading.value = true;
+  const key = createSmartQueryKey('code-service-mappings', params);
+  const cached = getSmartQueryData<PageResult<CodePlatformMapping>>(key);
+
+  activeMappingsQueryKey.value = key;
+
+  if (cached) {
+    applyMappingResult(cached);
+  }
+
+  mappingLoading.value = !cached && !options.background;
+
   try {
-    const data = await codeServicesApi.listPlatformMappings({
-      page: 1,
-      pageSize: 100,
-      serviceId: selectedService.value.id
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => codeServicesApi.listPlatformMappings(params),
+      force: options.force ?? true
     });
-    mappings.value = data.items;
+
+    if (activeMappingsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyMappingResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载平台映射失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载平台映射失败');
+    }
   } finally {
-    mappingLoading.value = false;
+    if (activeMappingsQueryKey.value === key) {
+      mappingLoading.value = false;
+    }
   }
 }
 
@@ -995,7 +1070,7 @@ async function saveMapping() {
 
     ElMessage.success('平台映射已保存');
     mappingDialogVisible.value = false;
-    await loadMappings();
+    await loadMappings({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存平台映射失败');
   } finally {
@@ -1016,7 +1091,7 @@ async function deleteMapping(mapping: CodePlatformMapping) {
     );
     await codeServicesApi.removePlatformMapping(mapping.id);
     ElMessage.success('平台映射已删除');
-    await loadMappings();
+    await loadMappings({ force: true });
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(error instanceof Error ? error.message : '删除平台映射失败');
@@ -1025,6 +1100,25 @@ async function deleteMapping(mapping: CodePlatformMapping) {
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['code-services', 'code-service-mappings'],
+  () => {
+    void loadServices({
+      background: services.value.length > 0,
+      force: true
+    });
+
+    if (mappingDrawerVisible.value) {
+      void loadMappings({
+        background: mappings.value.length > 0,
+        force: true
+      });
+    }
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

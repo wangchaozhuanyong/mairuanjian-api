@@ -451,7 +451,7 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { codeServicesApi, redeemCodesApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
@@ -468,6 +468,13 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import {
+  createSmartQueryKey,
+  getSmartQueryData,
+  invalidateSmartQueries,
+  refreshSmartQuery
+} from '@/utils/smartQuery';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 
 const tableKey = 'code_inventory';
 const inventoryStatusOptions = [
@@ -510,9 +517,14 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const activeInventoryQueryKey = ref('');
+const activatedOnce = ref(false);
 const importResult = ref<RedeemCodeImportResult | null>(null);
 const importFormRef = ref<FormInstance>();
 const revealFormRef = ref<FormInstance>();
+
+type CodeInventoryPage = Awaited<ReturnType<typeof redeemCodesApi.listInventory>>;
+type CodeInventoryListParams = Parameters<typeof redeemCodesApi.listInventory>[0];
 
 const query = reactive({
   page: 1,
@@ -628,25 +640,59 @@ async function loadServices() {
   services.value = data.items;
 }
 
-async function loadInventory() {
-  loading.value = true;
-  try {
-    const data = await redeemCodesApi.listInventory({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      serviceId: query.serviceId || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
-    });
-    inventory.value = data.items;
-    total.value = data.total;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载兑换码库存失败');
-  } finally {
-    loading.value = false;
+async function loadInventory(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildInventoryListParams();
+  const key = createSmartQueryKey('code-inventory', params);
+  const cached = getSmartQueryData<CodeInventoryPage>(key);
+
+  activeInventoryQueryKey.value = key;
+
+  if (cached) {
+    applyInventoryListResult(cached);
   }
+
+  loading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => redeemCodesApi.listInventory(params),
+      force: options.force ?? true
+    });
+
+    if (activeInventoryQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyInventoryListResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载兑换码库存失败');
+    }
+  } finally {
+    if (activeInventoryQueryKey.value === key) {
+      loading.value = false;
+    }
+  }
+}
+
+function buildInventoryListParams(): CodeInventoryListParams {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    serviceId: query.serviceId || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyInventoryListResult(data: CodeInventoryPage) {
+  inventory.value = data.items;
+  total.value = data.total;
 }
 
 async function handleSearch() {
@@ -669,7 +715,7 @@ function handleSelectionChange(rows: RedeemCodeInventoryItem[]) {
 
 async function reloadAll() {
   try {
-    await Promise.all([loadServices(), loadInventory()]);
+    await Promise.all([loadServices(), loadInventory({ force: true })]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '刷新兑换码库存失败');
   }
@@ -717,11 +763,14 @@ async function loadTableViews(applyDefault = false) {
       const defaultView = data.items.find((view) => view.isDefault);
       if (defaultView) {
         applyView(defaultView);
+        return true;
       }
     }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载保存视图失败');
   }
+
+  return false;
 }
 
 async function saveTableView() {
@@ -867,6 +916,7 @@ async function submitImport() {
     });
     importResult.value = result;
     ElMessage.success(`成功导入 ${result.successCount} 条兑换码`);
+    invalidateSmartQueries('code-inventory');
     await loadInventory();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '导入兑换码失败');
@@ -895,17 +945,51 @@ async function revealCode() {
   }
 }
 
+async function loadPageData() {
+  const servicesPromise = loadServices();
+  const tableViewsPromise = loadTableViews(true);
+  const inventoryPromise = loadInventory({ force: false });
+  const defaultViewApplied = await tableViewsPromise;
+
+  await Promise.all([servicesPromise, inventoryPromise]);
+
+  if (defaultViewApplied) {
+    await loadInventory({
+      background: inventory.value.length > 0,
+      force: false
+    });
+  }
+}
+
 async function initializePage() {
   try {
-    await loadServices();
-    await loadTableViews(true);
-    await loadInventory();
+    await loadPageData();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载兑换码库存失败');
   }
 }
 
 onMounted(initializePage);
+onActivated(() => {
+  if (!activatedOnce.value) {
+    activatedOnce.value = true;
+    return;
+  }
+
+  void loadInventory({
+    background: inventory.value.length > 0,
+    force: false
+  });
+});
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['code-inventory'], () => {
+  void loadInventory({
+    background: inventory.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

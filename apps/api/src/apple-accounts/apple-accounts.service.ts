@@ -9,6 +9,8 @@ import type { AppleAccount, AppleAccountStatus, Prisma } from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -121,9 +123,12 @@ const SECRET_FIELD_CONFIGS: Record<AppleAccountSecretField, SecretFieldConfig> =
     label: '备用邮箱'
   }
 };
+const APPLE_ACCOUNT_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class AppleAccountsService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -131,42 +136,48 @@ export class AppleAccountsService {
   ) {}
 
   async list(query: ListAppleAccountsQuery) {
-    const pagination = getPagination(query);
-    const keyword = query.keyword?.trim().toLowerCase();
-    const status = this.parseStatus(query.status, false);
-    const locked = this.parseBoolean(query.locked);
-    const where: Prisma.AppleAccountWhereInput = {
-      deletedAt: null,
-      status: status ?? undefined,
-      currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
-      region: query.region ? query.region.trim().toUpperCase() : undefined,
-      isManuallyLocked: locked,
-      OR: keyword
-        ? [
-            { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
-            { region: { contains: keyword, mode: 'insensitive' } },
-            { currency: { contains: keyword, mode: 'insensitive' } },
-            { remark: { contains: keyword, mode: 'insensitive' } }
-          ]
-        : undefined
-    };
+    return this.listCache.getOrSet(
+      getListCacheKey('apple-accounts', query),
+      APPLE_ACCOUNT_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const keyword = query.keyword?.trim().toLowerCase();
+        const status = this.parseStatus(query.status, false);
+        const locked = this.parseBoolean(query.locked);
+        const where: Prisma.AppleAccountWhereInput = {
+          deletedAt: null,
+          status: status ?? undefined,
+          currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
+          region: query.region ? query.region.trim().toUpperCase() : undefined,
+          isManuallyLocked: locked,
+          OR: keyword
+            ? [
+                { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
+                { region: { contains: keyword, mode: 'insensitive' } },
+                { currency: { contains: keyword, mode: 'insensitive' } },
+                { remark: { contains: keyword, mode: 'insensitive' } }
+              ]
+            : undefined
+        };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.appleAccount.findMany({
-        where,
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: this.getListOrderBy(query)
-      }),
-      this.prisma.appleAccount.count({ where })
-    ]);
+        const [items, total] = await Promise.all([
+          this.prisma.appleAccount.findMany({
+            where,
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: this.getListOrderBy(query)
+          }),
+          this.prisma.appleAccount.count({ where })
+        ]);
 
-    return {
-      items: items.map((account) => this.toResponse(account)),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items: items.map((account) => this.toResponse(account)),
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   async get(id: string) {
@@ -222,6 +233,7 @@ export class AppleAccountsService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_account',
@@ -290,6 +302,7 @@ export class AppleAccountsService {
       return created;
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_account',
@@ -431,6 +444,7 @@ export class AppleAccountsService {
       data
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_account',
@@ -467,6 +481,7 @@ export class AppleAccountsService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_account',

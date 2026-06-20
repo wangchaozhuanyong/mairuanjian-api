@@ -6,7 +6,7 @@
     description="集中管理备份、恢复、导入、导出、回收站、数据清理、重复合并、数据字典和系统参数。"
   >
     <template #actions>
-      <AppButton variant="soft" @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton variant="soft" @click="() => refreshCurrentTab()">刷新</AppButton>
       <AppButton v-if="activeTab === 'backups'" variant="primary" @click="openBackupDialog">
         创建备份
       </AppButton>
@@ -66,7 +66,7 @@
       <el-tabs
         v-model="activeTab"
         class="system-tabs data-center-tabs"
-        @tab-change="refreshCurrentTab"
+        @tab-change="() => refreshCurrentTab()"
       >
         <el-tab-pane label="总览" name="overview">
           <div class="overview-grid">
@@ -249,7 +249,7 @@
             :show-primary="false"
             placeholder="搜索路径、备注、失败原因"
             @search="handleBackupSearch"
-            @refresh="loadBackups"
+            @refresh="() => loadBackups()"
             @clear-filters="clearBackupFilters"
             @save-view="saveBackupTableView"
             @apply-view="applyBackupSavedView"
@@ -407,7 +407,7 @@
             v-model:page="backupQuery.page"
             v-model:page-size="backupQuery.pageSize"
             :total="backupTotal"
-            @change="loadBackups"
+            @change="() => loadBackups()"
           />
         </el-tab-pane>
 
@@ -425,7 +425,7 @@
             :show-primary="false"
             placeholder="搜索恢复范围、审批说明"
             @search="handleRestoreSearch"
-            @refresh="loadRestores"
+            @refresh="() => loadRestores()"
             @clear-filters="clearRestoreFilters"
             @save-view="saveRestoreTableView"
             @apply-view="applyRestoreSavedView"
@@ -566,7 +566,7 @@
             v-model:page="restoreQuery.page"
             v-model:page-size="restoreQuery.pageSize"
             :total="restoreTotal"
-            @change="loadRestores"
+            @change="() => loadRestores()"
           />
         </el-tab-pane>
 
@@ -584,7 +584,7 @@
             :show-primary="false"
             placeholder="搜索模块、文件或错误报告"
             @search="handleImportSearch"
-            @refresh="loadImports"
+            @refresh="() => loadImports()"
             @clear-filters="clearImportFilters"
             @save-view="saveImportTableView"
             @apply-view="applyImportSavedView"
@@ -781,7 +781,7 @@
             v-model:page="importQuery.page"
             v-model:page-size="importQuery.pageSize"
             :total="importTotal"
-            @change="loadImports"
+            @change="() => loadImports()"
           />
         </el-tab-pane>
 
@@ -799,7 +799,7 @@
             :show-primary="false"
             placeholder="搜索模块、文件、失败原因"
             @search="handleExportSearch"
-            @refresh="loadExports"
+            @refresh="() => loadExports()"
             @clear-filters="clearExportFilters"
             @save-view="saveExportTableView"
             @apply-view="applyExportSavedView"
@@ -995,7 +995,7 @@
             v-model:page="exportQuery.page"
             v-model:page-size="exportQuery.pageSize"
             :total="exportTotal"
-            @change="loadExports"
+            @change="() => loadExports()"
           />
         </el-tab-pane>
 
@@ -1013,7 +1013,7 @@
             :show-primary="false"
             placeholder="搜索模块、对象、名称"
             @search="handleRecycleSearch"
-            @refresh="loadRecycleBin"
+            @refresh="() => loadRecycleBin()"
             @clear-filters="clearRecycleFilters"
             @save-view="saveRecycleTableView"
             @apply-view="applyRecycleSavedView"
@@ -1179,7 +1179,7 @@
             v-model:page="recycleQuery.page"
             v-model:page-size="recycleQuery.pageSize"
             :total="recycleTotal"
-            @change="loadRecycleBin"
+            @change="() => loadRecycleBin()"
           />
         </el-tab-pane>
 
@@ -1197,7 +1197,7 @@
             :show-primary="false"
             placeholder="搜索模块、审批说明或失败原因"
             @search="handleCleanupSearch"
-            @refresh="loadCleanupJobs"
+            @refresh="() => loadCleanupJobs()"
             @clear-filters="clearCleanupFilters"
             @save-view="saveCleanupTableView"
             @apply-view="applyCleanupSavedView"
@@ -1342,7 +1342,7 @@
             v-model:page="cleanupQuery.page"
             v-model:page-size="cleanupQuery.pageSize"
             :total="cleanupTotal"
-            @change="loadCleanupJobs"
+            @change="() => loadCleanupJobs()"
           />
         </el-tab-pane>
 
@@ -1360,7 +1360,7 @@
             :show-primary="false"
             placeholder="搜索模块、审批说明或失败原因"
             @search="handleDuplicateSearch"
-            @refresh="loadDuplicateJobs"
+            @refresh="() => loadDuplicateJobs()"
             @clear-filters="clearDuplicateFilters"
             @save-view="saveDuplicateTableView"
             @apply-view="applyDuplicateSavedView"
@@ -1523,7 +1523,7 @@
             v-model:page="duplicateQuery.page"
             v-model:page-size="duplicateQuery.pageSize"
             :total="duplicateTotal"
-            @change="loadDuplicateJobs"
+            @change="() => loadDuplicateJobs()"
           />
         </el-tab-pane>
 
@@ -1541,7 +1541,7 @@
             :show-primary="false"
             placeholder="搜索分组、编码、名称"
             @search="handleDictionarySearch"
-            @refresh="loadDictionaries"
+            @refresh="() => loadDictionaries()"
             @clear-filters="clearDictionaryFilters"
             @save-view="saveDictionaryTableView"
             @apply-view="applyDictionarySavedView"
@@ -1705,7 +1705,7 @@
             v-model:page="dictionaryQuery.page"
             v-model:page-size="dictionaryQuery.pageSize"
             :total="dictionaryTotal"
-            @change="loadDictionaries"
+            @change="() => loadDictionaries()"
           />
         </el-tab-pane>
 
@@ -1722,7 +1722,7 @@
             :show-status="false"
             placeholder="搜索 key、分组、备注"
             @search="handleParameterSearch"
-            @refresh="loadParameters"
+            @refresh="() => loadParameters()"
             @clear-filters="clearParameterFilters"
             @save-view="saveParameterTableView"
             @apply-view="applyParameterSavedView"
@@ -1854,7 +1854,7 @@
             v-model:page="parameterQuery.page"
             v-model:page-size="parameterQuery.pageSize"
             :total="parameterTotal"
-            @change="loadParameters"
+            @change="() => loadParameters()"
           />
         </el-tab-pane>
       </el-tabs>
@@ -2065,9 +2065,19 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import type { Ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { dataCenterApi, userTableViewsApi } from '@/api/system';
+import type {
+  BackupJobQuery,
+  DataDictionaryQuery,
+  DataJobQuery,
+  ExportJobQuery,
+  RecycleBinQuery,
+  RestoreJobQuery,
+  SystemParameterQuery
+} from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppState from '@/components/ui/AppState.vue';
 import JobStatusTag from '@/components/ui/DataJobStatusTag.vue';
@@ -2075,6 +2085,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   BackupJob,
   BackupJobType,
@@ -2086,12 +2097,16 @@ import type {
   DataImportJob,
   DataJobStatus,
   DuplicateMergeJob,
+  PageResult,
   RecycleBinRecord,
   RestoreJob,
   SystemParameter,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+
+type LoadOptions = { background?: boolean; force?: boolean };
 
 const route = useRoute();
 const activeTab = ref(getInitialTab());
@@ -2368,6 +2383,16 @@ const parameterSavedViewId = ref('');
 const parameterSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const parameterViewsLoaded = ref(false);
 const parameterQuery = reactive({ page: 1, pageSize: 10, keyword: '', group: '' });
+const activeOverviewQueryKey = ref('');
+const activeBackupQueryKey = ref('');
+const activeRestoreQueryKey = ref('');
+const activeImportQueryKey = ref('');
+const activeExportQueryKey = ref('');
+const activeRecycleQueryKey = ref('');
+const activeCleanupQueryKey = ref('');
+const activeDuplicateQueryKey = ref('');
+const activeDictionaryQueryKey = ref('');
+const activeParameterQueryKey = ref('');
 
 const backupDialogVisible = ref(false);
 const backupForm = reactive({ jobType: 'database' as BackupJobType, remark: '' });
@@ -2497,137 +2522,320 @@ const activeTabMeta = computed(() => {
 });
 
 onMounted(() => {
-  void refreshCurrentTab();
+  void refreshCurrentTab({ force: false });
 });
 
 watch(
   () => route.name,
   () => {
     activeTab.value = getInitialTab();
-    void refreshCurrentTab();
+    void refreshCurrentTab({ force: false });
   }
 );
 
-async function refreshCurrentTab() {
-  await loadOverview();
-  if (activeTab.value === 'backups') await loadBackupsWithViews();
-  if (activeTab.value === 'restores') await loadRestoresWithViews();
-  if (activeTab.value === 'imports') await loadImportsWithViews();
-  if (activeTab.value === 'exports') await loadExportsWithViews();
-  if (activeTab.value === 'recycle') await loadRecycleBinWithViews();
-  if (activeTab.value === 'cleanup') await loadCleanupJobsWithViews();
-  if (activeTab.value === 'duplicates') await loadDuplicateJobsWithViews();
-  if (activeTab.value === 'dictionaries') await loadDictionariesWithViews();
-  if (activeTab.value === 'parameters') await loadParametersWithViews();
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  [
+    'data-overview',
+    'data-backups',
+    'data-restores',
+    'data-imports',
+    'data-exports',
+    'data-recycle-bin',
+    'data-cleanup-jobs',
+    'data-duplicate-merge-jobs',
+    'data-dictionaries',
+    'data-parameters'
+  ],
+  ({ scopes }) => {
+    if (scopes.includes('data-overview')) {
+      void loadOverview({
+        background: Boolean(overview.value),
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'backups' && scopes.includes('data-backups')) {
+      void loadBackups({ background: backups.value.length > 0, force: true });
+    }
+
+    if (activeTab.value === 'restores' && scopes.includes('data-restores')) {
+      void loadRestores({ background: restores.value.length > 0, force: true });
+    }
+
+    if (activeTab.value === 'imports' && scopes.includes('data-imports')) {
+      void loadImports({ background: imports.value.length > 0, force: true });
+    }
+
+    if (activeTab.value === 'exports' && scopes.includes('data-exports')) {
+      void loadExports({ background: exports.value.length > 0, force: true });
+    }
+
+    if (activeTab.value === 'recycle' && scopes.includes('data-recycle-bin')) {
+      void loadRecycleBin();
+    }
+
+    if (activeTab.value === 'cleanup' && scopes.includes('data-cleanup-jobs')) {
+      void loadCleanupJobs();
+    }
+
+    if (activeTab.value === 'duplicates' && scopes.includes('data-duplicate-merge-jobs')) {
+      void loadDuplicateJobs();
+    }
+
+    if (activeTab.value === 'dictionaries' && scopes.includes('data-dictionaries')) {
+      void loadDictionaries();
+    }
+
+    if (activeTab.value === 'parameters' && scopes.includes('data-parameters')) {
+      void loadParameters();
+    }
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
+
+async function refreshCurrentTab(options: LoadOptions = {}) {
+  await loadOverview(options);
+  if (activeTab.value === 'backups') await loadBackupsWithViews(options);
+  if (activeTab.value === 'restores') await loadRestoresWithViews(options);
+  if (activeTab.value === 'imports') await loadImportsWithViews(options);
+  if (activeTab.value === 'exports') await loadExportsWithViews(options);
+  if (activeTab.value === 'recycle') await loadRecycleBinWithViews(options);
+  if (activeTab.value === 'cleanup') await loadCleanupJobsWithViews(options);
+  if (activeTab.value === 'duplicates') await loadDuplicateJobsWithViews(options);
+  if (activeTab.value === 'dictionaries') await loadDictionariesWithViews(options);
+  if (activeTab.value === 'parameters') await loadParametersWithViews(options);
 }
 
-async function loadOverview() {
-  overview.value = await dataCenterApi.overview();
-}
+async function loadOverview(options: LoadOptions = {}) {
+  const key = createSmartQueryKey('data-overview');
+  const cached = getSmartQueryData<DataCenterOverview>(key);
 
-async function loadBackups() {
-  backupLoading.value = true;
+  activeOverviewQueryKey.value = key;
+
+  if (cached) {
+    overview.value = cached;
+  }
+
   try {
-    const result = await dataCenterApi.listBackupJobs({
-      ...backupQuery,
-      sortBy: mapSortField(backupSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(backupSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => dataCenterApi.overview(),
+      force: options.force ?? true
     });
-    backups.value = result.items;
-    backupTotal.value = result.total;
-  } finally {
-    backupLoading.value = false;
+
+    if (activeOverviewQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      overview.value = result.data;
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载数据中心总览失败');
+    }
   }
 }
 
-async function loadBackupsWithViews() {
+async function loadPagedData<TItem>(config: {
+  scope: string;
+  params: unknown;
+  activeKey: Ref<string>;
+  setLoading: (loading: boolean) => void;
+  apply: (result: PageResult<TItem>) => void;
+  fetcher: () => Promise<PageResult<TItem>>;
+  errorMessage: string;
+  options?: LoadOptions;
+}) {
+  const options = config.options ?? {};
+  const key = createSmartQueryKey(config.scope, config.params);
+  const cached = getSmartQueryData<PageResult<TItem>>(key);
+
+  config.activeKey.value = key;
+
+  if (cached) {
+    config.apply(cached);
+  }
+
+  config.setLoading(!cached && !options.background);
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: config.fetcher,
+      force: options.force ?? true
+    });
+
+    if (config.activeKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      config.apply(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : config.errorMessage);
+    }
+  } finally {
+    if (config.activeKey.value === key) {
+      config.setLoading(false);
+    }
+  }
+}
+
+function buildBackupParams(): BackupJobQuery {
+  return {
+    ...backupQuery,
+    sortBy: mapSortField(backupSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(backupSortConfig.value.order)
+  };
+}
+
+async function loadBackups(options: LoadOptions = {}) {
+  const params = buildBackupParams();
+  await loadPagedData<BackupJob>({
+    scope: 'data-backups',
+    params,
+    activeKey: activeBackupQueryKey,
+    setLoading: (loading) => {
+      backupLoading.value = loading;
+    },
+    apply: (result) => {
+      backups.value = result.items;
+      backupTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listBackupJobs(params),
+    errorMessage: '加载备份任务失败',
+    options
+  });
+}
+
+async function loadBackupsWithViews(options: LoadOptions = {}) {
   await ensureBackupTableViews();
-  await loadBackups();
+  await loadBackups(options);
 }
 
-async function loadRestores() {
-  restoreLoading.value = true;
-  try {
-    const result = await dataCenterApi.listRestoreJobs({
-      ...restoreQuery,
-      sortBy: mapSortField(restoreSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(restoreSortConfig.value.order)
-    });
-    restores.value = result.items;
-    restoreTotal.value = result.total;
-  } finally {
-    restoreLoading.value = false;
-  }
+function buildRestoreParams(): RestoreJobQuery {
+  return {
+    ...restoreQuery,
+    sortBy: mapSortField(restoreSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(restoreSortConfig.value.order)
+  };
 }
 
-async function loadRestoresWithViews() {
+async function loadRestores(options: LoadOptions = {}) {
+  const params = buildRestoreParams();
+  await loadPagedData<RestoreJob>({
+    scope: 'data-restores',
+    params,
+    activeKey: activeRestoreQueryKey,
+    setLoading: (loading) => {
+      restoreLoading.value = loading;
+    },
+    apply: (result) => {
+      restores.value = result.items;
+      restoreTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listRestoreJobs(params),
+    errorMessage: '加载恢复任务失败',
+    options
+  });
+}
+
+async function loadRestoresWithViews(options: LoadOptions = {}) {
   await ensureRestoreTableViews();
-  await loadRestores();
+  await loadRestores(options);
 }
 
-async function loadImports() {
-  importLoading.value = true;
-  try {
-    const result = await dataCenterApi.listImportJobs({
-      ...importQuery,
-      sortBy: mapSortField(importSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(importSortConfig.value.order)
-    });
-    imports.value = result.items;
-    importTotal.value = result.total;
-  } finally {
-    importLoading.value = false;
-  }
+function buildImportParams(): DataJobQuery {
+  return {
+    ...importQuery,
+    sortBy: mapSortField(importSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(importSortConfig.value.order)
+  };
 }
 
-async function loadImportsWithViews() {
+async function loadImports(options: LoadOptions = {}) {
+  const params = buildImportParams();
+  await loadPagedData<DataImportJob>({
+    scope: 'data-imports',
+    params,
+    activeKey: activeImportQueryKey,
+    setLoading: (loading) => {
+      importLoading.value = loading;
+    },
+    apply: (result) => {
+      imports.value = result.items;
+      importTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listImportJobs(params),
+    errorMessage: '加载导入任务失败',
+    options
+  });
+}
+
+async function loadImportsWithViews(options: LoadOptions = {}) {
   await ensureImportTableViews();
-  await loadImports();
+  await loadImports(options);
 }
 
-async function loadExports() {
-  exportLoading.value = true;
-  try {
-    const result = await dataCenterApi.listExportJobs({
-      ...exportQuery,
-      sortBy: mapSortField(exportSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(exportSortConfig.value.order)
-    });
-    exports.value = result.items;
-    exportTotal.value = result.total;
-  } finally {
-    exportLoading.value = false;
-  }
+function buildExportParams(): ExportJobQuery {
+  return {
+    ...exportQuery,
+    sortBy: mapSortField(exportSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(exportSortConfig.value.order)
+  };
 }
 
-async function loadExportsWithViews() {
+async function loadExports(options: LoadOptions = {}) {
+  const params = buildExportParams();
+  await loadPagedData<DataExportJob>({
+    scope: 'data-exports',
+    params,
+    activeKey: activeExportQueryKey,
+    setLoading: (loading) => {
+      exportLoading.value = loading;
+    },
+    apply: (result) => {
+      exports.value = result.items;
+      exportTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listExportJobs(params),
+    errorMessage: '加载导出任务失败',
+    options
+  });
+}
+
+async function loadExportsWithViews(options: LoadOptions = {}) {
   await ensureExportTableViews();
-  await loadExports();
+  await loadExports(options);
 }
 
-async function loadRecycleBinWithViews() {
+async function loadRecycleBinWithViews(options: LoadOptions = {}) {
   await ensureRecycleTableViews();
-  await loadRecycleBin();
+  await loadRecycleBin(options);
 }
 
-async function loadCleanupJobsWithViews() {
+async function loadCleanupJobsWithViews(options: LoadOptions = {}) {
   await ensureCleanupTableViews();
-  await loadCleanupJobs();
+  await loadCleanupJobs(options);
 }
 
-async function loadDuplicateJobsWithViews() {
+async function loadDuplicateJobsWithViews(options: LoadOptions = {}) {
   await ensureDuplicateTableViews();
-  await loadDuplicateJobs();
+  await loadDuplicateJobs(options);
 }
 
-async function loadDictionariesWithViews() {
+async function loadDictionariesWithViews(options: LoadOptions = {}) {
   await ensureDictionaryTableViews();
-  await loadDictionaries();
+  await loadDictionaries(options);
 }
 
-async function loadParametersWithViews() {
+async function loadParametersWithViews(options: LoadOptions = {}) {
   await ensureParameterTableViews();
-  await loadParameters();
+  await loadParameters(options);
 }
 
 async function handleBackupSearch() {
@@ -3566,81 +3774,141 @@ function isParameterColumnVisible(column: string) {
     : true;
 }
 
-async function loadRecycleBin() {
-  recycleLoading.value = true;
-  try {
-    const result = await dataCenterApi.listRecycleBin({
-      ...recycleQuery,
-      sortBy: mapSortField(recycleSortConfig.value.prop, {
-        restoredStatus: 'restoredAt'
-      }),
-      sortOrder: mapSortOrder(recycleSortConfig.value.order)
-    });
-    recycleRecords.value = result.items;
-    recycleTotal.value = result.total;
-  } finally {
-    recycleLoading.value = false;
-  }
+function buildRecycleParams(): RecycleBinQuery {
+  return {
+    ...recycleQuery,
+    sortBy: mapSortField(recycleSortConfig.value.prop, {
+      restoredStatus: 'restoredAt'
+    }),
+    sortOrder: mapSortOrder(recycleSortConfig.value.order)
+  };
 }
 
-async function loadCleanupJobs() {
-  cleanupLoading.value = true;
-  try {
-    const result = await dataCenterApi.listCleanupJobs({
-      ...cleanupQuery,
-      sortBy: mapSortField(cleanupSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(cleanupSortConfig.value.order)
-    });
-    cleanupJobs.value = result.items;
-    cleanupTotal.value = result.total;
-  } finally {
-    cleanupLoading.value = false;
-  }
+async function loadRecycleBin(options: LoadOptions = {}) {
+  const params = buildRecycleParams();
+  await loadPagedData<RecycleBinRecord>({
+    scope: 'data-recycle-bin',
+    params,
+    activeKey: activeRecycleQueryKey,
+    setLoading: (loading) => {
+      recycleLoading.value = loading;
+    },
+    apply: (result) => {
+      recycleRecords.value = result.items;
+      recycleTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listRecycleBin(params),
+    errorMessage: '加载回收站失败',
+    options
+  });
 }
 
-async function loadDuplicateJobs() {
-  duplicateLoading.value = true;
-  try {
-    const result = await dataCenterApi.listDuplicateMergeJobs({
-      ...duplicateQuery,
-      sortBy: mapSortField(duplicateSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(duplicateSortConfig.value.order)
-    });
-    duplicateJobs.value = result.items;
-    duplicateTotal.value = result.total;
-  } finally {
-    duplicateLoading.value = false;
-  }
+function buildCleanupParams(): DataJobQuery {
+  return {
+    ...cleanupQuery,
+    sortBy: mapSortField(cleanupSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(cleanupSortConfig.value.order)
+  };
 }
 
-async function loadDictionaries() {
-  dictionaryLoading.value = true;
-  try {
-    const result = await dataCenterApi.listDictionaries({
-      ...dictionaryQuery,
-      sortBy: mapSortField(dictionarySortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(dictionarySortConfig.value.order)
-    });
-    dictionaries.value = result.items;
-    dictionaryTotal.value = result.total;
-  } finally {
-    dictionaryLoading.value = false;
-  }
+async function loadCleanupJobs(options: LoadOptions = {}) {
+  const params = buildCleanupParams();
+  await loadPagedData<DataCleanupJob>({
+    scope: 'data-cleanup-jobs',
+    params,
+    activeKey: activeCleanupQueryKey,
+    setLoading: (loading) => {
+      cleanupLoading.value = loading;
+    },
+    apply: (result) => {
+      cleanupJobs.value = result.items;
+      cleanupTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listCleanupJobs(params),
+    errorMessage: '加载数据清理任务失败',
+    options
+  });
 }
 
-async function loadParameters() {
-  parameterLoading.value = true;
-  try {
-    const result = await dataCenterApi.listSystemParameters({
-      ...parameterQuery,
-      sortBy: mapSortField(parameterSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(parameterSortConfig.value.order)
-    });
-    parameters.value = result.items;
-    parameterTotal.value = result.total;
-  } finally {
-    parameterLoading.value = false;
-  }
+function buildDuplicateParams(): DataJobQuery {
+  return {
+    ...duplicateQuery,
+    sortBy: mapSortField(duplicateSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(duplicateSortConfig.value.order)
+  };
+}
+
+async function loadDuplicateJobs(options: LoadOptions = {}) {
+  const params = buildDuplicateParams();
+  await loadPagedData<DuplicateMergeJob>({
+    scope: 'data-duplicate-merge-jobs',
+    params,
+    activeKey: activeDuplicateQueryKey,
+    setLoading: (loading) => {
+      duplicateLoading.value = loading;
+    },
+    apply: (result) => {
+      duplicateJobs.value = result.items;
+      duplicateTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listDuplicateMergeJobs(params),
+    errorMessage: '加载重复合并任务失败',
+    options
+  });
+}
+
+function buildDictionaryParams(): DataDictionaryQuery {
+  return {
+    ...dictionaryQuery,
+    sortBy: mapSortField(dictionarySortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(dictionarySortConfig.value.order)
+  };
+}
+
+async function loadDictionaries(options: LoadOptions = {}) {
+  const params = buildDictionaryParams();
+  await loadPagedData<DataDictionary>({
+    scope: 'data-dictionaries',
+    params,
+    activeKey: activeDictionaryQueryKey,
+    setLoading: (loading) => {
+      dictionaryLoading.value = loading;
+    },
+    apply: (result) => {
+      dictionaries.value = result.items;
+      dictionaryTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listDictionaries(params),
+    errorMessage: '加载数据字典失败',
+    options
+  });
+}
+
+function buildParameterParams(): SystemParameterQuery {
+  return {
+    ...parameterQuery,
+    sortBy: mapSortField(parameterSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(parameterSortConfig.value.order)
+  };
+}
+
+async function loadParameters(options: LoadOptions = {}) {
+  const params = buildParameterParams();
+  await loadPagedData<SystemParameter>({
+    scope: 'data-parameters',
+    params,
+    activeKey: activeParameterQueryKey,
+    setLoading: (loading) => {
+      parameterLoading.value = loading;
+    },
+    apply: (result) => {
+      parameters.value = result.items;
+      parameterTotal.value = result.total;
+    },
+    fetcher: () => dataCenterApi.listSystemParameters(params),
+    errorMessage: '加载系统参数失败',
+    options
+  });
 }
 
 function openBackupDialog() {

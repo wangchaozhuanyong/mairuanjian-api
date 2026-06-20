@@ -9,7 +9,7 @@
       <StatusChip :tone="totalExceptionCount > 0 ? 'orange' : 'green'" dot>
         {{ totalExceptionCount > 0 ? `待关注 ${totalExceptionCount}` : '队列稳定' }}
       </StatusChip>
-      <AppButton :loading="loading || summaryLoading" @click="reloadAll">刷新</AppButton>
+      <AppButton :loading="loading || summaryLoading" @click="() => reloadAll()">刷新</AppButton>
       <AppButton variant="primary" @click="goToCodeOrders">进入发货队列</AppButton>
     </template>
 
@@ -104,7 +104,7 @@
         primary-label="进入发货队列"
         placeholder="搜索订单号、买家、商品、SKU、业务"
         @search="handleSearch"
-        @refresh="reloadAll"
+        @refresh="() => reloadAll()"
         @primary="goToCodeOrders"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
@@ -356,9 +356,10 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { codeOrdersApi, sourcePlatformsApi } from '@/api/system';
+import { codeOrdersApi } from '@/api/system';
+import type { CodeOrderQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
@@ -367,11 +368,18 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { CodePlatformOrder, SourcePlatform, TableDensity } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { CodePlatformOrder, PageResult, SourcePlatform, TableDensity } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
 type ExceptionStatus = 'failed' | 'manual' | 'pending';
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 type SortOrder = 'ascending' | 'descending' | null;
+interface DeliveryExceptionSummary {
+  stats: Record<ExceptionStatus, number>;
+  lanes: Record<ExceptionStatus, CodePlatformOrder[]>;
+}
 
 const router = useRouter();
 const exceptionStatuses: ExceptionStatus[] = ['failed', 'manual', 'pending'];
@@ -400,6 +408,8 @@ const total = ref(0);
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
 const sortConfig = ref<{ prop?: string; order?: SortOrder }>({});
+const activeOrdersQueryKey = ref('');
+const activeSummaryQueryKey = ref('');
 const exceptionStats = reactive<Record<ExceptionStatus, number>>({
   failed: 0,
   manual: 0,
@@ -599,66 +609,159 @@ function mapSortOrder(order?: SortOrder) {
   return undefined;
 }
 
-async function loadPlatforms() {
-  const data = await sourcePlatformsApi.list({
-    page: 1,
-    pageSize: 100,
-    status: 'active'
-  });
+async function loadPlatforms(options: { force?: boolean } = {}) {
+  const data = await loadSmartSourcePlatforms(
+    {
+      page: 1,
+      pageSize: 100,
+      status: 'active'
+    },
+    options
+  );
   platforms.value = data.items;
 }
 
-async function loadSummary() {
-  summaryLoading.value = true;
-  try {
-    const results = await Promise.all(
-      exceptionStatuses.map((status) =>
-        codeOrdersApi.list({
-          page: 1,
-          pageSize: 4,
-          keyword: query.keyword || undefined,
-          platformId: query.platformId || undefined,
-          deliveryStatus: status
-        })
-      )
-    );
+function buildExceptionBaseParams() {
+  return {
+    keyword: query.keyword || undefined,
+    platformId: query.platformId || undefined
+  };
+}
 
-    exceptionStatuses.forEach((status, index) => {
-      const result = results[index];
-      exceptionStats[status] = result?.total ?? 0;
-      laneOrders[status] = result?.items ?? [];
-    });
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载发货异常看板失败');
-  } finally {
-    summaryLoading.value = false;
+function buildOrderParams(): CodeOrderQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    ...buildExceptionBaseParams(),
+    deliveryStatus: query.deliveryStatus,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applySummaryResult(data: DeliveryExceptionSummary) {
+  for (const status of exceptionStatuses) {
+    exceptionStats[status] = data.stats[status];
+    laneOrders[status] = data.lanes[status];
   }
 }
 
-async function loadOrders() {
-  loading.value = true;
+function applyOrderResult(data: PageResult<CodePlatformOrder>) {
+  orders.value = data.items;
+  total.value = data.total;
+}
+
+async function loadSummary(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildExceptionBaseParams();
+  const key = createSmartQueryKey('code-delivery-exceptions-summary', params);
+  const cached = getSmartQueryData<DeliveryExceptionSummary>(key);
+
+  activeSummaryQueryKey.value = key;
+
+  if (cached) {
+    applySummaryResult(cached);
+  }
+
+  summaryLoading.value = !cached && !options.background;
+
   try {
-    const data = await codeOrdersApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      platformId: query.platformId || undefined,
-      deliveryStatus: query.deliveryStatus,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: async () => {
+        const results = await Promise.all(
+          exceptionStatuses.map((status) =>
+            codeOrdersApi.list({
+              page: 1,
+              pageSize: 4,
+              ...params,
+              deliveryStatus: status
+            })
+          )
+        );
+
+        return exceptionStatuses.reduce<DeliveryExceptionSummary>(
+          (summary, status, index) => {
+            const page = results[index];
+            summary.stats[status] = page?.total ?? 0;
+            summary.lanes[status] = page?.items ?? [];
+            return summary;
+          },
+          {
+            stats: {
+              failed: 0,
+              manual: 0,
+              pending: 0
+            },
+            lanes: {
+              failed: [],
+              manual: [],
+              pending: []
+            }
+          }
+        );
+      },
+      force: options.force ?? true
     });
-    orders.value = data.items;
-    total.value = data.total;
+
+    if (activeSummaryQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applySummaryResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载发货异常订单失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载发货异常看板失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeSummaryQueryKey.value === key) {
+      summaryLoading.value = false;
+    }
   }
 }
 
-async function reloadAll() {
+async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildOrderParams();
+  const key = createSmartQueryKey('code-delivery-exceptions', params);
+  const cached = getSmartQueryData<PageResult<CodePlatformOrder>>(key);
+
+  activeOrdersQueryKey.value = key;
+
+  if (cached) {
+    applyOrderResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    await Promise.all([loadSummary(), loadOrders()]);
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => codeOrdersApi.list(params),
+      force: options.force ?? true
+    });
+
+    if (activeOrdersQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyOrderResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载发货异常订单失败');
+    }
+  } finally {
+    if (activeOrdersQueryKey.value === key) {
+      loading.value = false;
+    }
+  }
+}
+
+async function reloadAll(options: { background?: boolean; force?: boolean } = {}) {
+  try {
+    await Promise.all([loadSummary(options), loadOrders(options)]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '刷新发货异常失败');
   }
@@ -706,14 +809,23 @@ function showExportMessage() {
 
 async function initializePage() {
   try {
-    await loadPlatforms();
-    await reloadAll();
+    await loadPlatforms({ force: false });
+    await reloadAll({ force: false });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载发货异常页面失败');
   }
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['code-delivery-exceptions'], () => {
+  void reloadAll({
+    background: orders.value.length > 0 || totalExceptionCount.value > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

@@ -9,10 +9,14 @@ import type {
   TestPlatformConnectionInput
 } from './ops.service';
 import { OpsService } from './ops.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Controller('ops')
 export class OpsController {
-  constructor(private readonly opsService: OpsService) {}
+  constructor(
+    private readonly opsService: OpsService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get('overview')
   @RequirePermissions('ops.overview.view')
@@ -103,8 +107,13 @@ export class OpsController {
 
   @Post('error-logs')
   @RequirePermissions('ops.error_log.create')
-  createErrorLog(@Body() dto: CreateErrorLogInput, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.opsService.createErrorLog(dto, operator);
+  async createErrorLog(
+    @Body() dto: CreateErrorLogInput,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const log = await this.opsService.createErrorLog(dto, operator);
+    this.publishOpsEvent('ops.error_log.created', 'error_log', 'created', log.id);
+    return log;
   }
 
   @Get('health-snapshots')
@@ -119,18 +128,24 @@ export class OpsController {
 
   @Post('health-snapshots')
   @RequirePermissions('ops.health_snapshot.create')
-  captureHealthSnapshot(@CurrentUser() operator?: AuthenticatedUser) {
-    return this.opsService.captureHealthSnapshot(operator);
+  async captureHealthSnapshot(@CurrentUser() operator?: AuthenticatedUser) {
+    const snapshot = await this.opsService.captureHealthSnapshot(operator);
+    this.publishOpsEvent('ops.health.updated', 'health_snapshot', 'created');
+    return snapshot;
   }
 
   @Post('platforms/:platform/test-connection')
   @RequirePermissions('ops.platform.test_connection')
-  testPlatformConnection(
+  async testPlatformConnection(
     @Param('platform') platform: string,
     @Body() dto: TestPlatformConnectionInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.opsService.testPlatformConnection(platform, dto, operator);
+    const result = await this.opsService.testPlatformConnection(platform, dto, operator);
+    this.publishOpsEvent('platform.connection.tested', 'platform_sync', 'tested', null, {
+      platform
+    });
+    return result;
   }
 
   @Get('platforms')
@@ -153,12 +168,22 @@ export class OpsController {
 
   @Post('platforms/:platform/authorization')
   @RequirePermissions('ops.platform.reauthorize')
-  savePlatformAuthorization(
+  async savePlatformAuthorization(
     @Param('platform') platform: string,
     @Body() dto: SavePlatformAuthorizationInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.opsService.savePlatformAuthorization(platform, dto, operator);
+    const result = await this.opsService.savePlatformAuthorization(platform, dto, operator);
+    this.publishOpsEvent(
+      'platform.authorization.updated',
+      'platform_authorization',
+      'updated',
+      null,
+      {
+        platform
+      }
+    );
+    return result;
   }
 
   @Post('platforms/:platform/oauth/start')
@@ -190,11 +215,39 @@ export class OpsController {
 
   @Post('platforms/:platform/reauthorize')
   @RequirePermissions('ops.platform.reauthorize')
-  reauthorizePlatform(
+  async reauthorizePlatform(
     @Param('platform') platform: string,
     @Body() dto: ReauthorizePlatformInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.opsService.reauthorizePlatform(platform, dto, operator);
+    const result = await this.opsService.reauthorizePlatform(platform, dto, operator);
+    this.publishOpsEvent(
+      'platform.authorization.reauthorized',
+      'platform_authorization',
+      'reauthorized',
+      null,
+      {
+        platform
+      }
+    );
+    return result;
+  }
+
+  private publishOpsEvent(
+    type: string,
+    entity: string,
+    action: string,
+    resourceId?: string | null,
+    scope?: Record<string, string | null | undefined>
+  ) {
+    const module = type.startsWith('platform.') ? 'platform' : 'ops';
+    this.realtimeService.publish({
+      type,
+      module,
+      entity,
+      action,
+      resourceId: resourceId ?? null,
+      scope
+    });
   }
 }

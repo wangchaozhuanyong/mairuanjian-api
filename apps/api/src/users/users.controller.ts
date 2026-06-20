@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import type { CreateUserDto } from './dto/create-user.dto';
 import type { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
@@ -8,7 +9,10 @@ import { UsersService } from './users.service';
 @Controller('users')
 @RequirePermissions('system.user_manage')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get()
   list(
@@ -35,16 +39,30 @@ export class UsersController {
   }
 
   @Post()
-  create(@Body() dto: CreateUserDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.usersService.createUser(dto, operator);
+  async create(@Body() dto: CreateUserDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const user = await this.usersService.createUser(dto, operator);
+    this.publishUserEvent('system.user.created', 'created', user.id);
+    return user;
   }
 
   @Patch(':id')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateUserDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.usersService.updateUser(id, dto, operator);
+    const user = await this.usersService.updateUser(id, dto, operator);
+    this.publishUserEvent('system.user.updated', 'updated', user.id);
+    return user;
+  }
+
+  private publishUserEvent(type: string, action: string, userId: string) {
+    this.realtimeService.publish({
+      type,
+      module: 'system',
+      entity: 'user',
+      action,
+      resourceId: userId
+    });
   }
 }

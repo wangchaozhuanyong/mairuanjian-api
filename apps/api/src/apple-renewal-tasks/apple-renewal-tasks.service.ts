@@ -11,6 +11,8 @@ import type {
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -250,9 +252,12 @@ const activationForGenerationInclude = {
 type ActivationForGeneration = Prisma.ServiceActivationGetPayload<{
   include: typeof activationForGenerationInclude;
 }>;
+const RENEWAL_TASK_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class AppleRenewalTasksService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -260,69 +265,75 @@ export class AppleRenewalTasksService {
   ) {}
 
   async list(query: ListRenewalTasksQuery) {
-    const pagination = getPagination(query);
-    const keyword = query.keyword?.trim();
-    const status = this.parseTaskStatus(query.status, false);
-    const taskType = this.parseTaskType(query.taskType, false);
-    const priority = this.parsePriority(query.priority, false);
-    const customerDecision = this.parseCustomerDecision(query.customerDecision, false);
-    const dueFrom = this.parseDate(query.dueFrom, 'dueFrom');
-    const dueTo = this.parseDate(query.dueTo, 'dueTo');
+    return this.listCache.getOrSet(
+      getListCacheKey('apple-renewal-tasks', query),
+      RENEWAL_TASK_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const keyword = query.keyword?.trim();
+        const status = this.parseTaskStatus(query.status, false);
+        const taskType = this.parseTaskType(query.taskType, false);
+        const priority = this.parsePriority(query.priority, false);
+        const customerDecision = this.parseCustomerDecision(query.customerDecision, false);
+        const dueFrom = this.parseDate(query.dueFrom, 'dueFrom');
+        const dueTo = this.parseDate(query.dueTo, 'dueTo');
 
-    const where: Prisma.RenewalTaskWhereInput = {
-      status: status ?? undefined,
-      taskType: taskType ?? undefined,
-      priority: priority ?? undefined,
-      customerDecision: customerDecision ?? undefined,
-      customerId: query.customerId || undefined,
-      appleAccountId: query.appleAccountId || undefined,
-      serviceId: query.serviceId || undefined,
-      activationId: query.activationId || undefined,
-      assignedToUserId: query.assignedToUserId || undefined,
-      dueAt:
-        dueFrom || dueTo
-          ? {
-              gte: dueFrom ?? undefined,
-              lte: dueTo ?? undefined
-            }
-          : undefined,
-      OR: keyword
-        ? [
-            { title: { contains: keyword, mode: 'insensitive' } },
-            { requiredAction: { contains: keyword, mode: 'insensitive' } },
-            { note: { contains: keyword, mode: 'insensitive' } },
-            { resultNote: { contains: keyword, mode: 'insensitive' } },
-            { customer: { is: { name: { contains: keyword, mode: 'insensitive' } } } },
-            { service: { is: { name: { contains: keyword, mode: 'insensitive' } } } },
-            { order: { is: { orderNo: { contains: keyword, mode: 'insensitive' } } } },
-            {
-              appleAccount: {
-                is: {
-                  appleIdNormalized: { contains: keyword.toLowerCase(), mode: 'insensitive' }
+        const where: Prisma.RenewalTaskWhereInput = {
+          status: status ?? undefined,
+          taskType: taskType ?? undefined,
+          priority: priority ?? undefined,
+          customerDecision: customerDecision ?? undefined,
+          customerId: query.customerId || undefined,
+          appleAccountId: query.appleAccountId || undefined,
+          serviceId: query.serviceId || undefined,
+          activationId: query.activationId || undefined,
+          assignedToUserId: query.assignedToUserId || undefined,
+          dueAt:
+            dueFrom || dueTo
+              ? {
+                  gte: dueFrom ?? undefined,
+                  lte: dueTo ?? undefined
                 }
-              }
-            }
-          ]
-        : undefined
-    };
+              : undefined,
+          OR: keyword
+            ? [
+                { title: { contains: keyword, mode: 'insensitive' } },
+                { requiredAction: { contains: keyword, mode: 'insensitive' } },
+                { note: { contains: keyword, mode: 'insensitive' } },
+                { resultNote: { contains: keyword, mode: 'insensitive' } },
+                { customer: { is: { name: { contains: keyword, mode: 'insensitive' } } } },
+                { service: { is: { name: { contains: keyword, mode: 'insensitive' } } } },
+                { order: { is: { orderNo: { contains: keyword, mode: 'insensitive' } } } },
+                {
+                  appleAccount: {
+                    is: {
+                      appleIdNormalized: { contains: keyword.toLowerCase(), mode: 'insensitive' }
+                    }
+                  }
+                }
+              ]
+            : undefined
+        };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.renewalTask.findMany({
-        where,
-        include: renewalTaskInclude,
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: this.buildOrderBy(query)
-      }),
-      this.prisma.renewalTask.count({ where })
-    ]);
+        const [items, total] = await Promise.all([
+          this.prisma.renewalTask.findMany({
+            where,
+            include: renewalTaskInclude,
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: this.buildOrderBy(query)
+          }),
+          this.prisma.renewalTask.count({ where })
+        ]);
 
-    return {
-      items: items.map((task) => this.toRenewalTaskResponse(task)),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items: items.map((task) => this.toRenewalTaskResponse(task)),
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   async get(id: string) {
@@ -382,6 +393,7 @@ export class AppleRenewalTasksService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_renewal_task',
@@ -439,6 +451,7 @@ export class AppleRenewalTasksService {
       return task;
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_renewal_task',
@@ -495,6 +508,7 @@ export class AppleRenewalTasksService {
       return task;
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_renewal_task',
@@ -522,6 +536,7 @@ export class AppleRenewalTasksService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_renewal_task',
@@ -550,6 +565,7 @@ export class AppleRenewalTasksService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_renewal_task',
@@ -594,6 +610,7 @@ export class AppleRenewalTasksService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_renewal_task',

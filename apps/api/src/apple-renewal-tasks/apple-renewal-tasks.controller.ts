@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import {
   AppleRenewalTasksService,
   type CancelRenewalTaskDto,
@@ -13,7 +14,10 @@ import {
 
 @Controller('apple/renewal-tasks')
 export class AppleRenewalTasksController {
-  constructor(private readonly appleRenewalTasksService: AppleRenewalTasksService) {}
+  constructor(
+    private readonly appleRenewalTasksService: AppleRenewalTasksService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get()
   @RequirePermissions('apple.renewal_task.view')
@@ -57,14 +61,32 @@ export class AppleRenewalTasksController {
 
   @Post()
   @RequirePermissions('apple.renewal_task.update')
-  create(@Body() dto: CreateRenewalTaskDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.appleRenewalTasksService.create(dto, operator);
+  async create(@Body() dto: CreateRenewalTaskDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const task = await this.appleRenewalTasksService.create(dto, operator);
+    this.publishRenewalTaskEvent('apple.renewal_task.created', 'created', task.id);
+    return task;
   }
 
   @Post('generate-due-tasks')
   @RequirePermissions('apple.renewal_task.update')
-  generateDueTasks(@Body() dto: GenerateDueTasksDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.appleRenewalTasksService.generateDueTasks(dto, operator);
+  async generateDueTasks(
+    @Body() dto: GenerateDueTasksDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.appleRenewalTasksService.generateDueTasks(dto, operator);
+    this.realtimeService.publish({
+      type: 'apple.renewal_task.generated',
+      module: 'apple',
+      entity: 'renewal_task',
+      action: 'generated',
+      scope: {
+        scannedActivations: result.scannedActivations,
+        createdCount: result.createdCount,
+        updatedCount: result.updatedCount,
+        daysAhead: result.daysAhead
+      }
+    });
+    return result;
   }
 
   @Get(':id')
@@ -75,41 +97,59 @@ export class AppleRenewalTasksController {
 
   @Patch(':id')
   @RequirePermissions('apple.renewal_task.update')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateRenewalTaskDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleRenewalTasksService.update(id, dto, operator);
+    const task = await this.appleRenewalTasksService.update(id, dto, operator);
+    this.publishRenewalTaskEvent('apple.renewal_task.updated', 'updated', task.id);
+    return task;
   }
 
   @Post(':id/complete')
   @RequirePermissions('apple.renewal_task.update')
-  complete(
+  async complete(
     @Param('id') id: string,
     @Body() dto: CompleteRenewalTaskDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleRenewalTasksService.complete(id, dto, operator);
+    const task = await this.appleRenewalTasksService.complete(id, dto, operator);
+    this.publishRenewalTaskEvent('apple.renewal_task.completed', 'completed', task.id);
+    return task;
   }
 
   @Post(':id/cancel')
   @RequirePermissions('apple.renewal_task.update')
-  cancel(
+  async cancel(
     @Param('id') id: string,
     @Body() dto: CancelRenewalTaskDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleRenewalTasksService.cancel(id, dto, operator);
+    const task = await this.appleRenewalTasksService.cancel(id, dto, operator);
+    this.publishRenewalTaskEvent('apple.renewal_task.cancelled', 'cancelled', task.id);
+    return task;
   }
 
   @Post(':id/postpone')
   @RequirePermissions('apple.renewal_task.update')
-  postpone(
+  async postpone(
     @Param('id') id: string,
     @Body() dto: PostponeRenewalTaskDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.appleRenewalTasksService.postpone(id, dto, operator);
+    const task = await this.appleRenewalTasksService.postpone(id, dto, operator);
+    this.publishRenewalTaskEvent('apple.renewal_task.postponed', 'postponed', task.id);
+    return task;
+  }
+
+  private publishRenewalTaskEvent(type: string, action: string, taskId: string) {
+    this.realtimeService.publish({
+      type,
+      module: 'apple',
+      entity: 'renewal_task',
+      action,
+      resourceId: taskId
+    });
   }
 }

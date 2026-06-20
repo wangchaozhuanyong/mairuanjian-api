@@ -36,7 +36,7 @@ export class AuthService {
         ip: requestMeta?.ip,
         userAgent: requestMeta?.userAgent
       });
-      throw new UnauthorizedException('IP address is not allowed');
+      throw new UnauthorizedException('当前 IP 不在白名单内，无法登录。');
     }
 
     const user = await this.prisma.user.findFirst({
@@ -55,7 +55,7 @@ export class AuthService {
         ip: requestMeta?.ip,
         userAgent: requestMeta?.userAgent
       });
-      throw new UnauthorizedException('Invalid username or password');
+      throw new UnauthorizedException('账号或密码错误，请检查账号和密码后重试。');
     }
 
     const passwordValid = await verifyPassword(dto.password, user.passwordHash);
@@ -68,7 +68,7 @@ export class AuthService {
         ip: requestMeta?.ip,
         userAgent: requestMeta?.userAgent
       });
-      throw new UnauthorizedException('Invalid username or password');
+      throw new UnauthorizedException('账号或密码错误，请检查账号和密码后重试。');
     }
 
     const authenticatedUser = await this.usersService.getAuthenticatedUser(user.id);
@@ -84,7 +84,7 @@ export class AuthService {
           ip: requestMeta?.ip,
           userAgent: requestMeta?.userAgent
         });
-        throw new UnauthorizedException('MFA code is required');
+        throw new UnauthorizedException('需要输入动态验证码或恢复码。');
       }
 
       try {
@@ -98,36 +98,12 @@ export class AuthService {
           ip: requestMeta?.ip,
           userAgent: requestMeta?.userAgent
         });
-        throw new UnauthorizedException('MFA code is invalid');
+        throw new UnauthorizedException('动态验证码或恢复码错误，请重新输入。');
       }
     }
 
-    await this.prisma.user.update({
-      where: {
-        id: user.id
-      },
-      data: {
-        lastLoginAt: new Date()
-      }
-    });
-
-    await this.auditLogsService.create({
-      userId: user.id,
-      module: 'auth',
-      action: 'login',
-      objectType: 'user',
-      objectId: user.id,
-      remark: 'User logged in'
-    });
-
     const response = this.createAuthResponse(authenticatedUser);
-    await this.securityService.recordLoginAttempt({
-      username: user.username,
-      userId: user.id,
-      status: 'success',
-      ip: requestMeta?.ip,
-      userAgent: requestMeta?.userAgent
-    });
+
     await this.securityService.createActiveSession({
       userId: user.id,
       accessToken: response.accessToken,
@@ -135,6 +111,32 @@ export class AuthService {
       ip: requestMeta?.ip,
       userAgent: requestMeta?.userAgent
     });
+
+    void Promise.all([
+      this.prisma.user.update({
+        where: {
+          id: user.id
+        },
+        data: {
+          lastLoginAt: new Date()
+        }
+      }),
+      this.auditLogsService.create({
+        userId: user.id,
+        module: 'auth',
+        action: 'login',
+        objectType: 'user',
+        objectId: user.id,
+        remark: 'User logged in'
+      }),
+      this.securityService.recordLoginAttempt({
+        username: user.username,
+        userId: user.id,
+        status: 'success',
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent
+      })
+    ]).catch(() => undefined);
 
     return response;
   }

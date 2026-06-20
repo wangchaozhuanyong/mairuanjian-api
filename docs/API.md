@@ -1297,13 +1297,16 @@ DELETE /api/apple/accounts/:id
 - 列表和详情默认只返回 `appleIdMasked` 和 `appleIdTail`，不返回完整 Apple ID 密码、密保、手机号、备用邮箱。
 - `password`、`securityInfo`、`phone`、`recoveryEmail` 写入时加密保存。
 - `currentBalance`、`balanceCostAmount`、`averageCost` 使用 Decimal。
-- `averageCost = balanceCostAmount / currentBalance`，余额为 0 时成本必须为 0。
+- API 字段 `balanceCostAmount` 表示当前余额对应的人民币总成本，不是汇率成本。
+- 后台页面给用户填写“汇率成本”时，会先换算成 `currentBalance × 汇率成本` 再提交给 `balanceCostAmount`。
+- `averageCost = balanceCostAmount / currentBalance`，余额为 0 时总成本必须为 0。
 - 创建、更新、删除写入 `audit_logs`，审计日志中敏感字段只记录 `[encrypted]`。
 - 查看完整 Apple ID、密码、密保、手机号、备用邮箱必须调用 `reveal-secret`，并填写查看原因。
 - `reveal-secret` 会写入 `sensitive_access_logs` 和 `audit_logs`，日志不记录完整明文。
 - `reveal-secret` 响应头禁止缓存。
 - 批量导入每批最多 500 行，支持逗号或制表符分隔文本，支持首行表头。
 - 批量导入字段顺序：`appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark`。
+- 批量导入走 API 原始字段，`balanceCostAmount` 需要填人民币总成本；如果只知道汇率成本，需要先用余额乘以汇率成本。
 - 批量导入会逐行返回成功/失败结果；已存在账号和本批次重复账号不会导入。
 - 批量导入会加密保存敏感字段，并写入 `audit_logs`，审计日志不记录敏感明文。
 
@@ -1385,7 +1388,7 @@ POST /api/apple/accounts/:accountId/consumptions
 | 字段         | 类型    | 说明                                |
 | ------------ | ------- | ----------------------------------- |
 | faceValue    | Decimal | 充值面值                            |
-| costAmount   | Decimal | 本次人民币成本                      |
+| costAmount   | Decimal | 本次充值的人民币总成本              |
 | giftCardCode | string  | 礼品卡代码/充值代码，选填，加密保存 |
 | remark       | string  | 备注                                |
 
@@ -1402,6 +1405,7 @@ POST /api/apple/accounts/:accountId/consumptions
 - 充值后：`新余额 = 原余额 + faceValue`。
 - 充值后：`新余额人民币成本 = 原余额人民币成本 + costAmount`。
 - 充值后：`新平均成本 = 新余额人民币成本 / 新余额`。
+- 后台充值弹窗给用户填写的是“汇率成本”，保存前会换算成 `faceValue × 汇率成本` 再提交给 `costAmount`。
 - 消费时：`本次消费成本 = 消费金额 × 消费时平均成本`。
 - 消费后：`余额 = 消费前余额 - 消费金额`。
 - 消费后：`余额人民币成本 = 消费前成本 - 本次消费成本`。

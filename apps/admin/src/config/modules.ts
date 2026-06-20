@@ -17,7 +17,6 @@ export interface AppModuleItem {
   group: string;
   phase: string;
   status: ModuleStatus;
-  badge?: string;
   permission?: string;
   description: string;
   metrics?: Array<{
@@ -118,7 +117,6 @@ const workspaceModules: AppModuleItem[] = [
     group: '工作台',
     phase: 'Phase 5',
     status: 'ready',
-    badge: '18',
     description: '集中处理到期联系、客户续费确认、待取消、待充值和等待扣费任务。',
     features: ['到期任务生成', '任务优先级', '客户决定流转', '任务处理抽屉'],
     primaryAction: '生成到期任务',
@@ -171,7 +169,6 @@ const workspaceModules: AppModuleItem[] = [
     group: '工作台',
     phase: 'Phase 5',
     status: 'ready',
-    badge: '6',
     description: '按 Apple ID 聚合同周期多业务续费、取消、充值和风险动作。',
     features: ['同账号任务聚合', '误扣费风险提示', '操作清单', '计划完成'],
     primaryAction: '重新生成计划',
@@ -185,7 +182,6 @@ const workspaceModules: AppModuleItem[] = [
     group: '工作台',
     phase: 'Phase 16',
     status: 'ready',
-    badge: '12',
     description: '上线前检查接口联调、权限、安全、发货兜底、数据备份和生产配置等质量项。',
     features: ['上线阻塞项', '验收负责人', '检查证据', '状态保存', '发布前风险判断'],
     primaryAction: '保存清单',
@@ -379,7 +375,6 @@ const codeModules: AppModuleItem[] = [
     group: '兑换码自动发货',
     phase: 'Phase 7',
     status: 'design-ready',
-    badge: '9',
     description: '集中处理缺货、接口失败、锁定超时和退款后异常订单。',
     features: ['异常分类', '转人工', '重试发货', '释放锁定', '通知发货员'],
     primaryAction: '批量转人工',
@@ -501,7 +496,6 @@ const systemModules: AppModuleItem[] = [
     group: '系统管理',
     phase: 'Phase 9',
     status: 'ready',
-    badge: '6',
     description: '管理 Telegram、站内通知、通知规则、消息模板和通知日志。',
     features: ['通知规则', 'Telegram 配置', '站内通知', '通知日志', '失败重试'],
     primaryAction: '新增通知规则',
@@ -664,14 +658,14 @@ const systemModules: AppModuleItem[] = [
   },
   {
     key: 'maintenance',
-    title: '网站维护',
+    title: '系统配置',
     route: '/system/maintenance',
-    mark: 'WM',
+    mark: 'SC',
     group: '系统管理',
     phase: 'Phase 13',
     status: 'ready',
-    description: '管理公告、维护模式、版本信息、更新日志、功能开关和主题配置。',
-    features: ['系统公告', '维护模式', '版本信息', '更新日志', '功能开关'],
+    description: '集中管理系统公告、维护模式、功能开关、版本信息、更新日志和系统参数。',
+    features: ['维护总览', '系统公告', '维护模式', '功能开关', '版本信息', '更新日志', '系统参数'],
     primaryAction: '发布公告',
     tableColumns: ['配置项', '状态', '影响范围', '更新时间', '操作']
   },
@@ -785,7 +779,6 @@ const systemModules: AppModuleItem[] = [
     group: '系统管理',
     phase: 'Phase 14',
     status: 'later',
-    badge: '8',
     description: '管理余额误扣费、异常登录、敏感查看、发货失败等风险规则。',
     features: ['风险规则', '风险事件', '处置动作', '通知联动', '任务置顶'],
     primaryAction: '新增风控规则',
@@ -799,7 +792,6 @@ const systemModules: AppModuleItem[] = [
     group: '系统管理',
     phase: 'Phase 14',
     status: 'later',
-    badge: '14',
     description: '聚合客户问题、订单、续费、发货、退款和售后处理记录。',
     features: ['工单看板', 'SLA', '关联客户', '关联订单', '处理记录'],
     primaryAction: '新建工单',
@@ -902,7 +894,11 @@ export function getModuleSearchText(item: AppModuleItem) {
     item.group,
     getModuleDisplayGroup(item),
     item.phase,
-    item.description
+    item.description,
+    item.features.join(' '),
+    item.primaryAction ?? '',
+    item.secondaryAction ?? '',
+    item.tableColumns?.join(' ') ?? ''
   ].join(' ');
 }
 
@@ -971,16 +967,7 @@ export const menuSections: MenuSection[] = [
     key: 'security',
     title: '安全与权限',
     icon: 'security',
-    items: selectModules(systemModules, [
-      'users',
-      'roles',
-      'security',
-      'login-logs',
-      'sessions',
-      'mfa',
-      'ip-whitelist',
-      'sensitive-approvals'
-    ])
+    items: selectModules(systemModules, ['users', 'roles', 'security'])
   },
   {
     key: 'data-audit',
@@ -1010,13 +997,7 @@ export const menuSections: MenuSection[] = [
     key: 'system-config',
     title: '系统配置',
     icon: 'system',
-    items: selectModules(systemModules, [
-      'maintenance',
-      'feature-flags',
-      'versions',
-      'changelog',
-      'system-parameters'
-    ])
+    items: selectModules(systemModules, ['maintenance'])
   }
 ];
 

@@ -11,6 +11,8 @@ import type {
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 
@@ -107,6 +109,7 @@ const ACTION_PLAN_SORT_FIELDS: Record<
   updatedAt: 'updatedAt',
   completedAt: 'completedAt'
 };
+const ACTION_PLAN_LIST_CACHE_TTL_MS = 120_000;
 
 const actionPlanListInclude = {
   appleAccount: {
@@ -259,71 +262,83 @@ type ActionPlanItemPayload = Prisma.AppleAccountActionPlanItemGetPayload<{
 
 @Injectable()
 export class AppleActionPlansService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async list(query: ListActionPlansQuery) {
-    const pagination = getPagination(query);
-    const keyword = query.keyword?.trim();
-    const status = this.parseStatus(query.status, false);
-    const planDateFrom = this.parseDate(query.planDateFrom, 'planDateFrom');
-    const planDateTo = this.parseDate(query.planDateTo, 'planDateTo');
-    const hasWrongChargeRisk = this.parseOptionalBoolean(query.hasWrongChargeRisk);
+    return this.listCache.getOrSet(
+      getListCacheKey('apple-action-plans', query),
+      ACTION_PLAN_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const keyword = query.keyword?.trim();
+        const status = this.parseStatus(query.status, false);
+        const planDateFrom = this.parseDate(query.planDateFrom, 'planDateFrom');
+        const planDateTo = this.parseDate(query.planDateTo, 'planDateTo');
+        const hasWrongChargeRisk = this.parseOptionalBoolean(query.hasWrongChargeRisk);
 
-    const where: Prisma.AppleAccountActionPlanWhereInput = {
-      status: status ?? undefined,
-      appleAccountId: query.appleAccountId || undefined,
-      hasWrongChargeRisk: hasWrongChargeRisk ?? undefined,
-      planDate:
-        planDateFrom || planDateTo
-          ? {
-              gte: planDateFrom ?? undefined,
-              lte: planDateTo ?? undefined
-            }
-          : undefined,
-      OR: keyword
-        ? [
-            { mainNote: { contains: keyword, mode: 'insensitive' } },
-            {
-              appleAccount: {
-                is: {
-                  appleIdNormalized: { contains: keyword.toLowerCase(), mode: 'insensitive' }
+        const where: Prisma.AppleAccountActionPlanWhereInput = {
+          status: status ?? undefined,
+          appleAccountId: query.appleAccountId || undefined,
+          hasWrongChargeRisk: hasWrongChargeRisk ?? undefined,
+          planDate:
+            planDateFrom || planDateTo
+              ? {
+                  gte: planDateFrom ?? undefined,
+                  lte: planDateTo ?? undefined
                 }
-              }
-            },
-            {
-              items: {
-                some: { customer: { is: { name: { contains: keyword, mode: 'insensitive' } } } }
-              }
-            },
-            {
-              items: {
-                some: { service: { is: { name: { contains: keyword, mode: 'insensitive' } } } }
-              }
-            }
-          ]
-        : undefined
-    };
+              : undefined,
+          OR: keyword
+            ? [
+                { mainNote: { contains: keyword, mode: 'insensitive' } },
+                {
+                  appleAccount: {
+                    is: {
+                      appleIdNormalized: { contains: keyword.toLowerCase(), mode: 'insensitive' }
+                    }
+                  }
+                },
+                {
+                  items: {
+                    some: {
+                      customer: { is: { name: { contains: keyword, mode: 'insensitive' } } }
+                    }
+                  }
+                },
+                {
+                  items: {
+                    some: {
+                      service: { is: { name: { contains: keyword, mode: 'insensitive' } } }
+                    }
+                  }
+                }
+              ]
+            : undefined
+        };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.appleAccountActionPlan.findMany({
-        where,
-        include: actionPlanListInclude,
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: this.buildOrderBy(query)
-      }),
-      this.prisma.appleAccountActionPlan.count({ where })
-    ]);
+        const [items, total] = await Promise.all([
+          this.prisma.appleAccountActionPlan.findMany({
+            where,
+            include: actionPlanListInclude,
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: this.buildOrderBy(query)
+          }),
+          this.prisma.appleAccountActionPlan.count({ where })
+        ]);
 
-    return {
-      items: items.map((plan) => this.toPlanResponse(plan)),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items: items.map((plan) => this.toPlanResponse(plan)),
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   async get(id: string) {
@@ -467,6 +482,7 @@ export class AppleActionPlansService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_action_plan',
@@ -526,6 +542,7 @@ export class AppleActionPlansService {
       });
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_action_plan',

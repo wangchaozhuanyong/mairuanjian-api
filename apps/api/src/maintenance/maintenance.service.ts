@@ -16,6 +16,7 @@ import type {
 } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 
@@ -288,58 +289,63 @@ const DEFAULT_LAUNCH_CHECKLIST_ITEMS = [
     remark: '未获明确要求前不 commit、不 push'
   }
 ];
+const MAINTENANCE_OVERVIEW_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class MaintenanceService {
+  private readonly overviewCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async overview() {
-    const [
-      enabledAnnouncementCount,
-      activeMaintenanceWindow,
-      enabledFeatureFlagCount,
-      latestVersion,
-      recentAnnouncements,
-      recentVersions
-    ] = await this.prisma.$transaction([
-      this.prisma.appAnnouncement.count({ where: { enabled: true, deletedAt: null } }),
-      this.prisma.maintenanceWindow.findFirst({
-        where: { deletedAt: null },
-        include: this.getMaintenanceWindowInclude(),
-        orderBy: { updatedAt: 'desc' }
-      }),
-      this.prisma.featureFlag.count({ where: { enabled: true, deletedAt: null } }),
-      this.prisma.appVersion.findFirst({
-        include: this.getAppVersionInclude(),
-        orderBy: [{ releasedAt: 'desc' }, { createdAt: 'desc' }]
-      }),
-      this.prisma.appAnnouncement.findMany({
-        where: { deletedAt: null },
-        include: this.getAnnouncementInclude(),
-        take: 5,
-        orderBy: { createdAt: 'desc' }
-      }),
-      this.prisma.appVersion.findMany({
-        include: this.getAppVersionInclude(),
-        take: 5,
-        orderBy: [{ releasedAt: 'desc' }, { createdAt: 'desc' }]
-      })
-    ]);
+    return this.overviewCache.getOrSet('overview', MAINTENANCE_OVERVIEW_CACHE_TTL_MS, async () => {
+      const [
+        enabledAnnouncementCount,
+        activeMaintenanceWindow,
+        enabledFeatureFlagCount,
+        latestVersion,
+        recentAnnouncements,
+        recentVersions
+      ] = await Promise.all([
+        this.prisma.appAnnouncement.count({ where: { enabled: true, deletedAt: null } }),
+        this.prisma.maintenanceWindow.findFirst({
+          where: { deletedAt: null },
+          include: this.getMaintenanceWindowInclude(),
+          orderBy: { updatedAt: 'desc' }
+        }),
+        this.prisma.featureFlag.count({ where: { enabled: true, deletedAt: null } }),
+        this.prisma.appVersion.findFirst({
+          include: this.getAppVersionInclude(),
+          orderBy: [{ releasedAt: 'desc' }, { createdAt: 'desc' }]
+        }),
+        this.prisma.appAnnouncement.findMany({
+          where: { deletedAt: null },
+          include: this.getAnnouncementInclude(),
+          take: 5,
+          orderBy: { createdAt: 'desc' }
+        }),
+        this.prisma.appVersion.findMany({
+          include: this.getAppVersionInclude(),
+          take: 5,
+          orderBy: [{ releasedAt: 'desc' }, { createdAt: 'desc' }]
+        })
+      ]);
 
-    return {
-      enabledAnnouncementCount,
-      maintenanceModeEnabled: activeMaintenanceWindow?.enabled ?? false,
-      activeMaintenanceWindow: activeMaintenanceWindow
-        ? this.toMaintenanceWindowResponse(activeMaintenanceWindow)
-        : this.getDefaultMaintenanceMode(),
-      enabledFeatureFlagCount,
-      latestVersion: latestVersion ? this.toAppVersionResponse(latestVersion) : null,
-      recentAnnouncements: recentAnnouncements.map((item) => this.toAnnouncementResponse(item)),
-      recentVersions: recentVersions.map((item) => this.toAppVersionResponse(item))
-    };
+      return {
+        enabledAnnouncementCount,
+        maintenanceModeEnabled: activeMaintenanceWindow?.enabled ?? false,
+        activeMaintenanceWindow: activeMaintenanceWindow
+          ? this.toMaintenanceWindowResponse(activeMaintenanceWindow)
+          : this.getDefaultMaintenanceMode(),
+        enabledFeatureFlagCount,
+        latestVersion: latestVersion ? this.toAppVersionResponse(latestVersion) : null,
+        recentAnnouncements: recentAnnouncements.map((item) => this.toAnnouncementResponse(item)),
+        recentVersions: recentVersions.map((item) => this.toAppVersionResponse(item))
+      };
+    });
   }
 
   async listAnnouncements(query: ListAnnouncementsQuery) {
@@ -358,7 +364,7 @@ export class MaintenanceService {
           ]
         : undefined
     };
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.appAnnouncement.findMany({
         where,
         include: this.getAnnouncementInclude(),
@@ -549,7 +555,7 @@ export class MaintenanceService {
           ]
         : undefined
     };
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.appVersion.findMany({
         where,
         include: this.getAppVersionInclude(),
@@ -624,7 +630,7 @@ export class MaintenanceService {
           ]
         : undefined
     };
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.featureFlag.findMany({
         where,
         include: this.getFeatureFlagInclude(),
@@ -805,7 +811,7 @@ export class MaintenanceService {
           ]
         : undefined
     };
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.systemParameter.findMany({
         where,
         include: this.getParameterInclude(),

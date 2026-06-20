@@ -520,12 +520,13 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { appleReportsApi, userTableViewsApi, type AppleProfitReportQuery } from '@/api/system';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleOrder,
   AppleProfitGroup,
@@ -533,6 +534,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 const props = withDefaults(
   defineProps<{
@@ -546,6 +548,7 @@ const props = withDefaults(
     defaultTab: 'daily'
   }
 );
+const APPLE_REPORT_SCOPE = 'apple-reports';
 
 const tableKey = props.defaultTab === 'daily' ? 'apple_finance_report' : 'apple_profit_report';
 const statusOptions = [
@@ -642,18 +645,35 @@ const reportRiskCount = computed(() => {
     return !Number.isNaN(rate) && rate < 20;
   }).length;
 });
+const stopRealtimeRefresh = onRealtimeQueryInvalidated([APPLE_REPORT_SCOPE], () => {
+  void loadReport({ silent: true, dedupeMs: 0 });
+});
+
 onMounted(initializePage);
 
-async function loadReport() {
-  loading.value = true;
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
+});
+
+async function loadReport(options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}) {
+  if (!options.silent || !report.value.recentOrders.length) {
+    loading.value = true;
+  }
   try {
-    report.value = await appleReportsApi.profit({
+    const params = {
       ...query,
       keyword: query.keyword || undefined,
       status: query.status || undefined,
       dateFrom: query.dateFrom || undefined,
       dateTo: query.dateTo || undefined
+    };
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey(APPLE_REPORT_SCOPE, params),
+      fetcher: () => appleReportsApi.profit(params),
+      force: options.force ?? true,
+      dedupeMs: options.dedupeMs ?? 1_200
     });
+    report.value = result.data;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 报表失败');
   } finally {
@@ -859,7 +879,10 @@ function applyView(view: UserTableView) {
 
 async function initializePage() {
   await loadTableViews(true);
-  await handleSearch();
+  if (quickDate.value !== 'custom') {
+    applyQuickDate(false);
+  }
+  await loadReport({ force: false });
 }
 
 function isOrderStatus(value: unknown): value is AppleProfitReportQuery['status'] {

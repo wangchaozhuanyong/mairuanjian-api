@@ -14,6 +14,8 @@ import type {
 import { randomUUID } from 'node:crypto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -97,10 +99,12 @@ const REDEEM_CODE_INVENTORY_SORT_FIELDS: Record<
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+const REDEEM_CODE_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class RedeemCodesService {
   private readonly lowInventoryThreshold = 5;
+  private readonly listCache = new TimedMemoryCache();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -110,36 +114,42 @@ export class RedeemCodesService {
   ) {}
 
   async listBatches(query: ListRedeemCodeBatchesQuery) {
-    const pagination = getPagination(query);
-    const keyword = query.keyword?.trim();
-    const where: Prisma.RedeemCodeBatchWhereInput = {
-      serviceId: this.normalizeOptionalUuid(query.serviceId, 'serviceId') ?? undefined,
-      OR: keyword
-        ? [
-            { batchNo: { contains: keyword, mode: 'insensitive' } },
-            { remark: { contains: keyword, mode: 'insensitive' } },
-            { service: { name: { contains: keyword, mode: 'insensitive' } } }
-          ]
-        : undefined
-    };
+    return this.listCache.getOrSet(
+      getListCacheKey('redeem-code-batches', query),
+      REDEEM_CODE_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const keyword = query.keyword?.trim();
+        const where: Prisma.RedeemCodeBatchWhereInput = {
+          serviceId: this.normalizeOptionalUuid(query.serviceId, 'serviceId') ?? undefined,
+          OR: keyword
+            ? [
+                { batchNo: { contains: keyword, mode: 'insensitive' } },
+                { remark: { contains: keyword, mode: 'insensitive' } },
+                { service: { name: { contains: keyword, mode: 'insensitive' } } }
+              ]
+            : undefined
+        };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.redeemCodeBatch.findMany({
-        where,
-        include: this.getBatchInclude(),
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: { createdAt: 'desc' }
-      }),
-      this.prisma.redeemCodeBatch.count({ where })
-    ]);
+        const [items, total] = await Promise.all([
+          this.prisma.redeemCodeBatch.findMany({
+            where,
+            include: this.getBatchInclude(),
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: { createdAt: 'desc' }
+          }),
+          this.prisma.redeemCodeBatch.count({ where })
+        ]);
 
-    return {
-      items: items.map((batch) => this.toBatchResponse(batch)),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items: items.map((batch) => this.toBatchResponse(batch)),
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   async importBatch(dto: ImportRedeemCodesDto, operator?: AuthenticatedUser) {
@@ -216,6 +226,7 @@ export class RedeemCodesService {
       return createdBatch;
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'redeem_code',
@@ -348,40 +359,46 @@ export class RedeemCodesService {
   }
 
   async listInventory(query: ListRedeemCodeInventoryQuery) {
-    const pagination = getPagination(query);
-    const keyword = query.keyword?.trim();
-    const status = this.parseRedeemCodeStatus(query.status, false);
-    const where: Prisma.RedeemCodeWhereInput = {
-      status: status ?? undefined,
-      serviceId: this.normalizeOptionalUuid(query.serviceId, 'serviceId') ?? undefined,
-      batchId: this.normalizeOptionalUuid(query.batchId, 'batchId') ?? undefined,
-      OR: keyword
-        ? [
-            { codeTail: { contains: keyword, mode: 'insensitive' } },
-            { remark: { contains: keyword, mode: 'insensitive' } },
-            { batch: { batchNo: { contains: keyword, mode: 'insensitive' } } },
-            { service: { name: { contains: keyword, mode: 'insensitive' } } }
-          ]
-        : undefined
-    };
+    return this.listCache.getOrSet(
+      getListCacheKey('redeem-code-inventory', query),
+      REDEEM_CODE_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const keyword = query.keyword?.trim();
+        const status = this.parseRedeemCodeStatus(query.status, false);
+        const where: Prisma.RedeemCodeWhereInput = {
+          status: status ?? undefined,
+          serviceId: this.normalizeOptionalUuid(query.serviceId, 'serviceId') ?? undefined,
+          batchId: this.normalizeOptionalUuid(query.batchId, 'batchId') ?? undefined,
+          OR: keyword
+            ? [
+                { codeTail: { contains: keyword, mode: 'insensitive' } },
+                { remark: { contains: keyword, mode: 'insensitive' } },
+                { batch: { batchNo: { contains: keyword, mode: 'insensitive' } } },
+                { service: { name: { contains: keyword, mode: 'insensitive' } } }
+              ]
+            : undefined
+        };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.redeemCode.findMany({
-        where,
-        include: this.getInventoryInclude(),
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: this.buildInventoryOrderBy(query)
-      }),
-      this.prisma.redeemCode.count({ where })
-    ]);
+        const [items, total] = await Promise.all([
+          this.prisma.redeemCode.findMany({
+            where,
+            include: this.getInventoryInclude(),
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: this.buildInventoryOrderBy(query)
+          }),
+          this.prisma.redeemCode.count({ where })
+        ]);
 
-    return {
-      items: items.map((code) => this.toInventoryResponse(code)),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items: items.map((code) => this.toInventoryResponse(code)),
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   async getInventoryItem(id: string) {

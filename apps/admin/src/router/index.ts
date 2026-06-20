@@ -115,10 +115,27 @@ const readyPageComponents = {
 } as const;
 
 type RouteComponentLoader = () => Promise<unknown>;
+type NavigatorConnectionLike = {
+  effectiveType?: string;
+  saveData?: boolean;
+};
 
 const prefetchedRouteLoaders = new Set<RouteComponentLoader>();
 const routeComponentLoaders = new Map<string, RouteComponentLoader>();
 let readyRoutePrefetchStarted = false;
+const SECURITY_CENTER_MODULE_KEYS = new Set([
+  'login-logs',
+  'sessions',
+  'mfa',
+  'ip-whitelist',
+  'sensitive-approvals'
+]);
+const SYSTEM_CONFIG_MODULE_KEYS = new Set([
+  'feature-flags',
+  'versions',
+  'changelog',
+  'system-parameters'
+]);
 
 for (const module of allModules) {
   const loader = readyPageComponents[module.key as keyof typeof readyPageComponents];
@@ -143,6 +160,24 @@ function prefetchRouteLoader(loader: RouteComponentLoader) {
   });
 }
 
+function getNavigatorConnection() {
+  return (navigator as Navigator & { connection?: NavigatorConnectionLike }).connection;
+}
+
+function canRunBackgroundRoutePrefetch() {
+  const connection = getNavigatorConnection();
+
+  if (document.visibilityState !== 'visible') {
+    return false;
+  }
+
+  if (connection?.saveData) {
+    return false;
+  }
+
+  return !['slow-2g', '2g'].includes(connection?.effectiveType ?? '');
+}
+
 function scheduleRoutePrefetch(callback: () => void, delay = 220) {
   const requestIdle = (
     window as Window & {
@@ -150,12 +185,18 @@ function scheduleRoutePrefetch(callback: () => void, delay = 220) {
     }
   ).requestIdleCallback;
 
-  if (requestIdle) {
-    requestIdle(callback, { timeout: 1800 });
-    return;
-  }
+  window.setTimeout(() => {
+    if (!canRunBackgroundRoutePrefetch()) {
+      return;
+    }
 
-  window.setTimeout(callback, delay);
+    if (requestIdle) {
+      requestIdle(callback, { timeout: ROUTE_PREFETCH_IDLE_TIMEOUT_MS });
+      return;
+    }
+
+    callback();
+  }, delay);
 }
 
 export function prefetchRouteComponent(routePath: string) {
@@ -188,9 +229,9 @@ export function prefetchReadyRouteComponents(priorityRoutePaths: string[] = []) 
 
   readyRoutePrefetchStarted = true;
 
-  const loaders = [...new Set(routeComponentLoaders.values())].filter(
-    (loader) => !priorityLoaderSet.has(loader)
-  );
+  const loaders = [...new Set(routeComponentLoaders.values())]
+    .filter((loader) => !priorityLoaderSet.has(loader))
+    .slice(0, ROUTE_BACKGROUND_PREFETCH_LIMIT);
   let cursor = 0;
 
   const prefetchNextBatch = () => {
@@ -215,28 +256,46 @@ export function prefetchReadyRouteComponents(priorityRoutePaths: string[] = []) 
   scheduleRoutePrefetch(prefetchNextBatch, ROUTE_PREFETCH_INITIAL_DELAY_MS);
 }
 
-const moduleRoutes = allModules.map((module) => ({
-  path: module.route.replace(/^\//, ''),
-  name: module.key,
-  component:
-    readyPageComponents[module.key as keyof typeof readyPageComponents] ?? ModulePlaceholderView,
-  meta: {
-    title: getModuleDisplayTitle(module),
-    group: getModuleDisplayGroup(module),
-    phase: module.phase,
-    description: getModuleDisplayDescription(module),
-    moduleKey: module.key,
-    permission: getModulePermission(module),
-    status: module.status
+const moduleRoutes = allModules.map((module) => {
+  const displayModule = getCanonicalDisplayModule(module);
+
+  return {
+    path: module.route.replace(/^\//, ''),
+    name: module.key,
+    component:
+      readyPageComponents[module.key as keyof typeof readyPageComponents] ?? ModulePlaceholderView,
+    meta: {
+      title: getModuleDisplayTitle(displayModule),
+      group: getModuleDisplayGroup(displayModule),
+      phase: module.phase,
+      description: getModuleDisplayDescription(displayModule),
+      moduleKey: module.key,
+      permission: getModulePermission(module),
+      status: module.status
+    }
+  };
+});
+
+function getCanonicalDisplayModule(module: (typeof allModules)[number]) {
+  if (SECURITY_CENTER_MODULE_KEYS.has(module.key)) {
+    return allModules.find((item) => item.key === 'security') ?? module;
   }
-}));
+
+  if (SYSTEM_CONFIG_MODULE_KEYS.has(module.key)) {
+    return allModules.find((item) => item.key === 'maintenance') ?? module;
+  }
+
+  return module;
+}
 
 const MAINTENANCE_MODE_ROUTE = '/system/maintenance-mode';
 const MAINTENANCE_MODE_CACHE_MS = 60_000;
 const MAINTENANCE_MODE_RETRY_FLOOR_MS = 10_000;
-const ROUTE_PREFETCH_BATCH_SIZE = 6;
-const ROUTE_PREFETCH_INITIAL_DELAY_MS = 180;
-const ROUTE_PREFETCH_NEXT_DELAY_MS = 180;
+const ROUTE_PREFETCH_BATCH_SIZE = 1;
+const ROUTE_PREFETCH_INITIAL_DELAY_MS = 6_000;
+const ROUTE_PREFETCH_NEXT_DELAY_MS = 2_500;
+const ROUTE_PREFETCH_IDLE_TIMEOUT_MS = 2_000;
+const ROUTE_BACKGROUND_PREFETCH_LIMIT = 8;
 const ROUTE_PENDING_DELAY_MS = 180;
 const ROUTE_PENDING_SETTLE_MS = 120;
 

@@ -14,10 +14,16 @@ import type {
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+
+const ACTIVE_SESSION_TOUCH_INTERVAL_MS = 60_000;
+const ACTIVE_TOKEN_CACHE_TTL_MS = 15_000;
+const IP_WHITELIST_CACHE_TTL_MS = 30_000;
+const SECURITY_OVERVIEW_CACHE_TTL_MS = 120_000;
 
 interface RequestMeta {
   ip?: string | null;
@@ -193,8 +199,28 @@ interface UserMfaState {
   disabledReason?: string | null;
 }
 
+interface SecurityOverviewCounts {
+  failedLoginCount: number;
+  abnormalLoginCount: number;
+  activeSessionCount: number;
+  pendingApprovalCount: number;
+  enabledWhitelistCount: number;
+}
+
+interface SecurityOverviewCountsRow {
+  failedLoginCount: bigint | number | string | null;
+  abnormalLoginCount: bigint | number | string | null;
+  activeSessionCount: bigint | number | string | null;
+  pendingApprovalCount: bigint | number | string | null;
+  enabledWhitelistCount: bigint | number | string | null;
+}
+
 @Injectable()
 export class SecurityService {
+  private readonly activeTokenCache = new TimedMemoryCache();
+  private readonly ipWhitelistCache = new TimedMemoryCache();
+  private readonly overviewCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -203,15 +229,68 @@ export class SecurityService {
   ) {}
 
   async overview() {
-    const now = new Date();
+    return this.overviewCache.getOrSet('overview', SECURITY_OVERVIEW_CACHE_TTL_MS, async () => {
+      const now = new Date();
+      const [counts, recentLoginLogs] = await Promise.all([
+        this.getSecurityOverviewCounts(now),
+        this.prisma.loginLog.findMany({
+          take: 8,
+          orderBy: { createdAt: 'desc' },
+          include: this.getLoginLogInclude()
+        })
+      ]);
+
+      return {
+        ...counts,
+        recentLoginLogs: recentLoginLogs.map((item) => this.toLoginLogResponse(item))
+      };
+    });
+  }
+
+  private async getSecurityOverviewCounts(now: Date): Promise<SecurityOverviewCounts> {
+    if (typeof this.prisma.$queryRaw !== 'function') {
+      return this.getSecurityOverviewCountsWithPrisma(now);
+    }
+
+    try {
+      const rows = await this.prisma.$queryRaw<SecurityOverviewCountsRow[]>`
+        SELECT
+          (SELECT COUNT(*) FROM login_logs WHERE status::text = 'failed') AS "failedLoginCount",
+          (SELECT COUNT(*) FROM login_logs WHERE abnormal = true) AS "abnormalLoginCount",
+          (
+            SELECT COUNT(*)
+            FROM active_sessions
+            WHERE revoked_at IS NULL AND expires_at > ${now}
+          ) AS "activeSessionCount",
+          (
+            SELECT COUNT(*)
+            FROM sensitive_access_approvals
+            WHERE status::text = 'pending'
+          ) AS "pendingApprovalCount",
+          (SELECT COUNT(*) FROM ip_whitelists WHERE enabled = true) AS "enabledWhitelistCount"
+      `;
+      const row = rows[0];
+      if (!row) throw new Error('Missing security overview counts row');
+      return {
+        failedLoginCount: this.getCountNumber(row.failedLoginCount),
+        abnormalLoginCount: this.getCountNumber(row.abnormalLoginCount),
+        activeSessionCount: this.getCountNumber(row.activeSessionCount),
+        pendingApprovalCount: this.getCountNumber(row.pendingApprovalCount),
+        enabledWhitelistCount: this.getCountNumber(row.enabledWhitelistCount)
+      };
+    } catch {
+      return this.getSecurityOverviewCountsWithPrisma(now);
+    }
+  }
+
+  private async getSecurityOverviewCountsWithPrisma(now: Date): Promise<SecurityOverviewCounts> {
     const [
       failedLoginCount,
       abnormalLoginCount,
       activeSessionCount,
       pendingApprovalCount,
-      enabledWhitelistCount,
-      recentLoginLogs
-    ] = await this.prisma.$transaction([
+      enabledWhitelistCount
+    ] = await Promise.all([
       this.prisma.loginLog.count({ where: { status: 'failed' } }),
       this.prisma.loginLog.count({ where: { abnormal: true } }),
       this.prisma.activeSession.count({
@@ -221,12 +300,7 @@ export class SecurityService {
         }
       }),
       this.prisma.sensitiveAccessApproval.count({ where: { status: 'pending' } }),
-      this.prisma.ipWhitelist.count({ where: { enabled: true } }),
-      this.prisma.loginLog.findMany({
-        take: 8,
-        orderBy: { createdAt: 'desc' },
-        include: this.getLoginLogInclude()
-      })
+      this.prisma.ipWhitelist.count({ where: { enabled: true } })
     ]);
 
     return {
@@ -234,8 +308,7 @@ export class SecurityService {
       abnormalLoginCount,
       activeSessionCount,
       pendingApprovalCount,
-      enabledWhitelistCount,
-      recentLoginLogs: recentLoginLogs.map((item) => this.toLoginLogResponse(item))
+      enabledWhitelistCount
     };
   }
 
@@ -261,15 +334,19 @@ export class SecurityService {
       }
     });
 
+    if (status !== 'success' || abnormal) {
+      this.overviewCache.clear();
+    }
     await this.notifyLoginLog(log, riskContext);
     return this.toLoginLogResponse(log);
   }
 
   async createActiveSession(input: CreateActiveSessionInput) {
+    const tokenHash = this.hashToken(input.accessToken);
     const session = await this.prisma.activeSession.create({
       data: {
         userId: this.normalizeRequiredUuid(input.userId, 'userId'),
-        tokenHash: this.hashToken(input.accessToken),
+        tokenHash,
         ip: this.normalizeNullableString(input.ip),
         userAgent: this.normalizeNullableString(input.userAgent),
         expiresAt: input.expiresAt
@@ -277,6 +354,7 @@ export class SecurityService {
       include: this.getSessionInclude()
     });
 
+    this.cacheActiveToken(tokenHash, input.expiresAt);
     return this.toSessionResponse(session);
   }
 
@@ -287,12 +365,17 @@ export class SecurityService {
 
     const now = new Date();
     const tokenHash = this.hashToken(accessToken);
+    if (this.activeTokenCache.get<boolean>(tokenHash)) {
+      return true;
+    }
+
     const session = await this.prisma.activeSession.findUnique({
       where: { tokenHash },
       select: {
         id: true,
         revokedAt: true,
-        expiresAt: true
+        expiresAt: true,
+        lastActiveAt: true
       }
     });
 
@@ -300,16 +383,18 @@ export class SecurityService {
       return false;
     }
 
-    await this.prisma.activeSession.updateMany({
-      where: {
-        id: session.id,
-        revokedAt: null,
-        expiresAt: { gt: now }
-      },
-      data: {
-        lastActiveAt: now
-      }
-    });
+    if (now.getTime() - session.lastActiveAt.getTime() >= ACTIVE_SESSION_TOUCH_INTERVAL_MS) {
+      await this.prisma.activeSession.updateMany({
+        where: {
+          id: session.id,
+          revokedAt: null,
+          expiresAt: { gt: now }
+        },
+        data: {
+          lastActiveAt: now
+        }
+      });
+    }
 
     return true;
   }
@@ -334,6 +419,8 @@ export class SecurityService {
       include: this.getSessionInclude()
     });
 
+    this.activeTokenCache.delete(session.tokenHash);
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'security',
@@ -352,17 +439,22 @@ export class SecurityService {
   }
 
   async isRequestIpAllowed(ip: string | null | undefined, scopes: IpWhitelistScope[]) {
-    const records = await this.prisma.ipWhitelist.findMany({
-      where: {
-        enabled: true,
-        scope: {
-          in: scopes
-        }
-      },
-      select: {
-        ipOrCidr: true
-      }
-    });
+    const records = await this.ipWhitelistCache.getOrSet(
+      this.getIpWhitelistCacheKey(scopes),
+      IP_WHITELIST_CACHE_TTL_MS,
+      () =>
+        this.prisma.ipWhitelist.findMany({
+          where: {
+            enabled: true,
+            scope: {
+              in: scopes
+            }
+          },
+          select: {
+            ipOrCidr: true
+          }
+        })
+    );
 
     if (!records.length) {
       return true;
@@ -393,7 +485,7 @@ export class SecurityService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.loginLog.findMany({
         where,
         include: this.getLoginLogInclude(),
@@ -445,7 +537,7 @@ export class SecurityService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.activeSession.findMany({
         where,
         include: this.getSessionInclude(),
@@ -494,6 +586,7 @@ export class SecurityService {
       include: this.getSessionInclude()
     });
 
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'security',
@@ -572,7 +665,7 @@ export class SecurityService {
     const secret = this.getMfaSecretOrThrow(state);
     const verification = this.verifyTotp(secret, this.normalizeMfaCode(dto.code));
     if (!verification.valid) {
-      throw new BadRequestException('MFA code is invalid');
+      throw new BadRequestException('动态验证码或恢复码错误，请重新输入。');
     }
 
     const recoveryCodes = this.generateRecoveryCodes();
@@ -721,7 +814,7 @@ export class SecurityService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.ipWhitelist.findMany({
         where,
         include: this.getIpWhitelistInclude(),
@@ -754,6 +847,8 @@ export class SecurityService {
       include: this.getIpWhitelistInclude()
     });
 
+    this.ipWhitelistCache.clear();
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'security',
@@ -795,6 +890,8 @@ export class SecurityService {
       include: this.getIpWhitelistInclude()
     });
 
+    this.ipWhitelistCache.clear();
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'security',
@@ -813,6 +910,8 @@ export class SecurityService {
     const record = await this.findIpWhitelistOrThrow(id);
     await this.prisma.ipWhitelist.delete({ where: { id: record.id } });
 
+    this.ipWhitelistCache.clear();
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'security',
@@ -844,7 +943,7 @@ export class SecurityService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.sensitiveAccessLog.findMany({
         where,
         include: this.getSensitiveAccessLogInclude(),
@@ -890,6 +989,7 @@ export class SecurityService {
       include: this.getSensitiveApprovalInclude()
     });
 
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: requester.id,
       module: 'security',
@@ -920,7 +1020,7 @@ export class SecurityService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.sensitiveAccessApproval.findMany({
         where,
         include: this.getSensitiveApprovalInclude(),
@@ -986,7 +1086,7 @@ export class SecurityService {
       ]
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
         include: {
@@ -1029,6 +1129,7 @@ export class SecurityService {
       include: this.getSensitiveApprovalInclude()
     });
 
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'security',
@@ -1150,7 +1251,7 @@ export class SecurityService {
       return { method: 'recovery_code' as const };
     }
 
-    throw new BadRequestException('MFA code is invalid');
+    throw new BadRequestException('动态验证码或恢复码错误，请重新输入。');
   }
 
   private parseUserMfaState(value: unknown): UserMfaState {
@@ -1193,7 +1294,7 @@ export class SecurityService {
   private getMfaSecretOrThrow(state: UserMfaState) {
     const secret = this.fieldEncryptionService.decrypt(state.secretEncrypted);
     if (!secret) {
-      throw new BadRequestException('MFA secret is not configured');
+      throw new BadRequestException('动态验证码还没有配置，请先重新绑定。');
     }
     return secret;
   }
@@ -1231,7 +1332,7 @@ export class SecurityService {
   private normalizeMfaCode(value: string | null | undefined) {
     const code = this.normalizeNullableString(value)?.replace(/\s+/g, '').toUpperCase();
     if (!code) {
-      throw new BadRequestException('MFA code is required');
+      throw new BadRequestException('需要输入动态验证码或恢复码。');
     }
     return code;
   }
@@ -1346,8 +1447,7 @@ export class SecurityService {
       );
     }
 
-    const [usernameFailureCount = 0, ipFailureCount = 0] =
-      await this.prisma.$transaction(countQueries);
+    const [usernameFailureCount = 0, ipFailureCount = 0] = await Promise.all(countQueries);
     const failureCount = Math.max(usernameFailureCount, ipFailureCount) + 1;
 
     return {
@@ -1419,6 +1519,15 @@ export class SecurityService {
 
   private hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private cacheActiveToken(tokenHash: string, expiresAt: Date, now = new Date()) {
+    const ttlMs = Math.min(ACTIVE_TOKEN_CACHE_TTL_MS, expiresAt.getTime() - now.getTime());
+    this.activeTokenCache.set(tokenHash, true, ttlMs);
+  }
+
+  private getIpWhitelistCacheKey(scopes: IpWhitelistScope[]) {
+    return [...new Set(scopes)].sort().join('|');
   }
 
   private parseLoginStatus(value: unknown, strict: true): LoginLogStatus;
@@ -1575,6 +1684,12 @@ export class SecurityService {
       throw new BadRequestException(`${field} must be a uuid`);
     }
     return normalized;
+  }
+
+  private getCountNumber(value: bigint | number | string | null) {
+    const numberValue = typeof value === 'bigint' ? Number(value) : Number(value ?? 0);
+    if (!Number.isFinite(numberValue)) return 0;
+    return Math.max(0, Math.trunc(numberValue));
   }
 
   private normalizeNullableUuid(value: string | null | undefined, field: string) {

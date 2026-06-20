@@ -39,6 +39,8 @@
     "acceptance:business": "node scripts/acceptance-business-workflows.mjs",
     "acceptance:security": "node scripts/acceptance-sensitive-security.mjs",
     "acceptance:launch": "bash scripts/acceptance-launch-local.sh",
+    "acceptance:navigation": "node scripts/acceptance-navigation-loading.mjs",
+    "acceptance:realtime": "node scripts/acceptance-realtime-refresh.mjs",
     "git:readiness": "node scripts/git-readiness.mjs",
     "git:readiness:verbose": "node scripts/git-readiness.mjs --verbose",
     "launch:gates": "node scripts/manual-gates-status.mjs",
@@ -46,7 +48,8 @@
     "launch:checklist": "node scripts/record-launch-checklist.mjs",
     "release:review": "node scripts/release-review.mjs",
     "release:ready": "node scripts/release-review.mjs --strict",
-    "release:blockers": "node scripts/release-blockers.mjs"
+    "release:blockers": "node scripts/release-blockers.mjs",
+    "clean:dev-data": "node scripts/cleanup-development-data.mjs"
   },
   "engines": {
     "node": ">=22.0.0",

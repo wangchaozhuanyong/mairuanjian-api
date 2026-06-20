@@ -6,7 +6,7 @@
     description="查看淘宝、闲鱼、Telegram、文件存储和自动化服务的授权状态、最近同步、失败原因、调用次数和错误率。"
   >
     <template #actions>
-      <AppButton @click="loadPlatforms">刷新</AppButton>
+      <AppButton @click="() => loadPlatforms({ force: true })">刷新</AppButton>
       <AppButton variant="primary" :loading="testingAll" @click="testAllPlatforms">
         测试全部
       </AppButton>
@@ -65,7 +65,7 @@
         :show-primary="false"
         placeholder="搜索平台、说明、失败原因"
         @search="handleSearch"
-        @refresh="loadPlatforms"
+        @refresh="() => loadPlatforms({ force: true })"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
         @save-view="saveTableView"
@@ -334,7 +334,9 @@
           <span>可以清空筛选或刷新平台接口状态后重新查看。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-            <AppButton variant="primary" :loading="loading" @click="loadPlatforms">刷新</AppButton>
+            <AppButton variant="primary" :loading="loading" @click="() => loadPlatforms()">
+              刷新
+            </AppButton>
           </div>
         </div>
       </div>
@@ -464,12 +466,13 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { opsApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   OpsHealthStatus,
   PlatformAuthMode,
@@ -479,6 +482,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'ops_platform_interface_status';
 const healthStatusOptions = [
@@ -555,6 +559,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const viewsLoaded = ref(false);
+const activePlatformsQueryKey = ref('');
 
 const normalCount = computed(
   () => platforms.value.filter((item) => item.status === 'normal').length
@@ -617,16 +622,52 @@ const platformRows = computed(() => {
 
 onMounted(() => {
   void loadTableViews();
-  void loadPlatforms();
+  void loadPlatforms({ force: false });
 });
 
-async function loadPlatforms() {
-  loading.value = true;
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['ops-platform-status'], () => {
+  void loadPlatforms({
+    background: platforms.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
+
+async function loadPlatforms(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('ops-platform-status');
+  const cached = getSmartQueryData<{ items: PlatformInterfaceStatus[] }>(key);
+
+  activePlatformsQueryKey.value = key;
+
+  if (cached) {
+    platforms.value = cached.items;
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const result = await opsApi.platforms();
-    platforms.value = result.items;
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => opsApi.platforms(),
+      force: options.force ?? true
+    });
+
+    if (activePlatformsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      platforms.value = result.data.items;
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载平台接口状态失败');
+    }
   } finally {
-    loading.value = false;
+    if (activePlatformsQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -798,7 +839,7 @@ async function testPlatform(row: PlatformInterfaceStatus) {
     } else {
       ElMessage.warning(result.message);
     }
-    await loadPlatforms();
+    await loadPlatforms({ force: true });
   } finally {
     testingPlatform.value = '';
   }
@@ -811,7 +852,7 @@ async function testAllPlatforms() {
       await opsApi.testPlatformConnection(platform.platform, { syncType: 'test_all' });
     }
     ElMessage.success('平台连接测试已完成');
-    await loadPlatforms();
+    await loadPlatforms({ force: true });
   } finally {
     testingAll.value = false;
   }
@@ -855,7 +896,7 @@ async function saveAuthorization() {
     fillAuthorizationForm(result);
     ElMessage.success('平台授权配置已保存');
     authorizationDialogVisible.value = false;
-    await loadPlatforms();
+    await loadPlatforms({ force: true });
   } finally {
     authorizationSaving.value = false;
   }

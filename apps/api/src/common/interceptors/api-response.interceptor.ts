@@ -5,7 +5,9 @@ import {
   NestInterceptor,
   StreamableFile
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { map, Observable } from 'rxjs';
+import { SKIP_API_RESPONSE_KEY } from './skip-api-response.decorator';
 
 interface ApiSuccessResponse<TData> {
   success: true;
@@ -23,10 +25,21 @@ export class ApiResponseInterceptor<TData> implements NestInterceptor<
   TData,
   ApiSuccessResponse<TData> | TData
 > {
+  private readonly reflector = new Reflector();
+
   intercept(
-    _context: ExecutionContext,
+    context: ExecutionContext,
     next: CallHandler<TData>
   ): Observable<ApiSuccessResponse<TData> | TData> {
+    const skipApiResponse = this.reflector.getAllAndOverride<boolean>(SKIP_API_RESPONSE_KEY, [
+      context.getHandler(),
+      context.getClass()
+    ]);
+
+    if (skipApiResponse) {
+      return next.handle();
+    }
+
     return next.handle().pipe(
       map((data) => {
         if (data instanceof StreamableFile) {

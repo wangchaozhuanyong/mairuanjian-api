@@ -13,6 +13,7 @@ import {
 import { createReadStream } from 'node:fs';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import type {
   CreateBackupJobInput,
   CreateCleanupJobInput,
@@ -35,7 +36,10 @@ interface DownloadResponse {
 
 @Controller('data')
 export class DataCenterController {
-  constructor(private readonly dataCenterService: DataCenterService) {}
+  constructor(
+    private readonly dataCenterService: DataCenterService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get('overview')
   @RequirePermissions('data.overview.view')
@@ -67,24 +71,33 @@ export class DataCenterController {
 
   @Post('backup-jobs')
   @RequirePermissions('data.backup.create')
-  createBackupJob(@Body() dto: CreateBackupJobInput, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.createBackupJob(dto, operator);
+  async createBackupJob(
+    @Body() dto: CreateBackupJobInput,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const job = await this.dataCenterService.createBackupJob(dto, operator);
+    this.publishDataEvent('data.backup_job.created', 'backup_job', 'created', job.id);
+    return job;
   }
 
   @Patch('backup-jobs/:id/status')
   @RequirePermissions('data.backup.create')
-  updateBackupJobStatus(
+  async updateBackupJobStatus(
     @Param('id') id: string,
     @Body() dto: UpdateBackupJobStatusInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.updateBackupJobStatus(id, dto, operator);
+    const job = await this.dataCenterService.updateBackupJobStatus(id, dto, operator);
+    this.publishDataEvent('data.backup_job.updated', 'backup_job', 'updated', id);
+    return job;
   }
 
   @Post('backup-jobs/:id/execute')
   @RequirePermissions('data.backup.create')
-  executeBackupJob(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.executeBackupJob(id, operator);
+  async executeBackupJob(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const job = await this.dataCenterService.executeBackupJob(id, operator);
+    this.publishDataEvent('data.backup_job.executed', 'backup_job', 'executed', id);
+    return job;
   }
 
   @Get('restore-jobs')
@@ -111,31 +124,37 @@ export class DataCenterController {
 
   @Post('restore-jobs')
   @RequirePermissions('data.restore.create')
-  createRestoreJob(
+  async createRestoreJob(
     @Body() dto: CreateRestoreJobInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.createRestoreJob(dto, operator);
+    const job = await this.dataCenterService.createRestoreJob(dto, operator);
+    this.publishDataEvent('data.restore_job.created', 'restore_job', 'created', job.id);
+    return job;
   }
 
   @Patch('restore-jobs/:id/status')
   @RequirePermissions('data.restore.create')
-  updateRestoreJobStatus(
+  async updateRestoreJobStatus(
     @Param('id') id: string,
     @Body() dto: UpdateGenericJobStatusInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.updateRestoreJobStatus(id, dto, operator);
+    const job = await this.dataCenterService.updateRestoreJobStatus(id, dto, operator);
+    this.publishDataEvent('data.restore_job.updated', 'restore_job', 'updated', id);
+    return job;
   }
 
   @Post('restore-jobs/:id/execute')
   @RequirePermissions('data.restore.create')
-  executeRestoreJob(
+  async executeRestoreJob(
     @Param('id') id: string,
     @Body() dto: ExecuteRestoreJobInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.executeRestoreJob(id, dto, operator);
+    const job = await this.dataCenterService.executeRestoreJob(id, dto, operator);
+    this.publishDataEvent('data.restore_job.executed', 'restore_job', 'executed', id);
+    return job;
   }
 
   @Get('import-jobs')
@@ -162,24 +181,33 @@ export class DataCenterController {
 
   @Post('import-jobs')
   @RequirePermissions('data.import.create')
-  createImportJob(@Body() dto: CreateImportJobInput, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.createImportJob(dto, operator);
+  async createImportJob(
+    @Body() dto: CreateImportJobInput,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const job = await this.dataCenterService.createImportJob(dto, operator);
+    this.publishDataEvent('data.import_job.created', 'import_job', 'created', job.id);
+    return job;
   }
 
   @Patch('import-jobs/:id/status')
   @RequirePermissions('data.import.create')
-  updateImportJobStatus(
+  async updateImportJobStatus(
     @Param('id') id: string,
     @Body() dto: UpdateGenericJobStatusInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.updateImportJobStatus(id, dto, operator);
+    const job = await this.dataCenterService.updateImportJobStatus(id, dto, operator);
+    this.publishDataEvent('data.import_job.updated', 'import_job', 'updated', id);
+    return job;
   }
 
   @Post('import-jobs/:id/execute')
   @RequirePermissions('data.import.create')
-  executeImportJob(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.executeImportJob(id, operator);
+  async executeImportJob(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const job = await this.dataCenterService.executeImportJob(id, operator);
+    this.publishDataEvent('data.import_job.executed', 'import_job', 'executed', id);
+    return job;
   }
 
   @Get('import-jobs/:id/error-report')
@@ -221,24 +249,33 @@ export class DataCenterController {
 
   @Post('export-jobs')
   @RequirePermissions('data.export.create')
-  createExportJob(@Body() dto: CreateExportJobInput, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.createExportJob(dto, operator);
+  async createExportJob(
+    @Body() dto: CreateExportJobInput,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const job = await this.dataCenterService.createExportJob(dto, operator);
+    this.publishDataEvent('data.export_job.created', 'export_job', 'created', job.id);
+    return job;
   }
 
   @Patch('export-jobs/:id/status')
   @RequirePermissions('data.export.create')
-  updateExportJobStatus(
+  async updateExportJobStatus(
     @Param('id') id: string,
     @Body() dto: UpdateGenericJobStatusInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.updateExportJobStatus(id, dto, operator);
+    const job = await this.dataCenterService.updateExportJobStatus(id, dto, operator);
+    this.publishDataEvent('data.export_job.updated', 'export_job', 'updated', id);
+    return job;
   }
 
   @Post('export-jobs/:id/execute')
   @RequirePermissions('data.export.create')
-  executeExportJob(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.executeExportJob(id, operator);
+  async executeExportJob(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const job = await this.dataCenterService.executeExportJob(id, operator);
+    this.publishDataEvent('data.export_job.executed', 'export_job', 'executed', id);
+    return job;
   }
 
   @Get('export-jobs/:id/download')
@@ -280,14 +317,24 @@ export class DataCenterController {
 
   @Post('recycle-bin/:id/restore')
   @RequirePermissions('data.recycle_bin.restore')
-  restoreRecycleBinRecord(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.restoreRecycleBinRecord(id, operator);
+  async restoreRecycleBinRecord(
+    @Param('id') id: string,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const record = await this.dataCenterService.restoreRecycleBinRecord(id, operator);
+    this.publishDataEvent('data.recycle_bin.restored', 'recycle_bin_record', 'restored', id);
+    return record;
   }
 
   @Delete('recycle-bin/:id')
   @RequirePermissions('data.recycle_bin.restore')
-  purgeRecycleBinRecord(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.dataCenterService.purgeRecycleBinRecord(id, operator);
+  async purgeRecycleBinRecord(
+    @Param('id') id: string,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.dataCenterService.purgeRecycleBinRecord(id, operator);
+    this.publishDataEvent('data.recycle_bin.purged', 'recycle_bin_record', 'purged', id);
+    return result;
   }
 
   @Get('cleanup-jobs')
@@ -314,21 +361,25 @@ export class DataCenterController {
 
   @Post('cleanup-jobs')
   @RequirePermissions('data.cleanup.manage')
-  createCleanupJob(
+  async createCleanupJob(
     @Body() dto: CreateCleanupJobInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.createCleanupJob(dto, operator);
+    const job = await this.dataCenterService.createCleanupJob(dto, operator);
+    this.publishDataEvent('data.cleanup_job.created', 'cleanup_job', 'created', job.id);
+    return job;
   }
 
   @Patch('cleanup-jobs/:id/status')
   @RequirePermissions('data.cleanup.manage')
-  updateCleanupJobStatus(
+  async updateCleanupJobStatus(
     @Param('id') id: string,
     @Body() dto: UpdateGenericJobStatusInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.updateCleanupJobStatus(id, dto, operator);
+    const job = await this.dataCenterService.updateCleanupJobStatus(id, dto, operator);
+    this.publishDataEvent('data.cleanup_job.updated', 'cleanup_job', 'updated', id);
+    return job;
   }
 
   @Get('duplicate-merge-jobs')
@@ -355,21 +406,30 @@ export class DataCenterController {
 
   @Post('duplicate-merge-jobs')
   @RequirePermissions('data.duplicate_merge.manage')
-  createDuplicateMergeJob(
+  async createDuplicateMergeJob(
     @Body() dto: CreateDuplicateMergeJobInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.createDuplicateMergeJob(dto, operator);
+    const job = await this.dataCenterService.createDuplicateMergeJob(dto, operator);
+    this.publishDataEvent(
+      'data.duplicate_merge_job.created',
+      'duplicate_merge_job',
+      'created',
+      job.id
+    );
+    return job;
   }
 
   @Patch('duplicate-merge-jobs/:id/status')
   @RequirePermissions('data.duplicate_merge.manage')
-  updateDuplicateMergeJobStatus(
+  async updateDuplicateMergeJobStatus(
     @Param('id') id: string,
     @Body() dto: UpdateGenericJobStatusInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.updateDuplicateMergeJobStatus(id, dto, operator);
+    const job = await this.dataCenterService.updateDuplicateMergeJobStatus(id, dto, operator);
+    this.publishDataEvent('data.duplicate_merge_job.updated', 'duplicate_merge_job', 'updated', id);
+    return job;
   }
 
   @Get('dictionaries')
@@ -396,21 +456,25 @@ export class DataCenterController {
 
   @Post('dictionaries')
   @RequirePermissions('data.dictionary.manage')
-  createDictionary(
+  async createDictionary(
     @Body() dto: CreateDataDictionaryInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.createDictionary(dto, operator);
+    const dictionary = await this.dataCenterService.createDictionary(dto, operator);
+    this.publishDataEvent('data.dictionary.created', 'dictionary', 'created', dictionary.id);
+    return dictionary;
   }
 
   @Patch('dictionaries/:id')
   @RequirePermissions('data.dictionary.manage')
-  updateDictionary(
+  async updateDictionary(
     @Param('id') id: string,
     @Body() dto: UpdateDataDictionaryInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.updateDictionary(id, dto, operator);
+    const dictionary = await this.dataCenterService.updateDictionary(id, dto, operator);
+    this.publishDataEvent('data.dictionary.updated', 'dictionary', 'updated', id);
+    return dictionary;
   }
 
   @Get('system-parameters')
@@ -435,12 +499,14 @@ export class DataCenterController {
 
   @Patch('system-parameters/:key')
   @RequirePermissions('data.system_parameter.manage')
-  saveSystemParameter(
+  async saveSystemParameter(
     @Param('key') key: string,
     @Body() dto: SaveSystemParameterInput,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.dataCenterService.saveSystemParameter(key, dto, operator);
+    const parameter = await this.dataCenterService.saveSystemParameter(key, dto, operator);
+    this.publishDataEvent('data.system_parameter.saved', 'system_parameter', 'saved', key);
+    return parameter;
   }
 
   private buildContentDisposition(fileName: string) {
@@ -448,5 +514,20 @@ export class DataCenterController {
     return `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(
       fileName
     )}`;
+  }
+
+  private publishDataEvent(
+    type: string,
+    entity: string,
+    action: string,
+    resourceId?: string | null
+  ) {
+    this.realtimeService.publish({
+      type,
+      module: 'data',
+      entity,
+      action,
+      resourceId: resourceId ?? null
+    });
   }
 }

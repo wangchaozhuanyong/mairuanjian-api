@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Header, Param, Post, Query, Req } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import type { ImportRedeemCodesDto } from './dto/import-redeem-codes.dto';
 import type { RevealRedeemCodeDto } from './dto/reveal-redeem-code.dto';
 import { RedeemCodesService } from './redeem-codes.service';
@@ -12,7 +13,10 @@ interface RequestWithAuditMeta {
 
 @Controller('codes')
 export class RedeemCodesController {
-  constructor(private readonly redeemCodesService: RedeemCodesService) {}
+  constructor(
+    private readonly redeemCodesService: RedeemCodesService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get('batches')
   @RequirePermissions('code.inventory.view')
@@ -32,8 +36,23 @@ export class RedeemCodesController {
 
   @Post('batches/import')
   @RequirePermissions('code.batch.import')
-  importBatch(@Body() dto: ImportRedeemCodesDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.redeemCodesService.importBatch(dto, operator);
+  async importBatch(
+    @Body() dto: ImportRedeemCodesDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.redeemCodesService.importBatch(dto, operator);
+    this.realtimeService.publish({
+      type: 'codes.batch.imported',
+      module: 'code',
+      entity: 'redeem_code_batch',
+      action: 'imported',
+      resourceId: result.batch.id,
+      scope: {
+        successCount: result.successCount,
+        failedCount: result.failedCount
+      }
+    });
+    return result;
   }
 
   @Get('inventory')

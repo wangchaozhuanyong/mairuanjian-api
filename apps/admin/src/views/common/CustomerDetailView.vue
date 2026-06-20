@@ -10,7 +10,9 @@
         {{ customer ? getCustomerStatusLabel(customer.status) : '待选择客户' }}
       </StatusChip>
       <AppButton @click="goBack">返回客户列表</AppButton>
-      <AppButton :disabled="!customerId" :loading="loading" @click="loadDetail">刷新</AppButton>
+      <AppButton :disabled="!customerId" :loading="loading" @click="() => loadDetail()"
+        >刷新</AppButton
+      >
     </template>
 
     <section v-if="!customerId" class="content-panel">
@@ -25,7 +27,7 @@
 
     <section v-else-if="loadError" class="content-panel">
       <AppState type="error" title="加载失败" :description="loadError">
-        <AppButton variant="primary" @click="loadDetail">重新加载</AppButton>
+        <AppButton variant="primary" @click="() => loadDetail()">重新加载</AppButton>
         <AppButton @click="goBack">返回客户列表</AppButton>
       </AppState>
     </section>
@@ -347,7 +349,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   appleActivationsApi,
@@ -359,11 +361,19 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppState from '@/components/ui/AppState.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleOrder, Customer, RenewalTask, ServiceActivation } from '@/types/system';
+import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 const route = useRoute();
 const router = useRouter();
 const customerId = computed(() => (typeof route.query.id === 'string' ? route.query.id : ''));
+const CUSTOMER_DETAIL_SCOPES = [
+  'customers',
+  'apple-orders',
+  'apple-activations',
+  'apple-renewal-tasks'
+];
 
 const loading = ref(false);
 const relatedLoading = ref(false);
@@ -389,16 +399,24 @@ function goBack() {
   router.push('/system/customers');
 }
 
-async function loadDetail() {
+async function loadDetail(options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}) {
   if (!customerId.value) {
     return;
   }
 
-  loading.value = true;
+  if (!options.silent || !customer.value) {
+    loading.value = true;
+  }
   loadError.value = '';
   try {
-    customer.value = await customersApi.get(customerId.value);
-    await loadRelatedData(customerId.value);
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey('customer-detail', { id: customerId.value }),
+      fetcher: () => customersApi.get(customerId.value),
+      force: options.force ?? true,
+      dedupeMs: options.dedupeMs ?? 1_200
+    });
+    customer.value = result.data;
+    await loadRelatedData(customerId.value, options);
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '加载客户详情失败';
     ElMessage.error(loadError.value);
@@ -407,14 +425,26 @@ async function loadDetail() {
   }
 }
 
-async function loadRelatedData(id: string) {
-  relatedLoading.value = true;
+async function loadRelatedData(
+  id: string,
+  options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
+) {
+  if (!options.silent) {
+    relatedLoading.value = true;
+  }
   try {
-    const [orderData, activationData, taskData] = await Promise.all([
-      appleOrdersApi.list({ page: 1, pageSize: 8, customerId: id }),
-      appleActivationsApi.list({ page: 1, pageSize: 8, customerId: id }),
-      appleRenewalTasksApi.list({ page: 1, pageSize: 8, customerId: id })
-    ]);
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey('customer-related', { id }),
+      fetcher: () =>
+        Promise.all([
+          appleOrdersApi.list({ page: 1, pageSize: 8, customerId: id }),
+          appleActivationsApi.list({ page: 1, pageSize: 8, customerId: id }),
+          appleRenewalTasksApi.list({ page: 1, pageSize: 8, customerId: id })
+        ]),
+      force: options.force ?? true,
+      dedupeMs: options.dedupeMs ?? 1_200
+    });
+    const [orderData, activationData, taskData] = result.data;
 
     orders.value = orderData.items;
     activations.value = activationData.items;
@@ -429,5 +459,13 @@ async function loadRelatedData(id: string) {
   }
 }
 
-onMounted(loadDetail);
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(CUSTOMER_DETAIL_SCOPES, () => {
+  void loadDetail({ silent: true, dedupeMs: 0 });
+});
+
+onMounted(() => loadDetail({ force: false }));
+
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
+});
 </script>

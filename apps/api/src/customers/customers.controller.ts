@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import type { CreateCustomerDto } from './dto/create-customer.dto';
 import type { RevealCustomerPhoneDto } from './dto/reveal-customer-phone.dto';
 import type { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -24,7 +25,10 @@ interface RequestWithAuditMeta {
 
 @Controller('customers')
 export class CustomersController {
-  constructor(private readonly customersService: CustomersService) {}
+  constructor(
+    private readonly customersService: CustomersService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get()
   @RequirePermissions('customer.view')
@@ -56,18 +60,22 @@ export class CustomersController {
 
   @Post()
   @RequirePermissions('customer.create')
-  create(@Body() dto: CreateCustomerDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.customersService.create(dto, operator);
+  async create(@Body() dto: CreateCustomerDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const customer = await this.customersService.create(dto, operator);
+    this.publishCustomerEvent('common.customer.created', 'created', customer.id);
+    return customer;
   }
 
   @Patch(':id')
   @RequirePermissions('customer.update')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateCustomerDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.customersService.update(id, dto, operator);
+    const customer = await this.customersService.update(id, dto, operator);
+    this.publishCustomerEvent('common.customer.updated', 'updated', customer.id);
+    return customer;
   }
 
   @Post(':id/reveal-phone')
@@ -88,11 +96,26 @@ export class CustomersController {
 
   @Delete(':id')
   @RequirePermissions('customer.delete')
-  remove(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.customersService.remove(id, operator);
+  async remove(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.customersService.remove(id, operator);
+    this.publishCustomerEvent('common.customer.deleted', 'deleted', id);
+    return result;
   }
 
   private getHeaderValue(value: string | string[] | undefined) {
     return Array.isArray(value) ? value.join(', ') : value;
+  }
+
+  private publishCustomerEvent(type: string, action: string, customerId: string) {
+    this.realtimeService.publish({
+      type,
+      module: 'common',
+      entity: 'customer',
+      action,
+      resourceId: customerId,
+      scope: {
+        customerId
+      }
+    });
   }
 }

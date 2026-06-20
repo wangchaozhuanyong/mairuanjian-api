@@ -1,12 +1,12 @@
 <template>
   <PageScaffold
-    title="网站维护"
+    title="系统配置"
     group="系统管理"
     phase="Phase 13"
     description="集中管理系统公告、维护模式、版本信息、更新日志、功能开关、菜单配置、主题配置和系统参数。"
   >
     <template #actions>
-      <AppButton @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton @click="() => refreshCurrentTab({ force: true })">刷新</AppButton>
       <AppButton variant="primary" @click="openPrimaryDialog">{{ primaryActionText }}</AppButton>
     </template>
 
@@ -32,7 +32,7 @@
       <el-tabs
         v-model="activeTab"
         class="system-tabs maintenance-tabs"
-        @tab-change="refreshCurrentTab"
+        @tab-change="() => refreshCurrentTab()"
       >
         <el-tab-pane label="维护总览" name="overview">
           <div class="overview-grid">
@@ -171,7 +171,7 @@
             :show-primary="false"
             placeholder="搜索公告标题或内容"
             @search="handleAnnouncementSearch"
-            @refresh="loadAnnouncements"
+            @refresh="() => loadAnnouncements()"
             @clear-filters="clearAnnouncementFilters"
             @remove-filter="removeAnnouncementFilter"
             @save-view="saveAnnouncementTableView"
@@ -338,7 +338,7 @@
             v-model:page="announcementQuery.page"
             v-model:page-size="announcementQuery.pageSize"
             :total="announcementTotal"
-            @change="loadAnnouncements"
+            @change="() => loadAnnouncements()"
           />
         </el-tab-pane>
 
@@ -418,7 +418,7 @@
             :show-primary="false"
             placeholder="搜索开关编码、名称、备注"
             @search="handleFlagSearch"
-            @refresh="loadFeatureFlags"
+            @refresh="() => loadFeatureFlags()"
             @clear-filters="clearFlagFilters"
             @save-view="saveFlagTableView"
             @apply-view="applyFlagSavedView"
@@ -550,7 +550,7 @@
             v-model:page="flagQuery.page"
             v-model:page-size="flagQuery.pageSize"
             :total="flagTotal"
-            @change="loadFeatureFlags"
+            @change="() => loadFeatureFlags()"
           />
         </el-tab-pane>
 
@@ -568,7 +568,7 @@
             :show-primary="false"
             placeholder="搜索版本、标题、更新内容"
             @search="handleVersionSearch"
-            @refresh="loadAppVersions"
+            @refresh="() => loadAppVersions()"
             @clear-filters="clearVersionFilters"
             @save-view="saveVersionTableView"
             @apply-view="applyVersionSavedView"
@@ -697,7 +697,7 @@
             v-model:page="versionQuery.page"
             v-model:page-size="versionQuery.pageSize"
             :total="versionTotal"
-            @change="loadAppVersions"
+            @change="() => loadAppVersions()"
           />
         </el-tab-pane>
 
@@ -715,7 +715,7 @@
             :show-primary="false"
             placeholder="搜索版本、标题、更新内容"
             @search="handleChangelogSearch"
-            @refresh="loadChangelogs"
+            @refresh="() => loadChangelogs()"
             @clear-filters="clearChangelogFilters"
             @save-view="saveChangelogTableView"
             @apply-view="applyChangelogSavedView"
@@ -848,7 +848,7 @@
             v-model:page="changelogQuery.page"
             v-model:page-size="changelogQuery.pageSize"
             :total="changelogTotal"
-            @change="loadChangelogs"
+            @change="() => loadChangelogs()"
           />
         </el-tab-pane>
 
@@ -887,7 +887,7 @@
             :show-primary="false"
             placeholder="搜索参数 key 或备注"
             @search="handleParameterSearch"
-            @refresh="loadSystemParameters"
+            @refresh="() => loadSystemParameters()"
             @clear-filters="clearParameterFilters"
             @save-view="saveParameterTableView"
             @apply-view="applyParameterSavedView"
@@ -1020,7 +1020,7 @@
             v-model:page="parameterQuery.page"
             v-model:page-size="parameterQuery.pageSize"
             :total="parameterTotal"
-            @change="loadSystemParameters"
+            @change="() => loadSystemParameters()"
           />
         </el-tab-pane>
       </el-tabs>
@@ -1171,15 +1171,32 @@
 
 <script setup lang="ts">
 /* eslint-disable vue/one-component-per-file */
-import { computed, defineComponent, h, reactive, ref, resolveComponent, watch } from 'vue';
+import {
+  computed,
+  defineComponent,
+  h,
+  onBeforeUnmount,
+  reactive,
+  ref,
+  resolveComponent,
+  watch
+} from 'vue';
+import type { Ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
 import { maintenanceApi, userTableViewsApi } from '@/api/system';
+import type {
+  MaintenanceAnnouncementQuery,
+  MaintenanceFeatureFlagQuery,
+  MaintenanceParameterQuery,
+  MaintenanceVersionQuery
+} from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppAnnouncement,
   AppAnnouncementLevel,
@@ -1193,6 +1210,9 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+
+type LoadOptions = { background?: boolean; force?: boolean };
 
 const route = useRoute();
 const activeTab = ref('overview');
@@ -1374,6 +1394,15 @@ const parameterSavedViews = ref<UserTableView[]>([]);
 const parameterSavedViewId = ref('');
 const parameterSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const parameterViewsLoaded = ref(false);
+const activeOverviewQueryKey = ref('');
+const activeAnnouncementQueryKey = ref('');
+const activeModeQueryKey = ref('');
+const activeFlagQueryKey = ref('');
+const activeVersionQueryKey = ref('');
+const activeChangelogQueryKey = ref('');
+const activeMenuConfigQueryKey = ref('');
+const activeThemeConfigQueryKey = ref('');
+const activeParameterQueryKey = ref('');
 const parameterDialogVisible = ref(false);
 const parameterSaving = ref(false);
 const parameterForm = reactive({
@@ -1564,161 +1593,407 @@ watch(
   { immediate: true }
 );
 
-async function refreshCurrentTab() {
-  await loadOverview();
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  [
+    'maintenance-overview',
+    'maintenance-announcements',
+    'maintenance-mode',
+    'maintenance-feature-flags',
+    'maintenance-versions',
+    'maintenance-changelogs',
+    'maintenance-menu-config',
+    'maintenance-theme-config',
+    'maintenance-parameters'
+  ],
+  ({ scopes }) => {
+    if (scopes.includes('maintenance-overview')) {
+      void loadOverview({ background: Boolean(overview.value), force: true });
+    }
+
+    if (activeTab.value === 'announcements' && scopes.includes('maintenance-announcements')) {
+      void loadAnnouncements({
+        background: announcements.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'mode' && scopes.includes('maintenance-mode')) {
+      void loadMode({ background: true, force: true });
+    }
+
+    if (activeTab.value === 'flags' && scopes.includes('maintenance-feature-flags')) {
+      void loadFeatureFlags({
+        background: featureFlags.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'versions' && scopes.includes('maintenance-versions')) {
+      void loadAppVersions({
+        background: appVersions.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'changelog' && scopes.includes('maintenance-changelogs')) {
+      void loadChangelogs({
+        background: changelogs.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'menu' && scopes.includes('maintenance-menu-config')) {
+      void loadMenuConfig({ background: true, force: true });
+    }
+
+    if (activeTab.value === 'theme' && scopes.includes('maintenance-theme-config')) {
+      void loadThemeConfig({ background: true, force: true });
+    }
+
+    if (activeTab.value === 'parameters' && scopes.includes('maintenance-parameters')) {
+      void loadSystemParameters({
+        background: systemParameters.value.length > 0,
+        force: true
+      });
+    }
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
+
+async function refreshCurrentTab(options: LoadOptions = {}) {
+  await loadOverview(options);
   if (activeTab.value === 'overview') return;
-  if (activeTab.value === 'announcements') await loadAnnouncementsWithViews();
-  if (activeTab.value === 'mode') await loadMode();
-  if (activeTab.value === 'flags') await loadFeatureFlagsWithViews();
-  if (activeTab.value === 'versions') await loadAppVersionsWithViews();
-  if (activeTab.value === 'changelog') await loadChangelogsWithViews();
-  if (activeTab.value === 'menu') await loadMenuConfig();
-  if (activeTab.value === 'theme') await loadThemeConfig();
-  if (activeTab.value === 'parameters') await loadSystemParametersWithViews();
+  if (activeTab.value === 'announcements') await loadAnnouncementsWithViews(options);
+  if (activeTab.value === 'mode') await loadMode(options);
+  if (activeTab.value === 'flags') await loadFeatureFlagsWithViews(options);
+  if (activeTab.value === 'versions') await loadAppVersionsWithViews(options);
+  if (activeTab.value === 'changelog') await loadChangelogsWithViews(options);
+  if (activeTab.value === 'menu') await loadMenuConfig(options);
+  if (activeTab.value === 'theme') await loadThemeConfig(options);
+  if (activeTab.value === 'parameters') await loadSystemParametersWithViews(options);
 }
 
-async function loadOverview() {
-  overviewLoading.value = true;
+async function loadCachedData<TData>(config: {
+  scope: string;
+  activeKey: Ref<string>;
+  setLoading?: (loading: boolean) => void;
+  apply: (data: TData) => void;
+  fetcher: () => Promise<TData>;
+  errorMessage: string;
+  options?: LoadOptions;
+}) {
+  const options = config.options ?? {};
+  const key = createSmartQueryKey(config.scope);
+  const cached = getSmartQueryData<TData>(key);
+
+  config.activeKey.value = key;
+
+  if (cached) {
+    config.apply(cached);
+  }
+
+  config.setLoading?.(!cached && !options.background);
+
   try {
-    overview.value = await maintenanceApi.overview();
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: config.fetcher,
+      force: options.force ?? true
+    });
+
+    if (config.activeKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      config.apply(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : config.errorMessage);
+    }
   } finally {
-    overviewLoading.value = false;
+    if (config.activeKey.value === key) {
+      config.setLoading?.(false);
+    }
   }
 }
 
-async function loadAnnouncements() {
-  announcementsLoading.value = true;
+async function loadPagedData<TItem>(config: {
+  scope: string;
+  params: unknown;
+  activeKey: Ref<string>;
+  setLoading: (loading: boolean) => void;
+  apply: (result: PageResult<TItem>) => void;
+  fetcher: () => Promise<PageResult<TItem>>;
+  errorMessage: string;
+  options?: LoadOptions;
+}) {
+  const options = config.options ?? {};
+  const key = createSmartQueryKey(config.scope, config.params);
+  const cached = getSmartQueryData<PageResult<TItem>>(key);
+
+  config.activeKey.value = key;
+
+  if (cached) {
+    config.apply(cached);
+  }
+
+  config.setLoading(!cached && !options.background);
+
   try {
-    const result = await maintenanceApi.listAnnouncements({
-      ...announcementQuery,
-      sortBy: mapSortField(announcementSortConfig.value.prop, {
-        announcement: 'title',
-        displayTime: 'startAt'
-      }),
-      sortOrder: mapSortOrder(announcementSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: config.fetcher,
+      force: options.force ?? true
     });
-    applyPage(result, announcements, (total) => {
-      announcementTotal.value = total;
-    });
+
+    if (config.activeKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      config.apply(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : config.errorMessage);
+    }
   } finally {
-    announcementsLoading.value = false;
+    if (config.activeKey.value === key) {
+      config.setLoading(false);
+    }
   }
 }
 
-async function loadAnnouncementsWithViews() {
+async function loadOverview(options: LoadOptions = {}) {
+  await loadCachedData<MaintenanceOverview>({
+    scope: 'maintenance-overview',
+    activeKey: activeOverviewQueryKey,
+    setLoading: (loading) => {
+      overviewLoading.value = loading;
+    },
+    apply: (data) => {
+      overview.value = data;
+    },
+    fetcher: () => maintenanceApi.overview(),
+    errorMessage: '加载维护总览失败',
+    options
+  });
+}
+
+function buildAnnouncementParams(): MaintenanceAnnouncementQuery {
+  return {
+    ...announcementQuery,
+    sortBy: mapSortField(announcementSortConfig.value.prop, {
+      announcement: 'title',
+      displayTime: 'startAt'
+    }),
+    sortOrder: mapSortOrder(announcementSortConfig.value.order)
+  };
+}
+
+async function loadAnnouncements(options: LoadOptions = {}) {
+  const params = buildAnnouncementParams();
+  await loadPagedData<AppAnnouncement>({
+    scope: 'maintenance-announcements',
+    params,
+    activeKey: activeAnnouncementQueryKey,
+    setLoading: (loading) => {
+      announcementsLoading.value = loading;
+    },
+    apply: (result) => {
+      applyPage(result, announcements, (total) => {
+        announcementTotal.value = total;
+      });
+    },
+    fetcher: () => maintenanceApi.listAnnouncements(params),
+    errorMessage: '加载系统公告失败',
+    options
+  });
+}
+
+async function loadAnnouncementsWithViews(options: LoadOptions = {}) {
   await ensureAnnouncementTableViews();
-  await loadAnnouncements();
+  await loadAnnouncements(options);
 }
 
-async function loadMode() {
-  const mode = await maintenanceApi.getMode();
-  applyMode(mode);
+async function loadMode(options: LoadOptions = {}) {
+  await loadCachedData<MaintenanceWindow>({
+    scope: 'maintenance-mode',
+    activeKey: activeModeQueryKey,
+    apply: applyMode,
+    fetcher: () => maintenanceApi.getMode(),
+    errorMessage: '加载维护模式失败',
+    options
+  });
 }
 
-async function loadFeatureFlags() {
-  flagsLoading.value = true;
-  try {
-    const result = await maintenanceApi.listFeatureFlags({
-      ...flagQuery,
-      sortBy: mapSortField(flagSortConfig.value.prop, {
-        flag: 'name'
-      }),
-      sortOrder: mapSortOrder(flagSortConfig.value.order)
-    });
-    applyPage(result, featureFlags, (total) => {
-      flagTotal.value = total;
-    });
-  } finally {
-    flagsLoading.value = false;
-  }
+function buildFeatureFlagParams(): MaintenanceFeatureFlagQuery {
+  return {
+    ...flagQuery,
+    sortBy: mapSortField(flagSortConfig.value.prop, {
+      flag: 'name'
+    }),
+    sortOrder: mapSortOrder(flagSortConfig.value.order)
+  };
 }
 
-async function loadFeatureFlagsWithViews() {
+async function loadFeatureFlags(options: LoadOptions = {}) {
+  const params = buildFeatureFlagParams();
+  await loadPagedData<FeatureFlag>({
+    scope: 'maintenance-feature-flags',
+    params,
+    activeKey: activeFlagQueryKey,
+    setLoading: (loading) => {
+      flagsLoading.value = loading;
+    },
+    apply: (result) => {
+      applyPage(result, featureFlags, (total) => {
+        flagTotal.value = total;
+      });
+    },
+    fetcher: () => maintenanceApi.listFeatureFlags(params),
+    errorMessage: '加载功能开关失败',
+    options
+  });
+}
+
+async function loadFeatureFlagsWithViews(options: LoadOptions = {}) {
   await ensureFlagTableViews();
-  await loadFeatureFlags();
+  await loadFeatureFlags(options);
 }
 
-async function loadAppVersions() {
-  versionsLoading.value = true;
-  try {
-    const result = await maintenanceApi.listAppVersions({
-      ...versionQuery,
-      sortBy: mapSortField(versionSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(versionSortConfig.value.order)
-    });
-    applyPage(result, appVersions, (total) => {
-      versionTotal.value = total;
-    });
-  } finally {
-    versionsLoading.value = false;
-  }
+function buildVersionParams(): MaintenanceVersionQuery {
+  return {
+    ...versionQuery,
+    sortBy: mapSortField(versionSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(versionSortConfig.value.order)
+  };
 }
 
-async function loadAppVersionsWithViews() {
+async function loadAppVersions(options: LoadOptions = {}) {
+  const params = buildVersionParams();
+  await loadPagedData<AppVersion>({
+    scope: 'maintenance-versions',
+    params,
+    activeKey: activeVersionQueryKey,
+    setLoading: (loading) => {
+      versionsLoading.value = loading;
+    },
+    apply: (result) => {
+      applyPage(result, appVersions, (total) => {
+        versionTotal.value = total;
+      });
+    },
+    fetcher: () => maintenanceApi.listAppVersions(params),
+    errorMessage: '加载版本信息失败',
+    options
+  });
+}
+
+async function loadAppVersionsWithViews(options: LoadOptions = {}) {
   await ensureVersionTableViews();
-  await loadAppVersions();
+  await loadAppVersions(options);
 }
 
-async function loadChangelogs() {
-  changelogLoading.value = true;
-  try {
-    const result = await maintenanceApi.listChangelogs({
-      ...changelogQuery,
-      sortBy: mapSortField(changelogSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(changelogSortConfig.value.order)
-    });
-    applyPage(result, changelogs, (total) => {
-      changelogTotal.value = total;
-    });
-  } finally {
-    changelogLoading.value = false;
-  }
+function buildChangelogParams(): MaintenanceVersionQuery {
+  return {
+    ...changelogQuery,
+    sortBy: mapSortField(changelogSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(changelogSortConfig.value.order)
+  };
 }
 
-async function loadChangelogsWithViews() {
+async function loadChangelogs(options: LoadOptions = {}) {
+  const params = buildChangelogParams();
+  await loadPagedData<AppVersion>({
+    scope: 'maintenance-changelogs',
+    params,
+    activeKey: activeChangelogQueryKey,
+    setLoading: (loading) => {
+      changelogLoading.value = loading;
+    },
+    apply: (result) => {
+      applyPage(result, changelogs, (total) => {
+        changelogTotal.value = total;
+      });
+    },
+    fetcher: () => maintenanceApi.listChangelogs(params),
+    errorMessage: '加载更新日志失败',
+    options
+  });
+}
+
+async function loadChangelogsWithViews(options: LoadOptions = {}) {
   await ensureChangelogTableViews();
-  await loadChangelogs();
+  await loadChangelogs(options);
 }
 
-async function loadMenuConfig() {
-  menuConfigLoading.value = true;
-  try {
-    const parameter = await maintenanceApi.getMenuConfig();
-    menuConfigText.value = formatJson(parameter.value);
-  } finally {
-    menuConfigLoading.value = false;
-  }
+async function loadMenuConfig(options: LoadOptions = {}) {
+  await loadCachedData<SystemParameter>({
+    scope: 'maintenance-menu-config',
+    activeKey: activeMenuConfigQueryKey,
+    setLoading: (loading) => {
+      menuConfigLoading.value = loading;
+    },
+    apply: (parameter) => {
+      menuConfigText.value = formatJson(parameter.value);
+    },
+    fetcher: () => maintenanceApi.getMenuConfig(),
+    errorMessage: '加载菜单配置失败',
+    options
+  });
 }
 
-async function loadThemeConfig() {
-  themeConfigLoading.value = true;
-  try {
-    const parameter = await maintenanceApi.getThemeConfig();
-    themeConfigText.value = formatJson(parameter.value);
-  } finally {
-    themeConfigLoading.value = false;
-  }
+async function loadThemeConfig(options: LoadOptions = {}) {
+  await loadCachedData<SystemParameter>({
+    scope: 'maintenance-theme-config',
+    activeKey: activeThemeConfigQueryKey,
+    setLoading: (loading) => {
+      themeConfigLoading.value = loading;
+    },
+    apply: (parameter) => {
+      themeConfigText.value = formatJson(parameter.value);
+    },
+    fetcher: () => maintenanceApi.getThemeConfig(),
+    errorMessage: '加载主题配置失败',
+    options
+  });
 }
 
-async function loadSystemParameters() {
-  parametersLoading.value = true;
-  try {
-    const result = await maintenanceApi.listSystemParameters({
-      ...parameterQuery,
-      sortBy: mapSortField(parameterSortConfig.value.prop, {}),
-      sortOrder: mapSortOrder(parameterSortConfig.value.order)
-    });
-    applyPage(result, systemParameters, (total) => {
-      parameterTotal.value = total;
-    });
-  } finally {
-    parametersLoading.value = false;
-  }
+function buildParameterParams(): MaintenanceParameterQuery {
+  return {
+    ...parameterQuery,
+    sortBy: mapSortField(parameterSortConfig.value.prop, {}),
+    sortOrder: mapSortOrder(parameterSortConfig.value.order)
+  };
 }
 
-async function loadSystemParametersWithViews() {
+async function loadSystemParameters(options: LoadOptions = {}) {
+  const params = buildParameterParams();
+  await loadPagedData<SystemParameter>({
+    scope: 'maintenance-parameters',
+    params,
+    activeKey: activeParameterQueryKey,
+    setLoading: (loading) => {
+      parametersLoading.value = loading;
+    },
+    apply: (result) => {
+      applyPage(result, systemParameters, (total) => {
+        parameterTotal.value = total;
+      });
+    },
+    fetcher: () => maintenanceApi.listSystemParameters(params),
+    errorMessage: '加载系统参数失败',
+    options
+  });
+}
+
+async function loadSystemParametersWithViews(options: LoadOptions = {}) {
   await ensureParameterTableViews();
-  await loadSystemParameters();
+  await loadSystemParameters(options);
 }
 
 async function handleAnnouncementSearch() {
@@ -2436,7 +2711,7 @@ async function saveMenuConfig() {
   try {
     await maintenanceApi.saveMenuConfig({
       value,
-      remark: '网站维护菜单配置'
+      remark: '系统配置菜单配置'
     });
     ElMessage.success('菜单配置已保存');
   } finally {
@@ -2451,7 +2726,7 @@ async function saveThemeConfig() {
   try {
     await maintenanceApi.saveThemeConfig({
       value,
-      remark: '网站维护主题配置'
+      remark: '系统配置主题配置'
     });
     ElMessage.success('主题配置已保存');
   } finally {
@@ -2597,7 +2872,7 @@ function isAppVersionStatus(value: unknown): value is AppVersionStatus {
 }
 
 function showExportMessage() {
-  ElMessage.info('网站维护导出会走数据中心导出任务，后续统一接入');
+  ElMessage.info('系统配置导出会走数据中心导出任务，后续统一接入');
 }
 
 function formatJson(value: unknown) {

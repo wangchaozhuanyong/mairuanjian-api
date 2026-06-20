@@ -338,9 +338,10 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { appleOrdersApi, userTableViewsApi } from '@/api/system';
+import type { AppleOrderQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
@@ -348,7 +349,9 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { AppleOrder, TableDensity, UserTableView } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { AppleOrder, PageResult, TableDensity, UserTableView } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const router = useRouter();
 const tableKey = 'apple_orders';
@@ -383,6 +386,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const activeOrdersQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -437,23 +441,57 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadOrders() {
-  loading.value = true;
+function buildOrderParams(): AppleOrderQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyOrderResult(data: PageResult<AppleOrder>) {
+  orders.value = data.items;
+  total.value = data.total;
+}
+
+async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildOrderParams();
+  const key = createSmartQueryKey('apple-orders', params);
+  const cached = getSmartQueryData<PageResult<AppleOrder>>(key);
+
+  activeOrdersQueryKey.value = key;
+
+  if (cached) {
+    applyOrderResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const data = await appleOrdersApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => appleOrdersApi.list(params),
+      force: options.force ?? true
     });
-    orders.value = data.items;
-    total.value = data.total;
+
+    if (activeOrdersQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyOrderResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 订单失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 订单失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeOrdersQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -603,8 +641,17 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadOrders();
+  await loadOrders({ force: false });
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-orders'], () => {
+  void loadOrders({
+    background: orders.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>

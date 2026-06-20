@@ -35,7 +35,7 @@
         primary-label="新增消息模板"
         placeholder="搜索模板名称、内容、备注"
         @search="handleSearch"
-        @refresh="loadTemplates"
+        @refresh="() => loadTemplates()"
         @primary="openCreate"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
@@ -230,7 +230,7 @@
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @change="loadTemplates"
+        @change="() => loadTemplates()"
       />
     </section>
 
@@ -304,15 +304,18 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { messageTemplatesApi, userTableViewsApi } from '@/api/system';
+import type { MessageTemplateQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { MessageTemplate, TableDensity, UserTableView } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { MessageTemplate, PageResult, TableDensity, UserTableView } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const templateTypes: Array<{ label: string; value: MessageTemplate['type'] }> = [
   { label: '续费', value: 'renewal' },
@@ -357,6 +360,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const activeTemplatesQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -427,25 +431,59 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadTemplates() {
-  loading.value = true;
+function buildTemplateParams(): MessageTemplateQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    type: query.type || undefined,
+    channel: query.channel || undefined,
+    status: query.status || undefined,
+    sortBy: sortConfig.value.prop,
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyTemplateResult(data: PageResult<MessageTemplate>) {
+  templates.value = data.items;
+  total.value = data.total;
+}
+
+async function loadTemplates(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildTemplateParams();
+  const key = createSmartQueryKey('message-templates', params);
+  const cached = getSmartQueryData<PageResult<MessageTemplate>>(key);
+
+  activeTemplatesQueryKey.value = key;
+
+  if (cached) {
+    applyTemplateResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const data = await messageTemplatesApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      type: query.type || undefined,
-      channel: query.channel || undefined,
-      status: query.status || undefined,
-      sortBy: sortConfig.value.prop,
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => messageTemplatesApi.list(params),
+      force: options.force ?? true
     });
-    templates.value = data.items;
-    total.value = data.total;
+
+    if (activeTemplatesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyTemplateResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载消息模板失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载消息模板失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeTemplatesQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -616,7 +654,7 @@ function isTemplateStatus(value: unknown): value is MessageTemplate['status'] | 
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadTemplates();
+  await loadTemplates({ force: false });
 }
 
 function resetForm() {
@@ -673,7 +711,7 @@ async function saveTemplate() {
 
     ElMessage.success('消息模板已保存');
     dialogVisible.value = false;
-    await loadTemplates();
+    await loadTemplates({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存消息模板失败');
   } finally {
@@ -682,6 +720,15 @@ async function saveTemplate() {
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['message-templates'], () => {
+  void loadTemplates({
+    background: templates.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

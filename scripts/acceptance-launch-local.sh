@@ -15,6 +15,10 @@ run npm run prod:config:example
 run npm run acceptance:business
 run npm run acceptance:security
 
+if [[ "${ACCEPTANCE_KEEP_DATA:-0}" != "1" ]]; then
+  run npm run clean:dev-data -- --yes
+fi
+
 echo
 echo "==> npm run backup:postgres (local Docker PostgreSQL)"
 BACKUP_OUTPUT="$(

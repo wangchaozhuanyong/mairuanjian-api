@@ -456,13 +456,14 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox, ElTable, ElTableColumn } from 'element-plus';
 import type { PropType } from 'vue';
-import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue';
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { codeReportsApi, userTableViewsApi, type CodeProfitReportQuery } from '@/api/system';
 import AppCard from '@/components/ui/AppCard.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodePlatformOrder,
   CodeProfitGroup,
@@ -470,6 +471,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const ReportTable = defineComponent({
   props: {
@@ -574,6 +576,7 @@ const query = reactive<CodeProfitReportQuery>({
   deliveryStatus: ''
 });
 const report = ref<CodeProfitReport>(createEmptyReport());
+const activeReportQueryKey = ref('');
 
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
@@ -644,20 +647,51 @@ const filterChips = computed(() => {
 
 onMounted(initializePage);
 
-async function loadReport() {
-  loading.value = true;
+function buildReportParams(): CodeProfitReportQuery {
+  return {
+    ...query,
+    keyword: query.keyword || undefined,
+    deliveryStatus: query.deliveryStatus || undefined,
+    dateFrom: query.dateFrom || undefined,
+    dateTo: query.dateTo || undefined
+  };
+}
+
+async function loadReport(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildReportParams();
+  const key = createSmartQueryKey('code-reports', params);
+  const cached = getSmartQueryData<CodeProfitReport>(key);
+
+  activeReportQueryKey.value = key;
+
+  if (cached) {
+    report.value = cached;
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    report.value = await codeReportsApi.profit({
-      ...query,
-      keyword: query.keyword || undefined,
-      deliveryStatus: query.deliveryStatus || undefined,
-      dateFrom: query.dateFrom || undefined,
-      dateTo: query.dateTo || undefined
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => codeReportsApi.profit(params),
+      force: options.force ?? true
     });
+
+    if (activeReportQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      report.value = result.data;
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载兑换码报表失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载兑换码报表失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeReportQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -859,7 +893,10 @@ function applyView(view: UserTableView) {
 
 async function initializePage() {
   await loadTableViews(true);
-  await handleSearch();
+  if (quickDate.value !== 'custom') {
+    applyQuickDate(false);
+  }
+  await loadReport({ force: false });
 }
 
 function isDeliveryStatus(value: unknown): value is CodeProfitReportQuery['deliveryStatus'] {
@@ -909,4 +946,13 @@ function createEmptyReport(): CodeProfitReport {
     recentOrders: []
   };
 }
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['code-reports'], () => {
+  void loadReport({
+    background: report.value.summary.orderCount > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>

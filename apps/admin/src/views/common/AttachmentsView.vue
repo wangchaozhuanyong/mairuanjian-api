@@ -34,7 +34,7 @@
         primary-label="上传附件"
         placeholder="搜索文件名、类型、归属、用途、备注"
         @search="handleSearch"
-        @refresh="loadAttachments"
+        @refresh="() => loadAttachments()"
         @primary="openUploadDialog"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
@@ -217,7 +217,7 @@
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @page-change="loadAttachments"
+        @page-change="() => loadAttachments()"
         @page-size-change="handlePageSizeChange"
       />
     </section>
@@ -266,14 +266,20 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import type { Ref } from 'vue';
 import { attachmentsApi, userTableViewsApi } from '@/api/system';
+import type { AttachmentQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import type { Attachment, TableDensity, UserTableView } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { Attachment, PageResult, TableDensity, UserTableView } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+
+type LoadOptions = { background?: boolean; force?: boolean };
 
 const tableKey = 'attachments';
 const attachmentColumnOptions = [
@@ -300,6 +306,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const activeAttachmentsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -391,26 +398,97 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadAttachments() {
-  loading.value = true;
-  try {
-    const data = await attachmentsApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      businessModule: query.businessModule || undefined,
-      objectType: query.objectType || undefined,
-      purpose: query.purpose || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
-    });
-    attachments.value = data.items;
-    total.value = data.total;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载附件失败');
-  } finally {
-    loading.value = false;
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['attachments'], () => {
+  void loadAttachments({
+    background: attachments.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
+
+function buildAttachmentParams(): AttachmentQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    businessModule: query.businessModule || undefined,
+    objectType: query.objectType || undefined,
+    purpose: query.purpose || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyAttachmentsResult(data: PageResult<Attachment>) {
+  attachments.value = data.items;
+  total.value = data.total;
+  selectedAttachments.value = selectedAttachments.value.filter((selected) =>
+    data.items.some((attachment) => attachment.id === selected.id)
+  );
+}
+
+async function loadCachedPage<TItem>(config: {
+  scope: string;
+  params: unknown;
+  activeKey: Ref<string>;
+  setLoading: (loading: boolean) => void;
+  apply: (result: PageResult<TItem>) => void;
+  fetcher: () => Promise<PageResult<TItem>>;
+  errorMessage: string;
+  options?: LoadOptions;
+}) {
+  const options = config.options ?? {};
+  const key = createSmartQueryKey(config.scope, config.params);
+  const cached = getSmartQueryData<PageResult<TItem>>(key);
+
+  config.activeKey.value = key;
+
+  if (cached) {
+    config.apply(cached);
   }
+
+  config.setLoading(!cached && !options.background);
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: config.fetcher,
+      force: options.force ?? true
+    });
+
+    if (config.activeKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      config.apply(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : config.errorMessage);
+    }
+  } finally {
+    if (config.activeKey.value === key) {
+      config.setLoading(false);
+    }
+  }
+}
+
+async function loadAttachments(options: LoadOptions = {}) {
+  const params = buildAttachmentParams();
+  await loadCachedPage<Attachment>({
+    scope: 'attachments',
+    params,
+    activeKey: activeAttachmentsQueryKey,
+    setLoading: (nextLoading) => {
+      loading.value = nextLoading;
+    },
+    apply: applyAttachmentsResult,
+    fetcher: () => attachmentsApi.list(params),
+    errorMessage: '加载附件失败',
+    options
+  });
 }
 
 async function handleSearch() {
@@ -573,7 +651,7 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 
 function handlePageSizeChange() {
   query.page = 1;
-  loadAttachments();
+  void loadAttachments();
 }
 
 function resetUploadForm() {
@@ -615,7 +693,7 @@ async function submitUpload() {
     });
     ElMessage.success('附件已上传');
     uploadDialogVisible.value = false;
-    await loadAttachments();
+    await loadAttachments({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '上传附件失败');
   } finally {
@@ -641,7 +719,7 @@ async function downloadAttachment(attachment: Attachment) {
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadAttachments();
+  await loadAttachments({ force: false });
 }
 
 onMounted(initializePage);

@@ -270,11 +270,10 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
   codeOrdersApi,
   platformDeliveryApi,
-  sourcePlatformsApi,
   userTableViewsApi,
   type PlatformSyncResult
 } from '@/api/system';
@@ -289,6 +288,14 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import {
+  createSmartQueryKey,
+  getSmartQueryData,
+  invalidateSmartQueries,
+  refreshSmartQuery
+} from '@/utils/smartQuery';
+import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 
 const props = defineProps<{
   platform: 'taobao' | 'xianyu';
@@ -308,6 +315,11 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const activeOrdersQueryKey = ref('');
+const activatedOnce = ref(false);
+
+type PlatformCodeOrderPage = Awaited<ReturnType<typeof codeOrdersApi.list>>;
+type PlatformCodeOrderListParams = Parameters<typeof codeOrdersApi.list>[0];
 
 const query = reactive({
   page: 1,
@@ -387,38 +399,77 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadPlatforms() {
-  const data = await sourcePlatformsApi.list({
-    page: 1,
-    pageSize: 100,
-    type: props.platform,
-    status: 'active'
-  });
+async function loadPlatforms(options: { force?: boolean } = {}) {
+  const data = await loadSmartSourcePlatforms(
+    {
+      page: 1,
+      pageSize: 100,
+      type: props.platform,
+      status: 'active'
+    },
+    options
+  );
   platforms.value = data.items;
   if (!query.platformId) {
     query.platformId = platforms.value[0]?.id ?? '';
   }
 }
 
-async function loadOrders() {
-  loading.value = true;
-  try {
-    const data = await codeOrdersApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      platformId: query.platformId || undefined,
-      deliveryStatus: query.deliveryStatus || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
-    });
-    orders.value = data.items;
-    total.value = data.total;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : `加载${props.platformTitle}订单失败`);
-  } finally {
-    loading.value = false;
+async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildOrderListParams();
+  const key = createSmartQueryKey(`platform-code-orders-${props.platform}`, params);
+  const cached = getSmartQueryData<PlatformCodeOrderPage>(key);
+
+  activeOrdersQueryKey.value = key;
+
+  if (cached) {
+    applyOrderListResult(cached);
   }
+
+  loading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => codeOrdersApi.list(params),
+      force: options.force ?? true
+    });
+
+    if (activeOrdersQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyOrderListResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(
+        error instanceof Error ? error.message : `加载${props.platformTitle}订单失败`
+      );
+    }
+  } finally {
+    if (activeOrdersQueryKey.value === key) {
+      loading.value = false;
+    }
+  }
+}
+
+function buildOrderListParams(): PlatformCodeOrderListParams {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    platformId: query.platformId || undefined,
+    deliveryStatus: query.deliveryStatus || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyOrderListResult(data: PlatformCodeOrderPage) {
+  orders.value = data.items;
+  total.value = data.total;
 }
 
 async function handleSearch() {
@@ -441,8 +492,8 @@ function handleSelectionChange(rows: CodePlatformOrder[]) {
 
 async function reloadAll() {
   try {
-    await loadPlatforms();
-    await loadOrders();
+    await loadPlatforms({ force: true });
+    await loadOrders({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : `刷新${props.platformTitle}订单失败`);
   }
@@ -485,11 +536,14 @@ async function loadTableViews(applyDefault = false) {
       const defaultView = data.items.find((view) => view.isDefault);
       if (defaultView) {
         applyView(defaultView);
+        return true;
       }
     }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载保存视图失败');
   }
+
+  return false;
 }
 
 async function saveTableView() {
@@ -598,6 +652,7 @@ async function syncOrders() {
   syncingOrders.value = true;
   try {
     showSyncResult(await platformDeliveryApi.syncOrders(props.platform));
+    invalidateSmartQueries(`platform-code-orders-${props.platform}`);
     await loadOrders();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : `${props.platformTitle}订单同步失败`);
@@ -639,6 +694,7 @@ async function platformDeliver(order: CodePlatformOrder) {
     } else {
       ElMessage.success(result.message);
     }
+    invalidateSmartQueries(`platform-code-orders-${props.platform}`);
     await loadOrders();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '平台发货失败');
@@ -651,23 +707,62 @@ async function markManual(order: CodePlatformOrder) {
       reason: `${props.platformTitle}页面手动转人工`
     });
     ElMessage.success('订单已转入人工处理');
+    invalidateSmartQueries(`platform-code-orders-${props.platform}`);
     await loadOrders();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '转人工失败');
   }
 }
 
+async function loadPageData() {
+  await loadPlatforms({ force: false });
+
+  const tableViewsPromise = loadTableViews(true);
+  const ordersPromise = loadOrders({ force: false });
+  const defaultViewApplied = await tableViewsPromise;
+
+  await ordersPromise;
+
+  if (defaultViewApplied) {
+    await loadOrders({
+      background: orders.value.length > 0,
+      force: false
+    });
+  }
+}
+
 async function initializePage() {
   try {
-    await loadPlatforms();
-    await loadTableViews(true);
-    await loadOrders();
+    await loadPageData();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : `加载${props.platformTitle}订单失败`);
   }
 }
 
 onMounted(initializePage);
+onActivated(() => {
+  if (!activatedOnce.value) {
+    activatedOnce.value = true;
+    return;
+  }
+
+  void loadOrders({
+    background: orders.value.length > 0,
+    force: false
+  });
+});
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  [`platform-code-orders-${props.platform}`],
+  () => {
+    void loadOrders({
+      background: orders.value.length > 0,
+      force: true
+    });
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

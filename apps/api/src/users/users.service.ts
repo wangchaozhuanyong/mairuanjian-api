@@ -9,6 +9,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { hashPassword } from '../auth/password-hasher';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import type { CreateUserDto } from './dto/create-user.dto';
 import { SecurityService } from '../security/security.service';
@@ -30,6 +31,8 @@ const USER_SORT_FIELDS: Record<string, keyof Prisma.UserOrderByWithRelationInput
   updatedAt: 'updatedAt'
 };
 
+const AUTHENTICATED_USER_CACHE_TTL_MS = 15_000;
+
 const userSelect = {
   id: true,
   username: true,
@@ -49,6 +52,8 @@ const userSelect = {
 
 @Injectable()
 export class UsersService {
+  private readonly authenticatedUserCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -56,45 +61,51 @@ export class UsersService {
   ) {}
 
   async getAuthenticatedUser(userId: string): Promise<AuthenticatedUser> {
-    const user = await this.prisma.user.findFirst({
-      where: {
-        id: userId,
-        status: 'active',
-        deletedAt: null
-      },
-      include: {
-        userRoles: {
+    return this.authenticatedUserCache.getOrSet(
+      userId,
+      AUTHENTICATED_USER_CACHE_TTL_MS,
+      async () => {
+        const user = await this.prisma.user.findFirst({
+          where: {
+            id: userId,
+            status: 'active',
+            deletedAt: null
+          },
           include: {
-            role: {
+            userRoles: {
               include: {
-                rolePermissions: {
+                role: {
                   include: {
-                    permission: true
+                    rolePermissions: {
+                      include: {
+                        permission: true
+                      }
+                    }
                   }
                 }
               }
             }
           }
+        });
+
+        if (!user) {
+          throw new NotFoundException('User not found');
         }
+
+        const roles = user.userRoles.map((userRole) => userRole.role.code);
+        const permissions = user.userRoles.flatMap((userRole) =>
+          userRole.role.rolePermissions.map((rolePermission) => rolePermission.permission.code)
+        );
+
+        return {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          roles: [...new Set(roles)],
+          permissions: [...new Set(permissions)]
+        };
       }
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const roles = user.userRoles.map((userRole) => userRole.role.code);
-    const permissions = user.userRoles.flatMap((userRole) =>
-      userRole.role.rolePermissions.map((rolePermission) => rolePermission.permission.code)
     );
-
-    return {
-      id: user.id,
-      username: user.username,
-      displayName: user.displayName,
-      roles: [...new Set(roles)],
-      permissions: [...new Set(permissions)]
-    };
   }
 
   async listUsers(query: ListUsersQuery) {
@@ -312,6 +323,7 @@ export class UsersService {
       remark: `Updated user ${existingUser.username}`
     });
 
+    this.authenticatedUserCache.delete(userId);
     return this.getUserDetail(userId);
   }
 

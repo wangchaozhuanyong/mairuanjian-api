@@ -7,7 +7,7 @@
   >
     <template #actions>
       <StatusChip tone="blue" dot>真实验收清单</StatusChip>
-      <AppButton @click="loadChecklist">刷新</AppButton>
+      <AppButton @click="() => loadChecklist()">刷新</AppButton>
       <AppButton variant="primary" :loading="saving" :disabled="!dirty" @click="saveChecklist">
         保存清单
       </AppButton>
@@ -298,15 +298,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { maintenanceApi } from '@/api/system';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { LaunchChecklistItem, LaunchChecklistStatus } from '@/types/system';
+import { createSmartQueryKey, invalidateSmartQueries, refreshSmartQuery } from '@/utils/smartQuery';
 
+const LAUNCH_AUDIT_SCOPE = 'launch-audit';
 const loading = ref(false);
 const saving = ref(false);
 const dirty = ref(false);
@@ -408,13 +411,30 @@ const filteredItems = computed(() => {
   });
 });
 
-onMounted(loadChecklist);
+const stopRealtimeRefresh = onRealtimeQueryInvalidated([LAUNCH_AUDIT_SCOPE], () => {
+  void loadChecklist({ silent: true, dedupeMs: 0 });
+});
 
-async function loadChecklist() {
-  loading.value = true;
+onMounted(() => loadChecklist({ force: false }));
+
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
+});
+
+async function loadChecklist(
+  options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
+) {
+  if (!options.silent || !items.value.length) {
+    loading.value = true;
+  }
   try {
-    const result = await maintenanceApi.getLaunchChecklist();
-    items.value = result.items;
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey(LAUNCH_AUDIT_SCOPE),
+      fetcher: () => maintenanceApi.getLaunchChecklist(),
+      force: options.force ?? true,
+      dedupeMs: options.dedupeMs ?? 1_200
+    });
+    items.value = result.data.items;
     dirty.value = false;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载上线检查清单失败');
@@ -428,6 +448,7 @@ async function saveChecklist() {
   try {
     const result = await maintenanceApi.saveLaunchChecklist(items.value);
     items.value = result.items;
+    invalidateSmartQueries(LAUNCH_AUDIT_SCOPE);
     dirty.value = false;
     ElMessage.success('上线检查清单已保存');
   } catch (error) {

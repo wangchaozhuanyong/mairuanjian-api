@@ -29,6 +29,7 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { ElConfigProvider } from 'element-plus/es/components/config-provider/index.mjs';
 import zhCn from 'element-plus/es/locale/lang/zh-cn.mjs';
 import { isRoutePending, router } from '@/router';
+import { useRealtimeConnection } from '@/realtime/useRealtime';
 
 const isRouterReady = ref(false);
 const isBootVisible = ref(false);
@@ -50,6 +51,8 @@ const slowBootTimer = window.setTimeout(() => {
   isBootVisible.value = true;
   isSlowBoot.value = true;
 }, 1200);
+
+useRealtimeConnection();
 
 router
   .isReady()

@@ -4,15 +4,21 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import type { PlatformDeliverDto } from './dto/platform-deliver.dto';
 import type { PlatformPollDto } from './dto/platform-poll.dto';
 import { PlatformDeliveryService } from './platform-delivery.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Controller('platforms')
 export class PlatformDeliveryController {
-  constructor(private readonly platformDeliveryService: PlatformDeliveryService) {}
+  constructor(
+    private readonly platformDeliveryService: PlatformDeliveryService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Post('taobao/sync-orders')
   @RequirePermissions('code.order.deliver')
-  syncTaobaoOrders() {
-    return this.platformDeliveryService.syncOrders('taobao');
+  async syncTaobaoOrders() {
+    const result = await this.platformDeliveryService.syncOrders('taobao');
+    this.publishPlatformEvent('codes.order.synced', 'taobao', 'synced');
+    return result;
   }
 
   @Get('taobao/orders/:externalOrderNo')
@@ -23,30 +29,38 @@ export class PlatformDeliveryController {
 
   @Post('taobao/orders/:id/deliver')
   @RequirePermissions('code.order.deliver')
-  deliverTaobaoOrder(
+  async deliverTaobaoOrder(
     @Param('id') id: string,
     @Body() dto: PlatformDeliverDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.platformDeliveryService.deliver('taobao', id, dto, operator);
+    const result = await this.platformDeliveryService.deliver('taobao', id, dto, operator);
+    this.publishPlatformEvent('codes.delivery.completed', 'taobao', 'delivered', id);
+    return result;
   }
 
   @Post('taobao/sync-refunds')
   @RequirePermissions('code.order.deliver')
-  syncTaobaoRefunds() {
-    return this.platformDeliveryService.syncRefunds('taobao');
+  async syncTaobaoRefunds() {
+    const result = await this.platformDeliveryService.syncRefunds('taobao');
+    this.publishPlatformEvent('code.order.refunds_synced', 'taobao', 'refunds_synced');
+    return result;
   }
 
   @Post('taobao/poll')
   @RequirePermissions('code.order.deliver')
-  pollTaobao(@Body() dto: PlatformPollDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.platformDeliveryService.pollPlatform('taobao', dto, operator);
+  async pollTaobao(@Body() dto: PlatformPollDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.platformDeliveryService.pollPlatform('taobao', dto, operator);
+    this.publishPlatformEvent('codes.order.synced', 'taobao', 'polled');
+    return result;
   }
 
   @Post('xianyu/sync-orders')
   @RequirePermissions('code.order.deliver')
-  syncXianyuOrders() {
-    return this.platformDeliveryService.syncOrders('xianyu');
+  async syncXianyuOrders() {
+    const result = await this.platformDeliveryService.syncOrders('xianyu');
+    this.publishPlatformEvent('codes.order.synced', 'xianyu', 'synced');
+    return result;
   }
 
   @Get('xianyu/orders/:externalOrderNo')
@@ -57,39 +71,69 @@ export class PlatformDeliveryController {
 
   @Post('xianyu/orders/:id/deliver')
   @RequirePermissions('code.order.deliver')
-  deliverXianyuOrder(
+  async deliverXianyuOrder(
     @Param('id') id: string,
     @Body() dto: PlatformDeliverDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.platformDeliveryService.deliver('xianyu', id, dto, operator);
+    const result = await this.platformDeliveryService.deliver('xianyu', id, dto, operator);
+    this.publishPlatformEvent('codes.delivery.completed', 'xianyu', 'delivered', id);
+    return result;
   }
 
   @Post('xianyu/sync-refunds')
   @RequirePermissions('code.order.deliver')
-  syncXianyuRefunds() {
-    return this.platformDeliveryService.syncRefunds('xianyu');
+  async syncXianyuRefunds() {
+    const result = await this.platformDeliveryService.syncRefunds('xianyu');
+    this.publishPlatformEvent('code.order.refunds_synced', 'xianyu', 'refunds_synced');
+    return result;
   }
 
   @Post('xianyu/poll')
   @RequirePermissions('code.order.deliver')
-  pollXianyu(@Body() dto: PlatformPollDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.platformDeliveryService.pollPlatform('xianyu', dto, operator);
+  async pollXianyu(@Body() dto: PlatformPollDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.platformDeliveryService.pollPlatform('xianyu', dto, operator);
+    this.publishPlatformEvent('codes.order.synced', 'xianyu', 'polled');
+    return result;
   }
 
   @Post('poll-all')
   @RequirePermissions('code.order.deliver')
-  pollAll(@Body() dto: PlatformPollDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.platformDeliveryService.pollAllPlatforms(dto, operator);
+  async pollAll(@Body() dto: PlatformPollDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.platformDeliveryService.pollAllPlatforms(dto, operator);
+    this.publishPlatformEvent('codes.order.synced', 'taobao', 'polled');
+    this.publishPlatformEvent('codes.order.synced', 'xianyu', 'polled');
+    return result;
   }
 
   @Post('manual/orders/:id/deliver')
   @RequirePermissions('code.order.deliver')
-  deliverManualOrder(
+  async deliverManualOrder(
     @Param('id') id: string,
     @Body() dto: PlatformDeliverDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.platformDeliveryService.deliver('manual', id, dto, operator);
+    const result = await this.platformDeliveryService.deliver('manual', id, dto, operator);
+    this.publishPlatformEvent('codes.delivery.completed', 'manual', 'delivered', id);
+    return result;
+  }
+
+  private publishPlatformEvent(
+    type: string,
+    platform: 'taobao' | 'xianyu' | 'manual',
+    action: string,
+    orderId?: string | null
+  ) {
+    this.realtimeService.publish({
+      type,
+      module: platform === 'manual' ? 'code' : 'platform',
+      entity: 'platform_code_order',
+      action,
+      resourceId: orderId ?? null,
+      scope: {
+        platform,
+        orderId: orderId ?? null
+      }
+    });
   }
 }

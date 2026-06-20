@@ -6,7 +6,7 @@
     description="录入客户订单，按业务规则自动匹配 Apple ID，提交后自动生成开通记录、扣减余额并计算利润。"
   >
     <template #actions>
-      <AppButton @click="loadInitialData">刷新基础数据</AppButton>
+      <AppButton @click="() => loadInitialData()">刷新基础数据</AppButton>
       <AppButton variant="primary" :loading="saving" @click="submitOrder">提交订单</AppButton>
     </template>
 
@@ -342,20 +342,19 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
-import {
-  appleMatchingApi,
-  appleOrdersApi,
-  appleServicesApi,
-  customersApi,
-  sourcePlatformsApi
-} from '@/api/system';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { appleMatchingApi, appleOrdersApi, appleServicesApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleService, AvailableAppleAccount, Customer, SourcePlatform } from '@/types/system';
+import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
+import { loadSmartCustomers, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
+const ORDER_ENTRY_BASE_SCOPE = 'order-entry-base';
+const ORDER_ENTRY_REALTIME_SCOPES = ['customers', 'source-platforms', 'apple-services'];
 const loading = ref(false);
 const saving = ref(false);
 const matchingLoading = ref(false);
@@ -528,14 +527,31 @@ function formatMoney(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : '-';
 }
 
-async function loadInitialData() {
-  loading.value = true;
+async function loadInitialData(
+  options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
+) {
+  if (!options.silent || !customers.value.length) {
+    loading.value = true;
+  }
   try {
-    const [customerData, platformData, serviceData] = await Promise.all([
-      customersApi.list({ page: 1, pageSize: 100, status: 'active' }),
-      sourcePlatformsApi.list({ page: 1, pageSize: 100, status: 'active' }),
-      appleServicesApi.list({ page: 1, pageSize: 100, status: 'enabled' })
-    ]);
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey(ORDER_ENTRY_BASE_SCOPE),
+      fetcher: () =>
+        Promise.all([
+          loadSmartCustomers(
+            { page: 1, pageSize: 100, status: 'active' },
+            { force: options.force ?? true, dedupeMs: options.dedupeMs }
+          ),
+          loadSmartSourcePlatforms(
+            { page: 1, pageSize: 100, status: 'active' },
+            { force: options.force ?? true, dedupeMs: options.dedupeMs }
+          ),
+          appleServicesApi.list({ page: 1, pageSize: 100, status: 'enabled' })
+        ]),
+      force: options.force ?? true,
+      dedupeMs: options.dedupeMs ?? 1_200
+    });
+    const [customerData, platformData, serviceData] = result.data;
     customers.value = customerData.items;
     sourcePlatforms.value = platformData.items;
     services.value = serviceData.items;
@@ -657,5 +673,13 @@ function resetOrderForm() {
   selectedAccount.value = null;
 }
 
-onMounted(loadInitialData);
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(ORDER_ENTRY_REALTIME_SCOPES, () => {
+  void loadInitialData({ silent: true, dedupeMs: 0 });
+});
+
+onMounted(() => loadInitialData({ force: false }));
+
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
+});
 </script>

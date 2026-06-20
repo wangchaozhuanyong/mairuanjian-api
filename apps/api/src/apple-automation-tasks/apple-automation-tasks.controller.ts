@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { RealtimeService } from '../realtime/realtime.service';
 import { AppleAutomationTasksService } from './apple-automation-tasks.service';
 import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
@@ -8,7 +9,10 @@ import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-man
 
 @Controller('apple/automation-tasks')
 export class AppleAutomationTasksController {
-  constructor(private readonly automationTasksService: AppleAutomationTasksService) {}
+  constructor(
+    private readonly automationTasksService: AppleAutomationTasksService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   @Get()
   @RequirePermissions('apple.automation_task.manage')
@@ -40,8 +44,12 @@ export class AppleAutomationTasksController {
 
   @Post()
   @RequirePermissions('apple.automation_task.manage')
-  create(@Body() dto: CreateAutomationTaskDto, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.automationTasksService.create(dto, operator);
+  async create(@Body() dto: CreateAutomationTaskDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const task = await this.automationTasksService.create(dto, operator);
+    this.publishAutomationTaskEvent('apple.automation_task.created', 'created', task.id, {
+      appleAccountId: task.appleAccountId
+    });
+    return task;
   }
 
   @Get(':id')
@@ -58,39 +66,85 @@ export class AppleAutomationTasksController {
 
   @Post(':id/run-placeholder')
   @RequirePermissions('apple.automation_task.manage')
-  runPlaceholder(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.automationTasksService.runPlaceholder(id, operator);
+  async runPlaceholder(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const task = await this.automationTasksService.runPlaceholder(id, operator);
+    this.publishAutomationTaskEvent('apple.automation_task.ran', 'ran', task.id, {
+      appleAccountId: task.appleAccountId
+    });
+    return task;
   }
 
   @Post(':id/cancel')
   @RequirePermissions('apple.automation_task.manage')
-  cancel(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.automationTasksService.cancel(id, operator);
+  async cancel(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const task = await this.automationTasksService.cancel(id, operator);
+    this.publishAutomationTaskEvent('apple.automation_task.cancelled', 'cancelled', task.id, {
+      appleAccountId: task.appleAccountId
+    });
+    return task;
   }
 
   @Post(':id/retry')
   @RequirePermissions('apple.automation_task.manage')
-  retry(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    return this.automationTasksService.retry(id, operator);
+  async retry(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const task = await this.automationTasksService.retry(id, operator);
+    this.publishAutomationTaskEvent('apple.automation_task.retried', 'retried', task.id, {
+      appleAccountId: task.appleAccountId
+    });
+    return task;
   }
 
   @Post(':id/mark-manual')
   @RequirePermissions('apple.automation_task.manage')
-  markManual(
+  async markManual(
     @Param('id') id: string,
     @Body() dto: MarkAutomationTaskManualDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.automationTasksService.markManual(id, dto, operator);
+    const task = await this.automationTasksService.markManual(id, dto, operator);
+    this.publishAutomationTaskEvent(
+      'apple.automation_task.manual_required',
+      'manual_required',
+      task.id,
+      {
+        appleAccountId: task.appleAccountId
+      }
+    );
+    return task;
   }
 
   @Post(':id/result')
   @RequirePermissions('apple.automation_task.manage')
-  writeResult(
+  async writeResult(
     @Param('id') id: string,
     @Body() dto: AutomationTaskResultDto,
     @CurrentUser() operator?: AuthenticatedUser
   ) {
-    return this.automationTasksService.writeResult(id, dto, operator);
+    const task = await this.automationTasksService.writeResult(id, dto, operator);
+    this.publishAutomationTaskEvent(
+      'apple.automation_task.result_written',
+      'result_written',
+      task.id,
+      {
+        appleAccountId: task.appleAccountId
+      }
+    );
+    return task;
+  }
+
+  private publishAutomationTaskEvent(
+    type: string,
+    action: string,
+    taskId: string,
+    scope?: { appleAccountId?: string | null }
+  ) {
+    this.realtimeService.publish({
+      type,
+      module: 'apple',
+      entity: 'automation_task',
+      action,
+      resourceId: taskId,
+      scope
+    });
   }
 }

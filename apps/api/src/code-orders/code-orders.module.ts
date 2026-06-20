@@ -3,12 +3,13 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { PrismaModule } from '../common/prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { CodeDeliveriesController } from './code-deliveries.controller';
 import { CodeOrdersController } from './code-orders.controller';
 import { CodeOrdersService } from './code-orders.service';
 
 @Module({
-  imports: [AuditLogsModule, PrismaModule, NotificationsModule],
+  imports: [AuditLogsModule, PrismaModule, NotificationsModule, RealtimeModule],
   controllers: [CodeOrdersController, CodeDeliveriesController],
   providers: [CodeOrdersService, FieldEncryptionService],
   exports: [CodeOrdersService]

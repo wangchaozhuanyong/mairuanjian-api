@@ -41,7 +41,7 @@
             :show-primary="false"
             placeholder="搜索备注、模块、动作或对象"
             @search="handleOperationSearch"
-            @refresh="loadOperationLogs"
+            @refresh="() => loadOperationLogs()"
             @clear-filters="clearOperationFilters"
             @remove-filter="removeOperationFilter"
             @save-view="saveOperationTableView"
@@ -169,7 +169,7 @@
             v-model:page="operationQuery.page"
             v-model:page-size="operationQuery.pageSize"
             :total="operationTotal"
-            @change="loadOperationLogs"
+            @change="() => loadOperationLogs()"
           />
         </el-tab-pane>
 
@@ -188,7 +188,7 @@
             :show-primary="false"
             placeholder="搜索模块、字段、对象或原因"
             @search="handleSensitiveSearch"
-            @refresh="loadSensitiveLogs"
+            @refresh="() => loadSensitiveLogs()"
             @clear-filters="clearSensitiveFilters"
             @remove-filter="removeSensitiveFilter"
             @save-view="saveSensitiveTableView"
@@ -343,7 +343,7 @@
             v-model:page="sensitiveQuery.page"
             v-model:page-size="sensitiveQuery.pageSize"
             :total="sensitiveTotal"
-            @change="loadSensitiveLogs"
+            @change="() => loadSensitiveLogs()"
           />
         </el-tab-pane>
 
@@ -362,7 +362,7 @@
             :show-primary="false"
             placeholder="搜索账号、IP 或失败原因"
             @search="handleLoginSearch"
-            @refresh="loadLoginLogs"
+            @refresh="() => loadLoginLogs()"
             @clear-filters="clearLoginFilters"
             @remove-filter="removeLoginFilter"
             @save-view="saveLoginTableView"
@@ -501,7 +501,7 @@
             v-model:page="loginQuery.page"
             v-model:page-size="loginQuery.pageSize"
             :total="loginTotal"
-            @change="loadLoginLogs"
+            @change="() => loadLoginLogs()"
           />
         </el-tab-pane>
 
@@ -520,7 +520,7 @@
             :show-primary="false"
             placeholder="搜索模块、文件或失败原因"
             @search="handleExportSearch"
-            @refresh="loadExportLogs"
+            @refresh="() => loadExportLogs()"
             @clear-filters="clearExportFilters"
             @remove-filter="removeExportFilter"
             @save-view="saveExportTableView"
@@ -675,7 +675,7 @@
             v-model:page="exportQuery.page"
             v-model:page-size="exportQuery.pageSize"
             :total="exportTotal"
-            @change="loadExportLogs"
+            @change="() => loadExportLogs()"
           />
         </el-tab-pane>
 
@@ -692,7 +692,7 @@
             :show-primary="false"
             placeholder="搜索权限、角色、备注"
             @search="handlePermissionSearch"
-            @refresh="loadPermissionLogs"
+            @refresh="() => loadPermissionLogs()"
             @clear-filters="clearPermissionFilters"
             @save-view="savePermissionTableView"
             @apply-view="applyPermissionSavedView"
@@ -804,7 +804,7 @@
             v-model:page="permissionQuery.page"
             v-model:page-size="permissionQuery.pageSize"
             :total="permissionTotal"
-            @change="loadPermissionLogs"
+            @change="() => loadPermissionLogs()"
           />
         </el-tab-pane>
 
@@ -822,7 +822,7 @@
             :show-primary="false"
             placeholder="搜索任务消息、错误码、队列 ID"
             @search="handleAutomationSearch"
-            @refresh="loadAutomationLogs"
+            @refresh="() => loadAutomationLogs()"
             @clear-filters="clearAutomationFilters"
             @save-view="saveAutomationTableView"
             @apply-view="applyAutomationSavedView"
@@ -955,7 +955,7 @@
             v-model:page="automationQuery.page"
             v-model:page-size="automationQuery.pageSize"
             :total="automationTotal"
-            @change="loadAutomationLogs"
+            @change="() => loadAutomationLogs()"
           />
         </el-tab-pane>
 
@@ -974,7 +974,7 @@
             :show-primary="false"
             placeholder="搜索平台、接口、失败原因"
             @search="handlePlatformSearch"
-            @refresh="loadPlatformLogs"
+            @refresh="() => loadPlatformLogs()"
             @clear-filters="clearPlatformFilters"
             @remove-filter="removePlatformFilter"
             @save-view="savePlatformTableView"
@@ -1128,7 +1128,7 @@
             v-model:page="platformQuery.page"
             v-model:page-size="platformQuery.pageSize"
             :total="platformTotal"
-            @change="loadPlatformLogs"
+            @change="() => loadPlatformLogs()"
           />
         </el-tab-pane>
       </el-tabs>
@@ -1137,15 +1137,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
 import { auditLogsApi, userTableViewsApi } from '@/api/system';
+import type {
+  AuditAutomationTaskLogQuery,
+  AuditExportQuery,
+  AuditLoginQuery,
+  AuditLogQuery,
+  AuditPermissionChangeQuery,
+  AuditPlatformInterfaceLogQuery,
+  AuditSensitiveAccessQuery
+} from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AuditLog,
   AutomationTaskLog,
@@ -1153,12 +1163,14 @@ import type {
   DataJobStatus,
   LoginLog,
   LoginLogStatus,
+  PageResult,
   PlatformSyncLog,
   PlatformSyncLogStatus,
   SensitiveAccessLog,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const route = useRoute();
 const activeTab = ref('operation');
@@ -1282,6 +1294,7 @@ const operationSavedViews = ref<UserTableView[]>([]);
 const operationSavedViewId = ref('');
 const operationSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const operationViewsLoaded = ref(false);
+const activeOperationQueryKey = ref('');
 
 const sensitiveQuery = reactive({
   page: 1,
@@ -1300,6 +1313,7 @@ const sensitiveSavedViews = ref<UserTableView[]>([]);
 const sensitiveSavedViewId = ref('');
 const sensitiveSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const sensitiveViewsLoaded = ref(false);
+const activeSensitiveQueryKey = ref('');
 
 const loginQuery = reactive({
   page: 1,
@@ -1317,6 +1331,7 @@ const loginSavedViews = ref<UserTableView[]>([]);
 const loginSavedViewId = ref('');
 const loginSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const loginViewsLoaded = ref(false);
+const activeLoginQueryKey = ref('');
 
 const exportQuery = reactive({
   page: 1,
@@ -1335,6 +1350,7 @@ const exportSavedViews = ref<UserTableView[]>([]);
 const exportSavedViewId = ref('');
 const exportSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const exportViewsLoaded = ref(false);
+const activeExportQueryKey = ref('');
 
 const permissionQuery = reactive({ page: 1, pageSize: 20, keyword: '' });
 const permissionLogs = ref<AuditLog[]>([]);
@@ -1346,6 +1362,7 @@ const permissionSavedViews = ref<UserTableView[]>([]);
 const permissionSavedViewId = ref('');
 const permissionSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const permissionViewsLoaded = ref(false);
+const activePermissionQueryKey = ref('');
 
 const automationQuery = reactive({
   page: 1,
@@ -1362,6 +1379,7 @@ const automationSavedViews = ref<UserTableView[]>([]);
 const automationSavedViewId = ref('');
 const automationSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const automationViewsLoaded = ref(false);
+const activeAutomationQueryKey = ref('');
 
 const platformQuery = reactive({
   page: 1,
@@ -1379,6 +1397,7 @@ const platformSavedViews = ref<UserTableView[]>([]);
 const platformSavedViewId = ref('');
 const platformSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const platformViewsLoaded = ref(false);
+const activePlatformQueryKey = ref('');
 
 const operationTableSize = computed(() =>
   operationDensity.value === 'compact'
@@ -1519,18 +1538,54 @@ async function refreshCurrentTab() {
   }
 }
 
-async function loadOperationLogs() {
-  operationLoading.value = true;
+function buildOperationParams(): AuditLogQuery {
+  return {
+    ...operationQuery,
+    sortBy: operationSortConfig.value.prop,
+    sortOrder: mapOperationSortOrder(operationSortConfig.value.order)
+  };
+}
+
+function applyOperationLogsResult(result: PageResult<AuditLog>) {
+  operationLogs.value = result.items;
+  operationTotal.value = result.total;
+}
+
+async function loadOperationLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildOperationParams();
+  const key = createSmartQueryKey('audit-operation-logs', params);
+  const cached = getSmartQueryData<PageResult<AuditLog>>(key);
+
+  activeOperationQueryKey.value = key;
+
+  if (cached) {
+    applyOperationLogsResult(cached);
+  }
+
+  operationLoading.value = !cached && !options.background;
+
   try {
-    const result = await auditLogsApi.operation({
-      ...operationQuery,
-      sortBy: operationSortConfig.value.prop,
-      sortOrder: mapOperationSortOrder(operationSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => auditLogsApi.operation(params),
+      force: options.force ?? true
     });
-    operationLogs.value = result.items;
-    operationTotal.value = result.total;
+
+    if (activeOperationQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyOperationLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载操作日志失败');
+    }
   } finally {
-    operationLoading.value = false;
+    if (activeOperationQueryKey.value === key) {
+      operationLoading.value = false;
+    }
   }
 }
 
@@ -1674,18 +1729,54 @@ function mapOperationSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-async function loadSensitiveLogs() {
-  sensitiveLoading.value = true;
+function buildSensitiveParams(): AuditSensitiveAccessQuery {
+  return {
+    ...sensitiveQuery,
+    sortBy: sensitiveSortConfig.value.prop,
+    sortOrder: mapSensitiveSortOrder(sensitiveSortConfig.value.order)
+  };
+}
+
+function applySensitiveLogsResult(result: PageResult<SensitiveAccessLog>) {
+  sensitiveLogs.value = result.items;
+  sensitiveTotal.value = result.total;
+}
+
+async function loadSensitiveLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildSensitiveParams();
+  const key = createSmartQueryKey('audit-sensitive-logs', params);
+  const cached = getSmartQueryData<PageResult<SensitiveAccessLog>>(key);
+
+  activeSensitiveQueryKey.value = key;
+
+  if (cached) {
+    applySensitiveLogsResult(cached);
+  }
+
+  sensitiveLoading.value = !cached && !options.background;
+
   try {
-    const result = await auditLogsApi.sensitiveAccess({
-      ...sensitiveQuery,
-      sortBy: sensitiveSortConfig.value.prop,
-      sortOrder: mapSensitiveSortOrder(sensitiveSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => auditLogsApi.sensitiveAccess(params),
+      force: options.force ?? true
     });
-    sensitiveLogs.value = result.items;
-    sensitiveTotal.value = result.total;
+
+    if (activeSensitiveQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applySensitiveLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载敏感查看日志失败');
+    }
   } finally {
-    sensitiveLoading.value = false;
+    if (activeSensitiveQueryKey.value === key) {
+      sensitiveLoading.value = false;
+    }
   }
 }
 
@@ -1832,18 +1923,54 @@ function mapSensitiveSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-async function loadLoginLogs() {
-  loginLoading.value = true;
+function buildLoginParams(): AuditLoginQuery {
+  return {
+    ...loginQuery,
+    sortBy: loginSortConfig.value.prop,
+    sortOrder: mapLoginSortOrder(loginSortConfig.value.order)
+  };
+}
+
+function applyLoginLogsResult(result: PageResult<LoginLog>) {
+  loginLogs.value = result.items;
+  loginTotal.value = result.total;
+}
+
+async function loadLoginLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildLoginParams();
+  const key = createSmartQueryKey('audit-login-logs', params);
+  const cached = getSmartQueryData<PageResult<LoginLog>>(key);
+
+  activeLoginQueryKey.value = key;
+
+  if (cached) {
+    applyLoginLogsResult(cached);
+  }
+
+  loginLoading.value = !cached && !options.background;
+
   try {
-    const result = await auditLogsApi.login({
-      ...loginQuery,
-      sortBy: loginSortConfig.value.prop,
-      sortOrder: mapLoginSortOrder(loginSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => auditLogsApi.login(params),
+      force: options.force ?? true
     });
-    loginLogs.value = result.items;
-    loginTotal.value = result.total;
+
+    if (activeLoginQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyLoginLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载登录日志失败');
+    }
   } finally {
-    loginLoading.value = false;
+    if (activeLoginQueryKey.value === key) {
+      loginLoading.value = false;
+    }
   }
 }
 
@@ -1980,18 +2107,54 @@ function mapLoginSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-async function loadExportLogs() {
-  exportLoading.value = true;
+function buildExportParams(): AuditExportQuery {
+  return {
+    ...exportQuery,
+    sortBy: exportSortConfig.value.prop,
+    sortOrder: mapExportSortOrder(exportSortConfig.value.order)
+  };
+}
+
+function applyExportLogsResult(result: PageResult<DataExportJob>) {
+  exportLogs.value = result.items;
+  exportTotal.value = result.total;
+}
+
+async function loadExportLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildExportParams();
+  const key = createSmartQueryKey('audit-export-logs', params);
+  const cached = getSmartQueryData<PageResult<DataExportJob>>(key);
+
+  activeExportQueryKey.value = key;
+
+  if (cached) {
+    applyExportLogsResult(cached);
+  }
+
+  exportLoading.value = !cached && !options.background;
+
   try {
-    const result = await auditLogsApi.exports({
-      ...exportQuery,
-      sortBy: exportSortConfig.value.prop,
-      sortOrder: mapExportSortOrder(exportSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => auditLogsApi.exports(params),
+      force: options.force ?? true
     });
-    exportLogs.value = result.items;
-    exportTotal.value = result.total;
+
+    if (activeExportQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyExportLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载导出日志失败');
+    }
   } finally {
-    exportLoading.value = false;
+    if (activeExportQueryKey.value === key) {
+      exportLoading.value = false;
+    }
   }
 }
 
@@ -2135,18 +2298,54 @@ function mapExportSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-async function loadPermissionLogs() {
-  permissionLoading.value = true;
+function buildPermissionParams(): AuditPermissionChangeQuery {
+  return {
+    ...permissionQuery,
+    sortBy: permissionSortConfig.value.prop,
+    sortOrder: mapPermissionSortOrder(permissionSortConfig.value.order)
+  };
+}
+
+function applyPermissionLogsResult(result: PageResult<AuditLog>) {
+  permissionLogs.value = result.items;
+  permissionTotal.value = result.total;
+}
+
+async function loadPermissionLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildPermissionParams();
+  const key = createSmartQueryKey('audit-permission-logs', params);
+  const cached = getSmartQueryData<PageResult<AuditLog>>(key);
+
+  activePermissionQueryKey.value = key;
+
+  if (cached) {
+    applyPermissionLogsResult(cached);
+  }
+
+  permissionLoading.value = !cached && !options.background;
+
   try {
-    const result = await auditLogsApi.permissionChanges({
-      ...permissionQuery,
-      sortBy: permissionSortConfig.value.prop,
-      sortOrder: mapPermissionSortOrder(permissionSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => auditLogsApi.permissionChanges(params),
+      force: options.force ?? true
     });
-    permissionLogs.value = result.items;
-    permissionTotal.value = result.total;
+
+    if (activePermissionQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyPermissionLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载权限变更日志失败');
+    }
   } finally {
-    permissionLoading.value = false;
+    if (activePermissionQueryKey.value === key) {
+      permissionLoading.value = false;
+    }
   }
 }
 
@@ -2275,18 +2474,54 @@ function mapPermissionSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-async function loadAutomationLogs() {
-  automationLoading.value = true;
+function buildAutomationParams(): AuditAutomationTaskLogQuery {
+  return {
+    ...automationQuery,
+    sortBy: automationSortConfig.value.prop,
+    sortOrder: mapAutomationSortOrder(automationSortConfig.value.order)
+  };
+}
+
+function applyAutomationLogsResult(result: PageResult<AutomationTaskLog>) {
+  automationLogs.value = result.items;
+  automationTotal.value = result.total;
+}
+
+async function loadAutomationLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildAutomationParams();
+  const key = createSmartQueryKey('audit-automation-logs', params);
+  const cached = getSmartQueryData<PageResult<AutomationTaskLog>>(key);
+
+  activeAutomationQueryKey.value = key;
+
+  if (cached) {
+    applyAutomationLogsResult(cached);
+  }
+
+  automationLoading.value = !cached && !options.background;
+
   try {
-    const result = await auditLogsApi.automationTasks({
-      ...automationQuery,
-      sortBy: automationSortConfig.value.prop,
-      sortOrder: mapAutomationSortOrder(automationSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => auditLogsApi.automationTasks(params),
+      force: options.force ?? true
     });
-    automationLogs.value = result.items;
-    automationTotal.value = result.total;
+
+    if (activeAutomationQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyAutomationLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载自动化任务日志失败');
+    }
   } finally {
-    automationLoading.value = false;
+    if (activeAutomationQueryKey.value === key) {
+      automationLoading.value = false;
+    }
   }
 }
 
@@ -2418,18 +2653,54 @@ function mapAutomationSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-async function loadPlatformLogs() {
-  platformLoading.value = true;
+function buildPlatformParams(): AuditPlatformInterfaceLogQuery {
+  return {
+    ...platformQuery,
+    sortBy: platformSortConfig.value.prop,
+    sortOrder: mapPlatformSortOrder(platformSortConfig.value.order)
+  };
+}
+
+function applyPlatformLogsResult(result: PageResult<PlatformSyncLog>) {
+  platformLogs.value = result.items;
+  platformTotal.value = result.total;
+}
+
+async function loadPlatformLogs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildPlatformParams();
+  const key = createSmartQueryKey('audit-platform-logs', params);
+  const cached = getSmartQueryData<PageResult<PlatformSyncLog>>(key);
+
+  activePlatformQueryKey.value = key;
+
+  if (cached) {
+    applyPlatformLogsResult(cached);
+  }
+
+  platformLoading.value = !cached && !options.background;
+
   try {
-    const result = await auditLogsApi.platformInterfaces({
-      ...platformQuery,
-      sortBy: platformSortConfig.value.prop,
-      sortOrder: mapPlatformSortOrder(platformSortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => auditLogsApi.platformInterfaces(params),
+      force: options.force ?? true
     });
-    platformLogs.value = result.items;
-    platformTotal.value = result.total;
+
+    if (activePlatformQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyPlatformLogsResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载平台接口日志失败');
+    }
   } finally {
-    platformLoading.value = false;
+    if (activePlatformQueryKey.value === key) {
+      platformLoading.value = false;
+    }
   }
 }
 
@@ -2654,6 +2925,70 @@ function getPlatformLabel(platform: string) {
     }[platform] ?? platform
   );
 }
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  [
+    'audit-operation-logs',
+    'audit-sensitive-logs',
+    'audit-login-logs',
+    'audit-export-logs',
+    'audit-permission-logs',
+    'audit-automation-logs',
+    'audit-platform-logs'
+  ],
+  ({ scopes }) => {
+    if (activeTab.value === 'operation' && scopes.includes('audit-operation-logs')) {
+      void loadOperationLogs({
+        background: operationLogs.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'sensitive' && scopes.includes('audit-sensitive-logs')) {
+      void loadSensitiveLogs({
+        background: sensitiveLogs.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'login' && scopes.includes('audit-login-logs')) {
+      void loadLoginLogs({
+        background: loginLogs.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'exports' && scopes.includes('audit-export-logs')) {
+      void loadExportLogs({
+        background: exportLogs.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'permission' && scopes.includes('audit-permission-logs')) {
+      void loadPermissionLogs({
+        background: permissionLogs.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'automation' && scopes.includes('audit-automation-logs')) {
+      void loadAutomationLogs({
+        background: automationLogs.value.length > 0,
+        force: true
+      });
+    }
+
+    if (activeTab.value === 'platform' && scopes.includes('audit-platform-logs')) {
+      void loadPlatformLogs({
+        background: platformLogs.value.length > 0,
+        force: true
+      });
+    }
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

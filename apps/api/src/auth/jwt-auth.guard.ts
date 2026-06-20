@@ -16,6 +16,8 @@ interface RequestWithAuthHeader {
   headers: {
     authorization?: string;
   };
+  originalUrl?: string;
+  query?: Record<string, string | string[] | undefined>;
   ip?: string;
   user?: AuthenticatedUser;
 }
@@ -40,22 +42,22 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<RequestWithAuthHeader>();
-    const token = this.extractToken(request.headers.authorization);
+    const token = this.extractToken(request);
 
     if (!token) {
-      throw new UnauthorizedException('Missing bearer token');
+      throw new UnauthorizedException('请先登录后再操作。');
     }
 
     try {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
       const active = await this.securityService.isAccessTokenActive(token);
       if (!active) {
-        throw new UnauthorizedException('Session has expired or been revoked');
+        throw new UnauthorizedException('登录状态已过期或已被下线，请重新登录。');
       }
 
       const ipAllowed = await this.securityService.isRequestIpAllowed(request.ip, ['admin', 'api']);
       if (!ipAllowed) {
-        throw new ForbiddenException('IP address is not allowed');
+        throw new ForbiddenException('当前 IP 不在白名单内，无法访问。');
       }
 
       request.user = await this.usersService.getAuthenticatedUser(payload.sub);
@@ -65,12 +67,21 @@ export class JwtAuthGuard implements CanActivate {
         throw error;
       }
 
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException('登录状态无效或已过期，请重新登录。');
     }
   }
 
-  private extractToken(authorization?: string) {
-    const [type, token] = authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
+  private extractToken(request: RequestWithAuthHeader) {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    if (type === 'Bearer' && token) {
+      return token;
+    }
+
+    if (!request.originalUrl?.startsWith('/api/realtime/events')) {
+      return undefined;
+    }
+
+    const queryToken = request.query?.accessToken;
+    return Array.isArray(queryToken) ? queryToken[0] : queryToken;
   }
 }

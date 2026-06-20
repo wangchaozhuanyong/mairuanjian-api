@@ -30,6 +30,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { OpsModule } from './ops/ops.module';
 import { PlatformDeliveryModule } from './platform-delivery/platform-delivery.module';
 import { RedeemCodesModule } from './redeem-codes/redeem-codes.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { RolesModule } from './roles/roles.module';
 import { SecurityModule } from './security/security.module';
 import { SourcePlatformsModule } from './source-platforms/source-platforms.module';
@@ -69,6 +70,7 @@ import { UsersModule } from './users/users.module';
     CodeServicesModule,
     PlatformDeliveryModule,
     RedeemCodesModule,
+    RealtimeModule,
     RolesModule,
     SecurityModule,
     UsersModule,

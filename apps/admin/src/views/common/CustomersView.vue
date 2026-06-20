@@ -41,7 +41,7 @@
         primary-label="新增客户"
         placeholder="搜索客户、联系人、微信、手机号尾号"
         @search="handleSearch"
-        @refresh="loadData"
+        @refresh="() => loadData()"
         @primary="openCreate"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
@@ -275,7 +275,7 @@
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @change="loadCustomers"
+        @change="() => loadCustomers()"
       />
     </section>
 
@@ -376,9 +376,10 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { customersApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
+import type { CustomerQuery, SourcePlatformQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
@@ -386,8 +387,16 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
-import type { Customer, SourcePlatform, TableDensity, UserTableView } from '@/types/system';
+import type {
+  Customer,
+  PageResult,
+  SourcePlatform,
+  TableDensity,
+  UserTableView
+} from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'customers';
 const customerStatusOptions = [
@@ -426,6 +435,8 @@ const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | nul
 const total = ref(0);
 const authStore = useAuthStore();
 const router = useRouter();
+const activeCustomersQueryKey = ref('');
+const activeSourcePlatformsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -499,33 +510,102 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadSourcePlatforms() {
-  const data = await sourcePlatformsApi.list({
+function buildSourcePlatformParams(): SourcePlatformQuery {
+  return {
     page: 1,
     pageSize: 100,
     status: 'active'
-  });
+  };
+}
+
+function applySourcePlatformResult(data: PageResult<SourcePlatform>) {
   sourcePlatforms.value = data.items;
 }
 
-async function loadCustomers() {
-  loading.value = true;
+async function loadSourcePlatforms(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildSourcePlatformParams();
+  const key = createSmartQueryKey('source-platforms', params);
+  const cached = getSmartQueryData<PageResult<SourcePlatform>>(key);
+
+  activeSourcePlatformsQueryKey.value = key;
+
+  if (cached) {
+    applySourcePlatformResult(cached);
+  }
+
   try {
-    const data = await customersApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      sourcePlatformId: query.sourcePlatformId || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => sourcePlatformsApi.list(params),
+      force: options.force ?? true
     });
-    customers.value = data.items;
-    total.value = data.total;
+
+    if (activeSourcePlatformsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applySourcePlatformResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载客户失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载来源平台失败');
+    }
+  }
+}
+
+function buildCustomerParams(): CustomerQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    sourcePlatformId: query.sourcePlatformId || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyCustomerResult(data: PageResult<Customer>) {
+  customers.value = data.items;
+  total.value = data.total;
+}
+
+async function loadCustomers(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildCustomerParams();
+  const key = createSmartQueryKey('customers', params);
+  const cached = getSmartQueryData<PageResult<Customer>>(key);
+
+  activeCustomersQueryKey.value = key;
+
+  if (cached) {
+    applyCustomerResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => customersApi.list(params),
+      force: options.force ?? true
+    });
+
+    if (activeCustomersQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyCustomerResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载客户失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeCustomersQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -547,8 +627,8 @@ function handleSelectionChange(rows: Customer[]) {
   selectedCustomers.value = rows;
 }
 
-async function loadData() {
-  await Promise.all([loadSourcePlatforms(), loadCustomers()]);
+async function loadData(options: { background?: boolean; force?: boolean } = {}) {
+  await Promise.all([loadSourcePlatforms(options), loadCustomers(options)]);
 }
 
 function clearFilters() {
@@ -759,7 +839,7 @@ async function saveCustomer() {
 
     ElMessage.success('客户已保存');
     dialogVisible.value = false;
-    await loadCustomers();
+    await loadCustomers({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存客户失败');
   } finally {
@@ -789,15 +869,24 @@ async function revealPhone() {
 
 async function initializePage() {
   try {
-    await loadSourcePlatforms();
+    await loadSourcePlatforms({ force: false });
     await loadTableViews(true);
-    await loadCustomers();
+    await loadCustomers({ force: false });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载客户失败');
   }
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['customers', 'source-platforms'], () => {
+  void loadData({
+    background: customers.value.length > 0 || sourcePlatforms.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>

@@ -76,6 +76,10 @@ describe('NotificationsService', () => {
     }
   };
 
+  const createCountModel = () => ({
+    count: jest.fn().mockResolvedValue(0)
+  });
+
   function createService() {
     const prisma = {
       telegramConfig: {
@@ -105,7 +109,33 @@ describe('NotificationsService', () => {
         }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn().mockResolvedValue([notificationLog]),
-        count: jest.fn().mockResolvedValue(1)
+        count: jest.fn().mockResolvedValue(1),
+        groupBy: jest.fn().mockResolvedValue([
+          {
+            module: 'apple',
+            eventCode: 'apple.renewal.due',
+            status: 'sent',
+            _count: { _all: 2 }
+          },
+          {
+            module: 'code',
+            eventCode: 'code.delivery.failed',
+            status: 'failed',
+            _count: { _all: 1 }
+          },
+          {
+            module: 'security',
+            eventCode: 'security.login.abnormal',
+            status: 'pending',
+            _count: { _all: 3 }
+          },
+          {
+            module: 'unknown',
+            eventCode: 'unknown.notice',
+            status: 'sent',
+            _count: { _all: 1 }
+          }
+        ])
       },
       notificationRule: {
         findUnique: jest.fn().mockResolvedValue({
@@ -159,6 +189,28 @@ describe('NotificationsService', () => {
       },
       notificationChannel: {
         upsert: jest.fn()
+      },
+      renewalTask: createCountModel(),
+      appleAccountActionPlan: createCountModel(),
+      appleAccount: createCountModel(),
+      appleOrder: createCountModel(),
+      automationTask: createCountModel(),
+      codePlatformOrder: createCountModel(),
+      codeAfterSale: createCountModel(),
+      sensitiveAccessApproval: createCountModel(),
+      backupJob: createCountModel(),
+      restoreJob: createCountModel(),
+      dataImportJob: createCountModel(),
+      dataExportJob: createCountModel(),
+      dataCleanupJob: createCountModel(),
+      duplicateMergeJob: createCountModel(),
+      queueStatusLog: createCountModel(),
+      cronJobLog: createCountModel(),
+      errorLog: createCountModel(),
+      systemHealthSnapshot: createCountModel(),
+      platformSyncLog: createCountModel(),
+      systemParameter: {
+        findUnique: jest.fn().mockResolvedValue({ value: { items: [] } })
       },
       $transaction: jest.fn((input: unknown) => {
         if (Array.isArray(input)) return Promise.all(input);
@@ -454,5 +506,128 @@ describe('NotificationsService', () => {
         })
       })
     );
+  });
+
+  it('groups unread in-app notifications for navigation badges', async () => {
+    const { service, prisma } = createService();
+
+    const result = await service.navBadges(user);
+
+    expect(result.totalCount).toBe(7);
+    expect(result.todoCount).toBe(4);
+    expect(result.failedCount).toBe(1);
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sectionKey: 'workspace',
+          count: 2,
+          todoCount: 0,
+          failedCount: 0
+        }),
+        expect.objectContaining({
+          sectionKey: 'codes',
+          count: 1,
+          todoCount: 1,
+          failedCount: 1
+        }),
+        expect.objectContaining({
+          sectionKey: 'security',
+          count: 3,
+          todoCount: 3,
+          failedCount: 0
+        }),
+        expect.objectContaining({
+          sectionKey: 'system-config',
+          count: 1,
+          todoCount: 0,
+          failedCount: 0
+        })
+      ])
+    );
+    expect(prisma.notificationLog.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['module', 'status', 'eventCode'],
+        where: expect.objectContaining({
+          channel: 'system',
+          readAt: null,
+          status: { in: ['pending', 'sent', 'failed'] }
+        }),
+        _count: { _all: true }
+      })
+    );
+  });
+
+  it('returns factual actionable counts for child navigation badges', async () => {
+    const { service, prisma } = createService();
+
+    (prisma.renewalTask.count as jest.Mock)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
+    (prisma.appleAccountActionPlan.count as jest.Mock).mockResolvedValue(3);
+    (prisma.appleAccount.count as jest.Mock).mockResolvedValue(4);
+    (prisma.appleOrder.count as jest.Mock).mockResolvedValue(6);
+    (prisma.automationTask.count as jest.Mock).mockResolvedValue(2);
+    (prisma.codePlatformOrder.count as jest.Mock)
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(0);
+    (prisma.codeAfterSale.count as jest.Mock).mockResolvedValue(4);
+    (prisma.notificationLog.count as jest.Mock).mockResolvedValue(8);
+    (prisma.sensitiveAccessApproval.count as jest.Mock).mockResolvedValue(2);
+    (prisma.backupJob.count as jest.Mock).mockResolvedValue(1);
+    (prisma.dataImportJob.count as jest.Mock).mockResolvedValue(5);
+    (prisma.dataExportJob.count as jest.Mock).mockResolvedValue(2);
+    (prisma.dataCleanupJob.count as jest.Mock).mockResolvedValue(1);
+    (prisma.duplicateMergeJob.count as jest.Mock).mockResolvedValue(1);
+    (prisma.queueStatusLog.count as jest.Mock).mockResolvedValue(1);
+    (prisma.cronJobLog.count as jest.Mock).mockResolvedValue(2);
+    (prisma.errorLog.count as jest.Mock).mockResolvedValue(3);
+    (prisma.systemHealthSnapshot.count as jest.Mock).mockResolvedValue(4);
+    (prisma.platformSyncLog.count as jest.Mock).mockResolvedValue(1);
+    (prisma.systemParameter.findUnique as jest.Mock).mockResolvedValue({
+      value: {
+        items: [{ status: 'pending' }, { status: 'in_progress' }, { status: 'done' }]
+      }
+    });
+
+    const result = await service.navItemBadges(user);
+
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ itemKey: 'renewal', count: 5 }),
+        expect.objectContaining({ itemKey: 'renewal-cancel', count: 2 }),
+        expect.objectContaining({ itemKey: 'renewal-topup', count: 1 }),
+        expect.objectContaining({ itemKey: 'action-plans', count: 3 }),
+        expect.objectContaining({ itemKey: 'launch-audit', count: 2 }),
+        expect.objectContaining({ itemKey: 'apple-list', count: 4 }),
+        expect.objectContaining({ itemKey: 'apple-orders', count: 6 }),
+        expect.objectContaining({ itemKey: 'apple-automation', count: 2 }),
+        expect.objectContaining({ itemKey: 'code-orders', count: 7 }),
+        expect.objectContaining({ itemKey: 'delivery-exceptions', count: 1 }),
+        expect.objectContaining({ itemKey: 'taobao-orders', count: 3 }),
+        expect.objectContaining({ itemKey: 'after-sales', count: 4 }),
+        expect.objectContaining({ itemKey: 'notifications', count: 8 }),
+        expect.objectContaining({ itemKey: 'sensitive-approvals', count: 2 }),
+        expect.objectContaining({ itemKey: 'data-center', count: 3 }),
+        expect.objectContaining({ itemKey: 'data-imports', count: 5 }),
+        expect.objectContaining({ itemKey: 'data-exports', count: 2 }),
+        expect.objectContaining({ itemKey: 'ops-monitor', count: 10 }),
+        expect.objectContaining({ itemKey: 'platform-status', count: 1 })
+      ])
+    );
+    expect(result.items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ itemKey: 'work-orders' }),
+        expect.objectContaining({ itemKey: 'risk-control' }),
+        expect.objectContaining({ itemKey: 'xianyu-orders' })
+      ])
+    );
+    expect(prisma.appleOrder.count).toHaveBeenCalledWith({
+      where: { status: { in: ['pending', 'abnormal'] } }
+    });
+    expect(result.totalCount).toBe(result.items.reduce((sum, item) => sum + item.count, 0));
   });
 });

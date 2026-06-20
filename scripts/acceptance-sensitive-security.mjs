@@ -2,6 +2,10 @@
 import { randomBytes, scrypt as scryptCallback } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
+import {
+  assertLocalAcceptanceDatabase,
+  cleanupLocalAcceptanceData
+} from './lib/development-data-cleanup.mjs';
 
 const scrypt = promisify(scryptCallback);
 const API_BASE_URL = process.env.ACCEPTANCE_API_BASE_URL ?? 'http://localhost:3000/api';
@@ -430,6 +434,7 @@ async function updateLaunchChecklist(api, evidence) {
 
 async function main() {
   loadDotEnv();
+  assertLocalAcceptanceDatabase(API_BASE_URL, process.env.DATABASE_URL);
   const { PrismaClient } = await import('@prisma/client');
   const prisma = new PrismaClient();
   const temporaryUserIds = [];
@@ -458,7 +463,9 @@ async function main() {
       records
     );
 
-    await updateLaunchChecklist(adminApi, `scripts/acceptance-sensitive-security.mjs ${suffix}`);
+    if (process.env.ACCEPTANCE_UPDATE_CHECKLIST === '1') {
+      await updateLaunchChecklist(adminApi, `scripts/acceptance-sensitive-security.mjs ${suffix}`);
+    }
 
     console.log(
       JSON.stringify(
@@ -474,6 +481,10 @@ async function main() {
     );
   } finally {
     await disableTemporaryUsers(prisma, temporaryUserIds);
+    const cleanup = await cleanupLocalAcceptanceData(prisma, API_BASE_URL);
+    if (!cleanup.skipped) {
+      console.error('Local acceptance data was cleaned after sensitive security workflow.');
+    }
     await prisma.$disconnect();
   }
 }

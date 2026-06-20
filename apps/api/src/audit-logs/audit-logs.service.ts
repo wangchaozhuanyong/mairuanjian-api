@@ -8,6 +8,7 @@ import type {
   Prisma,
   SensitiveAccessLog
 } from '@prisma/client';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { CreateAuditLogInput } from './audit-logs.types';
@@ -133,13 +134,16 @@ const PLATFORM_SYNC_LOG_SORT_FIELDS: Record<
   errorRate: 'errorRate',
   errorMessage: 'errorMessage'
 };
+const AUDIT_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class AuditLogsService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(private readonly prisma: PrismaService) {}
 
-  create(input: CreateAuditLogInput) {
-    return this.prisma.auditLog.create({
+  async create(input: CreateAuditLogInput) {
+    const log = await this.prisma.auditLog.create({
       data: {
         userId: input.userId,
         module: input.module,
@@ -153,59 +157,67 @@ export class AuditLogsService {
         remark: input.remark
       }
     });
+    this.listCache.clear();
+    return log;
   }
 
   async list(query: ListAuditLogsQuery) {
-    const pagination = getPagination(query);
-    const where: Prisma.AuditLogWhereInput = {
-      module: query.module || undefined,
-      action: query.action || undefined,
-      userId: query.userId || undefined,
-      OR: query.keyword
-        ? [
-            {
-              remark: {
-                contains: query.keyword,
-                mode: 'insensitive'
-              }
-            },
-            {
-              objectType: {
-                contains: query.keyword,
-                mode: 'insensitive'
+    return this.listCache.getOrSet(
+      this.getListCacheKey('audit', query),
+      AUDIT_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const where: Prisma.AuditLogWhereInput = {
+          module: query.module || undefined,
+          action: query.action || undefined,
+          userId: query.userId || undefined,
+          OR: query.keyword
+            ? [
+                {
+                  remark: {
+                    contains: query.keyword,
+                    mode: 'insensitive'
+                  }
+                },
+                {
+                  objectType: {
+                    contains: query.keyword,
+                    mode: 'insensitive'
+                  }
+                }
+              ]
+            : undefined
+        };
+
+        const [items, total] = await Promise.all([
+          this.prisma.auditLog.findMany({
+            where,
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: this.buildAuditLogOrderBy(query),
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true
+                }
               }
             }
-          ]
-        : undefined
-    };
+          }),
+          this.prisma.auditLog.count({
+            where
+          })
+        ]);
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.auditLog.findMany({
-        where,
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: this.buildAuditLogOrderBy(query),
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              displayName: true
-            }
-          }
-        }
-      }),
-      this.prisma.auditLog.count({
-        where
-      })
-    ]);
-
-    return {
-      items,
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items,
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   listOperationLogs(query: ListAuditLogsQuery) {
@@ -237,6 +249,14 @@ export class AuditLogsService {
     throw new BadRequestException('sortOrder is invalid');
   }
 
+  private getListCacheKey(namespace: string, query: object) {
+    const params = Object.entries(query)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .sort(([left], [right]) => left.localeCompare(right));
+
+    return `${namespace}:${JSON.stringify(params)}`;
+  }
+
   async listSensitiveAccessLogs(query: ListSensitiveAccessLogsQuery) {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();
@@ -255,7 +275,7 @@ export class AuditLogsService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.sensitiveAccessLog.findMany({
         where,
         include: this.getUserInclude(),
@@ -303,7 +323,7 @@ export class AuditLogsService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.loginLog.findMany({
         where,
         include: this.getUserInclude(),
@@ -348,7 +368,7 @@ export class AuditLogsService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.dataExportJob.findMany({
         where,
         include: {
@@ -405,7 +425,7 @@ export class AuditLogsService {
       ]
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
         include: this.getUserInclude(),
@@ -449,7 +469,7 @@ export class AuditLogsService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.automationTaskLog.findMany({
         where,
         include: {
@@ -513,7 +533,7 @@ export class AuditLogsService {
         : undefined
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.platformSyncLog.findMany({
         where,
         skip: pagination.skip,

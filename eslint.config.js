@@ -13,6 +13,7 @@ export default [
       'coverage/**',
       'apps/*/dist/**',
       'packages/*/dist/**',
+      '.wrangler/**',
       '.deploy/**',
       '.secrets/**'
     ]

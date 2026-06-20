@@ -7,6 +7,8 @@ import {
 import type { CustomerStatus, Prisma } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getListCacheKey } from '../common/cache/list-cache-key';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { CreateCustomerDto } from './dto/create-customer.dto';
@@ -60,49 +62,58 @@ const CUSTOMER_SORT_FIELDS: Record<string, keyof Prisma.CustomerOrderByWithRelat
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+const CUSTOMER_LIST_CACHE_TTL_MS = 120_000;
 
 @Injectable()
 export class CustomersService {
+  private readonly listCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService
   ) {}
 
   async list(query: ListCustomersQuery) {
-    const pagination = getPagination(query);
-    const status = this.parseStatus(query.status, false);
-    const keyword = query.keyword?.trim();
-    const where: Prisma.CustomerWhereInput = {
-      deletedAt: null,
-      status: status ?? undefined,
-      sourcePlatformId: query.sourcePlatformId || undefined,
-      OR: keyword
-        ? [
-            { name: { contains: keyword, mode: 'insensitive' } },
-            { contactName: { contains: keyword, mode: 'insensitive' } },
-            { wechat: { contains: keyword, mode: 'insensitive' } },
-            { phoneTail: { contains: keyword.slice(-8), mode: 'insensitive' } }
-          ]
-        : undefined
-    };
+    return this.listCache.getOrSet(
+      getListCacheKey('customers', query),
+      CUSTOMER_LIST_CACHE_TTL_MS,
+      async () => {
+        const pagination = getPagination(query);
+        const status = this.parseStatus(query.status, false);
+        const keyword = query.keyword?.trim();
+        const where: Prisma.CustomerWhereInput = {
+          deletedAt: null,
+          status: status ?? undefined,
+          sourcePlatformId: query.sourcePlatformId || undefined,
+          OR: keyword
+            ? [
+                { name: { contains: keyword, mode: 'insensitive' } },
+                { contactName: { contains: keyword, mode: 'insensitive' } },
+                { wechat: { contains: keyword, mode: 'insensitive' } },
+                { phoneTail: { contains: keyword.slice(-8), mode: 'insensitive' } }
+              ]
+            : undefined
+        };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.customer.findMany({
-        where,
-        include: customerInclude,
-        skip: pagination.skip,
-        take: pagination.take,
-        orderBy: this.buildOrderBy(query)
-      }),
-      this.prisma.customer.count({ where })
-    ]);
+        const [items, total] = await Promise.all([
+          this.prisma.customer.findMany({
+            where,
+            include: customerInclude,
+            skip: pagination.skip,
+            take: pagination.take,
+            orderBy: this.buildOrderBy(query)
+          }),
+          this.prisma.customer.count({ where })
+        ]);
 
-    return {
-      items: items.map((customer) => this.toResponse(customer)),
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    };
+        return {
+          items: items.map((customer) => this.toResponse(customer)),
+          total,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        };
+      }
+    );
   }
 
   async get(id: string) {
@@ -142,6 +153,7 @@ export class CustomersService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'customer',
@@ -231,6 +243,7 @@ export class CustomersService {
       data
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'customer',
@@ -329,6 +342,7 @@ export class CustomersService {
       }
     });
 
+    this.listCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'customer',

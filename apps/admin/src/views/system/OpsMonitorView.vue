@@ -6,7 +6,7 @@
     description="监控 API、数据库、Redis、队列、定时任务、平台同步、Worker、文件存储、磁盘空间和最近错误。"
   >
     <template #actions>
-      <AppButton @click="refreshCurrentTab">刷新</AppButton>
+      <AppButton @click="() => refreshCurrentTab()">刷新</AppButton>
       <AppButton variant="primary" :loading="capturing" @click="captureSnapshot">
         记录快照
       </AppButton>
@@ -59,7 +59,7 @@
       <el-tabs
         v-model="activeTab"
         class="system-tabs ops-monitor-tabs"
-        @tab-change="refreshCurrentTab"
+        @tab-change="() => refreshCurrentTab()"
       >
         <el-tab-pane label="总览" name="overview">
           <el-table
@@ -185,7 +185,7 @@
             v-model:page="queueQuery.page"
             v-model:page-size="queueQuery.pageSize"
             :total="queueResult?.logs.total ?? 0"
-            @change="loadQueueStatus"
+            @change="() => loadQueueStatus()"
           />
         </el-tab-pane>
 
@@ -196,7 +196,7 @@
               class="toolbar-search"
               placeholder="搜索任务名或失败原因"
               clearable
-              @keyup.enter="loadCronJobs"
+              @keyup.enter="() => loadCronJobs()"
             />
             <el-select
               v-model="cronQuery.status"
@@ -209,7 +209,7 @@
               <el-option label="失败" value="failed" />
               <el-option label="跳过" value="skipped" />
             </el-select>
-            <AppButton @click="loadCronJobs">查询</AppButton>
+            <AppButton @click="() => loadCronJobs()">查询</AppButton>
           </div>
           <el-table class="desktop-data-table" :data="cronJobs" row-key="id">
             <el-table-column label="任务" min-width="180" prop="jobName" />
@@ -255,7 +255,7 @@
             v-model:page="cronQuery.page"
             v-model:page-size="cronQuery.pageSize"
             :total="cronTotal"
-            @change="loadCronJobs"
+            @change="() => loadCronJobs()"
           />
         </el-tab-pane>
 
@@ -458,7 +458,7 @@
               class="toolbar-search"
               placeholder="搜索模块、错误信息、堆栈"
               clearable
-              @keyup.enter="loadErrors"
+              @keyup.enter="() => loadErrors()"
             />
             <el-select
               v-model="errorQuery.level"
@@ -471,7 +471,7 @@
               <el-option label="Error" value="error" />
               <el-option label="Fatal" value="fatal" />
             </el-select>
-            <AppButton @click="loadErrors">查询</AppButton>
+            <AppButton @click="() => loadErrors()">查询</AppButton>
           </div>
           <el-table class="desktop-data-table" :data="errors" row-key="id">
             <el-table-column label="级别" width="100">
@@ -516,7 +516,7 @@
             v-model:page="errorQuery.page"
             v-model:page-size="errorQuery.pageSize"
             :total="errorTotal"
-            @change="loadErrors"
+            @change="() => loadErrors()"
           />
         </el-tab-pane>
 
@@ -592,7 +592,7 @@
             v-model:page="snapshotQuery.page"
             v-model:page-size="snapshotQuery.pageSize"
             :total="snapshotTotal"
-            @change="loadSnapshots"
+            @change="() => loadSnapshots()"
           />
         </el-tab-pane>
       </el-tabs>
@@ -630,7 +630,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { opsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import OpsStatusTag from '@/components/ui/OpsStatusTag.vue';
@@ -648,13 +648,35 @@ import type {
   PlatformSyncLogStatus,
   SystemHealthSnapshot
 } from '@/types/system';
+import {
+  createSmartQueryKey,
+  getSmartQueryData,
+  invalidateSmartQueries,
+  refreshSmartQuery
+} from '@/utils/smartQuery';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 
 const overview = ref<OpsOverview | null>(null);
 const overviewLoading = ref(false);
 const activeTab = ref('overview');
 const capturing = ref(false);
+const activeOverviewQueryKey = ref('');
+const activeQueueQueryKey = ref('');
+const activeCronQueryKey = ref('');
+const activePlatformQueryKey = ref('');
+const activeResourcesQueryKey = ref('');
+const activeErrorsQueryKey = ref('');
+const activeSnapshotsQueryKey = ref('');
+const activatedOnce = ref(false);
 
-const queueResult = ref<Awaited<ReturnType<typeof opsApi.queueStatus>> | null>(null);
+type OpsQueueStatusResult = Awaited<ReturnType<typeof opsApi.queueStatus>>;
+type OpsCronJobsPage = Awaited<ReturnType<typeof opsApi.cronJobs>>;
+type OpsPlatformSyncResult = Awaited<ReturnType<typeof opsApi.platformSyncStatus>>;
+type OpsResourcesResult = OpsComponentStatus[];
+type OpsErrorLogsPage = Awaited<ReturnType<typeof opsApi.errorLogs>>;
+type OpsHealthSnapshotsPage = Awaited<ReturnType<typeof opsApi.healthSnapshots>>;
+
+const queueResult = ref<OpsQueueStatusResult | null>(null);
 const queueQuery = reactive({
   page: 1,
   pageSize: 10,
@@ -671,7 +693,7 @@ const cronQuery = reactive({
   status: '' as CronJobLogStatus | ''
 });
 
-const platformResult = ref<Awaited<ReturnType<typeof opsApi.platformSyncStatus>> | null>(null);
+const platformResult = ref<OpsPlatformSyncResult | null>(null);
 const platformQuery = reactive({
   page: 1,
   pageSize: 10,
@@ -772,58 +794,287 @@ const activeTabMeta = computed(() => {
 });
 
 onMounted(() => {
-  void refreshCurrentTab();
+  void refreshCurrentTab({ force: false });
 });
 
-async function refreshCurrentTab() {
-  await loadOverview();
-  if (activeTab.value === 'queue') await loadQueueStatus();
-  if (activeTab.value === 'cron') await loadCronJobs();
-  if (activeTab.value === 'platforms') await loadPlatformSync();
-  if (activeTab.value === 'resources') await loadResources();
-  if (activeTab.value === 'errors') await loadErrors();
-  if (activeTab.value === 'snapshots') await loadSnapshots();
-}
+onActivated(() => {
+  if (!activatedOnce.value) {
+    activatedOnce.value = true;
+    return;
+  }
 
-async function loadOverview() {
-  overviewLoading.value = true;
-  try {
-    overview.value = await opsApi.overview();
-  } finally {
-    overviewLoading.value = false;
+  void refreshCurrentTab({
+    background: true,
+    force: false
+  });
+});
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  [
+    'ops-overview',
+    'ops-queue-status',
+    'ops-cron-jobs',
+    'ops-platform-sync',
+    'ops-resources',
+    'ops-error-logs',
+    'ops-health-snapshots'
+  ],
+  ({ scopes }) => {
+    const scopeSet = new Set(scopes);
+    const requests: Array<Promise<void>> = [];
+
+    if (scopeSet.has('ops-overview')) {
+      requests.push(loadOverview({ background: Boolean(overview.value), force: true }));
+    }
+
+    if (activeTab.value === 'queue' && scopeSet.has('ops-queue-status')) {
+      requests.push(loadQueueStatus({ background: Boolean(queueResult.value), force: true }));
+    }
+
+    if (activeTab.value === 'cron' && scopeSet.has('ops-cron-jobs')) {
+      requests.push(loadCronJobs({ background: cronJobs.value.length > 0, force: true }));
+    }
+
+    if (activeTab.value === 'platforms' && scopeSet.has('ops-platform-sync')) {
+      requests.push(loadPlatformSync({ background: Boolean(platformResult.value), force: true }));
+    }
+
+    if (activeTab.value === 'resources' && scopeSet.has('ops-resources')) {
+      requests.push(loadResources({ background: resourceRows.value.length > 0, force: true }));
+    }
+
+    if (activeTab.value === 'errors' && scopeSet.has('ops-error-logs')) {
+      requests.push(loadErrors({ background: errors.value.length > 0, force: true }));
+    }
+
+    if (activeTab.value === 'snapshots' && scopeSet.has('ops-health-snapshots')) {
+      requests.push(loadSnapshots({ background: snapshots.value.length > 0, force: true }));
+    }
+
+    void Promise.all(requests);
+  }
+);
+
+onBeforeUnmount(stopRealtimeRefresh);
+
+async function refreshCurrentTab(options: { background?: boolean; force?: boolean } = {}) {
+  await loadOverview({ background: options.background, force: options.force ?? true });
+  if (activeTab.value === 'queue') {
+    await loadQueueStatus({ background: options.background, force: options.force ?? true });
+  }
+  if (activeTab.value === 'cron') {
+    await loadCronJobs({ background: options.background, force: options.force ?? true });
+  }
+  if (activeTab.value === 'platforms') {
+    await loadPlatformSync({ background: options.background, force: options.force ?? true });
+  }
+  if (activeTab.value === 'resources') {
+    await loadResources({ background: options.background, force: options.force ?? true });
+  }
+  if (activeTab.value === 'errors') {
+    await loadErrors({ background: options.background, force: options.force ?? true });
+  }
+  if (activeTab.value === 'snapshots') {
+    await loadSnapshots({ background: options.background, force: options.force ?? true });
   }
 }
 
-async function loadQueueStatus() {
-  queueResult.value = await opsApi.queueStatus(queueQuery);
+async function loadOverview(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('ops-overview');
+  const cached = getSmartQueryData<OpsOverview>(key);
+
+  activeOverviewQueryKey.value = key;
+
+  if (cached) {
+    overview.value = cached;
+  }
+
+  overviewLoading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => opsApi.overview(),
+      force: options.force ?? true
+    });
+
+    if (activeOverviewQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      overview.value = result.data;
+    }
+  } finally {
+    if (activeOverviewQueryKey.value === key) {
+      overviewLoading.value = false;
+    }
+  }
 }
 
-async function loadCronJobs() {
-  const result = await opsApi.cronJobs(cronQuery);
+async function loadQueueStatus(options: { background?: boolean; force?: boolean } = {}) {
+  const params = {
+    ...queueQuery,
+    queueName: queueQuery.queueName || undefined,
+    status: queueQuery.status || undefined
+  };
+  const key = createSmartQueryKey('ops-queue-status', params);
+  const cached = getSmartQueryData<OpsQueueStatusResult>(key);
+
+  activeQueueQueryKey.value = key;
+
+  if (cached) {
+    queueResult.value = cached;
+  }
+
+  const result = await refreshSmartQuery({
+    key,
+    fetcher: () => opsApi.queueStatus(params),
+    force: options.force ?? true
+  });
+
+  if (activeQueueQueryKey.value === key && (result.changed || !cached)) {
+    queueResult.value = result.data;
+  }
+}
+
+async function loadCronJobs(options: { background?: boolean; force?: boolean } = {}) {
+  const params = {
+    ...cronQuery,
+    keyword: cronQuery.keyword || undefined,
+    status: cronQuery.status || undefined
+  };
+  const key = createSmartQueryKey('ops-cron-jobs', params);
+  const cached = getSmartQueryData<OpsCronJobsPage>(key);
+
+  activeCronQueryKey.value = key;
+
+  if (cached) {
+    applyCronJobsResult(cached);
+  }
+
+  const result = await refreshSmartQuery({
+    key,
+    fetcher: () => opsApi.cronJobs(params),
+    force: options.force ?? true
+  });
+
+  if (activeCronQueryKey.value === key && (result.changed || !cached)) {
+    applyCronJobsResult(result.data);
+  }
+}
+
+async function loadPlatformSync(options: { background?: boolean; force?: boolean } = {}) {
+  const params = {
+    ...platformQuery,
+    platform: platformQuery.platform || undefined,
+    status: platformQuery.status || undefined
+  };
+  const key = createSmartQueryKey('ops-platform-sync', params);
+  const cached = getSmartQueryData<OpsPlatformSyncResult>(key);
+
+  activePlatformQueryKey.value = key;
+
+  if (cached) {
+    platformResult.value = cached;
+  }
+
+  const result = await refreshSmartQuery({
+    key,
+    fetcher: () => opsApi.platformSyncStatus(params),
+    force: options.force ?? true
+  });
+
+  if (activePlatformQueryKey.value === key && (result.changed || !cached)) {
+    platformResult.value = result.data;
+  }
+}
+
+async function loadResources(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('ops-resources');
+  const cached = getSmartQueryData<OpsResourcesResult>(key);
+
+  activeResourcesQueryKey.value = key;
+
+  if (cached) {
+    resourceRows.value = cached;
+  }
+
+  const result = await refreshSmartQuery({
+    key,
+    fetcher: () =>
+      Promise.all([opsApi.automationWorkers(), opsApi.fileStorageStatus(), opsApi.diskSpace()]),
+    force: options.force ?? true
+  });
+
+  if (activeResourcesQueryKey.value === key && (result.changed || !cached)) {
+    resourceRows.value = result.data;
+  }
+}
+
+async function loadErrors(options: { background?: boolean; force?: boolean } = {}) {
+  const params = {
+    ...errorQuery,
+    keyword: errorQuery.keyword || undefined,
+    module: errorQuery.module || undefined,
+    level: errorQuery.level || undefined
+  };
+  const key = createSmartQueryKey('ops-error-logs', params);
+  const cached = getSmartQueryData<OpsErrorLogsPage>(key);
+
+  activeErrorsQueryKey.value = key;
+
+  if (cached) {
+    applyErrorLogsResult(cached);
+  }
+
+  const result = await refreshSmartQuery({
+    key,
+    fetcher: () => opsApi.errorLogs(params),
+    force: options.force ?? true
+  });
+
+  if (activeErrorsQueryKey.value === key && (result.changed || !cached)) {
+    applyErrorLogsResult(result.data);
+  }
+}
+
+async function loadSnapshots(options: { background?: boolean; force?: boolean } = {}) {
+  const params = {
+    ...snapshotQuery,
+    status: snapshotQuery.status || undefined
+  };
+  const key = createSmartQueryKey('ops-health-snapshots', params);
+  const cached = getSmartQueryData<OpsHealthSnapshotsPage>(key);
+
+  activeSnapshotsQueryKey.value = key;
+
+  if (cached) {
+    applyHealthSnapshotsResult(cached);
+  }
+
+  const result = await refreshSmartQuery({
+    key,
+    fetcher: () => opsApi.healthSnapshots(params),
+    force: options.force ?? true
+  });
+
+  if (activeSnapshotsQueryKey.value === key && (result.changed || !cached)) {
+    applyHealthSnapshotsResult(result.data);
+  }
+}
+
+function applyCronJobsResult(result: OpsCronJobsPage) {
   cronJobs.value = result.items;
   cronTotal.value = result.total;
 }
 
-async function loadPlatformSync() {
-  platformResult.value = await opsApi.platformSyncStatus(platformQuery);
-}
-
-async function loadResources() {
-  resourceRows.value = await Promise.all([
-    opsApi.automationWorkers(),
-    opsApi.fileStorageStatus(),
-    opsApi.diskSpace()
-  ]);
-}
-
-async function loadErrors() {
-  const result = await opsApi.errorLogs(errorQuery);
+function applyErrorLogsResult(result: OpsErrorLogsPage) {
   errors.value = result.items;
   errorTotal.value = result.total;
 }
 
-async function loadSnapshots() {
-  const result = await opsApi.healthSnapshots(snapshotQuery);
+function applyHealthSnapshotsResult(result: OpsHealthSnapshotsPage) {
   snapshots.value = result.items;
   snapshotTotal.value = result.total;
 }
@@ -833,6 +1084,9 @@ async function captureSnapshot() {
   try {
     await opsApi.captureHealthSnapshot();
     ElMessage.success('健康快照已记录');
+    invalidateSmartQueries('ops-overview');
+    invalidateSmartQueries('ops-health-snapshots');
+    invalidateSmartQueries('ops-queue-status');
     await loadOverview();
     if (activeTab.value === 'snapshots') await loadSnapshots();
     if (activeTab.value === 'queue') await loadQueueStatus();
@@ -848,6 +1102,7 @@ async function testPlatform(platform: string) {
   } else {
     ElMessage.warning(result.message);
   }
+  invalidateSmartQueries('ops-platform-sync');
   await loadPlatformSync();
 }
 
@@ -879,6 +1134,8 @@ async function createError() {
     });
     ElMessage.success('错误日志已记录');
     errorDialogVisible.value = false;
+    invalidateSmartQueries('ops-error-logs');
+    invalidateSmartQueries('ops-overview');
     await loadErrors();
     await loadOverview();
   } finally {

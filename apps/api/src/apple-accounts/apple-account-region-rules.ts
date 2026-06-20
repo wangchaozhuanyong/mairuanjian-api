@@ -32,7 +32,7 @@ const REGION_RULES: AppleAccountRegionRule[] = [
 ];
 
 export function normalizeAppleAccountRegion(value?: string | null) {
-  const normalized = (value || 'US').trim().toUpperCase();
+  const normalized = (value || 'CN').trim().toUpperCase();
   const rule = REGION_RULES.find((item) => item.code === normalized);
 
   if (!rule) {

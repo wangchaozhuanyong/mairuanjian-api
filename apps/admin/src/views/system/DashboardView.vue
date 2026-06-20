@@ -31,13 +31,13 @@
     </div>
 
     <div class="dashboard-layout">
-      <AppCard
-        title="今日关键任务"
-        subtitle="按续费、发货和库存风险排序，支持一键跳转处理。"
-        tag="实时运营"
-      >
+      <AppCard title="今日关键任务" subtitle="续费、发货、库存风险按优先级排序。" tag="实时运营">
         <template #actions>
-          <AppButton variant="soft" :loading="dashboardLoading" @click="loadDashboardOverview">
+          <AppButton
+            variant="soft"
+            :loading="dashboardLoading"
+            @click="() => loadDashboardOverview()"
+          >
             刷新数据
           </AppButton>
           <AppButton variant="primary" @click="goTo('/workspace/renewal')">进入工作台</AppButton>
@@ -45,39 +45,51 @@
 
         <div class="app-table-wrap dashboard-task-table-wrap">
           <table class="app-table dashboard-task-table">
+            <colgroup>
+              <col class="dashboard-task-table__priority-col" />
+              <col class="dashboard-task-table__task-col" />
+              <col class="dashboard-task-table__module-col" />
+              <col class="dashboard-task-table__status-col" />
+              <col class="dashboard-task-table__advice-col" />
+              <col class="dashboard-task-table__action-col" />
+            </colgroup>
             <thead>
               <tr>
                 <th>优先级</th>
-                <th>客户/业务</th>
-                <th>对象</th>
+                <th>任务</th>
+                <th>模块</th>
                 <th>状态</th>
-                <th>影响</th>
+                <th>处理建议</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in dashboardTasks" :key="row.key">
-                <td>
+                <td class="dashboard-task-table__priority">
                   <StatusChip :tone="row.priorityTone">{{ row.priority }}</StatusChip>
                 </td>
-                <td>
-                  <div class="account-cell">
+                <td class="dashboard-task-table__task">
+                  <div class="dashboard-task-main">
                     <span class="mini-avatar">{{ row.mark }}</span>
-                    <div>
-                      <strong>{{ row.title }}</strong>
-                      <p>{{ row.description }}</p>
+                    <div class="dashboard-task-main__content">
+                      <strong :title="row.title">{{ row.title }}</strong>
+                      <p :title="row.description">{{ row.description }}</p>
                     </div>
                   </div>
                 </td>
-                <td>{{ row.group }}</td>
-                <td>
+                <td class="dashboard-task-table__module">
+                  <span :title="row.group">{{ row.group }}</span>
+                </td>
+                <td class="dashboard-task-table__status">
                   <StatusChip :tone="row.statusTone" dot>
                     {{ row.statusText }}
                   </StatusChip>
                 </td>
-                <td class="dashboard-table-description">{{ row.impact }}</td>
-                <td>
-                  <AppButton variant="ghost" @click="goTo(row.route)">进入</AppButton>
+                <td class="dashboard-task-table__advice">
+                  <span :title="row.impact">{{ row.impact }}</span>
+                </td>
+                <td class="dashboard-task-table__action">
+                  <AppButton variant="ghost" size="small" @click="goTo(row.route)">进入</AppButton>
                 </td>
               </tr>
             </tbody>
@@ -153,19 +165,16 @@
         </div>
       </AppCard>
 
-      <AppCard
-        title="平台订单状态"
-        subtitle="淘宝/闲鱼发货监控与半自动策略。"
-        tag="首版策略"
-        tag-tone="green"
-      >
+      <AppCard title="平台订单状态" subtitle="订单同步与发货监控。" tag="首版策略" tag-tone="green">
         <div class="dashboard-timeline-list">
           <div v-for="item in workflowStatus" :key="item.title" class="dashboard-workflow-item">
-            <div>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.description }}</p>
+            <div class="dashboard-workflow-item__content">
+              <strong :title="item.title">{{ item.title }}</strong>
+              <p :title="item.description">{{ item.description }}</p>
             </div>
-            <StatusChip :tone="getWorkflowTone(item.type)">{{ item.status }}</StatusChip>
+            <StatusChip class="dashboard-workflow-item__status" :tone="getWorkflowTone(item.type)">
+              {{ item.status }}
+            </StatusChip>
           </div>
         </div>
       </AppCard>
@@ -175,8 +184,8 @@
           <AppButton variant="default" @click="goTo('/apple/accounts')">Apple ID</AppButton>
           <AppButton variant="primary" @click="goTo('/apple/order-entry')">录订单</AppButton>
           <AppButton variant="default" @click="goTo('/codes/inventory')">导入兑换码</AppButton>
-          <AppButton variant="soft" @click="goTo('/workspace/renewal')">续费工作台</AppButton>
-          <AppButton variant="soft" @click="previewDrawerVisible = true">闭环状态</AppButton>
+          <AppButton variant="default" @click="goTo('/workspace/renewal')">续费工作台</AppButton>
+          <AppButton variant="default" @click="previewDrawerVisible = true">闭环状态</AppButton>
           <AppButton variant="default" @click="goTo('/system/platform-status')">接口状态</AppButton>
         </div>
       </AppCard>
@@ -220,7 +229,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   appleAccountsApi,
@@ -236,7 +245,9 @@ import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { allModules, getStatusText, getStatusType, type ModuleStatus } from '@/config/modules';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleAccount, AppleOrder, CodePlatformOrder, RenewalTask } from '@/types/system';
+import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 type StatusTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 type NoticeType = 'success' | 'warning' | 'info' | 'danger';
@@ -263,6 +274,7 @@ interface DashboardNotice {
 
 const DASHBOARD_REQUEST_COUNT = 7;
 const LOW_STOCK_THRESHOLD = 20;
+const DASHBOARD_REALTIME_SCOPES = ['dashboard-overview'];
 
 const router = useRouter();
 const previewDrawerVisible = ref(false);
@@ -339,7 +351,7 @@ const appleBalanceTotal = computed(() =>
   appleAccounts.value.reduce((total, account) => total + parseMoney(account.currentBalance), 0)
 );
 const appleBalanceCostTotal = computed(() =>
-  appleAccounts.value.reduce((total, account) => total + parseMoney(account.balanceCostAmount), 0)
+  appleAccounts.value.reduce((total, account) => total + getAppleAccountTotalCostAmount(account), 0)
 );
 const appleAverageCost = computed(() =>
   appleBalanceTotal.value > 0 ? appleBalanceCostTotal.value / appleBalanceTotal.value : 0
@@ -372,7 +384,7 @@ const dashboardMetrics = computed(() => [
     label: 'Apple ID总余额',
     value: appleBalanceTotal.value ? formatNumber(appleBalanceTotal.value) : '-',
     hint: appleBalanceTotal.value
-      ? `平均成本 ¥${formatDecimal(appleAverageCost.value)} / 单位`
+      ? `汇率成本 ¥${formatDecimal(appleAverageCost.value)} / 1美元`
       : '暂无余额样本',
     tag: appleAccountDataReady.value ? '多币种' : '读取中',
     tagTone: 'blue' as const
@@ -604,28 +616,47 @@ const attentionStatus = computed<DashboardNotice[]>(() => {
   return notices.slice(0, 3);
 });
 
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(DASHBOARD_REALTIME_SCOPES, () => {
+  void loadDashboardOverview({ silent: true, dedupeMs: 0 });
+});
+
 onMounted(() => {
-  void loadDashboardOverview();
+  void loadDashboardOverview({ force: false });
+});
+
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
 });
 
 async function goTo(route: string) {
   await router.push(route);
 }
 
-async function loadDashboardOverview() {
-  dashboardLoading.value = true;
+async function loadDashboardOverview(
+  options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
+) {
+  if (!options.silent || !dashboardDataReady.value) {
+    dashboardLoading.value = true;
+  }
   dashboardLoadFailed.value = false;
 
   try {
-    const results = await Promise.allSettled([
-      appleAccountsApi.list({ page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
-      appleOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
-      appleRenewalTasksApi.list({ page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' }),
-      codeOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
-      redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }),
-      redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }),
-      redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'delivery_failed' })
-    ]);
+    const result = await refreshSmartQuery({
+      key: createSmartQueryKey('dashboard-overview'),
+      fetcher: () =>
+        Promise.allSettled([
+          appleAccountsApi.list({ page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
+          appleOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
+          appleRenewalTasksApi.list({ page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' }),
+          codeOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
+          redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }),
+          redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }),
+          redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'delivery_failed' })
+        ]),
+      force: options.force ?? true,
+      dedupeMs: options.dedupeMs ?? 1_200
+    });
+    const results = result.data;
 
     const [
       accountResult,
@@ -786,6 +817,28 @@ function parseMoney(value?: string | number | null) {
   const amount = Number.parseFloat(String(value));
 
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function isLikelyLegacyRateCost(account: AppleAccount) {
+  const balance = parseMoney(account.currentBalance);
+  const storedCost = parseMoney(account.balanceCostAmount);
+  const averageCost = parseMoney(account.averageCost);
+
+  return (
+    account.currency !== 'CNY' &&
+    balance > 1 &&
+    storedCost >= 1 &&
+    averageCost > 0 &&
+    averageCost < 1
+  );
+}
+
+function getAppleAccountTotalCostAmount(account: AppleAccount) {
+  if (isLikelyLegacyRateCost(account)) {
+    return parseMoney(account.currentBalance) * parseMoney(account.balanceCostAmount);
+  }
+
+  return parseMoney(account.balanceCostAmount);
 }
 
 function formatNumber(value: number) {

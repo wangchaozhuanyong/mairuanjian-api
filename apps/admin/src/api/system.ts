@@ -65,6 +65,8 @@ import type {
   NotificationLevel,
   NotificationLog,
   NotificationLogStatus,
+  NavigationItemBadges,
+  NavigationNotificationBadges,
   NotificationOverview,
   NotificationRule,
   NotificationTemplate,
@@ -108,11 +110,91 @@ import type {
   FeatureFlag,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, markSmartQueriesStale, refreshSmartQuery } from '@/utils/smartQuery';
+
+export const NAVIGATION_NOTIFICATION_BADGES_CHANGED_EVENT =
+  'apple-business:navigation-notification-badges-changed';
+export const NAVIGATION_ITEM_BADGES_CHANGED_EVENT = 'apple-business:navigation-item-badges-changed';
+
+const NAVIGATION_MUTATION_METHODS = new Set(['post', 'put', 'patch', 'delete']);
 
 interface LoginResponse {
   accessToken: string;
   user: CurrentUser;
 }
+
+function notifyNavigationNotificationBadgesChanged() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(NAVIGATION_NOTIFICATION_BADGES_CHANGED_EVENT));
+}
+
+function notifyNavigationItemBadgesChanged() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(NAVIGATION_ITEM_BADGES_CHANGED_EVENT));
+}
+
+function markMutatedSmartQueriesStale(url?: string) {
+  if (!url) {
+    return;
+  }
+
+  const path = url.split('?')[0] ?? '';
+  const scopes = new Set<string>();
+
+  if (path.startsWith('/user-table-views')) {
+    scopes.add('user-table-views');
+  }
+
+  if (path.startsWith('/source-platforms')) {
+    scopes.add('source-platforms');
+    scopes.add('customers');
+    scopes.add('code-order-dependencies');
+    scopes.add('code-service-mappings');
+  }
+
+  if (path.startsWith('/customers')) {
+    scopes.add('customers');
+    scopes.add('dashboard-overview');
+  }
+
+  if (path.startsWith('/message-templates')) {
+    scopes.add('message-templates');
+    scopes.add('code-service-mappings');
+  }
+
+  if (path.startsWith('/roles') || path.startsWith('/permissions')) {
+    scopes.add('system-roles');
+    scopes.add('system-user-roles');
+    scopes.add('system-users');
+  }
+
+  if (path.startsWith('/apple-accounts')) {
+    scopes.add('apple-accounts');
+    scopes.add('dashboard-overview');
+  }
+
+  for (const scope of scopes) {
+    markSmartQueriesStale(scope);
+  }
+}
+
+http.interceptors.response.use((response) => {
+  const method = response.config.method?.toLowerCase() ?? '';
+
+  if (NAVIGATION_MUTATION_METHODS.has(method)) {
+    markMutatedSmartQueriesStale(response.config.url);
+    notifyNavigationNotificationBadgesChanged();
+    notifyNavigationItemBadgesChanged();
+  }
+
+  return response;
+});
 
 export interface UserQuery {
   page: number;
@@ -459,6 +541,8 @@ export interface AppleAccountQuery extends CommonPageQuery {
 export interface AppleServiceQuery extends CommonPageQuery {
   currency?: string;
   category?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc' | '';
 }
 
 export interface AppleOrderQuery extends CommonPageQuery {
@@ -1184,7 +1268,11 @@ export const rolesApi = {
 
 export const userTableViewsApi = {
   list(params: UserTableViewQuery) {
-    return request<PageResult<UserTableView>>(http.get('/user-table-views', { params }));
+    return refreshSmartQuery({
+      key: createSmartQueryKey('user-table-views', params),
+      fetcher: () => request<PageResult<UserTableView>>(http.get('/user-table-views', { params })),
+      force: false
+    }).then((result) => result.data);
   },
   create(payload: SaveUserTableViewPayload) {
     return request<UserTableView>(http.post('/user-table-views', payload));
@@ -1287,6 +1375,12 @@ export const messageTemplatesApi = {
 export const notificationsApi = {
   overview() {
     return request<NotificationOverview>(http.get('/notifications/overview'));
+  },
+  navBadges() {
+    return request<NavigationNotificationBadges>(http.get('/notifications/nav-badges'));
+  },
+  navItemBadges() {
+    return request<NavigationItemBadges>(http.get('/notifications/nav-item-badges'));
   },
   listInApp(params: NotificationLogQuery) {
     return request<PageResult<NotificationLog>>(http.get('/notifications', { params }));

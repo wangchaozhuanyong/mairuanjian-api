@@ -521,9 +521,8 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
-  appleAccountsApi,
   appleAutomationTasksApi,
   userTableViewsApi,
   type AppleAutomationTaskQuery
@@ -534,15 +533,19 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleAccount,
   AppleAutomationTask,
   AutomationTaskPriority,
   AutomationTaskStatus,
   AutomationTaskType,
+  PageResult,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { loadSmartAppleAccounts } from '@/utils/smartSystemQueries';
 
 const tasks = ref<AppleAutomationTask[]>([]);
 const appleAccounts = ref<AppleAccount[]>([]);
@@ -560,6 +563,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const tableKey = 'apple_automation_tasks';
+const activeTasksQueryKey = ref('');
 
 const query = reactive<AppleAutomationTaskQuery>({
   page: 1,
@@ -680,32 +684,66 @@ onMounted(async () => {
   await Promise.all([initializePage(), loadAppleAccounts()]);
 });
 
-async function loadTasks() {
-  loading.value = true;
+function buildTaskParams(): AppleAutomationTaskQuery {
+  return {
+    ...query,
+    keyword: query.keyword || undefined,
+    taskType: query.taskType || undefined,
+    status: query.status || undefined,
+    priority: query.priority || undefined,
+    appleAccountId: query.appleAccountId || undefined,
+    manualRequired: query.manualRequired || undefined,
+    sortBy: sortConfig.value.prop,
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyTaskResult(data: PageResult<AppleAutomationTask>) {
+  tasks.value = data.items;
+  total.value = data.total;
+}
+
+async function loadTasks(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildTaskParams();
+  const key = createSmartQueryKey('apple-automation-tasks', params);
+  const cached = getSmartQueryData<PageResult<AppleAutomationTask>>(key);
+
+  activeTasksQueryKey.value = key;
+
+  if (cached) {
+    applyTaskResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const result = await appleAutomationTasksApi.list({
-      ...query,
-      keyword: query.keyword || undefined,
-      taskType: query.taskType || undefined,
-      status: query.status || undefined,
-      priority: query.priority || undefined,
-      appleAccountId: query.appleAccountId || undefined,
-      manualRequired: query.manualRequired || undefined,
-      sortBy: sortConfig.value.prop,
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => appleAutomationTasksApi.list(params),
+      force: options.force ?? true
     });
-    tasks.value = result.items;
-    total.value = result.total;
+
+    if (activeTasksQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyTaskResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载自动化任务失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载自动化任务失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeTasksQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadTasks();
+  await loadTasks({ force: false });
 }
 
 async function handleSearch() {
@@ -885,7 +923,7 @@ function isTaskPriority(value: unknown): value is AutomationTaskPriority {
 
 async function loadAppleAccounts() {
   try {
-    const result = await appleAccountsApi.list({
+    const result = await loadSmartAppleAccounts({
       page: 1,
       pageSize: 100,
       keyword: '',
@@ -1149,4 +1187,13 @@ function canRetry(task: AppleAutomationTask) {
 function isFinalStatus(value: AutomationTaskStatus) {
   return value === 'success' || value === 'cancelled' || value === 'skipped';
 }
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-automation-tasks'], () => {
+  void loadTasks({
+    background: tasks.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>

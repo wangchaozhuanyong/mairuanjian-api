@@ -508,7 +508,7 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { appleActionPlansApi, userTableViewsApi, type AppleActionPlanQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
@@ -516,12 +516,15 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleActionPlan,
   AppleActionPlanItem,
+  PageResult,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const plans = ref<AppleActionPlan[]>([]);
 const total = ref(0);
@@ -537,6 +540,7 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const tableKey = 'apple_action_plans';
+const activePlansQueryKey = ref('');
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 interface PlanPreviewService {
   title: string;
@@ -635,25 +639,59 @@ const filterChips = computed(() => {
 
 onMounted(initializePage);
 
-async function loadPlans() {
-  loading.value = true;
+function buildPlanParams(): AppleActionPlanQuery {
+  return {
+    ...query,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    hasWrongChargeRisk: query.hasWrongChargeRisk || undefined,
+    planDateFrom: query.planDateFrom || undefined,
+    planDateTo: query.planDateTo || undefined,
+    sortBy: sortConfig.value.prop,
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyPlanResult(data: PageResult<AppleActionPlan>) {
+  plans.value = data.items;
+  total.value = data.total;
+}
+
+async function loadPlans(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildPlanParams();
+  const key = createSmartQueryKey('apple-action-plans', params);
+  const cached = getSmartQueryData<PageResult<AppleActionPlan>>(key);
+
+  activePlansQueryKey.value = key;
+
+  if (cached) {
+    applyPlanResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const result = await appleActionPlansApi.list({
-      ...query,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      hasWrongChargeRisk: query.hasWrongChargeRisk || undefined,
-      planDateFrom: query.planDateFrom || undefined,
-      planDateTo: query.planDateTo || undefined,
-      sortBy: sortConfig.value.prop,
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => appleActionPlansApi.list(params),
+      force: options.force ?? true
     });
-    plans.value = result.items;
-    total.value = result.total;
+
+    if (activePlansQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyPlanResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载操作计划失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载操作计划失败');
+    }
   } finally {
-    loading.value = false;
+    if (activePlansQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -915,7 +953,7 @@ function clearPlanDateRange() {
 
 async function initializePage() {
   await loadTableViews(true);
-  await loadPlans();
+  await loadPlans({ force: false });
 }
 
 function formatDate(value?: string | null, dateOnly = false) {
@@ -982,4 +1020,13 @@ function getPlanPreviewServices(plan: AppleActionPlan): PlanPreviewService[] {
     }
   ];
 }
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-action-plans'], () => {
+  void loadPlans({
+    background: plans.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>

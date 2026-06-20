@@ -78,6 +78,7 @@
         :selected-count="selectedTasks.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        show-overwrite-view
         :primary-loading="generating"
         primary-label="生成到期任务"
         placeholder="搜索任务、客户、业务、订单、Apple ID"
@@ -88,6 +89,7 @@
         @remove-filter="removeFilter"
         @save-view="saveTableView"
         @apply-view="applySavedView"
+        @overwrite-view="overwriteTableView"
         @export="exportList"
         @batch-action="handleBatchAction"
       >
@@ -553,13 +555,14 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import {
   appleRenewalTasksApi,
   attachmentsApi,
   userTableViewsApi,
-  type RenewalTaskQuery
+  type RenewalTaskQuery,
+  type SaveUserTableViewPayload
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
@@ -568,6 +571,8 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { RenewalTask, TableDensity, UserTableView } from '@/types/system';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const route = useRoute();
 const tasks = ref<RenewalTask[]>([]);
@@ -586,7 +591,9 @@ const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const evidenceFile = ref<File | null>(null);
 const evidenceFileInputRef = ref<HTMLInputElement>();
+const activatedOnce = ref(false);
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+type RenewalTaskPage = Awaited<ReturnType<typeof appleRenewalTasksApi.list>>;
 
 interface RenewalLane {
   key: string;
@@ -817,45 +824,109 @@ watch(
     query.taskType = '';
     quickDate.value = '';
     clearDueRange();
-    await loadTableViews(true);
-    await loadTasks();
+    await loadPageData();
   }
 );
 
 onMounted(initializePage);
+onActivated(() => {
+  if (!activatedOnce.value) {
+    activatedOnce.value = true;
+    return;
+  }
+
+  void loadTasks({
+    background: tasks.value.length > 0,
+    force: false
+  });
+});
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-renewal-tasks'], () => {
+  void loadTasks({
+    background: tasks.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 
 async function initializePage() {
   try {
-    await loadTableViews(true);
-    await loadTasks();
+    await loadPageData();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载续费任务失败');
   }
 }
 
-async function loadTasks() {
-  loading.value = true;
-  try {
-    const params: RenewalTaskQuery = {
-      ...query,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      taskType: fixedTaskType.value || query.taskType || undefined,
-      priority: query.priority || undefined,
-      customerDecision: query.customerDecision || undefined,
-      dueFrom: query.dueFrom || undefined,
-      dueTo: query.dueTo || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
-    };
-    const result = await appleRenewalTasksApi.list(params);
-    tasks.value = result.items;
-    total.value = result.total;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载续费任务失败');
-  } finally {
-    loading.value = false;
+async function loadPageData() {
+  const tableViewsPromise = loadTableViews(true);
+  const tasksPromise = loadTasks({ force: false });
+  const [defaultViewApplied] = await Promise.all([tableViewsPromise, tasksPromise]);
+
+  if (defaultViewApplied) {
+    await loadTasks({
+      background: tasks.value.length > 0,
+      force: false
+    });
   }
+}
+
+async function loadTasks(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildTaskListParams();
+  const queryKey = createSmartQueryKey('apple-renewal-tasks', {
+    tableKey: tableKey.value,
+    params
+  });
+  const cached = getSmartQueryData<RenewalTaskPage>(queryKey);
+  const shouldShowLoading = !cached && !options.background;
+
+  if (cached) {
+    applyTaskListResult(cached);
+  }
+
+  if (shouldShowLoading) {
+    loading.value = true;
+  }
+
+  try {
+    const result = await refreshSmartQuery({
+      key: queryKey,
+      fetcher: () => appleRenewalTasksApi.list(params),
+      force: options.force ?? true
+    });
+
+    if (result.changed || !cached) {
+      applyTaskListResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载续费任务失败');
+    }
+  } finally {
+    if (shouldShowLoading) {
+      loading.value = false;
+    }
+  }
+}
+
+function buildTaskListParams(): RenewalTaskQuery {
+  return {
+    ...query,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    taskType: fixedTaskType.value || query.taskType || undefined,
+    priority: query.priority || undefined,
+    customerDecision: query.customerDecision || undefined,
+    dueFrom: query.dueFrom || undefined,
+    dueTo: query.dueTo || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyTaskListResult(result: RenewalTaskPage) {
+  tasks.value = result.items;
+  total.value = result.total;
 }
 
 async function handleSearch() {
@@ -941,11 +1012,14 @@ async function loadTableViews(applyDefault = false) {
       const defaultView = data.items.find((view) => view.isDefault);
       if (defaultView) {
         applyView(defaultView);
+        return true;
       }
     }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载保存视图失败');
   }
+
+  return false;
 }
 
 async function saveTableView() {
@@ -961,27 +1035,9 @@ async function saveTableView() {
         cancelButtonText: '取消'
       }
     );
-    const created = await userTableViewsApi.create({
-      tableKey: tableKey.value,
-      viewName: value.trim(),
-      filters: {
-        keyword: query.keyword,
-        status: query.status,
-        taskType: query.taskType,
-        priority: query.priority,
-        customerDecision: query.customerDecision,
-        quickDate: quickDate.value,
-        dueFrom: query.dueFrom,
-        dueTo: query.dueTo
-      },
-      sortConfig: sortConfig.value,
-      columns: visibleColumns.value.length
-        ? visibleColumns.value
-        : renewalColumnOptions.map((column) => column.value),
-      density: density.value,
-      pageSize: query.pageSize,
-      isDefault: savedViews.value.length === 0
-    });
+    const created = await userTableViewsApi.create(
+      buildTableViewPayload(value.trim(), savedViews.value.length === 0)
+    );
     await loadTableViews();
     savedViewId.value = created.id;
     ElMessage.success('表格视图已保存');
@@ -991,12 +1047,64 @@ async function saveTableView() {
   }
 }
 
+async function overwriteTableView(id: string) {
+  const view = savedViews.value.find((item) => item.id === id);
+  if (!view) return;
+
+  try {
+    await ElMessageBox.confirm(
+      `将用当前筛选、排序、列显示、密度和分页大小覆盖“${view.viewName}”。确认继续？`,
+      '覆盖保存视图',
+      {
+        type: 'warning',
+        confirmButtonText: '覆盖',
+        cancelButtonText: '取消'
+      }
+    );
+
+    const updated = await userTableViewsApi.update(
+      view.id,
+      buildTableViewPayload(view.viewName, view.isDefault)
+    );
+    await loadTableViews();
+    savedViewId.value = updated.id;
+    ElMessage.success('当前视图已覆盖保存');
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    ElMessage.error(error instanceof Error ? error.message : '覆盖保存视图失败');
+  }
+}
+
 async function applySavedView(id: string) {
   const view = savedViews.value.find((item) => item.id === id);
   if (!view) return;
   applyView(view);
   ElMessage.success('已应用保存视图');
   await loadTasks();
+}
+
+function buildTableViewPayload(viewName: string, isDefault: boolean): SaveUserTableViewPayload {
+  return {
+    tableKey: tableKey.value,
+    viewName,
+    filters: {
+      keyword: query.keyword,
+      status: query.status,
+      taskType: query.taskType,
+      priority: query.priority,
+      customerDecision: query.customerDecision,
+      quickDate: quickDate.value,
+      dueFrom: query.dueFrom,
+      dueTo: query.dueTo
+    },
+    sortConfig: sortConfig.value,
+    columns: visibleColumns.value.length
+      ? visibleColumns.value
+      : renewalColumnOptions.map((column) => column.value),
+    density: density.value,
+    pageSize: query.pageSize,
+    isDefault
+  };
 }
 
 function applyView(view: UserTableView) {

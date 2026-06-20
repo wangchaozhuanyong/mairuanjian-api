@@ -26,6 +26,7 @@ import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, relative, resolve } from 'node:path';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -320,6 +321,7 @@ const DATA_IMPORT_MAX_ROWS = 5000;
 const DEFAULT_DATA_IMPORT_DIR = 'uploads/data-imports';
 const DEFAULT_DATA_IMPORT_ERROR_DIR = 'uploads/data-import-errors';
 const RESTORE_DRILL_CONFIRM_PREFIX = 'CONFIRM_RESTORE_DRILL';
+const DATA_CENTER_OVERVIEW_CACHE_TTL_MS = 120_000;
 
 interface ExportDataSet {
   fields: string[];
@@ -356,6 +358,8 @@ interface BackupExecutionResult extends CommandResult {
 
 @Injectable()
 export class DataCenterService {
+  private readonly overviewCache = new TimedMemoryCache();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -363,48 +367,50 @@ export class DataCenterService {
   ) {}
 
   async overview() {
-    const [
-      failedBackupCount,
-      runningImportCount,
-      runningExportCount,
-      recycleBinCount,
-      dictionaryCount,
-      recentBackupJobs,
-      recentImportJobs,
-      recentExportJobs
-    ] = await this.prisma.$transaction([
-      this.prisma.backupJob.count({ where: { status: 'failed' } }),
-      this.prisma.dataImportJob.count({ where: { status: { in: ['pending', 'running'] } } }),
-      this.prisma.dataExportJob.count({ where: { status: { in: ['pending', 'running'] } } }),
-      this.prisma.recycleBinRecord.count({ where: { restoredAt: null } }),
-      this.prisma.dataDictionary.count({ where: { status: 'active' } }),
-      this.prisma.backupJob.findMany({
-        include: this.getUserInclude(),
-        take: 5,
-        orderBy: { createdAt: 'desc' }
-      }),
-      this.prisma.dataImportJob.findMany({
-        include: this.getUserInclude(),
-        take: 5,
-        orderBy: { createdAt: 'desc' }
-      }),
-      this.prisma.dataExportJob.findMany({
-        include: this.getUserInclude(),
-        take: 5,
-        orderBy: { createdAt: 'desc' }
-      })
-    ]);
+    return this.overviewCache.getOrSet('overview', DATA_CENTER_OVERVIEW_CACHE_TTL_MS, async () => {
+      const [
+        failedBackupCount,
+        runningImportCount,
+        runningExportCount,
+        recycleBinCount,
+        dictionaryCount,
+        recentBackupJobs,
+        recentImportJobs,
+        recentExportJobs
+      ] = await Promise.all([
+        this.prisma.backupJob.count({ where: { status: 'failed' } }),
+        this.prisma.dataImportJob.count({ where: { status: { in: ['pending', 'running'] } } }),
+        this.prisma.dataExportJob.count({ where: { status: { in: ['pending', 'running'] } } }),
+        this.prisma.recycleBinRecord.count({ where: { restoredAt: null } }),
+        this.prisma.dataDictionary.count({ where: { status: 'active' } }),
+        this.prisma.backupJob.findMany({
+          include: this.getUserInclude(),
+          take: 5,
+          orderBy: { createdAt: 'desc' }
+        }),
+        this.prisma.dataImportJob.findMany({
+          include: this.getUserInclude(),
+          take: 5,
+          orderBy: { createdAt: 'desc' }
+        }),
+        this.prisma.dataExportJob.findMany({
+          include: this.getUserInclude(),
+          take: 5,
+          orderBy: { createdAt: 'desc' }
+        })
+      ]);
 
-    return {
-      failedBackupCount,
-      runningImportCount,
-      runningExportCount,
-      recycleBinCount,
-      dictionaryCount,
-      recentBackupJobs: recentBackupJobs.map((job) => this.toBackupJobResponse(job)),
-      recentImportJobs: recentImportJobs.map((job) => this.toImportJobResponse(job)),
-      recentExportJobs: recentExportJobs.map((job) => this.toExportJobResponse(job))
-    };
+      return {
+        failedBackupCount,
+        runningImportCount,
+        runningExportCount,
+        recycleBinCount,
+        dictionaryCount,
+        recentBackupJobs: recentBackupJobs.map((job) => this.toBackupJobResponse(job)),
+        recentImportJobs: recentImportJobs.map((job) => this.toImportJobResponse(job)),
+        recentExportJobs: recentExportJobs.map((job) => this.toExportJobResponse(job))
+      };
+    });
   }
 
   async listBackupJobs(query: ListBackupJobsQuery) {
@@ -1193,16 +1199,16 @@ export class DataCenterService {
   async getExportDownload(id: string, operator?: AuthenticatedUser): Promise<ExportDownloadFile> {
     const job = await this.findExportJobOrThrow(id);
     if (job.status !== 'success' || !job.filePath) {
-      throw new ConflictException('Export file is not ready');
+      throw new ConflictException('导出文件还没准备好，请稍后再试。');
     }
     if (job.downloadExpiresAt && job.downloadExpiresAt.getTime() < Date.now()) {
-      throw new ConflictException('Export download has expired');
+      throw new ConflictException('导出文件下载已过期，请重新生成导出任务。');
     }
     const absolutePath = this.resolveExportFilePath(job.filePath);
     try {
       await access(absolutePath);
     } catch {
-      throw new NotFoundException('Export file not found');
+      throw new NotFoundException('导出文件不存在或已被清理，请重新生成。');
     }
 
     await this.writeAudit(operator, 'data.export.download', 'data_export_job', job.id, undefined, {
@@ -2681,6 +2687,7 @@ export class DataCenterService {
     beforeData: unknown,
     afterData: unknown
   ) {
+    this.overviewCache.clear();
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'data',

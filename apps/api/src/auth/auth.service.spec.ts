@@ -77,7 +77,7 @@ describe('AuthService', () => {
         },
         { ip: '127.0.0.1', userAgent: 'unit-test' }
       )
-    ).rejects.toThrow(new UnauthorizedException('MFA code is required'));
+    ).rejects.toThrow(new UnauthorizedException('需要输入动态验证码或恢复码。'));
 
     expect(securityService.recordLoginAttempt).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -104,7 +104,7 @@ describe('AuthService', () => {
         },
         { ip: '10.0.1.25', userAgent: 'unit-test' }
       )
-    ).rejects.toThrow(new UnauthorizedException('IP address is not allowed'));
+    ).rejects.toThrow(new UnauthorizedException('当前 IP 不在白名单内，无法登录。'));
 
     expect(securityService.recordLoginAttempt).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -134,7 +134,7 @@ describe('AuthService', () => {
         },
         { ip: '127.0.0.1', userAgent: 'unit-test' }
       )
-    ).rejects.toThrow(new UnauthorizedException('MFA code is invalid'));
+    ).rejects.toThrow(new UnauthorizedException('动态验证码或恢复码错误，请重新输入。'));
 
     expect(securityService.recordLoginAttempt).toHaveBeenCalledWith(
       expect.objectContaining({

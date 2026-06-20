@@ -358,21 +358,25 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { codeAfterSalesApi, codeOrdersApi, userTableViewsApi } from '@/api/system';
+import type { CodeAfterSaleQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodeAfterSale,
   CodeDeliveryLog,
   CodePlatformOrder,
+  PageResult,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'code_after_sales';
 const afterSaleStatusOptions = [
@@ -410,6 +414,7 @@ const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | nul
 const generatedContent = ref('');
 const total = ref(0);
 const createFormRef = ref<FormInstance>();
+const activeAfterSalesQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -472,23 +477,57 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-async function loadAfterSales() {
-  loading.value = true;
+function buildAfterSalesParams(): CodeAfterSaleQuery {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    status: query.status || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
+    sortOrder: mapSortOrder(sortConfig.value.order)
+  };
+}
+
+function applyAfterSalesResult(data: PageResult<CodeAfterSale>) {
+  afterSales.value = data.items;
+  total.value = data.total;
+}
+
+async function loadAfterSales(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildAfterSalesParams();
+  const key = createSmartQueryKey('code-after-sales', params);
+  const cached = getSmartQueryData<PageResult<CodeAfterSale>>(key);
+
+  activeAfterSalesQueryKey.value = key;
+
+  if (cached) {
+    applyAfterSalesResult(cached);
+  }
+
+  loading.value = !cached && !options.background;
+
   try {
-    const data = await codeAfterSalesApi.list({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-      sortBy: mapSortProp(sortConfig.value.prop),
-      sortOrder: mapSortOrder(sortConfig.value.order)
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => codeAfterSalesApi.list(params),
+      force: options.force ?? true
     });
-    afterSales.value = data.items;
-    total.value = data.total;
+
+    if (activeAfterSalesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyAfterSalesResult(result.data);
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载售后补发失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载售后补发失败');
+    }
   } finally {
-    loading.value = false;
+    if (activeAfterSalesQueryKey.value === key) {
+      loading.value = false;
+    }
   }
 }
 
@@ -747,13 +786,22 @@ async function initializePage() {
   try {
     await loadDeliveredOrders();
     await loadTableViews(true);
-    await loadAfterSales();
+    await loadAfterSales({ force: false });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载售后补发失败');
   }
 }
 
 onMounted(initializePage);
+
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['code-after-sales'], () => {
+  void loadAfterSales({
+    background: afterSales.value.length > 0,
+    force: true
+  });
+});
+
+onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>
