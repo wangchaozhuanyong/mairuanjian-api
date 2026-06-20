@@ -441,6 +441,7 @@ const sidebarOpen = ref(false);
 const menuKeyword = ref('');
 const globalKeyword = ref('');
 const notificationDrawerVisible = ref(false);
+const activePath = computed(() => route.path);
 const openMenuKeys = ref(readStoredOpenMenuKeys());
 const workspaceCacheVersion = ref(0);
 const navigationNotificationBadges = ref<Record<string, NavigationNotificationBadge>>({});
@@ -478,7 +479,6 @@ const sectionIconMap = {
   system: Setting
 } satisfies Record<MenuSectionIcon, Component>;
 
-const activePath = computed(() => route.path);
 const routeTitle = computed(() => String(route.meta.title ?? '后台管理'));
 const routeDescription = computed(() => String(route.meta.description ?? ''));
 const routeGroup = computed(() => String(route.meta.group ?? '工作台'));
