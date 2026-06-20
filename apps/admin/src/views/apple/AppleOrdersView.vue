@@ -12,7 +12,13 @@
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
         <div>
-          <h3>Apple ID 订单队列</h3>
+          <h3>
+            Apple ID 订单队列
+            <FeatureHelp
+              placement="right"
+              text="这里看每一单有没有开通、用了哪个 ID、客户付了多少、系统算出来赚了多少。"
+            />
+          </h3>
           <p>跟踪订单、客户、业务、Apple ID、余额消耗和利润，开通与消费流水保持分区独立。</p>
         </div>
         <div class="inline-actions">
@@ -101,6 +107,14 @@
           min-width="170"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              实收/成本/利润
+              <FeatureHelp
+                text="实收是客户给的钱；成本是这单消耗掉的 Apple 余额折成人民币；利润就是扣掉成本后的结果。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <div class="order-money-stack">
               <div>
@@ -124,6 +138,12 @@
           width="120"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              消耗
+              <FeatureHelp text="这单用了多少 Apple 余额，比如用了 10 美元就会在这里显示出来。" />
+            </span>
+          </template>
           <template #default="{ row }"
             >{{ row.appleCostValue }} {{ row.service.currency }}</template
           >
@@ -135,6 +155,12 @@
           min-width="170"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              到期时间
+              <FeatureHelp text="客户这次开通到什么时候结束。后面续费提醒会看这个时间。" />
+            </span>
+          </template>
           <template #default="{ row }">{{ formatDate(row.expireTime) }}</template>
         </el-table-column>
         <el-table-column
@@ -144,6 +170,12 @@
           width="100"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              状态
+              <FeatureHelp text="看这单现在处在哪一步：待处理、生效中、完成、取消或异常。" />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
@@ -311,6 +343,7 @@ import { useRouter } from 'vue-router';
 import { appleOrdersApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';

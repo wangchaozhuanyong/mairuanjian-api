@@ -8,7 +8,13 @@
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
         <div>
-          <h3>来源平台列表</h3>
+          <h3>
+            来源平台列表
+            <FeatureHelp
+              placement="right"
+              text="这里设置客户和订单从哪里来，比如淘宝、闲鱼、微信。平台费用会影响后面算利润。"
+            />
+          </h3>
           <p>维护平台编码、手续费和同步/发货能力，供订单与客户模块共用。</p>
         </div>
         <div class="inline-actions">
@@ -112,6 +118,12 @@
           width="110"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              费率
+              <FeatureHelp text="平台按订单金额抽成的比例。比如 0.01 就是大约收 1%。" />
+            </span>
+          </template>
           <template #default="{ row }">{{ row.feeRate }}</template>
         </el-table-column>
         <el-table-column
@@ -120,8 +132,21 @@
           label="固定费用"
           width="120"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              固定费用
+              <FeatureHelp text="每单固定扣掉的钱，比如平台每单都收一笔服务费时填这里。" />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="isColumnVisible('syncEnabled')" label="同步" width="90">
+          <template #header>
+            <span class="help-label">
+              同步
+              <FeatureHelp text="开启后，后面接入平台接口时可以从这个平台拉订单或状态。" />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="row.syncEnabled ? 'green' : 'neutral'" dot>
               {{ row.syncEnabled ? '支持' : '关闭' }}
@@ -129,6 +154,14 @@
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('deliveryEnabled')" label="发货" width="90">
+          <template #header>
+            <span class="help-label">
+              发货
+              <FeatureHelp
+                text="开启后，后面接入平台接口时可以走自动或半自动发货；关闭就只做记录。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="row.deliveryEnabled ? 'green' : 'neutral'" dot>
               {{ row.deliveryEnabled ? '支持' : '关闭' }}
@@ -284,6 +317,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { sourcePlatformsApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';

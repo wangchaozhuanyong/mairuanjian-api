@@ -12,7 +12,13 @@
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
         <div>
-          <h3>Apple ID 资产列表</h3>
+          <h3>
+            Apple ID 资产列表
+            <FeatureHelp
+              placement="right"
+              text="这里放可以拿来开通业务的 Apple ID。先看余额够不够、状态正不正常，再决定要不要充值、锁定或查看资料。"
+            />
+          </h3>
           <p>支持模糊搜索、排序、分页、敏感字段脱敏、余额流水和充值/消费操作。</p>
         </div>
         <div class="inline-actions">
@@ -56,22 +62,34 @@
         @batch-action="handleBatchAction"
       >
         <template #filters>
-          <el-input
-            v-model.trim="query.region"
+          <el-select
+            v-model="query.region"
             class="table-toolbar__select"
             placeholder="地区"
             clearable
-            @keyup.enter="applyFilters"
-            @clear="applyFilters"
-          />
-          <el-input
-            v-model.trim="query.currency"
+            @change="handleRegionFilterChange"
+          >
+            <el-option
+              v-for="item in appleAccountRegionOptions"
+              :key="item.code"
+              :label="`${item.labelZh} ${item.labelEn}（${item.code}）`"
+              :value="item.code"
+            />
+          </el-select>
+          <el-select
+            v-model="query.currency"
             class="table-toolbar__select"
             placeholder="币种"
             clearable
-            @keyup.enter="applyFilters"
-            @clear="applyFilters"
-          />
+            @change="applyFilters"
+          >
+            <el-option
+              v-for="item in appleAccountCurrencyOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
           <el-select
             v-model="query.locked"
             class="table-toolbar__select"
@@ -119,10 +137,20 @@
           v-if="isColumnVisible('region')"
           prop="region"
           label="地区/币种"
-          width="130"
+          min-width="230"
           sortable="custom"
         >
-          <template #default="{ row }">{{ row.region }} / {{ row.currency }}</template>
+          <template #header>
+            <span class="help-label">
+              地区/币种
+              <FeatureHelp
+                text="这个 ID 属于哪个地区，就用哪个币种记余额。选错会影响后面充值、消费和成本计算。"
+              />
+            </span>
+          </template>
+          <template #default="{ row }">{{
+            formatRegionCurrency(row.region, row.currency)
+          }}</template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('currentBalance')"
@@ -130,21 +158,42 @@
           label="余额"
           width="120"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              余额
+              <FeatureHelp text="这个 Apple ID 现在还剩多少可以用的余额。" />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('balanceCostAmount')"
           prop="balanceCostAmount"
           label="余额成本"
           width="130"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              余额成本
+              <FeatureHelp text="这些余额当初一共花了你多少人民币买来。后面算利润会用到它。" />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('averageCost')"
           prop="averageCost"
           label="平均成本"
           width="130"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              平均成本
+              <FeatureHelp text="简单说就是每用掉 1 元 Apple 余额，大概算你多少人民币成本。" />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('status')"
           prop="status"
@@ -152,6 +201,14 @@
           width="130"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              状态
+              <FeatureHelp
+                text="看这个 ID 现在能不能正常使用。异常、风控、密码错误这类状态要先处理。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
@@ -159,6 +216,14 @@
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('secrets')" label="敏感资料" min-width="180">
+          <template #header>
+            <span class="help-label">
+              敏感资料
+              <FeatureHelp
+                text="这里不是直接显示密码，只告诉你这个 ID 有没有保存密码、密保、手机号这类资料。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip v-if="row.hasPassword" class="tag-gap" tone="purple">密码</StatusChip>
             <StatusChip v-if="row.hasSecurityInfo" class="tag-gap" tone="orange">密保</StatusChip>
@@ -181,6 +246,14 @@
           width="100"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              锁定
+              <FeatureHelp
+                text="锁定后，这个 ID 暂时不要被拿去开新业务，适合排查问题或预留给某个订单。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="row.isManuallyLocked ? 'red' : 'green'" dot>
               {{ row.isManuallyLocked ? '已锁定' : '正常' }}
@@ -218,7 +291,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ account.appleIdMasked }}</strong>
-              <span>{{ account.region }} / {{ account.currency }}</span>
+              <span>{{ formatRegionCurrency(account.region, account.currency) }}</span>
             </div>
             <StatusChip :tone="getStatusTone(account.status)" dot>
               {{ getStatusLabel(account.status) }}
@@ -317,10 +390,17 @@
         </el-form-item>
         <div class="form-grid">
           <el-form-item label="地区" prop="region">
-            <el-input v-model.trim="form.region" placeholder="US" />
+            <el-select v-model="form.region" class="full-input" @change="handleFormRegionChange">
+              <el-option
+                v-for="item in appleAccountRegionOptions"
+                :key="item.code"
+                :label="`${item.labelZh} ${item.labelEn}（${item.code}）`"
+                :value="item.code"
+              />
+            </el-select>
           </el-form-item>
           <el-form-item label="币种" prop="currency">
-            <el-input v-model.trim="form.currency" placeholder="USD" />
+            <el-input :model-value="selectedCurrencyLabel" disabled />
           </el-form-item>
         </div>
         <div class="form-grid">
@@ -353,8 +433,17 @@
           <el-form-item :label="editingAccount ? '密码（留空不修改）' : '密码'">
             <el-input v-model="form.password" type="password" show-password />
           </el-form-item>
-          <el-form-item :label="editingAccount ? '绑定手机号（留空不修改）' : '绑定手机号'">
-            <el-input v-model.trim="form.phone" />
+          <el-form-item
+            :label="editingAccount ? '绑定手机号（留空不修改）' : '绑定手机号'"
+            prop="phone"
+          >
+            <el-input
+              v-model.trim="form.phone"
+              class="apple-phone-input"
+              :placeholder="selectedRegionOption?.phoneExample ?? '请输入手机号'"
+            >
+              <template #prepend>{{ selectedRegionOption?.dialCode ?? '+1' }}</template>
+            </el-input>
           </el-form-item>
         </div>
         <el-form-item :label="editingAccount ? '备用邮箱（留空不修改）' : '备用邮箱'">
@@ -391,7 +480,7 @@
             v-model="importForm.accountsText"
             type="textarea"
             :rows="10"
-            placeholder="支持逗号或制表符分隔，可带表头。字段顺序：appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark"
+            placeholder="支持逗号或制表符分隔，可带表头。字段顺序：appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark。地区/币种支持 CN/CNY、MY/MYR、US/USD；手机号会按地区校验，例如 +86 13800138000、+60 12 3456789、+1 4155552671。"
           />
         </el-form-item>
       </el-form>
@@ -831,6 +920,7 @@ import { useRouter } from 'vue-router';
 import { appleAccountsApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
@@ -845,6 +935,15 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import {
+  appleAccountCurrencyOptions,
+  appleAccountRegionOptions,
+  formatCurrencyLabel,
+  formatRegionCurrency,
+  getAppleAccountRegionOption,
+  getCurrencyForRegion,
+  normalizePhoneForRegion
+} from '@/utils/appleAccountRegion';
 
 const statusOptions: Array<{
   label: string;
@@ -983,10 +1082,29 @@ const accountSecretForm = reactive({
 
 const rules: FormRules<typeof form> = {
   appleId: [{ required: true, message: '请输入 Apple ID', trigger: 'blur' }],
-  region: [{ required: true, message: '请输入地区', trigger: 'blur' }],
-  currency: [{ required: true, message: '请输入币种', trigger: 'blur' }],
+  region: [{ required: true, message: '请选择地区', trigger: 'change' }],
+  currency: [{ required: true, message: '请选择币种', trigger: 'change' }],
   currentBalance: [{ required: true, message: '请输入余额', trigger: 'blur' }],
-  balanceCostAmount: [{ required: true, message: '请输入余额成本', trigger: 'blur' }]
+  balanceCostAmount: [{ required: true, message: '请输入余额成本', trigger: 'blur' }],
+  phone: [
+    {
+      validator: (_rule, value: string, callback) => {
+        if (!value) {
+          callback();
+          return;
+        }
+
+        const normalized = normalizePhoneForRegion(value, form.region);
+        if (typeof normalized !== 'string' && !normalized.valid) {
+          callback(new Error(normalized.message));
+          return;
+        }
+
+        callback();
+      },
+      trigger: 'blur'
+    }
+  ]
 };
 
 const importRules: FormRules<typeof importForm> = {
@@ -1087,6 +1205,8 @@ const giftCodeRecordLabel = computed(() => {
     selectedTopup.value.giftCardCodeTail ?? '-'
   }`;
 });
+const selectedRegionOption = computed(() => getAppleAccountRegionOption(form.region));
+const selectedCurrencyLabel = computed(() => formatCurrencyLabel(form.currency));
 
 const accountSortFieldMap: Record<string, string> = {
   appleId: 'appleId',
@@ -1150,6 +1270,11 @@ async function loadAccounts() {
 function applyFilters() {
   query.page = 1;
   loadAccounts();
+}
+
+function handleRegionFilterChange() {
+  query.currency = query.region ? getCurrencyForRegion(query.region) : '';
+  applyFilters();
 }
 
 function clearFilters() {
@@ -1305,7 +1430,7 @@ function applySortConfig(value: Record<string, unknown>) {
 function resetForm() {
   form.appleId = '';
   form.region = 'US';
-  form.currency = 'USD';
+  syncFormCurrency();
   form.currentBalance = '0';
   form.balanceCostAmount = '0';
   form.status = 'normal';
@@ -1316,6 +1441,17 @@ function resetForm() {
   form.phone = '';
   form.recoveryEmail = '';
   form.remark = '';
+}
+
+function syncFormCurrency() {
+  form.currency = getCurrencyForRegion(form.region);
+}
+
+function handleFormRegionChange() {
+  syncFormCurrency();
+  if (form.phone) {
+    formRef.value?.validateField('phone').catch(() => undefined);
+  }
 }
 
 function openCreate() {
@@ -1333,8 +1469,8 @@ function openImport() {
 function openEdit(account: AppleAccount) {
   editingAccount.value = account;
   form.appleId = '';
-  form.region = account.region;
-  form.currency = account.currency;
+  form.region = getAppleAccountRegionOption(account.region)?.code ?? 'US';
+  syncFormCurrency();
   form.currentBalance = account.currentBalance;
   form.balanceCostAmount = account.balanceCostAmount;
   form.status = account.status;
@@ -1507,6 +1643,17 @@ async function saveAccount() {
     return;
   }
 
+  const normalizedPhone = normalizePhoneForRegion(form.phone, form.region);
+  if (typeof normalizedPhone !== 'string' && !normalizedPhone.valid) {
+    ElMessage.error(normalizedPhone.message);
+    return;
+  }
+
+  const phoneToSave =
+    typeof normalizedPhone !== 'string' && normalizedPhone.valid
+      ? normalizedPhone.value
+      : form.phone || undefined;
+
   saving.value = true;
   try {
     const payload = {
@@ -1519,7 +1666,7 @@ async function saveAccount() {
       manualLockReason: form.manualLockReason || null,
       password: form.password || undefined,
       securityInfo: form.securityInfo || undefined,
-      phone: form.phone || undefined,
+      phone: phoneToSave,
       recoveryEmail: form.recoveryEmail || undefined,
       remark: form.remark || null
     };

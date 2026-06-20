@@ -3,7 +3,13 @@
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row report-panel-title">
         <div>
-          <h3>报表明细</h3>
+          <h3>
+            报表明细
+            <FeatureHelp
+              placement="right"
+              text="这里看 Apple ID 业务到底赚不赚钱。销售额是客户给的钱，成本是用掉的 Apple 余额折成人民币，手续费和退款会一起扣掉。"
+            />
+          </h3>
           <p>按当前筛选范围聚合销售额、手续费、余额成本和利润。</p>
         </div>
         <div class="inline-actions">
@@ -516,6 +522,7 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { appleReportsApi, userTableViewsApi, type AppleProfitReportQuery } from '@/api/system';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';

@@ -8,7 +8,13 @@
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
         <div>
-          <h3>余额对账工作台</h3>
+          <h3>
+            余额对账工作台
+            <FeatureHelp
+              placement="right"
+              text="这里不是给 ID 充值，而是当你实际查到的余额和系统里记的不一样时，用来把账改准。"
+            />
+          </h3>
           <p>核对系统余额、实际余额和人民币成本，所有修正记录单独留痕并进入审计链路。</p>
         </div>
         <div class="inline-actions">
@@ -116,21 +122,46 @@
           label="系统余额"
           width="120"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              系统余额
+              <FeatureHelp
+                text="系统目前认为这个 Apple ID 还剩多少余额。和你人工查到的不一样时，再走修正。"
+              />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('balanceCostAmount')"
           prop="balanceCostAmount"
           label="余额成本"
           width="130"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              余额成本
+              <FeatureHelp
+                text="系统认为这些剩余余额对应的人民币成本。修正余额时要注意别把成本也改乱。"
+              />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('averageCost')"
           prop="averageCost"
           label="平均成本"
           width="130"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              平均成本
+              <FeatureHelp text="每 1 元 Apple 余额大概对应多少人民币成本。算订单利润会用到它。" />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('status')"
           prop="status"
@@ -151,6 +182,12 @@
           width="100"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              锁定
+              <FeatureHelp text="已锁定的 ID 一般在排查或预留中，修正前最好先确认原因。" />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="row.isManuallyLocked ? 'red' : 'green'" dot>
               {{ row.isManuallyLocked ? '已锁定' : '正常' }}
@@ -449,6 +486,7 @@ import { useRouter } from 'vue-router';
 import { appleAccountsApi, userTableViewsApi, type AppleAccountQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';

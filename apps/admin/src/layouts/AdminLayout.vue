@@ -86,24 +86,13 @@
           <small>当前位置 / {{ routeGroup }}</small>
           <div class="page-title-row">
             <h2>{{ routeTitle }}</h2>
-            <el-popover v-if="hasRouteHelp" placement="bottom-start" trigger="click" width="360">
-              <template #reference>
-                <AppButton
-                  class="page-help-button"
-                  icon-only
-                  title="查看页面说明"
-                  aria-label="查看页面说明"
-                >
-                  <el-icon>
-                    <QuestionFilled />
-                  </el-icon>
-                </AppButton>
-              </template>
-              <div class="page-help-popover">
-                <strong>{{ routeTitle }}</strong>
-                <p v-if="routeDescription">{{ routeDescription }}</p>
-              </div>
-            </el-popover>
+            <FeatureHelp
+              v-if="hasRouteHelp"
+              class="page-help-button"
+              placement="bottom"
+              :title="routeTitle"
+              :text="routeDescription"
+            />
           </div>
         </div>
 
@@ -344,7 +333,6 @@ import {
   Menu,
   Monitor,
   Plus,
-  QuestionFilled,
   Refresh,
   Setting,
   Ticket,
@@ -353,6 +341,7 @@ import {
 import { useRoute, useRouter } from 'vue-router';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageActionsPortal from '@/components/ui/PageActionsPortal.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import WorkspaceRouteSkeleton from '@/components/ui/WorkspaceRouteSkeleton.vue';

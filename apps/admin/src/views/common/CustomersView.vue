@@ -8,7 +8,13 @@
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
         <div>
-          <h3>客户列表</h3>
+          <h3>
+            客户列表
+            <FeatureHelp
+              placement="right"
+              text="这里管客户基础资料。后面查订单、续费、售后时，都会回到这个客户档案。"
+            />
+          </h3>
           <p>统一管理客户资料、来源、标签和敏感联系方式查看入口。</p>
         </div>
         <div class="inline-actions">
@@ -104,6 +110,14 @@
           label="手机号"
           min-width="130"
         >
+          <template #header>
+            <span class="help-label">
+              手机号
+              <FeatureHelp
+                text="列表只显示脱敏手机号。要看完整号码，需要有权限，并且会记录查看原因。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <span>{{ row.maskedPhone ?? '-' }}</span>
             <AppButton
@@ -127,9 +141,25 @@
           <template #default="{ row }">{{ row.wechat ?? '-' }}</template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('source')" label="来源" min-width="140">
+          <template #header>
+            <span class="help-label">
+              来源
+              <FeatureHelp
+                text="这个客户是从哪里来的，比如淘宝、闲鱼、微信或手工录入，方便后面统计和找单。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">{{ row.sourcePlatform?.name ?? '-' }}</template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('tags')" label="标签" min-width="180">
+          <template #header>
+            <span class="help-label">
+              标签
+              <FeatureHelp
+                text="给客户打简单标记，比如老客、重点客户、售后中，方便客服快速判断。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip v-for="tag in row.tags" :key="tag" class="tag-gap" tone="neutral">
               {{ tag }}
@@ -144,6 +174,12 @@
           width="90"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              状态
+              <FeatureHelp text="启用表示正常使用；停用表示这个客户暂时不参与后续业务处理。" />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusTag :status="row.status" />
           </template>
@@ -344,6 +380,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { customersApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';

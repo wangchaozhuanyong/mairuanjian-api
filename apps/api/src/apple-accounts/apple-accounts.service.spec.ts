@@ -227,6 +227,131 @@ describe('AppleAccountsService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('normalizes region currency and phone when creating Apple ID accounts', async () => {
+    const now = new Date('2026-06-18T00:00:00.000Z');
+    const prisma = {
+      appleAccount: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            id: 'created-account-id',
+            ...data,
+            currentBalance: new Prisma.Decimal(data.currentBalance),
+            balanceCostAmount: new Prisma.Decimal(data.balanceCostAmount),
+            averageCost: new Prisma.Decimal(data.averageCost),
+            lockedAt: null,
+            lockedByUserId: null,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null
+          })
+        ),
+        findFirst: jest.fn().mockImplementation(() =>
+          Promise.resolve({
+            id: 'created-account-id',
+            appleId: 'phone@example.com',
+            appleIdNormalized: 'phone@example.com',
+            region: 'CN',
+            currency: 'CNY',
+            currentBalance: new Prisma.Decimal(0),
+            balanceCostAmount: new Prisma.Decimal(0),
+            averageCost: new Prisma.Decimal(0),
+            status: 'normal',
+            isManuallyLocked: false,
+            manualLockReason: null,
+            lockedAt: null,
+            lockedByUserId: null,
+            passwordEncrypted: null,
+            securityInfoEncrypted: null,
+            phoneEncrypted: 'encrypted:+8613800138000',
+            recoveryEmailEncrypted: null,
+            remark: null,
+            createdByUserId: null,
+            updatedByUserId: null,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null
+          })
+        )
+      }
+    } as unknown as PrismaService;
+    const auditLogsService = {
+      create: jest.fn().mockResolvedValue({})
+    } as unknown as AuditLogsService;
+    const fieldEncryptionService = {
+      encrypt: jest.fn((value?: string | null) => (value ? `encrypted:${value}` : null))
+    } as unknown as FieldEncryptionService;
+    const createService = new AppleAccountsService(
+      prisma,
+      auditLogsService,
+      fieldEncryptionService
+    );
+
+    await createService.create({
+      appleId: 'phone@example.com',
+      region: 'cn',
+      currency: 'cny',
+      phone: '138 0013 8000'
+    });
+
+    expect(prisma.appleAccount.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          region: 'CN',
+          currency: 'CNY',
+          phoneEncrypted: 'encrypted:+8613800138000'
+        })
+      })
+    );
+  });
+
+  it('rejects mismatched Apple ID region and currency', async () => {
+    const prisma = {
+      appleAccount: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+      }
+    } as unknown as PrismaService;
+    const createService = new AppleAccountsService(
+      prisma,
+      {} as AuditLogsService,
+      {} as FieldEncryptionService
+    );
+
+    await expect(
+      createService.create({
+        appleId: 'currency@example.com',
+        region: 'CN',
+        currency: 'USD'
+      })
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.appleAccount.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects phone numbers that do not match the selected region', async () => {
+    const prisma = {
+      appleAccount: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+      }
+    } as unknown as PrismaService;
+    const createService = new AppleAccountsService(
+      prisma,
+      {} as AuditLogsService,
+      {} as FieldEncryptionService
+    );
+
+    await expect(
+      createService.create({
+        appleId: 'phone-error@example.com',
+        region: 'US',
+        currency: 'USD',
+        phone: '+86 138 0013 8000'
+      })
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.appleAccount.create).not.toHaveBeenCalled();
+  });
+
   it('imports Apple ID accounts with encrypted fields and row-level errors', async () => {
     const now = new Date('2026-06-18T00:00:00.000Z');
     const createdAccounts: unknown[] = [];
@@ -274,7 +399,7 @@ describe('AppleAccountsService', () => {
       {
         accounts: [
           'appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark',
-          'one@example.com,pass-one,US,USD,100,650,18800000000,backup@example.com,主账号',
+          'one@example.com,pass-one,CN,CNY,100,650,18800000000,backup@example.com,主账号',
           'exists@example.com,pass-two,US,USD,0,0',
           'one@example.com,pass-three,US,USD,0,0'
         ]
@@ -311,8 +436,10 @@ describe('AppleAccountsService', () => {
           currentBalance: '100',
           balanceCostAmount: '650',
           averageCost: '6.50000000',
+          region: 'CN',
+          currency: 'CNY',
           passwordEncrypted: 'encrypted:pass-one',
-          phoneEncrypted: 'encrypted:18800000000',
+          phoneEncrypted: 'encrypted:+8618800000000',
           recoveryEmailEncrypted: 'encrypted:backup@example.com'
         })
       })

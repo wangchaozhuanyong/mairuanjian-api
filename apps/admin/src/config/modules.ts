@@ -202,7 +202,8 @@ const appleModules: AppModuleItem[] = [
     group: 'Apple ID 业务',
     phase: 'Phase 3',
     status: 'ready',
-    description: '管理账号、余额、平均成本、状态检测、敏感字段和手动锁定。',
+    description:
+      '这里放所有 Apple ID。你可以看它还剩多少钱、有没有被锁、资料齐不齐，也可以做充值、消费和查流水。',
     features: ['账号列表', '批量导入', '敏感字段脱敏', '余额流水', '状态检测'],
     primaryAction: '新增 Apple ID',
     tableColumns: ['Apple ID', '地区/币种', '余额', '平均成本', '状态', '业务数', '操作']
@@ -241,7 +242,8 @@ const appleModules: AppModuleItem[] = [
     group: 'Apple ID 业务',
     phase: 'Phase 4',
     status: 'ready',
-    description: '查看 Apple ID 订单、开通记录、余额消耗、利润和关联续费任务。',
+    description:
+      '这里看 Apple ID 订单。重点看客户付了多少钱、这个单花掉多少余额、最后赚了还是亏了。',
     features: ['订单列表', '订单详情抽屉', '利润预估', '开通记录', '续费任务关联'],
     primaryAction: '新建订单',
     tableColumns: ['订单号', '客户', '业务', 'Apple ID', '实收', '利润', '状态']
@@ -280,7 +282,8 @@ const appleModules: AppModuleItem[] = [
     group: 'Apple ID 业务',
     phase: 'Phase 3',
     status: 'ready',
-    description: '处理系统余额与人工或自动查询余额不一致，并写入财务审计记录。',
+    description:
+      '系统里记的余额和你实际查到的不一样时，在这里修正。每次修正都会留下记录，方便以后对账。',
     features: ['余额差异列表', '成本影响预览', '修正原因', '通知财务', '审计日志'],
     primaryAction: '处理差异',
     tableColumns: ['Apple ID', '系统余额', '查询余额', '差异', '影响', '状态']
@@ -335,7 +338,8 @@ const codeModules: AppModuleItem[] = [
     group: '兑换码自动发货',
     phase: 'Phase 6',
     status: 'ready',
-    description: '管理兑换码批次、面值、成本、状态、锁定、防重复和完整码查看。',
+    description:
+      '这里放所有还没卖、已锁定或已发出的兑换码。平时只看尾号，完整码需要权限和原因才能查看。',
     features: ['批量导入', '重复检测', '库存状态', '锁定超时', '敏感查看日志'],
     primaryAction: '批量导入兑换码',
     tableColumns: ['兑换码尾号', '面值', '成本', '批次', '状态', '绑定订单']
@@ -361,7 +365,8 @@ const codeModules: AppModuleItem[] = [
     group: '兑换码自动发货',
     phase: 'Phase 6',
     status: 'ready',
-    description: '处理手工订单导入、平台映射识别、锁定未售兑换码和生成半自动发货内容。',
+    description:
+      '这里处理兑换码订单。系统会尽量帮你匹配业务、锁住可用兑换码，再生成可以发给买家的内容。',
     features: ['手工订单导入', '自动匹配面值', '锁定库存', '生成发货内容', '成本利润预估'],
     primaryAction: '手工导入订单',
     tableColumns: ['订单号', '平台', '商品/SKU', '业务', '锁码', '发货状态']
@@ -443,7 +448,7 @@ const systemModules: AppModuleItem[] = [
     group: '系统管理',
     phase: 'Phase 2',
     status: 'ready',
-    description: '管理客户资料、来源平台、标签、订单和任务关联。',
+    description: '这里管客户资料。客户是谁、从哪个平台来、联系方式和相关订单任务，都从这里查。',
     features: ['客户列表', '客户详情', '订单关联', '任务关联', '手机号脱敏'],
     primaryAction: '新增客户',
     tableColumns: ['客户', '来源', '开通中业务', '累计消费', '标签', '最近订单']
@@ -456,7 +461,8 @@ const systemModules: AppModuleItem[] = [
     group: '系统管理',
     phase: 'Phase 2',
     status: 'ready',
-    description: '配置淘宝、闲鱼、微信、手工等客户来源和费用规则。',
+    description:
+      '这里设置订单和客户从哪里来，比如淘宝、闲鱼、微信或手工录入，也能记录平台收多少手续费。',
     features: ['平台配置', '手续费规则', '启用状态', '订单同步能力', '发货能力'],
     primaryAction: '新增来源平台',
     tableColumns: ['平台', '类型', '账号', '手续费', '同步', '状态']

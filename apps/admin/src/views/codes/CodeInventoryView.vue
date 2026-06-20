@@ -8,7 +8,13 @@
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
         <div>
-          <h3>兑换码库存池</h3>
+          <h3>
+            兑换码库存池
+            <FeatureHelp
+              placement="right"
+              text="这里放所有导入进来的兑换码。平时只看尾号和状态，完整码需要有权限并填写查看原因。"
+            />
+          </h3>
           <p>按批次、业务、面值、成本和发货状态管理库存，完整兑换码加密保存并默认只展示尾号。</p>
         </div>
         <div class="inline-actions">
@@ -94,6 +100,14 @@
           width="130"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              兑换码尾号
+              <FeatureHelp
+                text="只显示最后几位，方便你核对是哪张码，同时避免完整兑换码被误复制或泄露。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip tone="purple">尾号 {{ row.codeTail }}</StatusChip>
           </template>
@@ -110,7 +124,14 @@
           label="成本"
           width="110"
           sortable="custom"
-        />
+        >
+          <template #header>
+            <span class="help-label">
+              成本
+              <FeatureHelp text="这张兑换码买进来花了多少钱。后面算订单利润会扣掉它。" />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="isColumnVisible('batch')" label="批次" min-width="170">
           <template #default="{ row }">
             {{ row.batch.batchNo }}
@@ -124,6 +145,14 @@
           width="110"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              状态
+              <FeatureHelp
+                text="未售表示还能用；锁定表示已经预留给订单；已发货表示已经给买家；失败要人工处理。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="getStatusTone(row.status)" dot>
               {{ getStatusLabel(row.status) }}
@@ -131,6 +160,12 @@
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('delivery')" label="发货信息" min-width="170">
+          <template #header>
+            <span class="help-label">
+              发货信息
+              <FeatureHelp text="显示这张码被哪个订单锁住或已经发给哪个订单，方便追查库存去向。" />
+            </span>
+          </template>
           <template #default="{ row }">
             <span v-if="row.deliveredOrderId">订单 {{ row.deliveredOrderId }}</span>
             <span v-else-if="row.lockedOrderId">锁定 {{ row.lockedOrderId }}</span>
@@ -420,6 +455,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { codeServicesApi, redeemCodesApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';

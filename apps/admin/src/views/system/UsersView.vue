@@ -5,27 +5,27 @@
     phase="Phase 1"
     description="管理员工账号、启停状态、角色分配和基础身份信息。"
   >
-    <section class="content-panel" aria-label="用户管理概览">
-      <div class="detail-note-grid">
-        <div class="detail-note-item">
+    <section class="content-panel users-summary-panel" aria-label="用户管理概览">
+      <div class="users-summary-row">
+        <div class="users-summary-item">
           <span>用户数量</span>
           <strong>{{ total }}</strong>
-          <span>当前筛选结果</span>
+          <small>当前筛选结果</small>
         </div>
-        <div class="detail-note-item">
+        <div class="users-summary-item">
           <span>启用账号</span>
           <strong>{{ activeUserCount }}</strong>
-          <span>当前页</span>
+          <small>当前页</small>
         </div>
-        <div class="detail-note-item">
+        <div class="users-summary-item">
           <span>已分配角色</span>
           <strong>{{ roleAssignedCount }}</strong>
-          <span>当前页</span>
+          <small>当前页</small>
         </div>
-        <div class="detail-note-item">
+        <div class="users-summary-item">
           <span>有登录记录</span>
           <strong>{{ loggedInUserCount }}</strong>
-          <span>当前页</span>
+          <small>当前页</small>
         </div>
       </div>
     </section>
@@ -560,3 +560,68 @@ onMounted(async () => {
   await Promise.all([loadRoles(), initializePage()]);
 });
 </script>
+
+<style scoped>
+.users-summary-panel {
+  padding: 10px;
+}
+
+.users-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.users-summary-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 3px 12px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 9px 12px;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius);
+  background: linear-gradient(180deg, var(--v3-surface), var(--v3-surface-2));
+}
+
+.users-summary-item span,
+.users-summary-item small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v3-muted);
+  font-size: 12px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.users-summary-item span {
+  color: var(--v3-text-soft);
+  font-weight: 750;
+}
+
+.users-summary-item strong {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--v3-text);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+@media (max-width: 840px) {
+  .users-summary-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .users-summary-row {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

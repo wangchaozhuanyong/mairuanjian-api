@@ -22,6 +22,12 @@ import type {
   RevealAppleAccountSecretDto
 } from './dto/reveal-apple-account-secret.dto';
 import type { UpdateAppleAccountDto } from './dto/update-apple-account.dto';
+import {
+  getAppleAccountCurrencyForRegion,
+  normalizeAppleAccountCurrency,
+  normalizeAppleAccountPhone,
+  normalizeAppleAccountRegion
+} from './apple-account-region-rules';
 
 interface ListAppleAccountsQuery extends PaginationQuery {
   keyword?: string;
@@ -188,13 +194,16 @@ export class AppleAccountsService {
     const balanceCostAmount = this.normalizeMoney(dto.balanceCostAmount, 'balanceCostAmount');
     const averageCost = this.calculateAverageCost(currentBalance, balanceCostAmount);
     const isManuallyLocked = Boolean(dto.isManuallyLocked);
+    const region = normalizeAppleAccountRegion(dto.region);
+    const currency = normalizeAppleAccountCurrency(region, dto.currency);
+    const phone = normalizeAppleAccountPhone(dto.phone, region);
 
     const account = await this.prisma.appleAccount.create({
       data: {
         appleId,
         appleIdNormalized,
-        region: this.normalizeCode(dto.region, 'US'),
-        currency: this.normalizeCode(dto.currency, 'USD'),
+        region,
+        currency,
         currentBalance,
         balanceCostAmount,
         averageCost,
@@ -205,7 +214,7 @@ export class AppleAccountsService {
         lockedByUserId: isManuallyLocked ? operator?.id : null,
         passwordEncrypted: this.fieldEncryptionService.encrypt(dto.password),
         securityInfoEncrypted: this.fieldEncryptionService.encrypt(dto.securityInfo),
-        phoneEncrypted: this.fieldEncryptionService.encrypt(dto.phone),
+        phoneEncrypted: this.fieldEncryptionService.encrypt(phone),
         recoveryEmailEncrypted: this.fieldEncryptionService.encrypt(dto.recoveryEmail),
         remark: this.normalizeNullableString(dto.remark),
         createdByUserId: operator?.id,
@@ -338,12 +347,21 @@ export class AppleAccountsService {
       data.appleIdNormalized = appleIdNormalized;
     }
 
-    if (dto.region !== undefined) {
-      data.region = this.normalizeCode(dto.region, 'US');
-    }
+    const effectiveRegion =
+      dto.region !== undefined
+        ? normalizeAppleAccountRegion(dto.region)
+        : dto.currency !== undefined || (dto.phone !== undefined && dto.phone !== '')
+          ? normalizeAppleAccountRegion(existingAccount.region)
+          : existingAccount.region;
 
-    if (dto.currency !== undefined) {
-      data.currency = this.normalizeCode(dto.currency, 'USD');
+    if (dto.region !== undefined) {
+      data.region = effectiveRegion;
+      data.currency =
+        dto.currency !== undefined
+          ? normalizeAppleAccountCurrency(effectiveRegion, dto.currency)
+          : getAppleAccountCurrencyForRegion(effectiveRegion);
+    } else if (dto.currency !== undefined) {
+      data.currency = normalizeAppleAccountCurrency(effectiveRegion, dto.currency);
     }
 
     const currentBalance =
@@ -393,7 +411,9 @@ export class AppleAccountsService {
     }
 
     if (dto.phone !== undefined && dto.phone !== '') {
-      data.phoneEncrypted = this.fieldEncryptionService.encrypt(dto.phone);
+      data.phoneEncrypted = this.fieldEncryptionService.encrypt(
+        normalizeAppleAccountPhone(dto.phone, effectiveRegion)
+      );
     }
 
     if (dto.recoveryEmail !== undefined && dto.recoveryEmail !== '') {
@@ -693,13 +713,16 @@ export class AppleAccountsService {
           item.data.balanceCostAmount,
           'balanceCostAmount'
         );
+        const region = normalizeAppleAccountRegion(item.data.region);
+        const currency = normalizeAppleAccountCurrency(region, item.data.currency);
+        const phone = normalizeAppleAccountPhone(item.data.phone, region);
 
         planItems.push({
           rowNo: item.rowNo,
           appleId,
           appleIdNormalized,
-          region: this.normalizeCode(item.data.region, 'US'),
-          currency: this.normalizeCode(item.data.currency, 'USD'),
+          region,
+          currency,
           currentBalance,
           balanceCostAmount,
           averageCost: this.calculateAverageCost(currentBalance, balanceCostAmount),
@@ -708,7 +731,7 @@ export class AppleAccountsService {
           manualLockReason: this.normalizeNullableString(item.data.manualLockReason),
           passwordEncrypted: this.fieldEncryptionService.encrypt(item.data.password),
           securityInfoEncrypted: this.fieldEncryptionService.encrypt(item.data.securityInfo),
-          phoneEncrypted: this.fieldEncryptionService.encrypt(item.data.phone),
+          phoneEncrypted: this.fieldEncryptionService.encrypt(phone),
           recoveryEmailEncrypted: this.fieldEncryptionService.encrypt(item.data.recoveryEmail),
           remark: this.normalizeNullableString(item.data.remark)
         });
@@ -831,15 +854,6 @@ export class AppleAccountsService {
     const normalized = value.trim().toLowerCase();
     if (!normalized.includes('@')) {
       throw new BadRequestException('Apple ID must be an email address');
-    }
-
-    return normalized;
-  }
-
-  private normalizeCode(value: string | undefined, fallback: string) {
-    const normalized = (value || fallback).trim().toUpperCase();
-    if (!/^[A-Z0-9_-]{2,20}$/.test(normalized)) {
-      throw new BadRequestException('Invalid code format');
     }
 
     return normalized;

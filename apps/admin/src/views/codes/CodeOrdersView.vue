@@ -8,7 +8,13 @@
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
         <div>
-          <h3>兑换码发货队列</h3>
+          <h3>
+            兑换码发货队列
+            <FeatureHelp
+              placement="right"
+              text="这里处理买家下单后的发货。先匹配业务，再锁住兑换码，最后生成内容并确认发货。"
+            />
+          </h3>
           <p>处理平台识别、兑换码锁定、半自动发货和失败重试，防止重复发货和库存误消耗。</p>
         </div>
         <div class="inline-actions">
@@ -100,12 +106,26 @@
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('item')" label="商品/SKU" min-width="220">
+          <template #header>
+            <span class="help-label">
+              商品/SKU
+              <FeatureHelp text="买家在平台拍下的商品信息。系统会拿它去判断应该发哪种兑换码。" />
+            </span>
+          </template>
           <template #default="{ row }">
             {{ row.itemTitle || row.itemId }}
             <div class="muted-block">SKU {{ row.skuName || row.skuId || '-' }}</div>
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('service')" label="匹配业务" min-width="170">
+          <template #header>
+            <span class="help-label">
+              匹配业务
+              <FeatureHelp
+                text="系统判断这单应该发哪种面值、哪类兑换码。没匹配上就不能放心自动发。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <span v-if="row.service">{{ row.service.name }}</span>
             <StatusChip v-else tone="orange" dot>未匹配</StatusChip>
@@ -119,12 +139,26 @@
           width="150"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              金额
+              <FeatureHelp text="实收是买家付的钱；利润是扣掉兑换码成本和相关费用后剩下的钱。" />
+            </span>
+          </template>
           <template #default="{ row }">
             实收 {{ row.paidAmount }}
             <div class="muted-block">利润 {{ row.profitAmount }}</div>
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('locked')" label="锁码" width="100">
+          <template #header>
+            <span class="help-label">
+              锁码
+              <FeatureHelp
+                text="已经给这单预留了几张兑换码。锁住后，别的订单就不会再拿走这些码。"
+              />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="row.lockedCodeCount ? 'green' : 'neutral'" dot>
               {{ row.lockedCodeCount }}/{{ row.quantity }}
@@ -138,6 +172,12 @@
           width="110"
           sortable="custom"
         >
+          <template #header>
+            <span class="help-label">
+              发货状态
+              <FeatureHelp text="看这单现在是待发、已发、失败还是需要人工处理。" />
+            </span>
+          </template>
           <template #default="{ row }">
             <StatusChip :tone="getDeliveryStatusTone(row.deliveryStatus)" dot>
               {{ getDeliveryStatusLabel(row.deliveryStatus) }}
@@ -512,6 +552,7 @@ import {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
