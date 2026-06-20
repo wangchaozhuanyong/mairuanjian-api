@@ -155,7 +155,7 @@ DELETE /api/source-platforms/:id
 
 ### 4.3 发货模板
 
-说明：这里复用 `/api/message-templates` 接口，但前台入口只作为兑换码发货模板使用。兑换码业务只绑定 `type=delivery`、`channel=customer_service` 的启用模板。
+说明：`/api/message-templates` 现在只作为兑换码业务的发货模板接口使用，不再承载系统通知模板。服务端会强制发货模板为 `type=delivery`、`channel=customer_service`，通知模板统一走 `/api/notifications/templates`。
 
 ```text
 GET    /api/message-templates
@@ -1260,10 +1260,11 @@ DELETE /api/message-templates/:id
 说明：
 
 - 列表支持 `page`、`pageSize`、`keyword`、`type`、`channel`、`status`。
-- 后台发货模板页固定查询 `type=delivery`、`channel=customer_service`，用于淘宝/闲鱼付款后的自动回复内容。
+- 后台发货模板页和服务端都固定为 `type=delivery`、`channel=customer_service`，用于淘宝/闲鱼付款后的自动回复内容。
 - 兑换码业务设置绑定发货模板时，后端也会校验模板必须是启用的发货客服话术。
+- 传入其他 `type` 或 `channel` 会被拒绝，避免通知模板误绑到自动发货流程。
 - 模板内容支持 `{{ variable }}` 变量写法，服务端会提取并合并变量。
-- 创建、更新、删除需要 `message_template.manage`。
+- 创建、更新、删除需要 `code.delivery_template.manage`。旧权限 `message_template.manage` 仅作为历史账号兼容，不再作为新权限名称使用。
 
 ### 18.4 附件中心
 

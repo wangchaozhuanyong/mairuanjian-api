@@ -16,7 +16,7 @@
 - 录入 Apple ID 订单
 - 查看自己的任务
 - 处理续费任务
-- 复制消息模板
+- 复制发货模板内容
 - 查看 Apple ID 脱敏信息
 - 查看开通记录
 
@@ -72,7 +72,7 @@
 
 - 维护业务设置
 - 维护来源平台
-- 维护消息模板
+- 维护发货模板
 - 查看运营报表
 - 查看库存统计
 
@@ -224,7 +224,7 @@
 - customer.delete
 - customer.view_phone
 - source_platform.manage
-- message_template.manage
+- code.delivery_template.manage
 - attachment.view
 - attachment.upload
 - attachment.download
@@ -239,6 +239,12 @@
 - `attachment.upload` 允许上传附件并填写业务归属字段。
 - `attachment.download` 才允许下载真实文件内容。
 - 下载附件必须写入 `audit_logs`，日志记录附件元数据，不记录本地文件系统绝对路径。
+
+发货模板权限规则：
+
+- `code.delivery_template.manage` 用于新增、编辑、删除兑换码发货模板。
+- 发货模板只服务淘宝/闲鱼自动发货和售后补发，不等于通知模板。
+- 历史权限 `message_template.manage` 仅作为旧账号兼容，不再作为新权限名称分配。
 
 ## 5. 补充权限编码
 
