@@ -1,16 +1,16 @@
 <template>
   <PageScaffold
-    title="通知中心"
-    group="系统管理"
+    title="通知设置"
+    group="系统配置"
     phase="Phase 9"
-    description="集中管理站内通知、Telegram 配置、通知规则、通知模板和发送日志。"
+    description="配置后台提醒规则、Telegram、通知模板和发送日志。"
   >
     <template #actions>
       <AppButton @click="refreshCurrentTab">刷新</AppButton>
       <AppButton variant="primary" @click="openPrimaryDialog">{{ primaryActionText }}</AppButton>
     </template>
 
-    <section class="content-panel" aria-label="通知中心概览">
+    <section class="content-panel" aria-label="通知设置概览">
       <div class="detail-note-grid">
         <div class="detail-note-item">
           <span>启用规则</span>
@@ -37,10 +37,7 @@
 
     <section class="content-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>{{ activeTabMeta.title }}</h3>
-          <p>{{ activeTabMeta.description }}</p>
-        </div>
+        <PanelTitleHelp :title="activeTabMeta.title" :help="activeTabMeta.description" />
         <div class="inline-actions">
           <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
         </div>
@@ -116,7 +113,6 @@
           <TableToolbar
             v-model:keyword="ruleQuery.keyword"
             v-model:status="ruleQuery.enabled"
-            v-model:density="ruleDensity"
             v-model:visible-columns="ruleVisibleColumns"
             v-model:saved-view-id="ruleSavedViewId"
             :column-options="ruleColumnOptions"
@@ -323,11 +319,10 @@
           />
         </el-tab-pane>
 
-        <el-tab-pane label="消息模板" name="templates">
+        <el-tab-pane label="通知模板" name="templates">
           <TableToolbar
             v-model:keyword="templateQuery.keyword"
             v-model:status="templateQuery.enabled"
-            v-model:density="templateDensity"
             v-model:visible-columns="templateVisibleColumns"
             v-model:saved-view-id="templateSavedViewId"
             :column-options="templateColumnOptions"
@@ -373,11 +368,11 @@
           >
             <template #empty>
               <div class="apple-core-empty-state">
-                <strong>暂无消息模板</strong>
+                <strong>暂无通知模板</strong>
                 <span>可以新增模板，或清空筛选后重新查看。</span>
                 <div class="apple-core-empty-state__actions">
                   <AppButton variant="soft" @click="clearTemplateFilters">清空筛选</AppButton>
-                  <AppButton variant="primary" @click="openTemplateDialog">新增消息模板</AppButton>
+                  <AppButton variant="primary" @click="openTemplateDialog">新增通知模板</AppButton>
                 </div>
               </div>
             </template>
@@ -476,11 +471,11 @@
           </div>
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
-              <strong>暂无消息模板</strong>
+              <strong>暂无通知模板</strong>
               <span>可以新增模板，或清空筛选后重新查看。</span>
               <div class="apple-core-empty-state__actions">
                 <AppButton variant="soft" @click="clearTemplateFilters">清空筛选</AppButton>
-                <AppButton variant="primary" @click="openTemplateDialog">新增消息模板</AppButton>
+                <AppButton variant="primary" @click="openTemplateDialog">新增通知模板</AppButton>
               </div>
             </div>
           </div>
@@ -623,7 +618,6 @@
           <TableToolbar
             v-model:keyword="logQuery.keyword"
             v-model:status="logQuery.status"
-            v-model:density="logDensity"
             v-model:visible-columns="logVisibleColumns"
             v-model:saved-view-id="logSavedViewId"
             :column-options="logColumnOptions"
@@ -1003,9 +997,11 @@ import {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import type {
   NotificationLevel,
   NotificationLog,
@@ -1086,7 +1082,7 @@ const moduleOptions = [
   { label: '平台接口', value: 'platform' },
   { label: '系统安全', value: 'security' },
   { label: '运维', value: 'ops' },
-  { label: '通知中心', value: 'notification' }
+  { label: '通知设置', value: 'notification' }
 ];
 const channelOptions = [
   { label: '站内通知', value: 'system' },
@@ -1188,7 +1184,7 @@ const telegramForm = reactive({
 
 const primaryActionText = computed(() => {
   if (activeTab.value === 'rules') return '新增通知规则';
-  if (activeTab.value === 'templates') return '新增消息模板';
+  if (activeTab.value === 'templates') return '新增通知模板';
   if (activeTab.value === 'telegram') return '新增 Telegram';
   return '新增通知规则';
 });
@@ -1204,7 +1200,7 @@ const activeTabMeta = computed(() => {
 
   if (activeTab.value === 'templates') {
     return {
-      title: '消息模板',
+      title: '通知模板',
       description: '维护站内通知和 Telegram 的标题、正文和变量占位内容。',
       badge: `${templateTotal.value} 个模板`,
       tone: 'purple' as const
@@ -1340,6 +1336,15 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 );
 
 onBeforeUnmount(stopRealtimeRefresh);
+
+usePageRefresh(
+  (options) =>
+    refreshActiveNotificationData({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '通知设置当前标签' }
+);
 
 async function refreshCurrentTab() {
   await refreshActiveNotificationData({ force: true });
@@ -1826,8 +1831,8 @@ async function saveRuleTableView() {
 
 async function saveTemplateTableView() {
   try {
-    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存消息模板视图', {
-      inputValue: '消息模板常用视图',
+    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存通知模板视图', {
+      inputValue: '通知模板常用视图',
       inputPattern: /^.{1,60}$/,
       inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
       confirmButtonText: '保存',
@@ -1926,7 +1931,7 @@ function applyRuleView(view: UserTableView) {
   ruleQuery.level = isNotificationLevel(filters.level) ? filters.level : '';
   ruleQuery.enabled = typeof filters.enabled === 'string' ? filters.enabled : '';
   ruleQuery.pageSize = view.pageSize;
-  ruleDensity.value = view.density;
+  ruleDensity.value = 'default';
   ruleVisibleColumns.value = normalizeColumns(view.columns, ruleColumnOptions);
   ruleSortConfig.value = parseSortConfig(view.sortConfig);
   ruleSavedViewId.value = view.id;
@@ -1939,7 +1944,7 @@ function applyTemplateView(view: UserTableView) {
   templateQuery.channel = isNotificationChannel(filters.channel) ? filters.channel : '';
   templateQuery.enabled = typeof filters.enabled === 'string' ? filters.enabled : '';
   templateQuery.pageSize = view.pageSize;
-  templateDensity.value = view.density;
+  templateDensity.value = 'default';
   templateVisibleColumns.value = normalizeColumns(view.columns, templateColumnOptions);
   templateSortConfig.value = parseSortConfig(view.sortConfig);
   templateSavedViewId.value = view.id;
@@ -1953,7 +1958,7 @@ function applyLogView(view: UserTableView) {
   logQuery.channel = isNotificationChannel(filters.channel) ? filters.channel : '';
   logQuery.status = isNotificationLogStatus(filters.status) ? filters.status : '';
   logQuery.pageSize = view.pageSize;
-  logDensity.value = view.density;
+  logDensity.value = 'default';
   logVisibleColumns.value = normalizeColumns(view.columns, logColumnOptions);
   logSortConfig.value = parseSortConfig(view.sortConfig);
   logSavedViewId.value = view.id;
@@ -2296,7 +2301,7 @@ function isNotificationLogStatus(value: unknown): value is NotificationLog['stat
 }
 
 function showExportMessage() {
-  ElMessage.info('通知中心导出会走数据中心导出任务，后续统一接入');
+  ElMessage.info('通知设置导出会走数据中心导出任务，后续统一接入');
 }
 
 function formatDate(value?: string | null) {
@@ -2317,7 +2322,7 @@ function getModuleLabel(value: string) {
     platform: '平台接口',
     security: '系统安全',
     ops: '运维',
-    notification: '通知中心'
+    notification: '通知设置'
   };
   return labels[value] ?? value;
 }

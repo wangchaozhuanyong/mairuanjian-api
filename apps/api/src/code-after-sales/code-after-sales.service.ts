@@ -46,7 +46,7 @@ type AfterSaleOrder = Pick<
   | 'costAmount'
   | 'profitAmount'
 > & {
-  platform: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'>;
+  platform: Pick<SourcePlatform, 'id' | 'name'>;
   service?: Pick<CodeService, 'id' | 'name' | 'faceValue' | 'status'> | null;
 };
 
@@ -430,9 +430,7 @@ export class CodeAfterSalesService {
           platform: {
             select: {
               id: true,
-              name: true,
-              code: true,
-              type: true
+              name: true
             }
           },
           service: {

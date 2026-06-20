@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     title="数据中心"
-    group="系统管理"
+    group="数据与审计"
     phase="Phase 11"
     description="集中管理备份、恢复、导入、导出、回收站、数据清理、重复合并、数据字典和系统参数。"
   >
@@ -43,10 +43,7 @@
 
     <section class="content-panel system-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>{{ activeTabMeta.title }}</h3>
-          <p>{{ activeTabMeta.description }}</p>
-        </div>
+        <PanelTitleHelp :title="activeTabMeta.title" :help="activeTabMeta.description" />
         <div class="inline-actions">
           <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
           <StatusChip :tone="(overview?.failedBackupCount ?? 0) > 0 ? 'red' : 'green'" dot>
@@ -239,7 +236,6 @@
           <TableToolbar
             v-model:keyword="backupQuery.keyword"
             v-model:status="backupQuery.status"
-            v-model:density="backupDensity"
             v-model:visible-columns="backupVisibleColumns"
             v-model:saved-view-id="backupSavedViewId"
             :column-options="backupColumnOptions"
@@ -415,7 +411,6 @@
           <TableToolbar
             v-model:keyword="restoreQuery.keyword"
             v-model:status="restoreQuery.status"
-            v-model:density="restoreDensity"
             v-model:visible-columns="restoreVisibleColumns"
             v-model:saved-view-id="restoreSavedViewId"
             :column-options="restoreColumnOptions"
@@ -574,7 +569,6 @@
           <TableToolbar
             v-model:keyword="importQuery.keyword"
             v-model:status="importQuery.status"
-            v-model:density="importDensity"
             v-model:visible-columns="importVisibleColumns"
             v-model:saved-view-id="importSavedViewId"
             :column-options="importColumnOptions"
@@ -789,7 +783,6 @@
           <TableToolbar
             v-model:keyword="exportQuery.keyword"
             v-model:status="exportQuery.status"
-            v-model:density="exportDensity"
             v-model:visible-columns="exportVisibleColumns"
             v-model:saved-view-id="exportSavedViewId"
             :column-options="exportColumnOptions"
@@ -1003,7 +996,6 @@
           <TableToolbar
             v-model:keyword="recycleQuery.keyword"
             v-model:status="recycleQuery.restored"
-            v-model:density="recycleDensity"
             v-model:visible-columns="recycleVisibleColumns"
             v-model:saved-view-id="recycleSavedViewId"
             :column-options="recycleColumnOptions"
@@ -1187,7 +1179,6 @@
           <TableToolbar
             v-model:keyword="cleanupQuery.keyword"
             v-model:status="cleanupQuery.status"
-            v-model:density="cleanupDensity"
             v-model:visible-columns="cleanupVisibleColumns"
             v-model:saved-view-id="cleanupSavedViewId"
             :column-options="cleanupColumnOptions"
@@ -1350,7 +1341,6 @@
           <TableToolbar
             v-model:keyword="duplicateQuery.keyword"
             v-model:status="duplicateQuery.status"
-            v-model:density="duplicateDensity"
             v-model:visible-columns="duplicateVisibleColumns"
             v-model:saved-view-id="duplicateSavedViewId"
             :column-options="duplicateColumnOptions"
@@ -1531,7 +1521,6 @@
           <TableToolbar
             v-model:keyword="dictionaryQuery.keyword"
             v-model:status="dictionaryQuery.status"
-            v-model:density="dictionaryDensity"
             v-model:visible-columns="dictionaryVisibleColumns"
             v-model:saved-view-id="dictionarySavedViewId"
             :column-options="dictionaryColumnOptions"
@@ -1712,7 +1701,6 @@
         <el-tab-pane label="系统参数" name="parameters">
           <TableToolbar
             v-model:keyword="parameterQuery.keyword"
-            v-model:density="parameterDensity"
             v-model:visible-columns="parameterVisibleColumns"
             v-model:saved-view-id="parameterSavedViewId"
             :column-options="parameterColumnOptions"
@@ -2083,6 +2071,7 @@ import AppState from '@/components/ui/AppState.vue';
 import JobStatusTag from '@/components/ui/DataJobStatusTag.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
@@ -3625,7 +3614,7 @@ function applyBackupView(view: UserTableView) {
   backupQuery.status = isDataJobStatus(filters.status) ? filters.status : '';
   backupQuery.jobType = isBackupJobType(filters.jobType) ? filters.jobType : '';
   backupQuery.pageSize = view.pageSize;
-  backupDensity.value = view.density;
+  backupDensity.value = 'default';
   backupVisibleColumns.value = normalizeColumns(view.columns, backupColumnOptions);
   backupSortConfig.value = parseSortConfig(view.sortConfig);
   backupSavedViewId.value = view.id;
@@ -3637,7 +3626,7 @@ function applyRestoreView(view: UserTableView) {
   restoreQuery.status = isDataJobStatus(filters.status) ? filters.status : '';
   restoreQuery.backupJobId = typeof filters.backupJobId === 'string' ? filters.backupJobId : '';
   restoreQuery.pageSize = view.pageSize;
-  restoreDensity.value = view.density;
+  restoreDensity.value = 'default';
   restoreVisibleColumns.value = normalizeColumns(view.columns, restoreColumnOptions);
   restoreSortConfig.value = parseSortConfig(view.sortConfig);
   restoreSavedViewId.value = view.id;
@@ -3649,7 +3638,7 @@ function applyImportView(view: UserTableView) {
   importQuery.status = isDataJobStatus(filters.status) ? filters.status : '';
   importQuery.module = typeof filters.module === 'string' ? filters.module : '';
   importQuery.pageSize = view.pageSize;
-  importDensity.value = view.density;
+  importDensity.value = 'default';
   importVisibleColumns.value = normalizeColumns(view.columns, importColumnOptions);
   importSortConfig.value = parseSortConfig(view.sortConfig);
   importSavedViewId.value = view.id;
@@ -3665,7 +3654,7 @@ function applyExportView(view: UserTableView) {
       ? filters.containsSensitive
       : '';
   exportQuery.pageSize = view.pageSize;
-  exportDensity.value = view.density;
+  exportDensity.value = 'default';
   exportVisibleColumns.value = normalizeColumns(view.columns, exportColumnOptions);
   exportSortConfig.value = parseSortConfig(view.sortConfig);
   exportSavedViewId.value = view.id;
@@ -3679,7 +3668,7 @@ function applyRecycleView(view: UserTableView) {
   recycleQuery.restored =
     filters.restored === 'true' || filters.restored === 'false' ? filters.restored : '';
   recycleQuery.pageSize = view.pageSize;
-  recycleDensity.value = view.density;
+  recycleDensity.value = 'default';
   recycleVisibleColumns.value = normalizeColumns(view.columns, recycleColumnOptions);
   recycleSortConfig.value = parseSortConfig(view.sortConfig);
   recycleSavedViewId.value = view.id;
@@ -3691,7 +3680,7 @@ function applyCleanupView(view: UserTableView) {
   cleanupQuery.status = isDataJobStatus(filters.status) ? filters.status : '';
   cleanupQuery.module = typeof filters.module === 'string' ? filters.module : '';
   cleanupQuery.pageSize = view.pageSize;
-  cleanupDensity.value = view.density;
+  cleanupDensity.value = 'default';
   cleanupVisibleColumns.value = normalizeColumns(view.columns, cleanupColumnOptions);
   cleanupSortConfig.value = parseSortConfig(view.sortConfig);
   cleanupSavedViewId.value = view.id;
@@ -3703,7 +3692,7 @@ function applyDuplicateView(view: UserTableView) {
   duplicateQuery.status = isDataJobStatus(filters.status) ? filters.status : '';
   duplicateQuery.module = typeof filters.module === 'string' ? filters.module : '';
   duplicateQuery.pageSize = view.pageSize;
-  duplicateDensity.value = view.density;
+  duplicateDensity.value = 'default';
   duplicateVisibleColumns.value = normalizeColumns(view.columns, duplicateColumnOptions);
   duplicateSortConfig.value = parseSortConfig(view.sortConfig);
   duplicateSavedViewId.value = view.id;
@@ -3715,7 +3704,7 @@ function applyDictionaryView(view: UserTableView) {
   dictionaryQuery.group = typeof filters.group === 'string' ? filters.group : '';
   dictionaryQuery.status = isDictionaryStatus(filters.status) ? filters.status : '';
   dictionaryQuery.pageSize = view.pageSize;
-  dictionaryDensity.value = view.density;
+  dictionaryDensity.value = 'default';
   dictionaryVisibleColumns.value = normalizeColumns(view.columns, dictionaryColumnOptions);
   dictionarySortConfig.value = parseSortConfig(view.sortConfig);
   dictionarySavedViewId.value = view.id;
@@ -3726,7 +3715,7 @@ function applyParameterView(view: UserTableView) {
   parameterQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   parameterQuery.group = typeof filters.group === 'string' ? filters.group : '';
   parameterQuery.pageSize = view.pageSize;
-  parameterDensity.value = view.density;
+  parameterDensity.value = 'default';
   parameterVisibleColumns.value = normalizeColumns(view.columns, parameterColumnOptions);
   parameterSortConfig.value = parseSortConfig(view.sortConfig);
   parameterSavedViewId.value = view.id;

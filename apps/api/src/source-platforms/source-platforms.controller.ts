@@ -19,7 +19,6 @@ export class SourcePlatformsController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('keyword') keyword?: string,
-    @Query('type') type?: string,
     @Query('status') status?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string
@@ -28,7 +27,6 @@ export class SourcePlatformsController {
       page,
       pageSize,
       keyword,
-      type,
       status,
       sortBy,
       sortOrder

@@ -7,10 +7,10 @@
   >
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>业务与锁定规则</h3>
-          <p>维护售价、官方消耗、周期、自动匹配和 Apple ID 锁定策略，避免业务配置互相污染。</p>
-        </div>
+        <PanelTitleHelp
+          title="业务与锁定规则"
+          help="这里维护代充业务的售价、官方消耗、周期、自动匹配和 Apple ID 锁定策略。它只管 Apple ID 代充，不和兑换码业务混用。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 个业务</StatusChip>
           <StatusChip tone="green">启用 {{ enabledCount }}</StatusChip>
@@ -29,7 +29,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="serviceColumnOptions"
@@ -52,14 +51,21 @@
         @batch-action="handleBatchAction"
       >
         <template #filters>
-          <el-input
-            v-model.trim="query.category"
+          <el-select
+            v-model="query.category"
             class="table-toolbar__select"
             placeholder="分类"
             clearable
-            @keyup.enter="handleSearch"
-            @clear="handleSearch"
-          />
+            filterable
+            @change="handleSearch"
+          >
+            <el-option
+              v-for="category in serviceCategoryOptions"
+              :key="category"
+              :label="getCategoryLabel(category)"
+              :value="category"
+            />
+          </el-select>
           <el-input
             v-model.trim="query.currency"
             class="table-toolbar__select"
@@ -70,6 +76,25 @@
           />
         </template>
       </TableToolbar>
+
+      <div class="apple-service-category-bar" aria-label="业务分类">
+        <AppButton
+          size="small"
+          :variant="query.category ? 'soft' : 'primary'"
+          @click="selectCategory('')"
+        >
+          全部分类
+        </AppButton>
+        <AppButton
+          v-for="category in serviceCategoryOptions"
+          :key="category"
+          size="small"
+          :variant="query.category === category ? 'primary' : 'soft'"
+          @click="selectCategory(category)"
+        >
+          {{ getCategoryLabel(category) }}
+        </AppButton>
+      </div>
 
       <el-table
         v-loading="loading"
@@ -105,7 +130,9 @@
           label="分类"
           width="110"
           sortable="custom"
-        />
+        >
+          <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('defaultPrice')"
           prop="defaultPrice"
@@ -194,7 +221,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ service.name }}</strong>
-              <span>{{ service.category || '未分类' }} · {{ service.currency }}</span>
+              <span>{{ getCategoryLabel(service.category) }} · {{ service.currency }}</span>
             </div>
             <StatusChip :tone="getStatusTone(service.status)" dot>
               {{ getStatusLabel(service.status) }}
@@ -272,35 +299,50 @@
       width="min(760px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+        <div class="apple-service-form-section">基础业务</div>
         <div class="form-grid">
+          <el-form-item prop="category">
+            <template #label>
+              <span class="help-label">
+                业务分类
+                <FeatureHelp
+                  text="先用分类把业务分组，例如 AI 会员、流媒体、工具订阅。订单录入时也会按分类分组选择。"
+                />
+              </span>
+            </template>
+            <el-select
+              v-model="form.category"
+              class="full-input"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入分类"
+            >
+              <el-option
+                v-for="category in serviceCategoryOptions"
+                :key="category"
+                :label="getCategoryLabel(category)"
+                :value="category"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item prop="name">
             <template #label>
               <span class="help-label">
                 业务名称
                 <FeatureHelp
-                  text="给这个业务起个好认的名字。以后录订单、查列表、看报表都会用这个名字。"
+                  text="分类下面的具体业务名称，例如 ChatGPT Plus 月费、Claude Pro 月费。"
                 />
               </span>
             </template>
-            <el-input v-model.trim="form.name" />
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <span class="help-label">
-                分类
-                <FeatureHelp
-                  text="用来把业务分组，方便以后搜索和筛选。它不会改价格，也不会影响订单处理。"
-                />
-              </span>
-            </template>
-            <el-input v-model.trim="form.category" placeholder="例如 streaming" />
+            <el-input v-model.trim="form.name" placeholder="例如 ChatGPT Plus 月费" />
           </el-form-item>
         </div>
         <div class="form-grid">
           <el-form-item prop="defaultPrice">
             <template #label>
               <span class="help-label">
-                默认售价
+                客户售价
                 <FeatureHelp
                   text="客户正常要付多少钱。录订单时会先带出这个价格，单独订单需要改也可以再改。"
                 />
@@ -311,7 +353,7 @@
           <el-form-item prop="officialCostValue">
             <template #label>
               <span class="help-label">
-                官方消耗金额
+                Apple 官方消耗金额
                 <FeatureHelp
                   text="开这个业务通常会扣掉多少 Apple 余额。比如官方扣 9.99 美元，这里就填 9.99。"
                 />
@@ -331,40 +373,30 @@
             <el-input v-model.trim="form.currency" placeholder="USD" />
           </el-form-item>
         </div>
+
+        <div class="apple-service-form-section">默认规则</div>
         <div class="form-grid">
           <el-form-item>
             <template #label>
               <span class="help-label">
-                周期类型
-                <FeatureHelp
-                  text="这个业务按什么时间单位算，比如按月、按天，或者不让系统自动算、你自己手工处理。"
-                />
+                业务周期
+                <FeatureHelp text="用来生成到期时间。多数订阅按月，少数按天。" />
               </span>
             </template>
-            <el-select v-model="form.defaultPeriodType" class="full-input">
-              <el-option label="按月" value="month" />
-              <el-option label="按天" value="day" />
-              <el-option label="手工" value="manual" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <span class="help-label">
-                周期值
-                <FeatureHelp
-                  text="配合周期类型一起用。比如周期类型是按月，周期值填 1，就是一个月。"
-                />
-              </span>
-            </template>
-            <el-input-number v-model="form.defaultPeriodValue" :min="1" class="full-input" />
+            <div class="apple-service-period-row">
+              <el-select v-model="form.defaultPeriodType" class="full-input">
+                <el-option label="按月" value="month" />
+                <el-option label="按天" value="day" />
+                <el-option label="手工" value="manual" />
+              </el-select>
+              <el-input-number v-model="form.defaultPeriodValue" :min="1" class="full-input" />
+            </div>
           </el-form-item>
           <el-form-item>
             <template #label>
               <span class="help-label">
                 到期计算
-                <FeatureHelp
-                  text="系统生成到期时间时怎么加时间：按月加、按天加，或者你后面自己手动填。"
-                />
+                <FeatureHelp text="订单提交后系统如何自动算到期时间。" />
               </span>
             </template>
             <el-select v-model="form.expireCalcType" class="full-input">
@@ -373,40 +405,11 @@
               <el-option label="手工" value="manual" />
             </el-select>
           </el-form-item>
-        </div>
-        <div class="form-grid">
-          <el-form-item>
-            <template #label>
-              <span class="help-label">
-                锁定规则
-                <FeatureHelp
-                  text="订单用到某个 Apple ID 后，系统怎么先占住它。按业务锁定只管同类业务，全局锁定会更严格。"
-                />
-              </span>
-            </template>
-            <el-select v-model="form.lockRule" class="full-input">
-              <el-option label="按业务锁定" value="by_service" />
-              <el-option label="全局锁定" value="global" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <span class="help-label">
-                最低余额要求
-                <FeatureHelp
-                  text="自动匹配 Apple ID 时，余额至少要有这么多。不够这个数的 ID 就不会被选上。"
-                />
-              </span>
-            </template>
-            <el-input v-model.trim="form.minBalanceRequired" />
-          </el-form-item>
           <el-form-item>
             <template #label>
               <span class="help-label">
                 状态
-                <FeatureHelp
-                  text="启用就是正常接单；暂停是先不接新单；停用就是这个业务暂时不用。"
-                />
+                <FeatureHelp text="启用可接单，暂停或停用不会出现在订单录入可选业务里。" />
               </span>
             </template>
             <el-select v-model="form.status" class="full-input">
@@ -416,62 +419,75 @@
             </el-select>
           </el-form-item>
         </div>
-        <el-form-item>
-          <template #label>
-            <span class="help-label">
-              允许地区
-              <FeatureHelp
-                text="只让这些地区的 Apple ID 接这个业务。留空就表示不限制地区，哪个地区都可以。"
-              />
-            </span>
-          </template>
-          <el-select
-            v-model="form.allowedRegions"
-            class="full-input"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="留空表示不限地区"
-          >
-            <el-option label="US" value="US" />
-            <el-option label="HK" value="HK" />
-            <el-option label="JP" value="JP" />
-            <el-option label="CN" value="CN" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <template #label>
-            <span class="help-label">
-              能力
-              <FeatureHelp
-                text="告诉系统这个业务开通时需要准备哪些东西，后面自动处理和人工检查都会参考这里。"
-              />
-            </span>
-          </template>
-          <el-checkbox v-model="form.requireAppleId">
-            <span class="help-label">
-              需要 Apple ID
-              <FeatureHelp
-                text="勾上表示开这个业务必须占用一个 Apple ID，不勾就是不需要 Apple ID。"
-              />
-            </span>
-          </el-checkbox>
-          <el-checkbox v-model="form.requireServiceAccount">
-            <span class="help-label">
-              需要客户网站账号
-              <FeatureHelp text="勾上表示客户还要提供目标网站账号，比如某个平台自己的登录账号。" />
-            </span>
-          </el-checkbox>
-          <el-checkbox v-model="form.autoMatchAppleId">
-            <span class="help-label">
-              自动匹配 Apple ID
-              <FeatureHelp
-                text="勾上后系统会按余额、地区和锁定规则，自动帮你挑一个合适的 Apple ID。"
-              />
-            </span>
-          </el-checkbox>
-        </el-form-item>
+
+        <el-collapse v-model="serviceAdvancedPanels" class="apple-service-advanced">
+          <el-collapse-item title="高级匹配规则" name="advanced">
+            <div class="form-grid">
+              <el-form-item>
+                <template #label>
+                  <span class="help-label">
+                    锁定规则
+                    <FeatureHelp
+                      text="订单用到某个 Apple ID 后，系统怎么先占住它。按业务锁定只管同类业务，全局锁定会更严格。"
+                    />
+                  </span>
+                </template>
+                <el-select v-model="form.lockRule" class="full-input">
+                  <el-option label="按业务锁定" value="by_service" />
+                  <el-option label="全局锁定" value="global" />
+                </el-select>
+              </el-form-item>
+              <el-form-item>
+                <template #label>
+                  <span class="help-label">
+                    最低余额要求
+                    <FeatureHelp
+                      text="自动匹配 Apple ID 时，余额至少要有这么多。不够这个数的 ID 就不会被选上。"
+                    />
+                  </span>
+                </template>
+                <el-input v-model.trim="form.minBalanceRequired" />
+              </el-form-item>
+            </div>
+            <el-form-item>
+              <template #label>
+                <span class="help-label">
+                  允许地区
+                  <FeatureHelp
+                    text="只让这些地区的 Apple ID 接这个业务。留空就表示不限制地区，哪个地区都可以。"
+                  />
+                </span>
+              </template>
+              <el-select
+                v-model="form.allowedRegions"
+                class="full-input"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                placeholder="留空表示不限地区"
+              >
+                <el-option label="US" value="US" />
+                <el-option label="HK" value="HK" />
+                <el-option label="JP" value="JP" />
+                <el-option label="CN" value="CN" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <span class="help-label">
+                  自动处理
+                  <FeatureHelp
+                    text="订单录入会按这里决定是否需要 Apple ID、是否要客户网站账号，以及是否自动匹配。"
+                  />
+                </span>
+              </template>
+              <el-checkbox v-model="form.requireAppleId">需要 Apple ID</el-checkbox>
+              <el-checkbox v-model="form.requireServiceAccount">需要客户网站账号</el-checkbox>
+              <el-checkbox v-model="form.autoMatchAppleId">自动匹配 Apple ID</el-checkbox>
+            </el-form-item>
+          </el-collapse-item>
+        </el-collapse>
         <el-form-item>
           <template #label>
             <span class="help-label">
@@ -516,7 +532,7 @@
           <el-table-column label="平台/店铺" min-width="170">
             <template #default="{ row }">
               {{ row.sourcePlatform.name }}
-              <div class="muted-block">{{ row.shopName || row.sourcePlatform.code }}</div>
+              <div class="muted-block">{{ row.shopName || row.sourcePlatform.name }}</div>
             </template>
           </el-table-column>
           <el-table-column label="商品/SKU" min-width="190">
@@ -564,7 +580,7 @@
             <div class="mobile-record-card__head">
               <div class="mobile-record-card__title">
                 <strong>{{ mapping.sourcePlatform.name }}</strong>
-                <span>{{ mapping.shopName || mapping.sourcePlatform.code }}</span>
+                <span>{{ mapping.shopName || mapping.sourcePlatform.name }}</span>
               </div>
               <StatusChip :tone="mapping.enabled ? 'green' : 'neutral'" dot>
                 {{ mapping.enabled ? '启用' : '停用' }}
@@ -638,7 +654,7 @@
               <el-option
                 v-for="platform in sourcePlatforms"
                 :key="platform.id"
-                :label="`${platform.name} / ${platform.code}`"
+                :label="platform.name"
                 :value="platform.id"
               />
             </el-select>
@@ -701,10 +717,14 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
-import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import {
+  notifyRealtimeScopesInvalidated,
+  onRealtimeQueryInvalidated
+} from '@/realtime/realtimeQueryEvents';
 import type {
   AppleService,
   AppleServicePlatformMapping,
@@ -712,11 +732,13 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
-import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
+import { createSmartQueryKey, invalidateSmartQueries, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
 const tableKey = 'apple_services';
 const APPLE_SERVICES_SCOPE = 'apple-services';
+const ORDER_ENTRY_BASE_SCOPE = 'order-entry-base';
+const APPLE_SERVICE_DEPENDENT_SCOPES = [APPLE_SERVICES_SCOPE, ORDER_ENTRY_BASE_SCOPE];
 const statusOptions = [
   { label: '启用', value: 'enabled' },
   { label: '暂停', value: 'paused' },
@@ -751,12 +773,14 @@ const services = ref<AppleService[]>([]);
 const selectedServices = ref<AppleService[]>([]);
 const mappings = ref<AppleServicePlatformMapping[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
+const knownServiceCategories = ref<string[]>([]);
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
 const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
+const serviceAdvancedPanels = ref<string[]>([]);
 
 const query = reactive({
   page: 1,
@@ -769,7 +793,7 @@ const query = reactive({
 
 const form = reactive({
   name: '',
-  category: 'default',
+  category: '通用',
   defaultPrice: '0',
   officialCostValue: '0',
   currency: 'USD',
@@ -800,6 +824,7 @@ const mappingForm = reactive({
 });
 
 const rules: FormRules<typeof form> = {
+  category: [{ required: true, message: '请选择或输入业务分类', trigger: 'change' }],
   name: [{ required: true, message: '请输入业务名称', trigger: 'blur' }],
   defaultPrice: [{ required: true, message: '请输入默认售价', trigger: 'blur' }],
   officialCostValue: [{ required: true, message: '请输入官方消耗金额', trigger: 'blur' }],
@@ -826,6 +851,20 @@ const inactiveServiceCount = computed(
 const byServiceLockCount = computed(
   () => services.value.filter((service) => service.lockRule === 'by_service').length
 );
+const serviceCategoryOptions = computed(() => {
+  const categories = [
+    ...knownServiceCategories.value,
+    ...services.value.map((service) => service.category),
+    query.category,
+    form.category
+  ]
+    .map((category) => normalizeCategoryValue(category))
+    .filter(Boolean);
+
+  return [...new Set(categories)].sort((left, right) =>
+    getCategoryLabel(left).localeCompare(getCategoryLabel(right), 'zh-CN')
+  );
+});
 const mappingCountLabel = computed(() =>
   selectedService.value ? String(mappings.value.length) : '-'
 );
@@ -835,7 +874,7 @@ const tableSize = computed(() =>
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
   if (query.category) {
-    chips.push({ key: 'category', label: '分类', value: query.category });
+    chips.push({ key: 'category', label: '分类', value: getCategoryLabel(query.category) });
   }
   if (query.currency) {
     chips.push({ key: 'currency', label: '币种', value: query.currency });
@@ -867,6 +906,30 @@ function getPeriodLabel(type: AppleService['defaultPeriodType'], value: number) 
   return `${value}${type === 'month' ? '个月' : '天'}`;
 }
 
+function normalizeCategoryValue(value?: string | null) {
+  const normalized = value?.trim();
+  if (!normalized || normalized === 'default') {
+    return '通用';
+  }
+  return normalized;
+}
+
+function getCategoryLabel(category?: string | null) {
+  return normalizeCategoryValue(category) || '通用';
+}
+
+function getDefaultCategory() {
+  return query.category || serviceCategoryOptions.value[0] || '通用';
+}
+
+function syncKnownServiceCategories(items: AppleService[]) {
+  const categories = [
+    ...knownServiceCategories.value,
+    ...items.map((service) => normalizeCategoryValue(service.category))
+  ].filter(Boolean);
+  knownServiceCategories.value = [...new Set(categories)];
+}
+
 function getFeeTypeLabel(type: AppleServicePlatformMapping['platformFeeType']) {
   return {
     none: '无手续费',
@@ -874,6 +937,13 @@ function getFeeTypeLabel(type: AppleServicePlatformMapping['platformFeeType']) {
     fixed: '固定',
     mixed: '混合'
   }[type];
+}
+
+function invalidateAppleServiceConsumers() {
+  for (const scope of APPLE_SERVICE_DEPENDENT_SCOPES) {
+    invalidateSmartQueries(scope);
+  }
+  notifyRealtimeScopesInvalidated(APPLE_SERVICE_DEPENDENT_SCOPES);
 }
 
 function isColumnVisible(column: string) {
@@ -904,6 +974,7 @@ async function loadServices(
       dedupeMs: options.dedupeMs ?? 1_200
     });
     services.value = result.data.items;
+    syncKnownServiceCategories(result.data.items);
     total.value = result.data.total;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务失败');
@@ -915,6 +986,12 @@ async function loadServices(
 async function handleSearch() {
   query.page = 1;
   await loadServices();
+}
+
+async function selectCategory(category: string) {
+  query.category = category;
+  query.page = 1;
+  await loadServices({ force: true, dedupeMs: 0 });
 }
 
 async function handleSortChange(payload: {
@@ -1033,7 +1110,7 @@ function applyView(view: UserTableView) {
   query.category = typeof filters.category === 'string' ? filters.category : '';
   query.currency = typeof filters.currency === 'string' ? filters.currency : '';
   query.pageSize = view.pageSize;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         serviceColumnOptions.some((option) => option.value === column)
@@ -1089,7 +1166,7 @@ async function loadSourcePlatforms() {
 
 function resetForm() {
   form.name = '';
-  form.category = 'default';
+  form.category = getDefaultCategory();
   form.defaultPrice = '0';
   form.officialCostValue = '0';
   form.currency = 'USD';
@@ -1104,6 +1181,7 @@ function resetForm() {
   form.minBalanceRequired = '0';
   form.status = 'enabled';
   form.remark = '';
+  serviceAdvancedPanels.value = [];
 }
 
 function openCreate() {
@@ -1115,7 +1193,7 @@ function openCreate() {
 function openEdit(service: AppleService) {
   editingService.value = service;
   form.name = service.name;
-  form.category = service.category;
+  form.category = normalizeCategoryValue(service.category);
   form.defaultPrice = service.defaultPrice;
   form.officialCostValue = service.officialCostValue;
   form.currency = service.currency;
@@ -1130,6 +1208,7 @@ function openEdit(service: AppleService) {
   form.minBalanceRequired = service.minBalanceRequired;
   form.status = service.status;
   form.remark = service.remark ?? '';
+  serviceAdvancedPanels.value = [];
   dialogVisible.value = true;
 }
 
@@ -1207,7 +1286,7 @@ async function saveService() {
   try {
     const payload = {
       name: form.name,
-      category: form.category,
+      category: normalizeCategoryValue(form.category),
       defaultPrice: form.defaultPrice,
       officialCostValue: form.officialCostValue,
       currency: form.currency,
@@ -1231,8 +1310,9 @@ async function saveService() {
     }
 
     ElMessage.success('Apple ID 业务已保存');
+    invalidateAppleServiceConsumers();
     dialogVisible.value = false;
-    await loadServices();
+    await loadServices({ force: true, dedupeMs: 0 });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存 Apple ID 业务失败');
   } finally {
@@ -1304,3 +1384,37 @@ onBeforeUnmount(() => {
   stopRealtimeRefresh();
 });
 </script>
+
+<style scoped>
+.apple-service-category-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 16px;
+}
+
+.apple-service-form-section {
+  margin: 4px 0 14px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.apple-service-period-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 8px;
+}
+
+.apple-service-advanced {
+  margin: 4px 0 16px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+@media (max-width: 720px) {
+  .apple-service-period-row {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

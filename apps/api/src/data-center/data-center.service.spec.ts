@@ -252,7 +252,6 @@ describe('DataCenterService', () => {
           {
             id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
             name: '测试客户',
-            contactName: '王先生',
             phoneTail: '1234',
             wechat: 'wechat-id',
             tags: ['vip'],
@@ -558,7 +557,7 @@ describe('DataCenterService', () => {
     const fileName = 'customers.csv';
     writeFileSync(
       join(importDir, fileName),
-      'name,contactName,phone,sourcePlatformCode,tags,status\n测试客户,王先生,18800001234,taobao,"vip|paid",active\n,缺少名称,18800005678,taobao,,active\n'
+      'name,phone,sourcePlatformName,tags,status\n测试客户,18800001234,淘宝,"vip|paid",active\n,18800005678,淘宝,,active\n'
     );
     const executableImportJob = {
       ...importJob,

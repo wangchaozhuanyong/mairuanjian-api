@@ -6,6 +6,9 @@ export interface ImportAppleAccountItemDto {
   currency?: string;
   currentBalance?: string | number;
   balanceCostAmount?: string | number;
+  sourcePlatformId?: string | null;
+  sourcePlatformName?: string | null;
+  sourcePlatform?: string | null;
   status?: AppleAccountStatus;
   isManuallyLocked?: boolean | string | null;
   manualLockReason?: string | null;
@@ -18,4 +21,5 @@ export interface ImportAppleAccountItemDto {
 
 export interface ImportAppleAccountsDto {
   accounts: Array<string | ImportAppleAccountItemDto>;
+  sourcePlatformId?: string | null;
 }

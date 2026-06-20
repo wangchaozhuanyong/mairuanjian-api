@@ -6,6 +6,7 @@ export interface CreateAppleAccountDto {
   currency?: string;
   currentBalance?: string | number;
   balanceCostAmount?: string | number;
+  sourcePlatformId?: string | null;
   status?: AppleAccountStatus;
   isManuallyLocked?: boolean;
   manualLockReason?: string | null;

@@ -2,16 +2,13 @@
   <PageScaffold :title="title" group="Apple ID 业务" :phase="phase" :description="description">
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row report-panel-title">
-        <div>
-          <h3>
-            报表明细
-            <FeatureHelp
-              placement="right"
-              text="这里看 Apple ID 业务到底赚不赚钱。销售额是客户给的钱，成本是用掉的 Apple 余额折成人民币，手续费和退款会一起扣掉。"
-            />
-          </h3>
-          <p>按当前筛选范围聚合销售额、手续费、余额成本和利润。</p>
-        </div>
+        <PanelTitleHelp
+          title="报表明细"
+          :help="[
+            '这里看 Apple ID 业务到底赚不赚钱。销售额是客户给的钱，成本是用掉的 Apple 余额折成人民币，手续费和退款会一起扣掉。',
+            '上面的筛选怎么选，这里就按这个范围汇总。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>{{ activeTabLabel }}</StatusChip>
           <StatusChip tone="blue">订单 {{ report.summary.orderCount }}</StatusChip>
@@ -29,7 +26,6 @@
         v-model:keyword="query.keyword"
         v-model:status="query.status"
         v-model:date-shortcut="quickDate"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="reportColumnOptions"
@@ -522,8 +518,8 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { appleReportsApi, userTableViewsApi, type AppleProfitReportQuery } from '@/api/system';
-import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
@@ -870,7 +866,7 @@ function applyView(view: UserTableView) {
   query.status = isOrderStatus(filters.status) ? filters.status : '';
   query.dateFrom = typeof filters.dateFrom === 'string' ? filters.dateFrom : '';
   query.dateTo = typeof filters.dateTo === 'string' ? filters.dateTo : '';
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) => reportColumnOptions.some((option) => option.value === column))
     : reportColumnOptions.map((column) => column.value);

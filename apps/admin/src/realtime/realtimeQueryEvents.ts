@@ -1,11 +1,12 @@
 import type { RealtimeEvent } from './realtimeTypes';
+import { markSmartQueriesStale } from '@/utils/smartQuery';
 
 export const REALTIME_QUERY_INVALIDATED_EVENT = 'apple-business:realtime-query-invalidated';
 
 export interface RealtimeQueryInvalidatedDetail {
   event: RealtimeEvent;
   scopes: string[];
-  reason?: 'push' | 'fallback-poll';
+  reason?: 'push' | 'fallback-poll' | 'manual';
 }
 
 export function notifyRealtimeQueryInvalidated(
@@ -22,6 +23,10 @@ export function notifyRealtimeScopesInvalidated(
 ) {
   if (!scopes.length) {
     return;
+  }
+
+  for (const scope of scopes) {
+    markSmartQueriesStale(scope);
   }
 
   dispatchRealtimeQueryInvalidated(

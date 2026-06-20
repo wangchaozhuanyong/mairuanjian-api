@@ -8,7 +8,7 @@ const roleDefinitions = [
   ['客服', 'customer_service', '处理客户、订单录入和续费任务'],
   ['发货员', 'delivery_staff', '处理兑换码发货和售后补发'],
   ['财务', 'finance', '查看成本、利润、充值和消费记录'],
-  ['运营', 'operation', '维护业务设置、来源平台和消息模板'],
+  ['运营', 'operation', '维护业务设置、来源平台和发货模板'],
   ['技术', 'technician', '查看系统日志和接口配置状态'],
   ['审计', 'auditor', '查看操作日志和权限变更记录']
 ] as const;
@@ -21,7 +21,8 @@ const permissionDefinitions = [
   ['查看客户手机号', 'customer.view_phone', 'customer', 'view_phone'],
   ['查看来源平台', 'source_platform.view', 'source_platform', 'view'],
   ['管理来源平台', 'source_platform.manage', 'source_platform', 'manage'],
-  ['管理消息模板', 'message_template.manage', 'message_template', 'manage'],
+  ['管理发货模板', 'code.delivery_template.manage', 'code.delivery_template', 'manage'],
+  ['管理消息模板（旧兼容）', 'message_template.manage', 'message_template', 'manage'],
   ['查看附件', 'attachment.view', 'attachment', 'view'],
   ['上传附件', 'attachment.upload', 'attachment', 'upload'],
   ['下载附件', 'attachment.download', 'attachment', 'download'],

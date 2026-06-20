@@ -1,15 +1,20 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AppleAccountsService } from '../apple-accounts/apple-accounts.service';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AppleBalancesService } from './apple-balances.service';
 
 describe('AppleBalancesService', () => {
+  const appleAccountsService = {
+    invalidateListCache: jest.fn()
+  } as unknown as AppleAccountsService;
   const service = new AppleBalancesService(
     {} as PrismaService,
     {} as AuditLogsService,
-    {} as FieldEncryptionService
+    {} as FieldEncryptionService,
+    appleAccountsService
   );
 
   const account = {
@@ -78,6 +83,78 @@ describe('AppleBalancesService', () => {
     );
   });
 
+  it('updates account balance and invalidates account list cache after topup', async () => {
+    const createdAt = new Date('2026-06-20T00:00:00.000Z');
+    const tx = {
+      appleAccount: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'apple-account-id',
+          currentBalance: new Prisma.Decimal('22'),
+          balanceCostAmount: new Prisma.Decimal('110'),
+          averageCost: new Prisma.Decimal('5')
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 })
+      },
+      appleBalanceTopup: {
+        create: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            id: 'topup-id',
+            ...data,
+            createdAt
+          })
+        )
+      }
+    };
+    const prisma = {
+      appleBalanceTopup: {
+        findUnique: jest.fn().mockResolvedValue(null)
+      },
+      $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) => callback(tx))
+    } as unknown as PrismaService;
+    const auditLogsService = {
+      create: jest.fn().mockResolvedValue({})
+    } as unknown as AuditLogsService;
+    const fieldEncryptionService = {
+      hash: jest.fn().mockReturnValue('gift-card-hash'),
+      encrypt: jest.fn().mockReturnValue('encrypted-code'),
+      decrypt: jest.fn().mockReturnValue('FULL-GIFT-CODE-3444')
+    } as unknown as FieldEncryptionService;
+    const cacheAwareAppleAccountsService = {
+      invalidateListCache: jest.fn()
+    } as unknown as AppleAccountsService;
+    const topupService = new AppleBalancesService(
+      prisma,
+      auditLogsService,
+      fieldEncryptionService,
+      cacheAwareAppleAccountsService
+    );
+
+    const result = await topupService.createTopup(
+      'apple-account-id',
+      {
+        faceValue: '100',
+        costAmount: '500',
+        giftCardCode: 'FULL-GIFT-CODE-3444'
+      },
+      {
+        id: 'operator-id',
+        username: 'admin',
+        displayName: '管理员',
+        roles: ['admin'],
+        permissions: []
+      }
+    );
+
+    const updateArgs = tx.appleAccount.updateMany.mock.calls[0][0];
+    expect(updateArgs.data.currentBalance.toString()).toBe('122');
+    expect(updateArgs.data.balanceCostAmount.toString()).toBe('610');
+    expect(updateArgs.data.averageCost.toFixed(8)).toBe('5.00000000');
+    expect(result.balanceAfter).toBe('122');
+    expect(result.costAfter).toBe('610');
+    expect(result.giftCardCode).toBe('FULL-GIFT-CODE-3444');
+    expect(cacheAwareAppleAccountsService.invalidateListCache).toHaveBeenCalledTimes(1);
+  });
+
   it('reveals gift card code and writes a redacted audit log', async () => {
     const prisma = {
       appleBalanceTopup: {
@@ -101,7 +178,8 @@ describe('AppleBalancesService', () => {
     const revealService = new AppleBalancesService(
       prisma,
       auditLogsService,
-      fieldEncryptionService
+      fieldEncryptionService,
+      appleAccountsService
     );
 
     const result = await revealService.revealGiftCardCode(

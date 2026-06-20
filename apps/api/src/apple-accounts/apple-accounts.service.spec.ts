@@ -529,4 +529,83 @@ describe('AppleAccountsService', () => {
       'pass-one'
     );
   });
+
+  it('imports Apple ID accounts with source platform channel by row', async () => {
+    const now = new Date('2026-06-20T00:00:00.000Z');
+    const sourcePlatformId = '11111111-1111-4111-8111-111111111111';
+    const createdAccounts: unknown[] = [];
+    const prisma = {
+      sourcePlatform: {
+        findFirst: jest.fn().mockResolvedValue({ id: sourcePlatformId })
+      },
+      appleAccount: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation(({ data }) => {
+          const account = {
+            id: `${createdAccounts.length + 1}`,
+            ...data,
+            sourcePlatform: {
+              id: data.sourcePlatformId,
+              name: '平台A',
+              status: 'active'
+            },
+            currentBalance: new Prisma.Decimal(data.currentBalance),
+            balanceCostAmount: new Prisma.Decimal(data.balanceCostAmount),
+            averageCost: new Prisma.Decimal(data.averageCost),
+            lockedAt: null,
+            lockedByUserId: null,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null
+          };
+          createdAccounts.push(account);
+          return Promise.resolve(account);
+        })
+      },
+      $transaction: jest.fn((handler: unknown) => {
+        if (typeof handler === 'function') {
+          return handler(prisma);
+        }
+
+        throw new Error('Unexpected transaction input');
+      })
+    } as unknown as PrismaService;
+    const auditLogsService = {
+      create: jest.fn().mockResolvedValue({})
+    } as unknown as AuditLogsService;
+    const fieldEncryptionService = {
+      encrypt: jest.fn((value?: string | null) => (value ? `encrypted:${value}` : null))
+    } as unknown as FieldEncryptionService;
+    const importService = new AppleAccountsService(
+      prisma,
+      auditLogsService,
+      fieldEncryptionService
+    );
+
+    const result = await importService.importAccounts({
+      accounts: [
+        'appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark,sourcePlatform',
+        'channel@example.com,pass,CN,CNY,0,0,,,渠道导入,平台A'
+      ]
+    });
+
+    expect(result.successCount).toBe(1);
+    expect(result.accounts[0]?.sourcePlatformId).toBe(sourcePlatformId);
+    expect(result.accounts[0]?.sourcePlatform?.name).toBe('平台A');
+    expect(prisma.sourcePlatform.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ name: { equals: '平台A', mode: 'insensitive' } }]
+        })
+      })
+    );
+    expect(prisma.appleAccount.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          appleId: 'channel@example.com',
+          sourcePlatformId
+        })
+      })
+    );
+  });
 });

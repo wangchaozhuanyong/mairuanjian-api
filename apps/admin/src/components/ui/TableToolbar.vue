@@ -3,7 +3,7 @@
     class="table-toolbar"
     :class="{
       'table-toolbar--has-selection': selectedCount > 0,
-      'table-toolbar--has-chips': activeChips.length > 0
+      'table-toolbar--has-chips': showFilterChips && activeChips.length > 0
     }"
     role="search"
     aria-label="列表查询工具栏"
@@ -160,7 +160,7 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <el-radio-group v-model="densityModel" size="small" class="density-toggle">
+      <el-radio-group v-if="showDensity" v-model="densityModel" size="small" class="density-toggle">
         <el-radio-button v-for="item in densityOptions" :key="item.value" :value="item.value">
           {{ item.label }}
         </el-radio-button>
@@ -186,7 +186,7 @@
       </AppButton>
     </div>
 
-    <div v-if="activeChips.length" class="filter-chips table-toolbar__chips">
+    <div v-if="showFilterChips && activeChips.length" class="filter-chips table-toolbar__chips">
       <span v-for="chip in activeChips" :key="chip.key" class="filter-chip filter-chip--closable">
         <span>
           <b>{{ chip.label }}</b
@@ -206,12 +206,12 @@
       <AppButton size="small" variant="ghost" @click="clearFilters">清空筛选</AppButton>
     </div>
 
-    <div class="table-toolbar__meta" aria-live="polite">
+    <div v-if="showToolbarMeta" class="table-toolbar__meta" aria-live="polite">
       <span>{{ filterSummaryText }}</span>
       <span v-if="hasColumnOptions"
         >显示列 {{ selectedColumnCount }}/{{ allColumnValues.length }}</span
       >
-      <span>密度 {{ activeDensityLabel }}</span>
+      <span v-if="showDensity">密度 {{ activeDensityLabel }}</span>
       <span v-if="activeSavedViewLabel">视图 {{ activeSavedViewLabel }}</span>
     </div>
   </div>
@@ -240,8 +240,8 @@ interface FilterChip {
   value: string;
 }
 
-type BuiltInChipKey = 'keyword' | 'status' | 'date' | 'density' | 'view';
 type SavedViewCommand = 'overwrite' | 'rename' | 'setDefault' | 'delete';
+type BuiltInChipKey = 'keyword' | 'status' | 'date' | 'density' | 'view';
 
 const props = withDefaults(
   defineProps<{
@@ -262,6 +262,9 @@ const props = withDefaults(
     showPrimary?: boolean;
     primaryLoading?: boolean;
     primaryDisabled?: boolean;
+    showDensity?: boolean;
+    showFilterChips?: boolean;
+    showToolbarMeta?: boolean;
   }>(),
   {
     primaryLabel: '新建记录',
@@ -279,7 +282,10 @@ const props = withDefaults(
     showOverwriteView: false,
     showPrimary: true,
     primaryLoading: false,
-    primaryDisabled: false
+    primaryDisabled: false,
+    showDensity: false,
+    showFilterChips: false,
+    showToolbarMeta: false
   }
 );
 
@@ -402,7 +408,7 @@ const activeChips = computed(() => {
     chips.push({ key: 'status', label: '状态', value: statusLabel });
   if (props.showDateShortcut && dateLabel)
     chips.push({ key: 'date', label: '日期', value: dateLabel });
-  if (densityModel.value !== 'default' && densityLabel)
+  if (props.showDensity && densityModel.value !== 'default' && densityLabel)
     chips.push({ key: 'density', label: '密度', value: densityLabel });
   if (viewLabel) chips.push({ key: 'view', label: '视图', value: viewLabel });
 

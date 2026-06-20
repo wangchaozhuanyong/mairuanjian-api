@@ -27,9 +27,7 @@ describe('CodeAfterSalesService', () => {
     profitAmount: new Prisma.Decimal('28'),
     platform: {
       id: platformId,
-      name: '淘宝店',
-      code: 'taobao-main',
-      type: 'taobao'
+      name: '淘宝店'
     },
     service: {
       id: serviceId,

@@ -59,7 +59,6 @@ type AutomationTaskWithRelations = AutomationTask & {
   customer?: {
     id: string;
     name: string;
-    contactName?: string | null;
     wechat?: string | null;
   } | null;
   service?: {
@@ -612,7 +611,6 @@ export class AppleAutomationTasksService {
         select: {
           id: true,
           name: true,
-          contactName: true,
           wechat: true
         }
       },

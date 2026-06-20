@@ -1,13 +1,9 @@
-import type {
-  MessageTemplateChannel,
-  MessageTemplateStatus,
-  MessageTemplateType
-} from '@prisma/client';
+import type { MessageTemplateStatus } from '@prisma/client';
 
 export interface CreateMessageTemplateDto {
   name: string;
-  type?: MessageTemplateType;
-  channel?: MessageTemplateChannel;
+  type?: 'delivery';
+  channel?: 'customer_service';
   content: string;
   variables?: string[];
   status?: MessageTemplateStatus;

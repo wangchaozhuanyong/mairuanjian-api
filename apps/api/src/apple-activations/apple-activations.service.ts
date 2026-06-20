@@ -58,7 +58,6 @@ const activationInclude = {
     select: {
       id: true,
       name: true,
-      contactName: true,
       wechat: true
     }
   },
@@ -74,9 +73,7 @@ const activationInclude = {
   sourcePlatform: {
     select: {
       id: true,
-      name: true,
-      code: true,
-      type: true
+      name: true
     }
   }
 } satisfies Prisma.ServiceActivationInclude;

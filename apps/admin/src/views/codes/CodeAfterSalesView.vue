@@ -7,10 +7,10 @@
   >
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>售后补发队列</h3>
-          <p>核对原订单和原兑换码，记录补发新码、损耗成本、处理结果和售后责任链路。</p>
-        </div>
+        <PanelTitleHelp
+          title="售后补发队列"
+          help="这里处理兑换码发货后的售后。要核对原订单和原码，记录补发的新码、损耗成本、处理结果和责任原因。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 个售后单</StatusChip>
           <StatusChip :tone="pendingCount > 0 ? 'orange' : 'green'" dot>
@@ -24,7 +24,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="afterSaleColumnOptions"
@@ -364,6 +363,7 @@ import type { CodeAfterSaleQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -655,7 +655,7 @@ function applyView(view: UserTableView) {
   query.status = typeof filters.status === 'string' ? filters.status : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         afterSaleColumnOptions.some((option) => option.value === column)

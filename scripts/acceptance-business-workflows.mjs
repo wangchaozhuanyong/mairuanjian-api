@@ -155,17 +155,12 @@ async function login(username, password) {
 async function runAppleWorkflow(api, suffix) {
   const platform = await api.post('/source-platforms', {
     name: `验收来源 ${suffix}`,
-    code: `acceptance_apple_${suffix}`,
-    type: 'manual',
     feeRate: '0',
     feeFixed: '2',
-    syncEnabled: false,
-    deliveryEnabled: false,
     remark: '上线验收 Apple ID 流程'
   });
   const customer = await api.post('/customers', {
     name: `验收客户 ${suffix}`,
-    contactName: '验收联系人',
     phone: '18800001111',
     wechat: `acceptance_${suffix}`,
     sourcePlatformId: platform.id,
@@ -289,12 +284,8 @@ async function runAppleWorkflow(api, suffix) {
 async function runCodeWorkflow(api, suffix) {
   const platform = await api.post('/source-platforms', {
     name: `验收发货平台 ${suffix}`,
-    code: `acceptance_code_${suffix}`,
-    type: 'taobao',
     feeRate: '0',
     feeFixed: '2',
-    syncEnabled: false,
-    deliveryEnabled: true,
     remark: '上线验收兑换码平台'
   });
   const service = await api.post('/codes/services', {

@@ -1,22 +1,19 @@
 <template>
   <PageScaffold
     title="客户管理"
-    group="系统管理"
+    group="客户与来源"
     phase="Phase 2"
     description="管理客户资料、来源平台、标签和基础联系方式。手机号列表默认脱敏展示。"
   >
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>
-            客户列表
-            <FeatureHelp
-              placement="right"
-              text="这里管客户基础资料。后面查订单、续费、售后时，都会回到这个客户档案。"
-            />
-          </h3>
-          <p>统一管理客户资料、来源、标签和敏感联系方式查看入口。</p>
-        </div>
+        <PanelTitleHelp
+          title="客户列表"
+          :help="[
+            '这里管客户基础资料。后面查订单、续费、售后时，都会回到这个客户档案。',
+            '客户来源、标签和敏感联系方式查看入口也在这里统一管理。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>客户 {{ total }}</StatusChip>
           <StatusChip tone="green">启用 {{ activeCustomerCount }}</StatusChip>
@@ -28,7 +25,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="customerColumnOptions"
@@ -39,7 +35,7 @@
         :batch-actions="batchActions"
         :show-date-shortcut="false"
         primary-label="新增客户"
-        placeholder="搜索客户、联系人、微信、手机号尾号"
+        placeholder="搜索客户、微信、手机号尾号"
         @search="handleSearch"
         @refresh="() => loadData()"
         @primary="openCreate"
@@ -95,15 +91,6 @@
           min-width="150"
           sortable="custom"
         />
-        <el-table-column
-          v-if="isColumnVisible('contactName')"
-          prop="contactName"
-          label="联系人"
-          min-width="120"
-          sortable="custom"
-        >
-          <template #default="{ row }">{{ row.contactName ?? '-' }}</template>
-        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('phone')"
           prop="phoneTail"
@@ -208,10 +195,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ customer.name }}</strong>
-              <span>
-                {{ customer.contactName ?? '未填联系人' }} ·
-                {{ customer.sourcePlatform?.name ?? '无来源' }}
-              </span>
+              <span>{{ customer.sourcePlatform?.name ?? '无来源' }}</span>
             </div>
             <StatusTag :status="customer.status" />
           </div>
@@ -284,51 +268,15 @@
       :title="editingCustomer ? '编辑客户' : '新增客户'"
       width="min(620px, calc(100vw - 24px))"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="客户名称" prop="name">
-          <el-input v-model.trim="form.name" />
-        </el-form-item>
-        <el-form-item label="联系人">
-          <el-input v-model.trim="form.contactName" />
-        </el-form-item>
-        <el-form-item :label="editingCustomer ? '手机号（留空不修改）' : '手机号'">
-          <el-input v-model.trim="form.phone" placeholder="保存后列表脱敏展示" />
-        </el-form-item>
-        <el-form-item label="微信">
-          <el-input v-model.trim="form.wechat" />
-        </el-form-item>
-        <el-form-item label="来源平台">
-          <el-select v-model="form.sourcePlatformId" class="full-input" clearable>
-            <el-option
-              v-for="platform in sourcePlatforms"
-              :key="platform.id"
-              :label="platform.name"
-              :value="platform.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="标签">
-          <el-select
-            v-model="form.tags"
-            class="full-input"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-          >
-            <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-radio-group v-model="form.status">
-            <el-radio-button value="active">启用</el-radio-button>
-            <el-radio-button value="disabled">停用</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
+      <CustomerProfileForm
+        ref="formRef"
+        :model-value="form"
+        :rules="rules"
+        :source-platforms="sourcePlatforms"
+        :tag-options="tagOptions"
+        :editing="Boolean(editingCustomer)"
+        @update:model-value="assignCustomerProfileForm(form, $event)"
+      />
       <template #footer>
         <AppButton @click="dialogVisible = false">取消</AppButton>
         <AppButton variant="primary" :loading="saving" @click="saveCustomer">保存</AppButton>
@@ -380,13 +328,16 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { customersApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
 import type { CustomerQuery, SourcePlatformQuery } from '@/api/system';
+import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type {
@@ -396,6 +347,14 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import type { CustomerProfileFormModel } from '@/types/customerProfileForm';
+import {
+  assignCustomerProfileForm,
+  buildCustomerProfilePayload,
+  createCustomerProfileFormModel,
+  fillCustomerProfileForm,
+  resetCustomerProfileForm
+} from '@/utils/customerProfileForm';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'customers';
@@ -405,7 +364,6 @@ const customerStatusOptions = [
 ];
 const customerColumnOptions = [
   { label: '客户', value: 'name', required: true },
-  { label: '联系人', value: 'contactName' },
   { label: '手机号', value: 'phone' },
   { label: '微信', value: 'wechat' },
   { label: '来源', value: 'source' },
@@ -422,7 +380,7 @@ const dialogVisible = ref(false);
 const phoneDialogVisible = ref(false);
 const editingCustomer = ref<Customer | null>(null);
 const selectedCustomer = ref<Customer | null>(null);
-const formRef = ref<FormInstance>();
+const formRef = ref<InstanceType<typeof CustomerProfileForm>>();
 const phoneFormRef = ref<FormInstance>();
 const customers = ref<Customer[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
@@ -446,23 +404,14 @@ const query = reactive({
   sourcePlatformId: ''
 });
 
-const form = reactive({
-  name: '',
-  contactName: '',
-  phone: '',
-  wechat: '',
-  sourcePlatformId: '',
-  tags: [] as string[],
-  remark: '',
-  status: 'active' as 'active' | 'disabled'
-});
+const form = reactive<CustomerProfileFormModel>(createCustomerProfileFormModel());
 
 const phoneForm = reactive({
   reason: '',
   phone: ''
 });
 
-const rules: FormRules<typeof form> = {
+const rules: FormRules<CustomerProfileFormModel> = {
   name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }]
 };
 
@@ -725,7 +674,7 @@ function applyView(view: UserTableView) {
     typeof filters.sourcePlatformId === 'string' ? filters.sourcePlatformId : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         customerColumnOptions.some((option) => option.value === column)
@@ -749,7 +698,6 @@ function parseSortConfig(value: Record<string, unknown>): {
 
 function mapSortProp(prop?: string) {
   if (prop === 'name') return 'name';
-  if (prop === 'contactName') return 'contactName';
   if (prop === 'phoneTail') return 'phoneTail';
   if (prop === 'wechat') return 'wechat';
   if (prop === 'status') return 'status';
@@ -764,14 +712,7 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 }
 
 function resetForm() {
-  form.name = '';
-  form.contactName = '';
-  form.phone = '';
-  form.wechat = '';
-  form.sourcePlatformId = '';
-  form.tags = [];
-  form.remark = '';
-  form.status = 'active';
+  resetCustomerProfileForm(form);
 }
 
 function openCreate() {
@@ -782,14 +723,7 @@ function openCreate() {
 
 function openEdit(customer: Customer) {
   editingCustomer.value = customer;
-  form.name = customer.name;
-  form.contactName = customer.contactName ?? '';
-  form.phone = '';
-  form.wechat = customer.wechat ?? '';
-  form.sourcePlatformId = customer.sourcePlatformId ?? '';
-  form.tags = [...customer.tags];
-  form.remark = customer.remark ?? '';
-  form.status = customer.status;
+  fillCustomerProfileForm(form, customer);
   dialogVisible.value = true;
 }
 
@@ -817,24 +751,12 @@ async function saveCustomer() {
 
   saving.value = true;
   try {
-    const payload = {
-      name: form.name,
-      contactName: form.contactName || null,
-      phone: form.phone || undefined,
-      wechat: form.wechat || null,
-      sourcePlatformId: form.sourcePlatformId || null,
-      tags: form.tags,
-      remark: form.remark || null,
-      status: form.status
-    };
+    const payload = buildCustomerProfilePayload(form);
 
     if (editingCustomer.value) {
       await customersApi.update(editingCustomer.value.id, payload);
     } else {
-      await customersApi.create({
-        ...payload,
-        phone: form.phone || null
-      });
+      await customersApi.create(buildCustomerProfilePayload(form, { emptyPhone: 'null' }));
     }
 
     ElMessage.success('客户已保存');
@@ -878,6 +800,15 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    loadData({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '客户列表' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['customers', 'source-platforms'], () => {
   void loadData({

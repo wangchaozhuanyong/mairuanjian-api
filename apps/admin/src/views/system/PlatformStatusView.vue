@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     title="平台接口状态"
-    group="系统管理"
+    group="运维与平台"
     phase="Phase 14"
     description="查看淘宝、闲鱼、Telegram、文件存储和自动化服务的授权状态、最近同步、失败原因、调用次数和错误率。"
   >
@@ -39,10 +39,10 @@
 
     <section class="content-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>平台接口健康台账</h3>
-          <p>跟踪授权状态、Token 有效期、同步时间、失败原因、调用次数和错误率。</p>
-        </div>
+        <PanelTitleHelp
+          title="平台接口健康台账"
+          help="这里看淘宝、闲鱼、Telegram 等外部接口是否正常，比如授权有没有过期、同步有没有失败、错误是不是变多了。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>平台接口</StatusChip>
           <StatusChip :tone="errorCount > 0 ? 'red' : 'green'" dot>
@@ -54,7 +54,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="tableDensity"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="columnOptions"
@@ -470,8 +469,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { opsApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   OpsHealthStatus,
@@ -625,6 +626,15 @@ onMounted(() => {
   void loadPlatforms({ force: false });
 });
 
+usePageRefresh(
+  (options) =>
+    loadPlatforms({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '平台接口状态' }
+);
+
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['ops-platform-status'], () => {
   void loadPlatforms({
     background: platforms.value.length > 0,
@@ -755,7 +765,7 @@ function applyView(view: UserTableView) {
   query.authorizationStatus = isAuthorizationStatus(filters.authorizationStatus)
     ? filters.authorizationStatus
     : '';
-  tableDensity.value = view.density;
+  tableDensity.value = 'default';
   visibleColumns.value = normalizeColumns(view.columns);
   sortConfig.value = parseSortConfig(view.sortConfig);
   savedViewId.value = view.id;

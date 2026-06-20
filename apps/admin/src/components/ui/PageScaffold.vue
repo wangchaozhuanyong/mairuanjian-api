@@ -49,8 +49,12 @@ function clearActions() {
   }
 }
 
-onMounted(registerActions);
-onActivated(registerActions);
+function activatePage() {
+  registerActions();
+}
+
+onMounted(activatePage);
+onActivated(activatePage);
 onDeactivated(clearActions);
 onBeforeUnmount(clearActions);
 </script>

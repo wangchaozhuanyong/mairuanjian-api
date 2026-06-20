@@ -153,7 +153,9 @@ PATCH  /api/source-platforms/:id
 DELETE /api/source-platforms/:id
 ```
 
-### 4.3 消息模板
+### 4.3 发货模板
+
+说明：这里复用 `/api/message-templates` 接口，但前台入口只作为兑换码发货模板使用。兑换码业务只绑定 `type=delivery`、`channel=customer_service` 的启用模板。
 
 ```text
 GET    /api/message-templates
@@ -211,7 +213,7 @@ GET  /api/apple/accounts/:id/balance-adjustments
 {
   "faceValue": "100",
   "currency": "USD",
-  "exchangeRate": "5.7",
+  "averageCost": "5.7",
   "costRmb": "570",
   "balanceBefore": "50",
   "balanceAfter": "150",
@@ -809,7 +811,7 @@ POST /api/apple/topups/:id/reveal-gift-card-code
 - APPLE_TOPUP_GIFT_CODE_NOT_FOUND
 - APPLE_TOPUP_GIFT_CODE_PERMISSION_DENIED
 
-## 10. 通知中心接口
+## 10. 通知设置接口
 
 ### 10.1 通知总览
 
@@ -985,8 +987,8 @@ PATCH /api/data/system-parameters/:key
 - `POST /api/data/import-jobs/:id/execute` 会执行真实 CSV 导入任务，读取 `DATA_IMPORT_DIR` 目录内的文件名，不允许读取任意系统路径。
 - 第一版支持导入模块：`customers`、`source_platforms`。
 - 单次导入最多 5000 行，CSV 第一行必须是表头。
-- 客户导入最少需要 `name`；可选字段包括 `contactName`、`phone`、`wechat`、`sourcePlatformId`、`sourcePlatformCode`、`tags`、`status`、`remark`。
-- 来源平台导入最少需要 `name`、`code`；可选字段包括 `type`、`feeRate`、`feeFixed`、`syncEnabled`、`deliveryEnabled`、`status`、`remark`。
+- 客户导入最少需要 `name`；可选字段包括 `phone`、`wechat`、`sourcePlatformId`、`sourcePlatformName`、`tags`、`status`、`remark`。
+- 来源平台导入最少需要 `name`；可选字段包括 `feeRate`、`feeFixed`、`status`、`remark`。
 - 部分成功、部分失败时任务状态为 `success`，并保留 `failedCount` 和错误报告；全部失败时任务状态为 `failed`。
 - `GET /api/data/import-jobs/:id/error-report` 返回 CSV 错误报告文件流，并写 `data.import.error_report.download` 审计日志。
 - 导入错误报告默认保存到 `DATA_IMPORT_ERROR_DIR`，默认值为 `uploads/data-import-errors`。
@@ -1020,7 +1022,7 @@ POST /api/ops/health-snapshots
 POST /api/ops/platforms/:platform/test-connection
 ```
 
-说明：第一版运维监控会实时检查 API、数据库、Redis、本地文件存储、磁盘空间和自动化任务队列；`POST /api/ops/health-snapshots` 会记录当前快照和队列状态，并在数据库异常、队列积压、磁盘不足时触发通知中心事件。淘宝、闲鱼真实授权检测和重新授权入口将在平台接口状态阶段继续完善。
+说明：第一版运维监控会实时检查 API、数据库、Redis、本地文件存储、磁盘空间和自动化任务队列；`POST /api/ops/health-snapshots` 会记录当前快照和队列状态，并在数据库异常、队列积压、磁盘不足时触发系统通知事件。淘宝、闲鱼真实授权检测和重新授权入口将在平台接口状态阶段继续完善。
 
 ## 14. 网站维护接口
 
@@ -1115,7 +1117,7 @@ POST /api/ops/platforms/:platform/reauthorize
 
 说明：
 
-- 平台编码支持 `taobao`、`xianyu`、`telegram`、`file-storage`、`automation-service`。
+- 运维接口标识支持 `taobao`、`xianyu`、`telegram`、`file-storage`、`automation-service`。
 - `GET /api/ops/platforms` 聚合授权状态、最近同步、最近失败、调用次数、失败请求数、失败日志数、重试记录数、错误率和最新日志。
 - 平台接口统计默认基于最近 30 天 `platform_sync_logs`；错误率按失败请求数 / 总请求数计算，避免简单平均导致少量大批次调用被低估。
 - 授权状态支持 `configured`、`expiring`、`expired`、`not_configured`、`not_required`、`unknown`。
@@ -1245,7 +1247,7 @@ DELETE /api/source-platforms/:id
 - `feeRate`、`feeFixed` 使用 Decimal 字段。
 - 查询需要 `source_platform.view`，新增、修改、删除需要 `source_platform.manage`。
 
-### 18.3 消息模板
+### 18.3 发货模板
 
 ```text
 GET    /api/message-templates
@@ -1258,10 +1260,12 @@ DELETE /api/message-templates/:id
 说明：
 
 - 列表支持 `page`、`pageSize`、`keyword`、`type`、`channel`、`status`。
+- 后台发货模板页固定查询 `type=delivery`、`channel=customer_service`，用于淘宝/闲鱼付款后的自动回复内容。
+- 兑换码业务设置绑定发货模板时，后端也会校验模板必须是启用的发货客服话术。
 - 模板内容支持 `{{ variable }}` 变量写法，服务端会提取并合并变量。
 - 创建、更新、删除需要 `message_template.manage`。
 
-### 18.4 附件管理
+### 18.4 附件中心
 
 ```text
 GET  /api/attachments
@@ -1297,8 +1301,8 @@ DELETE /api/apple/accounts/:id
 - 列表和详情默认只返回 `appleIdMasked` 和 `appleIdTail`，不返回完整 Apple ID 密码、密保、手机号、备用邮箱。
 - `password`、`securityInfo`、`phone`、`recoveryEmail` 写入时加密保存。
 - `currentBalance`、`balanceCostAmount`、`averageCost` 使用 Decimal。
-- API 字段 `balanceCostAmount` 表示当前余额对应的人民币总成本，不是汇率成本。
-- 后台页面给用户填写“汇率成本”时，会先换算成 `currentBalance × 汇率成本` 再提交给 `balanceCostAmount`。
+- API 字段 `balanceCostAmount` 表示当前余额对应的人民币总成本，不是平均成本。
+- 后台页面给用户填写“平均成本”时，会先换算成 `currentBalance × 平均成本` 再提交给 `balanceCostAmount`。
 - `averageCost = balanceCostAmount / currentBalance`，余额为 0 时总成本必须为 0。
 - 创建、更新、删除写入 `audit_logs`，审计日志中敏感字段只记录 `[encrypted]`。
 - 查看完整 Apple ID、密码、密保、手机号、备用邮箱必须调用 `reveal-secret`，并填写查看原因。
@@ -1306,7 +1310,7 @@ DELETE /api/apple/accounts/:id
 - `reveal-secret` 响应头禁止缓存。
 - 批量导入每批最多 500 行，支持逗号或制表符分隔文本，支持首行表头。
 - 批量导入字段顺序：`appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark`。
-- 批量导入走 API 原始字段，`balanceCostAmount` 需要填人民币总成本；如果只知道汇率成本，需要先用余额乘以汇率成本。
+- 批量导入走 API 原始字段，`balanceCostAmount` 需要填人民币总成本；如果只知道平均成本，需要先用余额乘以平均成本。
 - 批量导入会逐行返回成功/失败结果；已存在账号和本批次重复账号不会导入。
 - 批量导入会加密保存敏感字段，并写入 `audit_logs`，审计日志不记录敏感明文。
 
@@ -1405,7 +1409,7 @@ POST /api/apple/accounts/:accountId/consumptions
 - 充值后：`新余额 = 原余额 + faceValue`。
 - 充值后：`新余额人民币成本 = 原余额人民币成本 + costAmount`。
 - 充值后：`新平均成本 = 新余额人民币成本 / 新余额`。
-- 后台充值弹窗给用户填写的是“汇率成本”，保存前会换算成 `faceValue × 汇率成本` 再提交给 `costAmount`。
+- 后台充值弹窗给用户填写的是“本次平均成本”，保存前会换算成 `faceValue × 本次平均成本` 再提交给 `costAmount`。
 - 消费时：`本次消费成本 = 消费金额 × 消费时平均成本`。
 - 消费后：`余额 = 消费前余额 - 消费金额`。
 - 消费后：`余额人民币成本 = 消费前成本 - 本次消费成本`。

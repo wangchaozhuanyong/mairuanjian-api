@@ -42,10 +42,10 @@
 
     <section class="content-panel code-delivery-exception-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>异常处理看板</h3>
-          <p>基于真实兑换码订单状态聚合，不新建异常数据源，不改变订单处理流程。</p>
-        </div>
+        <PanelTitleHelp
+          title="异常处理看板"
+          help="这里按真实兑换码订单状态汇总发货异常，比如失败、转人工、待锁码。它只是看板，不会另建一套异常订单。"
+        />
         <div class="inline-actions">
           <StatusChip tone="red" dot>失败 {{ exceptionStats.failed }}</StatusChip>
           <StatusChip tone="orange">人工 {{ exceptionStats.manual }}</StatusChip>
@@ -94,7 +94,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.deliveryStatus"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         :column-options="columnOptions"
         :status-options="deliveryStatusOptions"
@@ -365,6 +364,7 @@ import AppCard from '@/components/ui/AppCard.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';

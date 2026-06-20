@@ -204,18 +204,13 @@ async function login(username, password) {
 async function createAcceptanceRecords(api, suffix) {
   const platform = await api.post('/source-platforms', {
     name: `敏感验收来源 ${suffix}`,
-    code: `sensitive_platform_${suffix}`,
-    type: 'manual',
     feeRate: '0',
     feeFixed: '0',
-    syncEnabled: false,
-    deliveryEnabled: false,
     remark: '敏感字段上线回归'
   });
 
   const customer = await api.post('/customers', {
     name: `敏感验收客户 ${suffix}`,
-    contactName: '敏感验收',
     phone: `188${suffix.slice(-8)}`,
     sourcePlatformId: platform.id,
     tags: ['acceptance-sensitive'],

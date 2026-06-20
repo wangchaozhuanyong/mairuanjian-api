@@ -81,8 +81,6 @@ type RedeemCodeWithRelations = RedeemCode & {
   deliveredPlatform?: {
     id: string;
     name: string;
-    code: string;
-    type: string;
   } | null;
 };
 
@@ -815,9 +813,7 @@ export class RedeemCodesService {
       deliveredPlatform: {
         select: {
           id: true,
-          name: true,
-          code: true,
-          type: true
+          name: true
         }
       }
     } satisfies Prisma.RedeemCodeInclude;
@@ -884,9 +880,7 @@ export class RedeemCodesService {
       deliveredPlatform: code.deliveredPlatform
         ? {
             id: code.deliveredPlatform.id,
-            name: code.deliveredPlatform.name,
-            code: code.deliveredPlatform.code,
-            type: code.deliveredPlatform.type
+            name: code.deliveredPlatform.name
           }
         : null,
       deliveredAt: code.deliveredAt,

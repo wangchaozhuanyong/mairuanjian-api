@@ -149,7 +149,6 @@ const actionPlanItemInclude = {
     select: {
       id: true,
       name: true,
-      contactName: true,
       wechat: true
     }
   },

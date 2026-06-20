@@ -3,7 +3,7 @@
     title="Apple ID 详情"
     group="Apple ID 业务"
     phase="Phase 3"
-    description="聚合单个 Apple ID 的汇率成本、充值消费、订单、开通记录、续费任务和操作计划。"
+    description="聚合单个 Apple ID 的平均成本、充值消费、订单、开通记录、续费任务和操作计划。"
   >
     <template #actions>
       <StatusChip :tone="account ? getAccountStatusTone(account.status) : 'neutral'" dot>
@@ -20,7 +20,7 @@
       empty
       state-compact
       empty-title="请先选择 Apple ID"
-      empty-description="从 Apple ID 管理列表进入详情页后，可以查看汇率成本、敏感资料和关联业务。"
+      empty-description="从 Apple ID 管理列表进入详情页后，可以查看平均成本、敏感资料和关联业务。"
     >
       <template #state-actions>
         <AppButton variant="primary" @click="goBack">去选择 Apple ID</AppButton>
@@ -45,14 +45,16 @@
     <template v-else-if="account">
       <section class="content-panel apple-compact-list-panel">
         <div class="panel-title-row">
-          <div>
-            <h3>账号运营概览</h3>
-            <p>余额、成本、关联业务和续费风险集中展示，敏感资料仍按权限审计查看。</p>
-          </div>
+          <PanelTitleHelp
+            title="账号运营概览"
+            help="这里集中看这个 Apple ID 的余额、成本、关联业务和续费风险。密码、手机号这类敏感资料还是按权限查看并记录。"
+          />
           <div class="inline-actions">
             <StatusChip tone="green">余额 {{ account.currentBalance }}</StatusChip>
-            <StatusChip tone="orange">汇率 {{ getAccountExchangeRateCost(account) }}</StatusChip>
-            <StatusChip tone="blue">均价 {{ getAccountExchangeRateCost(account) }}</StatusChip>
+            <StatusChip tone="blue">均价 {{ getAccountAverageCost(account) }}</StatusChip>
+            <StatusChip tone="purple"
+              >渠道 {{ account.sourcePlatform?.name ?? '未设置' }}</StatusChip
+            >
             <StatusChip :tone="account.isManuallyLocked ? 'red' : 'purple'">
               关联业务 {{ activationTotal }}
             </StatusChip>
@@ -96,10 +98,10 @@
 
       <section class="content-panel">
         <div class="panel-title-row">
-          <div>
-            <h3>{{ account.appleIdMasked }}</h3>
-            <p>尾号 {{ account.appleIdTail }} · {{ account.region }} · {{ account.currency }}</p>
-          </div>
+          <PanelTitleHelp
+            :title="account.appleIdMasked"
+            :help="`尾号 ${account.appleIdTail}，地区 ${account.region}，币种 ${account.currency}。这里查看这个账号的基础资料和敏感资料保存状态。`"
+          />
           <div class="inline-actions">
             <StatusChip :tone="getAccountStatusTone(account.status)" dot>
               {{ getAccountStatusLabel(account.status) }}
@@ -120,12 +122,12 @@
             <strong>{{ account.currentBalance }}</strong>
           </div>
           <div>
-            <span>汇率成本</span>
-            <strong>{{ getAccountExchangeRateCost(account) }}</strong>
+            <span>平均成本</span>
+            <strong>{{ getAccountAverageCost(account) }}</strong>
           </div>
           <div>
-            <span>平均成本</span>
-            <strong>{{ getAccountExchangeRateCost(account) }}</strong>
+            <span>渠道</span>
+            <strong>{{ account.sourcePlatform?.name ?? '-' }}</strong>
           </div>
           <div>
             <span>锁定原因</span>
@@ -169,10 +171,10 @@
 
       <section v-loading="relatedLoading" class="content-panel">
         <div class="panel-title-row">
-          <div>
-            <h3>关联业务数据</h3>
-            <p>展示最近记录，完整处理仍在各业务模块完成。</p>
-          </div>
+          <PanelTitleHelp
+            title="关联业务数据"
+            help="这里只展示最近关联记录，真正处理订单、开通、续费和操作计划时，还是回到对应业务页面完成。"
+          />
           <StatusChip tone="green" dot>关联同步</StatusChip>
         </div>
 
@@ -180,19 +182,21 @@
           <el-tab-pane :label="`充值记录 ${topupTotal}`" name="topups">
             <el-table class="desktop-data-table" :data="topups" row-key="id">
               <el-table-column prop="faceValue" label="面值" width="100" />
-              <el-table-column label="汇率成本" width="110">
-                <template #default="{ row }">{{ getTopupExchangeRateCost(row) }}</template>
+              <el-table-column label="本次均价" width="110">
+                <template #default="{ row }">{{ getTopupAverageCost(row) }}</template>
               </el-table-column>
               <el-table-column label="人民币总成本" width="120">
                 <template #default="{ row }">{{ getTopupTotalCostAmountFromRecord(row) }}</template>
               </el-table-column>
               <el-table-column prop="balanceAfter" label="充值后余额" width="130" />
-              <el-table-column prop="avgCostAfter" label="充值后均价" width="130" />
-              <el-table-column label="礼品卡代码" width="150">
+              <el-table-column label="充值后均价" width="130">
+                <template #default="{ row }">{{ formatAverageCost(row.avgCostAfter) }}</template>
+              </el-table-column>
+              <el-table-column label="礼品卡代码" min-width="240">
                 <template #default="{ row }">
-                  <StatusChip v-if="row.hasGiftCardCode" tone="purple">
-                    尾号 {{ row.giftCardCodeTail ?? '-' }}
-                  </StatusChip>
+                  <span v-if="row.hasGiftCardCode" class="gift-card-code-text">
+                    {{ row.giftCardCode ?? '-' }}
+                  </span>
                   <span v-else>-</span>
                 </template>
               </el-table-column>
@@ -210,15 +214,13 @@
                     <strong>充值 {{ topup.faceValue }}</strong>
                     <span>{{ topup.remark || '暂无备注' }}</span>
                   </div>
-                  <StatusChip v-if="topup.hasGiftCardCode" tone="purple">
-                    尾号 {{ topup.giftCardCodeTail ?? '-' }}
-                  </StatusChip>
+                  <StatusChip v-if="topup.hasGiftCardCode" tone="purple">有代码</StatusChip>
                   <StatusChip v-else tone="neutral">无代码</StatusChip>
                 </div>
                 <div class="mobile-record-card__stats">
                   <div>
-                    <span>汇率成本</span>
-                    <strong>{{ getTopupExchangeRateCost(topup) }}</strong>
+                    <span>本次均价</span>
+                    <strong>{{ getTopupAverageCost(topup) }}</strong>
                   </div>
                   <div>
                     <span>总成本</span>
@@ -230,10 +232,14 @@
                   </div>
                   <div>
                     <span>充值后均价</span>
-                    <strong>{{ topup.avgCostAfter }}</strong>
+                    <strong>{{ formatAverageCost(topup.avgCostAfter) }}</strong>
                   </div>
                 </div>
                 <div class="mobile-record-card__meta">
+                  <div v-if="topup.hasGiftCardCode">
+                    <span>礼品卡代码</span>
+                    <strong class="gift-card-code-text">{{ topup.giftCardCode ?? '-' }}</strong>
+                  </div>
                   <div>
                     <span>时间</span>
                     <strong>{{ formatDate(topup.createdAt) }}</strong>
@@ -244,7 +250,7 @@
             <div v-else class="mobile-record-list" aria-label="充值记录空状态">
               <div class="apple-core-empty-state">
                 <strong>暂无充值记录</strong>
-                <span>充值后会显示面值、成本、均价和礼品卡尾号。</span>
+                <span>充值后会显示面值、成本、均价和完整礼品卡代码。</span>
               </div>
             </div>
           </el-tab-pane>
@@ -253,7 +259,9 @@
             <el-table class="desktop-data-table" :data="consumptions" row-key="id">
               <el-table-column prop="amount" label="消费金额" width="110" />
               <el-table-column prop="costAmount" label="扣减成本" width="110" />
-              <el-table-column prop="avgUnitCost" label="消费均价" width="120" />
+              <el-table-column label="消费均价" width="120">
+                <template #default="{ row }">{{ formatAverageCost(row.avgUnitCost) }}</template>
+              </el-table-column>
               <el-table-column prop="balanceAfter" label="消费后余额" width="130" />
               <el-table-column label="原因" min-width="160">
                 <template #default="{ row }">{{ row.reason || '-' }}</template>
@@ -294,7 +302,7 @@
                   </div>
                   <div>
                     <span>消费均价</span>
-                    <strong>{{ consumption.avgUnitCost }}</strong>
+                    <strong>{{ formatAverageCost(consumption.avgUnitCost) }}</strong>
                   </div>
                   <div>
                     <span>消费后余额</span>
@@ -801,6 +809,7 @@ import {
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
@@ -1169,35 +1178,35 @@ function isLikelyLegacyRateCost(currentAccount: AppleAccount) {
   );
 }
 
-function getAccountExchangeRateCost(currentAccount: AppleAccount) {
+function formatAverageCost(value: string | null | undefined) {
+  return parseDecimalInput(value).toFixed(2);
+}
+
+function getAccountAverageCost(currentAccount: AppleAccount) {
   if (isLikelyLegacyRateCost(currentAccount)) {
-    return formatDecimalInput(parseDecimalInput(currentAccount.balanceCostAmount), 4);
+    return formatAverageCost(currentAccount.balanceCostAmount);
   }
 
-  return formatDecimalInput(parseDecimalInput(currentAccount.averageCost), 4);
+  return formatAverageCost(currentAccount.averageCost);
 }
 
 function isLikelyLegacyTopupRateCost(topup: AppleBalanceTopup) {
   const faceValue = parseDecimalInput(topup.faceValue);
   const storedCost = parseDecimalInput(topup.costAmount);
-  const exchangeRateCost = faceValue > 0 ? storedCost / faceValue : 0;
+  const averageCost = faceValue > 0 ? storedCost / faceValue : 0;
   const currency = account.value?.currency ?? '';
 
   return (
-    currency !== 'CNY' &&
-    faceValue > 1 &&
-    storedCost >= 1 &&
-    exchangeRateCost > 0 &&
-    exchangeRateCost < 1
+    currency !== 'CNY' && faceValue > 1 && storedCost >= 1 && averageCost > 0 && averageCost < 1
   );
 }
 
-function getTopupExchangeRateCost(topup: AppleBalanceTopup) {
+function getTopupAverageCost(topup: AppleBalanceTopup) {
   if (isLikelyLegacyTopupRateCost(topup)) {
-    return formatDecimalInput(parseDecimalInput(topup.costAmount), 4);
+    return formatAverageCost(topup.costAmount);
   }
 
-  return divideDecimalInputs(topup.costAmount, topup.faceValue, 4);
+  return formatAverageCost(divideDecimalInputs(topup.costAmount, topup.faceValue));
 }
 
 function getTopupTotalCostAmountFromRecord(topup: AppleBalanceTopup) {

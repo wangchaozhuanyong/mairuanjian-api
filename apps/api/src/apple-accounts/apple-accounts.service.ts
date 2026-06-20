@@ -37,6 +37,7 @@ interface ListAppleAccountsQuery extends PaginationQuery {
   currency?: string;
   region?: string;
   locked?: string;
+  sourcePlatformId?: string;
   sortBy?: string;
   sortOrder?: string;
 }
@@ -66,6 +67,7 @@ interface AppleAccountImportPlanItem {
   currentBalance: string;
   balanceCostAmount: string;
   averageCost: string;
+  sourcePlatformId: string | null;
   status: AppleAccountStatus;
   isManuallyLocked: boolean;
   manualLockReason: string | null;
@@ -75,6 +77,24 @@ interface AppleAccountImportPlanItem {
   recoveryEmailEncrypted: string | null;
   remark: string | null;
 }
+
+type AppleAccountWithSourcePlatform = AppleAccount & {
+  sourcePlatform?: {
+    id: string;
+    name: string;
+    status: string;
+  } | null;
+};
+
+const appleAccountInclude = {
+  sourcePlatform: {
+    select: {
+      id: true,
+      name: true,
+      status: true
+    }
+  }
+} satisfies Prisma.AppleAccountInclude;
 
 export interface AppleAccountImportError {
   rowNo: number;
@@ -150,6 +170,7 @@ export class AppleAccountsService {
           currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
           region: query.region ? query.region.trim().toUpperCase() : undefined,
           isManuallyLocked: locked,
+          sourcePlatformId: this.normalizeNullableString(query.sourcePlatformId) ?? undefined,
           OR: keyword
             ? [
                 { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
@@ -163,6 +184,7 @@ export class AppleAccountsService {
         const [items, total] = await Promise.all([
           this.prisma.appleAccount.findMany({
             where,
+            include: appleAccountInclude,
             skip: pagination.skip,
             take: pagination.take,
             orderBy: this.getListOrderBy(query)
@@ -185,7 +207,8 @@ export class AppleAccountsService {
       where: {
         id,
         deletedAt: null
-      }
+      },
+      include: appleAccountInclude
     });
 
     if (!account) {
@@ -193,6 +216,10 @@ export class AppleAccountsService {
     }
 
     return this.toResponse(account);
+  }
+
+  invalidateListCache() {
+    this.listCache.clear();
   }
 
   async create(dto: CreateAppleAccountDto, operator?: AuthenticatedUser) {
@@ -208,6 +235,7 @@ export class AppleAccountsService {
     const region = normalizeAppleAccountRegion(dto.region);
     const currency = normalizeAppleAccountCurrency(region, dto.currency);
     const phone = normalizeAppleAccountPhone(dto.phone, region);
+    const sourcePlatformId = await this.resolveSourcePlatformId(dto.sourcePlatformId);
 
     const account = await this.prisma.appleAccount.create({
       data: {
@@ -218,6 +246,7 @@ export class AppleAccountsService {
         currentBalance,
         balanceCostAmount,
         averageCost,
+        sourcePlatformId,
         status: this.parseStatus(dto.status, true) ?? 'normal',
         isManuallyLocked,
         manualLockReason: this.normalizeNullableString(dto.manualLockReason),
@@ -267,7 +296,12 @@ export class AppleAccountsService {
     const existingAppleIdSet = new Set(
       existingAccounts.map((account) => account.appleIdNormalized)
     );
-    const importPlan = this.buildImportPlan(parsedItems, existingAppleIdSet);
+    const defaultSourcePlatformId = await this.resolveSourcePlatformId(dto.sourcePlatformId);
+    const importPlan = await this.buildImportPlan(
+      parsedItems,
+      existingAppleIdSet,
+      defaultSourcePlatformId
+    );
     const createdAccounts = await this.prisma.$transaction(async (tx) => {
       const created: AppleAccount[] = [];
 
@@ -282,6 +316,7 @@ export class AppleAccountsService {
               currentBalance: item.currentBalance,
               balanceCostAmount: item.balanceCostAmount,
               averageCost: item.averageCost,
+              sourcePlatformId: item.sourcePlatformId,
               status: item.status,
               isManuallyLocked: item.isManuallyLocked,
               manualLockReason: item.manualLockReason,
@@ -294,7 +329,8 @@ export class AppleAccountsService {
               remark: item.remark,
               createdByUserId: operator?.id,
               updatedByUserId: operator?.id
-            }
+            },
+            include: appleAccountInclude
           })
         );
       }
@@ -413,6 +449,18 @@ export class AppleAccountsService {
 
     if (dto.manualLockReason !== undefined) {
       data.manualLockReason = this.normalizeNullableString(dto.manualLockReason);
+    }
+
+    if (dto.sourcePlatformId !== undefined) {
+      if (dto.sourcePlatformId === null || dto.sourcePlatformId === '') {
+        data.sourcePlatform = { disconnect: true };
+      } else {
+        const sourcePlatformId = await this.resolveSourcePlatformId(dto.sourcePlatformId);
+        if (!sourcePlatformId) {
+          throw new BadRequestException('Source platform does not exist');
+        }
+        data.sourcePlatform = { connect: { id: sourcePlatformId } };
+      }
     }
 
     if (dto.password !== undefined && dto.password !== '') {
@@ -643,7 +691,8 @@ export class AppleAccountsService {
       balanceCostAmount: values[5] || undefined,
       phone: values[6] || null,
       recoveryEmail: values[7] || null,
-      remark: values.slice(8).filter(Boolean).join(' ') || null
+      remark: values[8] || null,
+      sourcePlatform: values.slice(9).filter(Boolean).join(' ') || null
     };
   }
 
@@ -693,10 +742,15 @@ export class AppleAccountsService {
     return header === 'appleid' || header === 'apple账号';
   }
 
-  private buildImportPlan(items: ParsedAppleAccountImportItem[], existingAppleIdSet: Set<string>) {
+  private async buildImportPlan(
+    items: ParsedAppleAccountImportItem[],
+    existingAppleIdSet: Set<string>,
+    defaultSourcePlatformId: string | null
+  ) {
     const planItems: AppleAccountImportPlanItem[] = [];
     const errors: AppleAccountImportError[] = [];
     const seenAppleIds = new Set<string>();
+    const sourcePlatformCache = new Map<string, string>();
 
     for (const item of items) {
       try {
@@ -731,6 +785,11 @@ export class AppleAccountsService {
         const region = normalizeAppleAccountRegion(item.data.region);
         const currency = normalizeAppleAccountCurrency(region, item.data.currency);
         const phone = normalizeAppleAccountPhone(item.data.phone, region);
+        const sourcePlatformId = await this.resolveImportSourcePlatformId(
+          item.data,
+          defaultSourcePlatformId,
+          sourcePlatformCache
+        );
 
         planItems.push({
           rowNo: item.rowNo,
@@ -741,6 +800,7 @@ export class AppleAccountsService {
           currentBalance,
           balanceCostAmount,
           averageCost: this.calculateAverageCost(currentBalance, balanceCostAmount),
+          sourcePlatformId,
           status: this.parseStatus(item.data.status, true) ?? 'normal',
           isManuallyLocked: this.parseImportBoolean(item.data.isManuallyLocked),
           manualLockReason: this.normalizeNullableString(item.data.manualLockReason),
@@ -778,6 +838,75 @@ export class AppleAccountsService {
     } catch {
       return null;
     }
+  }
+
+  private async resolveSourcePlatformId(sourcePlatformId?: string | null) {
+    const normalized = this.normalizeNullableString(sourcePlatformId);
+    if (!normalized) {
+      return null;
+    }
+
+    if (!this.isUuid(normalized)) {
+      throw new BadRequestException('Source platform does not exist');
+    }
+
+    const sourcePlatform = await this.prisma.sourcePlatform.findFirst({
+      where: {
+        id: normalized,
+        deletedAt: null
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!sourcePlatform) {
+      throw new BadRequestException('Source platform does not exist');
+    }
+
+    return sourcePlatform.id;
+  }
+
+  private async resolveImportSourcePlatformId(
+    item: ImportAppleAccountItemDto,
+    defaultSourcePlatformId: string | null,
+    cache: Map<string, string>
+  ) {
+    const reference = this.normalizeNullableString(
+      item.sourcePlatformId ?? item.sourcePlatformName ?? item.sourcePlatform
+    );
+
+    if (!reference) {
+      return defaultSourcePlatformId;
+    }
+
+    const cached = cache.get(reference);
+    if (cached) {
+      return cached;
+    }
+
+    const sourcePlatform = await this.prisma.sourcePlatform.findFirst({
+      where: {
+        deletedAt: null,
+        OR: this.isUuid(reference)
+          ? [{ id: reference }, { name: { equals: reference, mode: 'insensitive' } }]
+          : [{ name: { equals: reference, mode: 'insensitive' } }]
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!sourcePlatform) {
+      throw new BadRequestException('Source platform does not exist');
+    }
+
+    cache.set(reference, sourcePlatform.id);
+    return sourcePlatform.id;
+  }
+
+  private isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
   private parseStatus(value: unknown, strict: boolean) {
@@ -985,7 +1114,7 @@ export class AppleAccountsService {
     return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
   }
 
-  private toResponse(account: AppleAccount) {
+  private toResponse(account: AppleAccountWithSourcePlatform) {
     return {
       id: account.id,
       appleIdMasked: this.maskAppleId(account.appleId),
@@ -995,6 +1124,14 @@ export class AppleAccountsService {
       currentBalance: account.currentBalance.toString(),
       balanceCostAmount: account.balanceCostAmount.toString(),
       averageCost: account.averageCost.toString(),
+      sourcePlatformId: account.sourcePlatformId,
+      sourcePlatform: account.sourcePlatform
+        ? {
+            id: account.sourcePlatform.id,
+            name: account.sourcePlatform.name,
+            status: account.sourcePlatform.status
+          }
+        : null,
       status: account.status,
       isManuallyLocked: account.isManuallyLocked,
       manualLockReason: account.manualLockReason,

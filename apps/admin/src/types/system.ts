@@ -63,12 +63,8 @@ export interface AuditLog {
 export interface SourcePlatform {
   id: string;
   name: string;
-  code: string;
-  type: 'taobao' | 'xianyu' | 'wechat' | 'manual' | 'other';
   feeRate: string;
   feeFixed: string;
-  syncEnabled: boolean;
-  deliveryEnabled: boolean;
   status: 'active' | 'disabled';
   remark?: string | null;
   createdAt: string;
@@ -78,12 +74,11 @@ export interface SourcePlatform {
 export interface Customer {
   id: string;
   name: string;
-  contactName?: string | null;
   maskedPhone?: string | null;
   phoneTail?: string | null;
   wechat?: string | null;
   sourcePlatformId?: string | null;
-  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'> | null;
+  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;
   tags: string[];
   remark?: string | null;
   status: 'active' | 'disabled';
@@ -818,6 +813,8 @@ export interface AppleAccount {
   currentBalance: string;
   balanceCostAmount: string;
   averageCost: string;
+  sourcePlatformId?: string | null;
+  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name' | 'status'> | null;
   status: 'normal' | 'need_verify' | 'locked' | 'password_error' | 'risk' | 'unknown';
   isManuallyLocked: boolean;
   manualLockReason?: string | null;
@@ -871,6 +868,7 @@ export interface AppleBalanceTopup {
   avgCostBefore: string;
   avgCostAfter: string;
   hasGiftCardCode: boolean;
+  giftCardCode?: string | null;
   giftCardCodeTail?: string | null;
   remark?: string | null;
   createdAt: string;
@@ -963,10 +961,7 @@ export interface AppleServicePlatformMapping {
   id: string;
   serviceId: string;
   sourcePlatformId: string;
-  sourcePlatform: Pick<
-    SourcePlatform,
-    'id' | 'name' | 'code' | 'type' | 'feeRate' | 'feeFixed' | 'status'
-  >;
+  sourcePlatform: Pick<SourcePlatform, 'id' | 'name' | 'feeRate' | 'feeFixed' | 'status'>;
   shopName?: string | null;
   platformItemId: string;
   platformSkuId: string;
@@ -998,9 +993,9 @@ export interface AppleOrder {
   id: string;
   orderNo: string;
   customerId: string;
-  customer: Pick<Customer, 'id' | 'name' | 'contactName' | 'wechat'>;
+  customer: Pick<Customer, 'id' | 'name' | 'wechat'>;
   sourcePlatformId?: string | null;
-  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'> | null;
+  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;
   externalOrderNo?: string | null;
   serviceId: string;
   service: Pick<AppleService, 'id' | 'name' | 'category' | 'currency' | 'officialCostValue'>;
@@ -1036,7 +1031,7 @@ export interface ServiceActivation {
   orderId: string;
   order: Pick<AppleOrder, 'id' | 'orderNo' | 'status'>;
   customerId: string;
-  customer: Pick<Customer, 'id' | 'name' | 'contactName' | 'wechat'>;
+  customer: Pick<Customer, 'id' | 'name' | 'wechat'>;
   appleAccountId?: string | null;
   appleAccount?: {
     id: string;
@@ -1062,7 +1057,7 @@ export interface ServiceActivation {
   refundLoss: string;
   profitAmount: string;
   sourcePlatformId?: string | null;
-  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'> | null;
+  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;
   externalOrderNo?: string | null;
   status: 'active' | 'expired' | 'cancelled' | 'abnormal';
   autoRenewStatus: 'enabled' | 'disabled' | 'unknown';
@@ -1102,7 +1097,7 @@ export interface RenewalTask {
     | 'postponed';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   customerId: string;
-  customer: Pick<Customer, 'id' | 'name' | 'contactName' | 'wechat'>;
+  customer: Pick<Customer, 'id' | 'name' | 'wechat'>;
   appleAccountId?: string | null;
   appleAccount?: {
     id: string;
@@ -1166,7 +1161,7 @@ export interface AppleActionPlanItem {
   planId: string;
   activationId: string;
   customerId: string;
-  customer: Pick<Customer, 'id' | 'name' | 'contactName' | 'wechat'>;
+  customer: Pick<Customer, 'id' | 'name' | 'wechat'>;
   serviceId: string;
   service: Pick<AppleService, 'id' | 'name' | 'category' | 'currency' | 'officialCostValue'>;
   activation: Pick<
@@ -1289,7 +1284,7 @@ export interface AppleAutomationTask {
     status: AppleAccount['status'];
   };
   customerId?: string | null;
-  customer?: Pick<Customer, 'id' | 'name' | 'contactName' | 'wechat'> | null;
+  customer?: Pick<Customer, 'id' | 'name' | 'wechat'> | null;
   serviceId?: string | null;
   service?: Pick<AppleService, 'id' | 'name' | 'category' | 'currency'> | null;
   activationId?: string | null;
@@ -1375,7 +1370,7 @@ export interface CodeService {
 export interface CodePlatformMapping {
   id: string;
   platformId: string;
-  platform: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type' | 'status'>;
+  platform: Pick<SourcePlatform, 'id' | 'name' | 'status'>;
   shopId?: string | null;
   platformItemId: string;
   platformSkuId: string;
@@ -1428,7 +1423,7 @@ export interface RedeemCodeInventoryItem {
   lockedOrderId?: string | null;
   deliveredOrderId?: string | null;
   deliveredPlatformId?: string | null;
-  deliveredPlatform?: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'> | null;
+  deliveredPlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;
   deliveredAt?: string | null;
   expireAt?: string | null;
   remark?: string | null;
@@ -1461,7 +1456,7 @@ export interface RevealedRedeemCode {
 export interface CodePlatformOrder {
   id: string;
   platformId: string;
-  platform: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type' | 'status'>;
+  platform: Pick<SourcePlatform, 'id' | 'name' | 'status'>;
   externalOrderNo: string;
   buyerId?: string | null;
   buyerNameMasked?: string | null;
@@ -1516,7 +1511,7 @@ export interface CodeDeliveryLog {
   orderId: string;
   order: Pick<CodePlatformOrder, 'id' | 'externalOrderNo' | 'deliveryStatus'>;
   platformId: string;
-  platform: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'>;
+  platform: Pick<SourcePlatform, 'id' | 'name'>;
   externalOrderNo: string;
   codeId: string;
   code: {
@@ -1549,7 +1544,7 @@ export interface CodeAfterSale {
     platformFee: string;
     costAmount: string;
     profitAmount: string;
-    platform: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'>;
+    platform: Pick<SourcePlatform, 'id' | 'name'>;
     service?: Pick<CodeService, 'id' | 'name' | 'faceValue' | 'status'> | null;
   };
   originalCodeId: string;

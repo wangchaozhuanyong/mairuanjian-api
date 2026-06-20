@@ -34,7 +34,8 @@
             <div>
               <strong class="mono">{{ plan.appleAccount.appleIdMasked }}</strong>
               <p>
-                当前余额 {{ plan.currentBalance }} · 平均成本 {{ plan.avgUnitCost }} · 建议充值
+                当前余额 {{ plan.currentBalance }} · 平均成本
+                {{ formatAverageCost(plan.avgUnitCost) }} · 建议充值
                 {{ plan.suggestedTopupAmount }}
               </p>
             </div>
@@ -81,10 +82,10 @@
 
     <section class="content-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>操作计划队列</h3>
-          <p>按 Apple ID 聚合当日可执行动作，优先处理误扣费风险和需要人工确认的计划。</p>
-        </div>
+        <PanelTitleHelp
+          title="操作计划队列"
+          help="这里把当天该做的事情按 Apple ID 汇总起来。先处理可能误扣费、需要人工确认或快到期的计划。"
+        />
         <div class="inline-actions">
           <StatusChip :tone="riskCount ? 'red' : 'blue'" dot>
             {{ riskCount ? '存在风险' : '计划正常' }}
@@ -95,7 +96,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="actionPlanColumnOptions"
@@ -310,7 +310,7 @@
               {{ plan.hasWrongChargeRisk ? '误扣费风险' : '风险正常' }}
             </StatusChip>
             <StatusChip tone="orange">等客户 {{ plan.pendingCustomerCount }}</StatusChip>
-            <StatusChip tone="blue">平均成本 {{ plan.avgUnitCost }}</StatusChip>
+            <StatusChip tone="blue">平均成本 {{ formatAverageCost(plan.avgUnitCost) }}</StatusChip>
           </div>
 
           <div class="mobile-record-card__actions">
@@ -405,7 +405,7 @@
             {{ formatDate(selectedPlan?.planDate, true) }}
           </el-descriptions-item>
           <el-descriptions-item label="平均成本">
-            {{ selectedPlan?.avgUnitCost ?? '-' }}
+            {{ formatAverageCost(selectedPlan?.avgUnitCost) }}
           </el-descriptions-item>
         </el-descriptions>
       </div>
@@ -513,6 +513,7 @@ import { appleActionPlansApi, userTableViewsApi, type AppleActionPlanQuery } fro
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -824,7 +825,7 @@ function applyView(view: UserTableView) {
   query.planDateTo = typeof filters.planDateTo === 'string' ? filters.planDateTo : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         actionPlanColumnOptions.some((option) => option.value === column)
@@ -962,6 +963,15 @@ function formatDate(value?: string | null, dateOnly = false) {
     ? { year: 'numeric', month: '2-digit', day: '2-digit' }
     : { hour12: false };
   return new Date(value).toLocaleString('zh-CN', options);
+}
+
+function formatAverageCost(value?: string | number | null) {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return '-';
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue.toFixed(2) : '-';
 }
 
 function getStatusLabel(value: AppleActionPlan['status']) {

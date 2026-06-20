@@ -34,8 +34,6 @@ describe('CodeOrdersService', () => {
     platform: {
       id: '22222222-2222-4222-8222-222222222222',
       name: '淘宝店',
-      code: 'taobao-main',
-      type: 'taobao',
       status: 'active'
     },
     service: {

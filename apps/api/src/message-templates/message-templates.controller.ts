@@ -7,7 +7,7 @@ import type { UpdateMessageTemplateDto } from './dto/update-message-template.dto
 import { MessageTemplatesService } from './message-templates.service';
 
 @Controller('message-templates')
-@RequirePermissions('message_template.manage')
+@RequirePermissions('code.delivery_template.manage')
 export class MessageTemplatesController {
   constructor(
     private readonly messageTemplatesService: MessageTemplatesService,
@@ -45,7 +45,7 @@ export class MessageTemplatesController {
   @Post()
   async create(@Body() dto: CreateMessageTemplateDto, @CurrentUser() operator?: AuthenticatedUser) {
     const template = await this.messageTemplatesService.create(dto, operator);
-    this.publishMessageTemplateEvent('common.message_template.created', 'created', template.id);
+    this.publishMessageTemplateEvent('code.delivery_template.created', 'created', template.id);
     return template;
   }
 
@@ -56,22 +56,22 @@ export class MessageTemplatesController {
     @CurrentUser() operator?: AuthenticatedUser
   ) {
     const template = await this.messageTemplatesService.update(id, dto, operator);
-    this.publishMessageTemplateEvent('common.message_template.updated', 'updated', template.id);
+    this.publishMessageTemplateEvent('code.delivery_template.updated', 'updated', template.id);
     return template;
   }
 
   @Delete(':id')
   async remove(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
     const result = await this.messageTemplatesService.remove(id, operator);
-    this.publishMessageTemplateEvent('common.message_template.deleted', 'deleted', id);
+    this.publishMessageTemplateEvent('code.delivery_template.deleted', 'deleted', id);
     return result;
   }
 
   private publishMessageTemplateEvent(type: string, action: string, templateId: string) {
     this.realtimeService.publish({
       type,
-      module: 'common',
-      entity: 'message_template',
+      module: 'code',
+      entity: 'delivery_template',
       action,
       resourceId: templateId
     });

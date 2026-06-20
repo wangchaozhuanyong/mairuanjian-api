@@ -7,6 +7,10 @@ interface RequestWithUser {
   user?: AuthenticatedUser;
 }
 
+const LEGACY_PERMISSION_ALIASES: Record<string, string[]> = {
+  'code.delivery_template.manage': ['message_template.manage']
+};
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -42,12 +46,22 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const permissionSet = new Set(user.permissions);
-    const allowed = requiredPermissions.every((permission) => permissionSet.has(permission));
+    const allowed = requiredPermissions.every((permission) =>
+      this.hasPermission(permissionSet, permission)
+    );
 
     if (!allowed) {
       throw new ForbiddenException('Permission denied');
     }
 
     return true;
+  }
+
+  private hasPermission(permissionSet: Set<string>, permission: string) {
+    if (permissionSet.has(permission)) {
+      return true;
+    }
+
+    return LEGACY_PERMISSION_ALIASES[permission]?.some((legacy) => permissionSet.has(legacy));
   }
 }

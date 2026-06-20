@@ -41,6 +41,7 @@ export class AppleAccountsController {
     @Query('currency') currency?: string,
     @Query('region') region?: string,
     @Query('locked') locked?: string,
+    @Query('sourcePlatformId') sourcePlatformId?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string
   ) {
@@ -52,6 +53,7 @@ export class AppleAccountsController {
       currency,
       region,
       locked,
+      sourcePlatformId,
       sortBy,
       sortOrder
     });

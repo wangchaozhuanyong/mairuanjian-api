@@ -6,7 +6,9 @@
     description="录入客户订单，按业务规则自动匹配 Apple ID，提交后自动生成开通记录、扣减余额并计算利润。"
   >
     <template #actions>
-      <AppButton @click="() => loadInitialData()">刷新基础数据</AppButton>
+      <AppButton @click="() => loadInitialData({ force: true, dedupeMs: 0 })">
+        刷新基础数据
+      </AppButton>
       <AppButton variant="primary" :loading="saving" @click="submitOrder">提交订单</AppButton>
     </template>
 
@@ -41,18 +43,69 @@
         label-position="top"
       >
         <div class="form-grid form-grid--three">
-          <el-form-item label="客户" prop="customerId">
-            <el-select v-model="form.customerId" class="full-input" filterable>
-              <el-option
-                v-for="customer in customers"
-                :key="customer.id"
-                :label="customer.name"
-                :value="customer.id"
-              />
-            </el-select>
+          <el-form-item label="客户" prop="customerId" required>
+            <div class="order-entry-customer-picker">
+              <el-select
+                v-model="form.customerId"
+                class="full-input"
+                clearable
+                filterable
+                remote
+                reserve-keyword
+                :disabled="Boolean(newCustomerDraft)"
+                :loading="customerSearching"
+                :remote-method="searchCustomers"
+                placeholder="搜索客户名称、微信、手机号尾号"
+                @change="handleCustomerChange"
+                @visible-change="handleCustomerSelectVisibleChange"
+              >
+                <el-option
+                  v-for="customer in customers"
+                  :key="customer.id"
+                  :label="getCustomerOptionLabel(customer)"
+                  :value="customer.id"
+                >
+                  <div class="order-entry-customer-option">
+                    <strong>{{ customer.name }}</strong>
+                    <span>{{ getCustomerMeta(customer) }}</span>
+                  </div>
+                </el-option>
+                <template #empty>
+                  <div class="order-entry-select-empty">
+                    <span>{{
+                      customerSearching ? '正在搜索客户...' : '未找到客户，可手动输入资料。'
+                    }}</span>
+                    <AppButton size="small" variant="soft" @click.stop="openNewCustomerDialog">
+                      手动输入
+                    </AppButton>
+                  </div>
+                </template>
+              </el-select>
+              <AppButton
+                class="order-entry-customer-picker__create"
+                size="small"
+                variant="soft"
+                @click="openNewCustomerDialog"
+              >
+                手动输入
+              </AppButton>
+            </div>
+            <div v-if="newCustomerDraft" class="order-entry-customer-draft">
+              <StatusChip tone="blue">待新增</StatusChip>
+              <span>{{ newCustomerDraftSummary }}</span>
+              <AppButton size="small" variant="ghost" @click="clearNewCustomerDraft">
+                移除
+              </AppButton>
+            </div>
           </el-form-item>
           <el-form-item label="来源平台">
-            <el-select v-model="form.sourcePlatformId" class="full-input" clearable filterable>
+            <el-select
+              v-model="form.sourcePlatformId"
+              class="full-input"
+              clearable
+              filterable
+              @change="handleSourcePlatformChange"
+            >
               <el-option
                 v-for="platform in sourcePlatforms"
                 :key="platform.id"
@@ -70,14 +123,40 @@
               v-model="form.serviceId"
               class="full-input"
               filterable
+              :loading="loading"
               @change="handleServiceChange"
             >
-              <el-option
-                v-for="service in services"
-                :key="service.id"
-                :label="`${service.name} · ${service.officialCostValue} ${service.currency}`"
-                :value="service.id"
-              />
+              <el-option-group
+                v-for="group in serviceGroups"
+                :key="group.category"
+                :label="group.category"
+              >
+                <el-option
+                  v-for="service in group.items"
+                  :key="service.id"
+                  :label="`${service.name} · ${service.officialCostValue} ${service.currency}`"
+                  :value="service.id"
+                />
+              </el-option-group>
+              <template #empty>
+                <div class="order-entry-select-empty">
+                  <span>
+                    {{
+                      loading
+                        ? '正在加载业务...'
+                        : '没有可选业务，请确认 ID 业务设置里已启用后再刷新。'
+                    }}
+                  </span>
+                  <AppButton
+                    v-if="!loading"
+                    size="small"
+                    variant="soft"
+                    @click.stop="loadInitialData({ force: true, dedupeMs: 0 })"
+                  >
+                    刷新业务
+                  </AppButton>
+                </div>
+              </template>
             </el-select>
           </el-form-item>
 
@@ -86,9 +165,6 @@
           </el-form-item>
           <el-form-item label="当前套餐">
             <el-input v-model.trim="form.currentPlan" />
-          </el-form-item>
-          <el-form-item label="目标套餐">
-            <el-input v-model.trim="form.targetPlan" />
           </el-form-item>
 
           <el-form-item label="开通时间">
@@ -110,17 +186,21 @@
           </el-form-item>
 
           <el-form-item label="客户实收" prop="paidAmount">
-            <el-input v-model.trim="form.paidAmount" />
+            <el-input v-model.trim="form.paidAmount" @change="syncDerivedOrderAmounts" />
           </el-form-item>
           <el-form-item label="平台手续费">
-            <el-input v-model.trim="form.platformFee" placeholder="留空按来源平台费率计算" />
+            <el-input v-model.trim="form.platformFee" disabled placeholder="按来源平台自动计算" />
           </el-form-item>
           <el-form-item label="退款/补发损耗">
             <el-input v-model.trim="form.refundLoss" />
           </el-form-item>
 
           <el-form-item label="Apple 消耗金额" prop="appleCostValue">
-            <el-input v-model.trim="form.appleCostValue" @change="loadAvailableAccounts" />
+            <el-input
+              v-model.trim="form.appleCostValue"
+              disabled
+              placeholder="按业务官方消耗自动带出"
+            />
           </el-form-item>
           <el-form-item label="已选 Apple ID" prop="appleAccountId">
             <el-input :model-value="selectedAccountLabel" disabled />
@@ -160,7 +240,7 @@
               {{
                 selectedAccount
                   ? `${selectedAccount.region} / ${selectedAccount.currency} · 余额 ${selectedAccount.balance}`
-                  : '点击匹配后从可用账号中选择，系统会保留不可用原因供核对。'
+                  : '选择业务后会自动匹配可用 Apple ID，也可以手动重新匹配。'
               }}
             </p>
           </div>
@@ -172,9 +252,9 @@
             class="toolbar-search"
             placeholder="搜索 Apple ID、地区、币种、备注"
             clearable
-            @keyup.enter="loadAvailableAccounts"
+            @keyup.enter="loadAvailableAccounts({ autoSelect: true })"
           />
-          <AppButton @click="loadAvailableAccounts">匹配</AppButton>
+          <AppButton @click="() => loadAvailableAccounts({ autoSelect: true })">重新匹配</AppButton>
         </div>
 
         <el-table
@@ -187,9 +267,11 @@
           <template #empty>
             <div class="apple-core-empty-state">
               <strong>暂无匹配结果</strong>
-              <span>请先选择 Apple ID 业务，确认消耗金额后点击匹配。</span>
+              <span>请先选择业务，系统会按官方消耗金额自动匹配。</span>
               <div class="apple-core-empty-state__actions">
-                <AppButton variant="soft" @click="loadAvailableAccounts">重新匹配</AppButton>
+                <AppButton variant="soft" @click="loadAvailableAccounts({ autoSelect: true })">
+                  重新匹配
+                </AppButton>
               </div>
             </div>
           </template>
@@ -200,7 +282,9 @@
             <template #default="{ row }">{{ row.region }} / {{ row.currency }}</template>
           </el-table-column>
           <el-table-column prop="balance" label="余额" width="90" />
-          <el-table-column prop="avgUnitCost" label="均价" width="100" />
+          <el-table-column label="均价" width="100">
+            <template #default="{ row }">{{ formatAverageCost(row.avgUnitCost) }}</template>
+          </el-table-column>
           <el-table-column label="状态" min-width="150">
             <template #default="{ row }">
               <StatusChip :tone="getAvailabilityTone(row.availability)" dot>
@@ -251,7 +335,7 @@
               </div>
               <div>
                 <span>均价</span>
-                <strong>{{ account.avgUnitCost }}</strong>
+                <strong>{{ formatAverageCost(account.avgUnitCost) }}</strong>
               </div>
               <div>
                 <span>状态原因</span>
@@ -277,9 +361,11 @@
         >
           <div class="apple-core-empty-state">
             <strong>暂无匹配结果</strong>
-            <span>请先选择 Apple ID 业务，确认消耗金额后点击匹配。</span>
+            <span>请先选择业务，系统会按官方消耗金额自动匹配。</span>
             <div class="apple-core-empty-state__actions">
-              <AppButton variant="soft" @click="loadAvailableAccounts">重新匹配</AppButton>
+              <AppButton variant="soft" @click="loadAvailableAccounts({ autoSelect: true })">
+                重新匹配
+              </AppButton>
             </div>
           </div>
         </div>
@@ -336,6 +422,25 @@
         </div>
       </AppCard>
     </div>
+
+    <el-dialog
+      v-model="newCustomerDialogVisible"
+      title="新增客户资料"
+      width="min(620px, calc(100vw - 24px))"
+    >
+      <CustomerProfileForm
+        ref="newCustomerFormRef"
+        :model-value="newCustomerForm"
+        :rules="newCustomerRules"
+        :source-platforms="sourcePlatforms"
+        :tag-options="customerTagOptions"
+        @update:model-value="assignCustomerProfileForm(newCustomerForm, $event)"
+      />
+      <template #footer>
+        <AppButton @click="newCustomerDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" @click="saveNewCustomerDraft">加入订单</AppButton>
+      </template>
+    </el-dialog>
   </PageScaffold>
 </template>
 
@@ -343,13 +448,22 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { appleMatchingApi, appleOrdersApi } from '@/api/system';
+import { appleMatchingApi, appleOrdersApi, customersApi } from '@/api/system';
+import type { SaveCustomerPayload } from '@/api/system';
+import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import type { CustomerProfileFormModel } from '@/types/customerProfileForm';
 import type { AppleService, AvailableAppleAccount, Customer, SourcePlatform } from '@/types/system';
+import {
+  assignCustomerProfileForm,
+  buildCustomerProfilePayload,
+  createCustomerProfileFormModel,
+  resetCustomerProfileForm
+} from '@/utils/customerProfileForm';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 import {
   loadSmartAppleServices,
@@ -358,17 +472,28 @@ import {
 } from '@/utils/smartSystemQueries';
 
 const ORDER_ENTRY_BASE_SCOPE = 'order-entry-base';
-const ORDER_ENTRY_REALTIME_SCOPES = ['customers', 'source-platforms', 'apple-services'];
+const ORDER_ENTRY_REALTIME_SCOPES = [
+  'customers',
+  'source-platforms',
+  'apple-services',
+  ORDER_ENTRY_BASE_SCOPE
+];
 const loading = ref(false);
 const saving = ref(false);
 const matchingLoading = ref(false);
+const customerSearching = ref(false);
 const formRef = ref<FormInstance>();
+const newCustomerFormRef = ref<InstanceType<typeof CustomerProfileForm>>();
 const customers = ref<Customer[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
 const services = ref<AppleService[]>([]);
 const availableAccounts = ref<AvailableAppleAccount[]>([]);
 const selectedAccount = ref<AvailableAppleAccount | null>(null);
+const newCustomerDialogVisible = ref(false);
+const newCustomerDraft = ref<SaveCustomerPayload | null>(null);
 const matchKeyword = ref('');
+const customerSearchKeyword = ref('');
+let customerSearchRequestId = 0;
 
 const form = reactive({
   customerId: '',
@@ -379,31 +504,73 @@ const form = reactive({
   serviceAccount: '',
   currentPlan: '',
   targetPlan: '',
-  startTime: '',
+  startTime: getCurrentDateTimeValue(),
   expireTime: '',
   paidAmount: '',
-  platformFee: '',
+  platformFee: '0.00',
   refundLoss: '0',
   appleCostValue: '',
   remark: ''
 });
 
+const newCustomerForm = reactive<CustomerProfileFormModel>(createCustomerProfileFormModel());
+
 const rules: FormRules<typeof form> = {
-  customerId: [{ required: true, message: '请选择客户', trigger: 'change' }],
   serviceId: [{ required: true, message: '请选择业务', trigger: 'change' }],
   paidAmount: [{ required: true, message: '请输入客户实收', trigger: 'blur' }],
   appleCostValue: [{ required: true, message: '请输入 Apple 消耗金额', trigger: 'blur' }],
   appleAccountId: [{ required: true, message: '请选择可用 Apple ID', trigger: 'change' }]
 };
 
+const newCustomerRules: FormRules<CustomerProfileFormModel> = {
+  name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }]
+};
+
 const selectedService = computed(
   () => services.value.find((service) => service.id === form.serviceId) ?? null
 );
+const selectedSourcePlatform = computed(
+  () => sourcePlatforms.value.find((platform) => platform.id === form.sourcePlatformId) ?? null
+);
+const selectedCustomer = computed(
+  () => customers.value.find((customer) => customer.id === form.customerId) ?? null
+);
+const hasOrderCustomer = computed(() => Boolean(form.customerId || newCustomerDraft.value));
+const serviceGroups = computed(() => {
+  const groupedServices = new Map<string, AppleService[]>();
+
+  for (const service of services.value) {
+    const category = getServiceCategoryLabel(service.category);
+    groupedServices.set(category, [...(groupedServices.get(category) ?? []), service]);
+  }
+
+  return Array.from(groupedServices.entries()).map(([category, items]) => ({
+    category,
+    items
+  }));
+});
 const selectedAccountLabel = computed(() =>
   selectedAccount.value
     ? `${selectedAccount.value.accountMasked} / ${selectedAccount.value.balance} ${selectedAccount.value.currency}`
     : '未选择'
 );
+const customerTagOptions = computed(() => [
+  ...new Set(customers.value.flatMap((customer) => customer.tags))
+]);
+const newCustomerDraftSummary = computed(() => {
+  const customer = newCustomerDraft.value;
+  if (!customer) {
+    return '';
+  }
+
+  const meta = [
+    customer.wechat ? `微信 ${customer.wechat}` : '',
+    customer.phone ? '已填手机号' : '',
+    sourcePlatforms.value.find((platform) => platform.id === customer.sourcePlatformId)?.name ?? ''
+  ].filter(Boolean);
+
+  return meta.length ? `${customer.name} · ${meta.join(' · ')}` : customer.name;
+});
 const availableMatchCount = computed(
   () => availableAccounts.value.filter((account) => account.availability === 'available').length
 );
@@ -414,8 +581,12 @@ const orderEntrySteps = computed(() => [
   {
     key: 'customer',
     label: '客户',
-    description: form.customerId ? '客户已选择' : '选择客户和来源平台',
-    status: form.customerId ? ('done' as const) : ('active' as const)
+    description: form.customerId
+      ? '客户已选择'
+      : newCustomerDraft.value
+        ? '客户资料待随订单新增'
+        : '选择客户和来源平台',
+    status: hasOrderCustomer.value ? ('done' as const) : ('active' as const)
   },
   {
     key: 'service',
@@ -442,7 +613,7 @@ const orderEntrySteps = computed(() => [
     label: '确认提交',
     description: form.appleAccountId ? '可提交生成订单闭环' : '等待选择可用 Apple ID',
     status:
-      form.customerId &&
+      hasOrderCustomer.value &&
       form.serviceId &&
       form.appleAccountId &&
       form.paidAmount &&
@@ -531,6 +702,53 @@ function formatMoney(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : '-';
 }
 
+function formatAverageCost(value: string | number | null | undefined) {
+  return readAmount(value).toFixed(2);
+}
+
+function getServiceCategoryLabel(category?: string | null) {
+  const normalized = category?.trim();
+  if (!normalized || normalized === 'default') {
+    return '通用';
+  }
+  return normalized;
+}
+
+function calculatePlatformFee() {
+  const platform = selectedSourcePlatform.value;
+  if (!platform || !form.paidAmount) {
+    return '0.00';
+  }
+
+  const paidAmount = readAmount(form.paidAmount);
+  const feeRate = readAmount(platform.feeRate);
+  const feeFixed = readAmount(platform.feeFixed);
+
+  return formatMoney(paidAmount * feeRate + feeFixed);
+}
+
+function syncDerivedOrderAmounts() {
+  form.platformFee = calculatePlatformFee();
+}
+
+function getCurrentDateTimeValue() {
+  const date = new Date();
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffset / 60)).padStart(2, '0');
+  const offsetRestMinutes = String(absoluteOffset % 60).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const second = String(date.getSeconds()).padStart(2, '0');
+  const millisecond = String(date.getMilliseconds()).padStart(3, '0');
+
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond}${sign}${offsetHours}:${offsetRestMinutes}`;
+}
+
 async function loadInitialData(
   options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
 ) {
@@ -570,9 +788,94 @@ async function loadOrderEntryBaseData(options: { dedupeMs?: number; force?: bool
 
 function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryBaseData>>) {
   const [customerData, platformData, serviceData] = data;
-  customers.value = customerData.items;
+  customers.value = mergeCustomerItems(
+    customerData.items,
+    selectedCustomer.value ? [selectedCustomer.value] : []
+  );
   sourcePlatforms.value = platformData.items;
   services.value = serviceData.items;
+}
+
+function mergeCustomerItems(items: Customer[], pinnedItems: Customer[] = []) {
+  const customerMap = new Map<string, Customer>();
+  for (const customer of pinnedItems) {
+    customerMap.set(customer.id, customer);
+  }
+  for (const customer of items) {
+    customerMap.set(customer.id, customer);
+  }
+  return Array.from(customerMap.values());
+}
+
+async function searchCustomers(keyword: string) {
+  const requestId = ++customerSearchRequestId;
+  customerSearchKeyword.value = keyword;
+  customerSearching.value = true;
+
+  try {
+    const data = await loadSmartCustomers(
+      {
+        page: 1,
+        pageSize: 30,
+        keyword: keyword.trim() || undefined,
+        status: 'active'
+      },
+      { force: true, dedupeMs: 300 }
+    );
+
+    if (requestId !== customerSearchRequestId) {
+      return;
+    }
+
+    customers.value = mergeCustomerItems(
+      data.items,
+      selectedCustomer.value ? [selectedCustomer.value] : []
+    );
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '搜索客户失败');
+  } finally {
+    if (requestId === customerSearchRequestId) {
+      customerSearching.value = false;
+    }
+  }
+}
+
+function handleCustomerSelectVisibleChange(visible: boolean) {
+  if (visible) {
+    void searchCustomers(customerSearchKeyword.value);
+  }
+}
+
+function handleCustomerChange(customerId: string) {
+  if (!customerId) {
+    return;
+  }
+
+  newCustomerDraft.value = null;
+  const customer = customers.value.find((item) => item.id === customerId);
+  if (!form.sourcePlatformId && customer?.sourcePlatformId) {
+    form.sourcePlatformId = customer.sourcePlatformId;
+    syncDerivedOrderAmounts();
+  }
+}
+
+function getCustomerMeta(customer: Customer) {
+  return [
+    customer.sourcePlatform?.name ?? '',
+    customer.wechat ? `微信 ${customer.wechat}` : '',
+    customer.maskedPhone ?? (customer.phoneTail ? `尾号 ${customer.phoneTail}` : '')
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function getCustomerOptionLabel(customer: Customer) {
+  const meta = getCustomerMeta(customer);
+  return meta ? `${customer.name} · ${meta}` : customer.name;
+}
+
+function handleSourcePlatformChange() {
+  syncDerivedOrderAmounts();
 }
 
 async function handleServiceChange() {
@@ -587,11 +890,56 @@ async function handleServiceChange() {
 
   form.paidAmount = service.defaultPrice;
   form.appleCostValue = service.officialCostValue;
-  form.targetPlan = form.targetPlan || service.name;
-  await loadAvailableAccounts();
+  form.targetPlan = service.name;
+  syncDerivedOrderAmounts();
+  await loadAvailableAccounts({ autoSelect: service.autoMatchAppleId });
 }
 
-async function loadAvailableAccounts() {
+function openNewCustomerDialog() {
+  if (newCustomerDraft.value) {
+    fillNewCustomerFormFromPayload(newCustomerDraft.value);
+  } else {
+    resetCustomerProfileForm(newCustomerForm);
+    newCustomerForm.sourcePlatformId = form.sourcePlatformId;
+  }
+
+  newCustomerDialogVisible.value = true;
+}
+
+function fillNewCustomerFormFromPayload(payload: SaveCustomerPayload) {
+  newCustomerForm.name = payload.name;
+  newCustomerForm.phone = payload.phone ?? '';
+  newCustomerForm.wechat = payload.wechat ?? '';
+  newCustomerForm.sourcePlatformId = payload.sourcePlatformId ?? '';
+  newCustomerForm.tags = [...(payload.tags ?? [])];
+  newCustomerForm.remark = payload.remark ?? '';
+  newCustomerForm.status = payload.status ?? 'active';
+}
+
+async function saveNewCustomerDraft() {
+  const valid = await newCustomerFormRef.value?.validate().catch(() => false);
+  if (!valid) {
+    return;
+  }
+
+  newCustomerDraft.value = buildCustomerProfilePayload(newCustomerForm, { emptyPhone: 'null' });
+  form.customerId = '';
+
+  if (!form.sourcePlatformId && newCustomerDraft.value.sourcePlatformId) {
+    form.sourcePlatformId = newCustomerDraft.value.sourcePlatformId;
+  }
+
+  formRef.value?.clearValidate('customerId');
+  newCustomerDialogVisible.value = false;
+  ElMessage.success('客户资料已加入订单，提交订单时会同步到客户管理');
+}
+
+function clearNewCustomerDraft() {
+  newCustomerDraft.value = null;
+  resetCustomerProfileForm(newCustomerForm);
+}
+
+async function loadAvailableAccounts(options: { autoSelect?: boolean } = {}) {
   if (!form.serviceId) {
     return;
   }
@@ -606,6 +954,16 @@ async function loadAvailableAccounts() {
       showUnavailable: 'true'
     });
     availableAccounts.value = data.items;
+    if (options.autoSelect) {
+      const firstAvailableAccount =
+        data.items.find((account) => account.availability === 'available') ?? null;
+      if (firstAvailableAccount) {
+        selectAccount(firstAvailableAccount);
+      } else {
+        selectedAccount.value = null;
+        form.appleAccountId = '';
+      }
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '自动匹配失败');
   } finally {
@@ -633,6 +991,11 @@ function getAvailabilityTone(value: AvailableAppleAccount['availability']) {
 }
 
 async function submitOrder() {
+  if (!hasOrderCustomer.value) {
+    ElMessage.warning('请选择客户，或手动输入客户资料后再提交订单');
+    return;
+  }
+
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -640,8 +1003,9 @@ async function submitOrder() {
 
   saving.value = true;
   try {
+    const customerId = await resolveOrderCustomerId();
     const order = await appleOrdersApi.create({
-      customerId: form.customerId,
+      customerId,
       sourcePlatformId: form.sourcePlatformId || null,
       externalOrderNo: form.externalOrderNo || null,
       serviceId: form.serviceId,
@@ -667,6 +1031,23 @@ async function submitOrder() {
   }
 }
 
+async function resolveOrderCustomerId() {
+  if (form.customerId) {
+    return form.customerId;
+  }
+
+  if (!newCustomerDraft.value) {
+    throw new Error('请先选择客户或新增客户资料');
+  }
+
+  const createdCustomer = await customersApi.create(newCustomerDraft.value);
+  customers.value = mergeCustomerItems([createdCustomer], customers.value);
+  form.customerId = createdCustomer.id;
+  newCustomerDraft.value = null;
+
+  return createdCustomer.id;
+}
+
 function resetOrderForm() {
   form.customerId = '';
   form.sourcePlatformId = '';
@@ -676,23 +1057,103 @@ function resetOrderForm() {
   form.serviceAccount = '';
   form.currentPlan = '';
   form.targetPlan = '';
-  form.startTime = '';
+  form.startTime = getCurrentDateTimeValue();
   form.expireTime = '';
   form.paidAmount = '';
-  form.platformFee = '';
+  form.platformFee = '0.00';
   form.refundLoss = '0';
   form.appleCostValue = '';
   form.remark = '';
   selectedAccount.value = null;
+  newCustomerDraft.value = null;
+  resetCustomerProfileForm(newCustomerForm);
 }
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(ORDER_ENTRY_REALTIME_SCOPES, () => {
   void loadInitialData({ silent: true, dedupeMs: 0 });
 });
 
-onMounted(() => loadInitialData({ force: false }));
+onMounted(() => loadInitialData({ force: true, dedupeMs: 0 }));
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();
 });
 </script>
+
+<style scoped>
+.order-entry-select-empty {
+  display: flex;
+  min-width: 260px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.order-entry-customer-picker {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.order-entry-customer-picker__create {
+  white-space: nowrap;
+}
+
+.order-entry-customer-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.order-entry-customer-option strong,
+.order-entry-customer-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-entry-customer-option span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.order-entry-customer-draft {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
+}
+
+.order-entry-customer-draft span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .order-entry-customer-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .order-entry-customer-picker__create {
+    width: 100%;
+  }
+}
+</style>

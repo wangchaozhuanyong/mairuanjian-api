@@ -32,7 +32,6 @@ interface ProfitReportOrder {
   sourcePlatform?: {
     id: string;
     name: string;
-    type: string;
   } | null;
   appleAccount?: {
     id: string;
@@ -77,8 +76,7 @@ const profitOrderSelect = {
   sourcePlatform: {
     select: {
       id: true,
-      name: true,
-      type: true
+      name: true
     }
   },
   appleAccount: {
@@ -134,10 +132,7 @@ export class AppleReportsService {
         sourcePlatformGroups,
         order.sourcePlatform?.id ?? 'manual',
         order.sourcePlatform?.name ?? '手工/未绑定平台',
-        order,
-        {
-          type: order.sourcePlatform?.type ?? null
-        }
+        order
       );
       this.addOrderToGroup(
         accountGroups,

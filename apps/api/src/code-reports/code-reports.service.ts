@@ -51,9 +51,7 @@ const codeProfitOrderSelect = {
   platform: {
     select: {
       id: true,
-      name: true,
-      code: true,
-      type: true
+      name: true
     }
   },
   service: {
@@ -126,10 +124,7 @@ export class CodeReportsService {
           status: order.service?.status ?? null
         }
       );
-      this.addOrderToGroup(platformGroups, order.platform.id, order.platform.name, order, {
-        type: order.platform.type,
-        code: order.platform.code
-      });
+      this.addOrderToGroup(platformGroups, order.platform.id, order.platform.name, order);
     }
 
     return {

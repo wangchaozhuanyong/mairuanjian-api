@@ -121,10 +121,10 @@
 
     <section class="content-panel">
       <div class="panel-title-row report-panel-title">
-        <div>
-          <h3>兑换码利润报表明细</h3>
-          <p>按当前筛选范围聚合发货、成本、售后补发、退款和净利润。</p>
-        </div>
+        <PanelTitleHelp
+          title="兑换码利润报表明细"
+          help="这里只看兑换码业务的利润。会按当前筛选范围汇总发货、成本、售后补发、退款和净利润。"
+        />
         <StatusChip tone="blue" dot>{{ activeTabLabel }}</StatusChip>
       </div>
 
@@ -132,7 +132,6 @@
         v-model:keyword="query.keyword"
         v-model:status="query.deliveryStatus"
         v-model:date-shortcut="quickDate"
-        v-model:density="density"
         v-model:visible-columns="reportVisibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="reportColumnOptions"
@@ -461,6 +460,7 @@ import { codeReportsApi, userTableViewsApi, type CodeProfitReportQuery } from '@
 import AppCard from '@/components/ui/AppCard.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
@@ -884,7 +884,7 @@ function applyView(view: UserTableView) {
   query.deliveryStatus = isDeliveryStatus(filters.deliveryStatus) ? filters.deliveryStatus : '';
   query.dateFrom = typeof filters.dateFrom === 'string' ? filters.dateFrom : '';
   query.dateTo = typeof filters.dateTo === 'string' ? filters.dateTo : '';
-  density.value = view.density;
+  density.value = 'default';
   reportVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) => reportColumnOptions.some((option) => option.value === column))
     : reportColumnOptions.map((column) => column.value);

@@ -20,9 +20,7 @@ describe('CodeReportsService', () => {
       deliveredAt: new Date('2026-06-18T00:10:00.000Z'),
       platform: {
         id: '22222222-2222-4222-8222-222222222222',
-        name: '淘宝店',
-        code: 'taobao-main',
-        type: 'taobao' as const
+        name: '淘宝店'
       },
       service: {
         id: '33333333-3333-4333-8333-333333333333',

@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     title="权限管理"
-    group="系统管理"
+    group="安全与风控"
     phase="Phase 1"
     description="管理角色、权限树和字段级权限入口。权限变更应写入审计日志。"
   >
@@ -47,16 +47,15 @@
     <section class="split-page">
       <section class="content-panel role-list-panel">
         <div class="panel-title-row">
-          <div>
-            <h3>角色列表</h3>
-            <p>选择一个角色后，在右侧维护该角色可访问的模块和动作权限。</p>
-          </div>
+          <PanelTitleHelp
+            title="角色列表"
+            help="先选一个角色，再到右侧给这个角色配置能看哪些模块、能点哪些操作。"
+          />
           <StatusChip tone="blue" dot>权限角色</StatusChip>
         </div>
 
         <TableToolbar
           v-model:keyword="roleKeyword"
-          v-model:density="density"
           v-model:visible-columns="visibleColumns"
           v-model:saved-view-id="savedViewId"
           :column-options="roleColumnOptions"
@@ -188,10 +187,10 @@
 
       <section class="content-panel permission-panel">
         <div class="panel-title-row">
-          <div>
-            <h3>{{ selectedRole?.name ?? '权限配置' }}</h3>
-            <p>{{ selectedRole?.description || '请选择左侧角色后维护权限树。' }}</p>
-          </div>
+          <PanelTitleHelp
+            :title="selectedRole?.name ?? '权限配置'"
+            :help="selectedRole?.description || '请选择左侧角色后维护权限树。'"
+          />
           <StatusChip :tone="selectedRole ? 'green' : 'neutral'" dot>
             {{ selectedRole ? selectedRole.code : '待选择' }}
           </StatusChip>
@@ -255,6 +254,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { rolesApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
@@ -507,7 +507,7 @@ async function applySavedView(id: string) {
 function applyView(view: UserTableView) {
   const filters = view.filters;
   roleKeyword.value = typeof filters.keyword === 'string' ? filters.keyword : '';
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) => roleColumnOptions.some((option) => option.value === column))
     : roleColumnOptions.map((column) => column.value);

@@ -29,7 +29,6 @@
       <TableToolbar
         v-model:keyword="keyword"
         v-model:status="status"
-        v-model:density="density"
         v-model:date-shortcut="dateShortcut"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
@@ -125,10 +124,10 @@
 
     <section class="content-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>模块能力</h3>
-          <p>页面已完成设计占位，后续只替换真实数据和接口。</p>
-        </div>
+        <PanelTitleHelp
+          title="模块能力"
+          help="这个页面现在是功能位置预留，后面接真实数据时，只需要把这里换成正式接口和正式记录。"
+        />
         <StatusChip tone="neutral">不接假数据库</StatusChip>
       </div>
       <div class="feature-grid">
@@ -186,6 +185,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import ExperiencePreview from '@/components/ui/ExperiencePreview.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -401,7 +401,7 @@ function applyView(view: UserTableView) {
   status.value = typeof filters.status === 'string' ? filters.status : '';
   dateShortcut.value =
     typeof filters.dateShortcut === 'string' ? filters.dateShortcut : 'last_7_days';
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) => columns.value.includes(column))
     : [...columns.value];

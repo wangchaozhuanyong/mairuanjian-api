@@ -1739,7 +1739,7 @@ export class DataCenterService {
         }
       });
     } catch {
-      // 数据任务状态不能因为通知中心异常而更新失败。
+      // 数据任务状态不能因为系统通知异常而更新失败。
     }
   }
 
@@ -1937,7 +1937,6 @@ export class DataCenterService {
     await this.prisma.customer.create({
       data: {
         name,
-        contactName: this.getOptionalImportValue(row, 'contactName'),
         phone,
         phoneTail: this.getTail(phone),
         wechat: this.getOptionalImportValue(row, 'wechat'),
@@ -1953,32 +1952,20 @@ export class DataCenterService {
 
   private async importSourcePlatformRow(row: Record<string, string>, operator?: AuthenticatedUser) {
     const name = this.getRequiredImportValue(row, 'name');
-    const code = this.normalizeImportCode(this.getRequiredImportValue(row, 'code'));
-    const existing = await this.prisma.sourcePlatform.findUnique({
-      where: { code },
-      select: { id: true }
-    });
-    if (existing) {
-      throw new ConflictException(`Source platform code already exists: ${code}`);
-    }
 
     await this.prisma.sourcePlatform.create({
       data: {
         name,
-        code,
-        type: this.parseImportStatus(
-          row.type,
-          ['taobao', 'xianyu', 'wechat', 'manual', 'other'] as const,
-          'other'
-        ),
         feeRate: this.parseImportDecimal(row.feeRate, 'feeRate', 4),
         feeFixed: this.parseImportDecimal(row.feeFixed, 'feeFixed', 2),
-        syncEnabled: this.parseImportBoolean(row.syncEnabled),
-        deliveryEnabled: this.parseImportBoolean(row.deliveryEnabled),
         status: this.parseImportStatus(row.status, ['active', 'disabled'] as const, 'active'),
         remark: this.getOptionalImportValue(row, 'remark'),
-        createdByUserId: operator?.id,
-        updatedByUserId: operator?.id
+        ...(operator?.id
+          ? {
+              createdBy: { connect: { id: operator.id } },
+              updatedBy: { connect: { id: operator.id } }
+            }
+          : {})
       }
     });
   }
@@ -1989,18 +1976,18 @@ export class DataCenterService {
       return this.normalizeRequiredUuid(explicitId, 'sourcePlatformId');
     }
 
-    const code = this.getOptionalImportValue(row, 'sourcePlatformCode');
-    if (!code) return null;
+    const name = this.getOptionalImportValue(row, 'sourcePlatformName');
+    if (!name) return null;
 
     const sourcePlatform = await this.prisma.sourcePlatform.findFirst({
       where: {
-        code: this.normalizeImportCode(code),
+        name,
         deletedAt: null
       },
       select: { id: true }
     });
     if (!sourcePlatform) {
-      throw new BadRequestException(`Source platform code does not exist: ${code}`);
+      throw new BadRequestException(`Source platform name does not exist: ${name}`);
     }
     return sourcePlatform.id;
   }
@@ -2148,14 +2135,6 @@ export class DataCenterService {
     return normalized;
   }
 
-  private normalizeImportCode(value: string) {
-    const code = value.trim().toLowerCase();
-    if (!/^[a-z0-9_-]+$/.test(code)) {
-      throw new BadRequestException('code can only contain lowercase letters, numbers, _ and -');
-    }
-    return code;
-  }
-
   private normalizeImportModule(value: string) {
     return value.trim().toLowerCase().replace(/-/g, '_');
   }
@@ -2260,7 +2239,6 @@ export class DataCenterService {
       select: {
         id: true,
         name: true,
-        contactName: true,
         phoneTail: true,
         wechat: true,
         tags: true,
@@ -2274,7 +2252,6 @@ export class DataCenterService {
     const fields = [
       'id',
       'name',
-      'contactName',
       'phoneMasked',
       'wechat',
       'sourcePlatform',
@@ -2289,7 +2266,6 @@ export class DataCenterService {
       rows: items.map((item) => ({
         id: item.id,
         name: item.name,
-        contactName: item.contactName,
         phoneMasked: item.phoneTail ? `***${item.phoneTail}` : '',
         wechat: item.wechat,
         sourcePlatform: item.sourcePlatform?.name,
@@ -2310,12 +2286,8 @@ export class DataCenterService {
       select: {
         id: true,
         name: true,
-        code: true,
-        type: true,
         feeRate: true,
         feeFixed: true,
-        syncEnabled: true,
-        deliveryEnabled: true,
         status: true,
         remark: true,
         createdAt: true,
@@ -2325,12 +2297,8 @@ export class DataCenterService {
     const fields = [
       'id',
       'name',
-      'code',
-      'type',
       'feeRate',
       'feeFixed',
-      'syncEnabled',
-      'deliveryEnabled',
       'status',
       'remark',
       'createdAt',

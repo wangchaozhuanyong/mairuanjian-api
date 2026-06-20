@@ -7,10 +7,10 @@
   >
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>开通记录台账</h3>
-          <p>核对订单、客户、业务、Apple ID、到期时间和续费决定，支撑后续续费任务生成。</p>
-        </div>
+        <PanelTitleHelp
+          title="开通记录台账"
+          help="这里核对每个已开通业务对应的订单、客户、Apple ID、到期时间和续费决定，后面生成续费任务会用到这些信息。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 条</StatusChip>
           <StatusChip tone="green">开通中 {{ activeCount }}</StatusChip>
@@ -31,7 +31,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="activationColumnOptions"
@@ -336,7 +335,7 @@
             {{ formatDate(selectedActivation?.expireTime) }}
           </el-descriptions-item>
           <el-descriptions-item label="消费时平均成本">
-            {{ selectedActivation?.avgUnitCost ?? '-' }}
+            {{ formatAverageCost(selectedActivation?.avgUnitCost) }}
           </el-descriptions-item>
           <el-descriptions-item label="实收/手续费/损耗">
             {{ selectedActivation?.paidAmount ?? '-' }} /
@@ -366,6 +365,7 @@ import type { ServiceActivationQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -484,6 +484,15 @@ const filterChips = computed(() => {
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
+}
+
+function formatAverageCost(value?: string | number | null) {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return '-';
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue.toFixed(2) : '-';
 }
 
 function formatDateOnly(date: Date) {
@@ -794,7 +803,7 @@ function applyView(view: UserTableView) {
   query.expireTo = typeof filters.expireTo === 'string' ? filters.expireTo : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         activationColumnOptions.some((option) => option.value === column)

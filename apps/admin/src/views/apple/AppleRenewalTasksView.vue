@@ -48,10 +48,7 @@
 
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>{{ pageCopy.panelTitle }}</h3>
-          <p>{{ pageCopy.panelDescription }}</p>
-        </div>
+        <PanelTitleHelp :title="pageCopy.panelTitle" :help="pageCopy.panelDescription" />
         <div class="inline-actions">
           <StatusChip :tone="pageCopy.tone" dot>{{ pageCopy.badge }}</StatusChip>
           <StatusChip tone="blue">待办 {{ pendingCount }}</StatusChip>
@@ -68,7 +65,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="renewalColumnOptions"
@@ -567,6 +563,7 @@ import {
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -1111,7 +1108,7 @@ function applyView(view: UserTableView) {
   query.dueTo = typeof filters.dueTo === 'string' ? filters.dueTo : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         renewalColumnOptions.some((option) => option.value === column)

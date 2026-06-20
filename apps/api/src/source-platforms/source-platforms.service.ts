@@ -1,15 +1,5 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException
-} from '@nestjs/common';
-import type {
-  Prisma,
-  SourcePlatform,
-  SourcePlatformStatus,
-  SourcePlatformType
-} from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma, SourcePlatform, SourcePlatformStatus } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { getListCacheKey } from '../common/cache/list-cache-key';
@@ -21,7 +11,6 @@ import type { UpdateSourcePlatformDto } from './dto/update-source-platform.dto';
 
 interface ListSourcePlatformsQuery extends PaginationQuery {
   keyword?: string;
-  type?: string;
   status?: string;
   sortBy?: string;
   sortOrder?: string;
@@ -32,8 +21,6 @@ const SOURCE_PLATFORM_SORT_FIELDS: Record<
   keyof Prisma.SourcePlatformOrderByWithRelationInput
 > = {
   name: 'name',
-  code: 'code',
-  type: 'type',
   feeRate: 'feeRate',
   feeFixed: 'feeFixed',
   status: 'status',
@@ -61,17 +48,14 @@ export class SourcePlatformsService {
 
   private async listUncached(query: ListSourcePlatformsQuery) {
     const pagination = getPagination(query);
-    const type = this.parseType(query.type, false);
     const status = this.parseStatus(query.status, false);
     const keyword = query.keyword?.trim();
     const where: Prisma.SourcePlatformWhereInput = {
       deletedAt: null,
-      type: type ?? undefined,
       status: status ?? undefined,
       OR: keyword
         ? [
             { name: { contains: keyword, mode: 'insensitive' } },
-            { code: { contains: keyword, mode: 'insensitive' } },
             { remark: { contains: keyword, mode: 'insensitive' } }
           ]
         : undefined
@@ -112,24 +96,20 @@ export class SourcePlatformsService {
 
   async create(dto: CreateSourcePlatformDto, operator?: AuthenticatedUser) {
     this.assertRequiredString(dto.name, 'name');
-    this.assertRequiredString(dto.code, 'code');
-
-    const code = this.normalizeCode(dto.code);
-    await this.assertCodeAvailable(code);
 
     const sourcePlatform = await this.prisma.sourcePlatform.create({
       data: {
         name: dto.name.trim(),
-        code,
-        type: this.parseType(dto.type, true) ?? 'other',
         feeRate: this.normalizeDecimal(dto.feeRate, 'feeRate'),
         feeFixed: this.normalizeDecimal(dto.feeFixed, 'feeFixed'),
-        syncEnabled: Boolean(dto.syncEnabled),
-        deliveryEnabled: Boolean(dto.deliveryEnabled),
         status: this.parseStatus(dto.status, true) ?? 'active',
         remark: this.normalizeNullableString(dto.remark),
-        createdByUserId: operator?.id,
-        updatedByUserId: operator?.id
+        ...(operator?.id
+          ? {
+              createdBy: { connect: { id: operator.id } },
+              updatedBy: { connect: { id: operator.id } }
+            }
+          : {})
       }
     });
 
@@ -140,7 +120,7 @@ export class SourcePlatformsService {
       objectType: 'source_platform',
       objectId: sourcePlatform.id,
       afterData: this.toResponse(sourcePlatform),
-      remark: `Created source platform ${sourcePlatform.code}`
+      remark: `Created source platform ${sourcePlatform.name}`
     });
 
     this.listCache.clear();
@@ -175,30 +155,12 @@ export class SourcePlatformsService {
       data.name = dto.name.trim();
     }
 
-    if (dto.code !== undefined) {
-      const code = this.normalizeCode(dto.code);
-      await this.assertCodeAvailable(code, id);
-      data.code = code;
-    }
-
-    if (dto.type !== undefined) {
-      data.type = this.parseType(dto.type, true);
-    }
-
     if (dto.feeRate !== undefined) {
       data.feeRate = this.normalizeDecimal(dto.feeRate, 'feeRate');
     }
 
     if (dto.feeFixed !== undefined) {
       data.feeFixed = this.normalizeDecimal(dto.feeFixed, 'feeFixed');
-    }
-
-    if (dto.syncEnabled !== undefined) {
-      data.syncEnabled = Boolean(dto.syncEnabled);
-    }
-
-    if (dto.deliveryEnabled !== undefined) {
-      data.deliveryEnabled = Boolean(dto.deliveryEnabled);
     }
 
     if (dto.status !== undefined) {
@@ -224,7 +186,7 @@ export class SourcePlatformsService {
       objectId: id,
       beforeData: this.toResponse(existingSourcePlatform),
       afterData: this.toAuditJson(dto),
-      remark: `Updated source platform ${existingSourcePlatform.code}`
+      remark: `Updated source platform ${existingSourcePlatform.name}`
     });
 
     this.listCache.clear();
@@ -261,7 +223,7 @@ export class SourcePlatformsService {
       objectType: 'source_platform',
       objectId: id,
       beforeData: this.toResponse(existingSourcePlatform),
-      remark: `Deleted source platform ${existingSourcePlatform.code}`
+      remark: `Deleted source platform ${existingSourcePlatform.name}`
     });
 
     this.listCache.clear();
@@ -269,43 +231,6 @@ export class SourcePlatformsService {
     return {
       deleted: true
     };
-  }
-
-  private async assertCodeAvailable(code: string, currentId?: string) {
-    const existingSourcePlatform = await this.prisma.sourcePlatform.findUnique({
-      where: {
-        code
-      },
-      select: {
-        id: true
-      }
-    });
-
-    if (existingSourcePlatform && existingSourcePlatform.id !== currentId) {
-      throw new ConflictException('Source platform code already exists');
-    }
-  }
-
-  private parseType(value: unknown, strict: boolean) {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (
-      value === 'taobao' ||
-      value === 'xianyu' ||
-      value === 'wechat' ||
-      value === 'manual' ||
-      value === 'other'
-    ) {
-      return value satisfies SourcePlatformType;
-    }
-
-    if (strict) {
-      throw new BadRequestException('Invalid source platform type');
-    }
-
-    return undefined;
   }
 
   private parseStatus(value: unknown, strict: boolean) {
@@ -328,15 +253,6 @@ export class SourcePlatformsService {
     if (typeof value !== 'string' || !value.trim()) {
       throw new BadRequestException(`${field} is required`);
     }
-  }
-
-  private normalizeCode(value: string) {
-    const code = value.trim().toLowerCase();
-    if (!/^[a-z0-9_-]+$/.test(code)) {
-      throw new BadRequestException('code can only contain lowercase letters, numbers, _ and -');
-    }
-
-    return code;
   }
 
   private normalizeDecimal(value: string | number | undefined, field: string) {
@@ -389,12 +305,8 @@ export class SourcePlatformsService {
     return {
       id: sourcePlatform.id,
       name: sourcePlatform.name,
-      code: sourcePlatform.code,
-      type: sourcePlatform.type,
       feeRate: sourcePlatform.feeRate.toString(),
       feeFixed: sourcePlatform.feeFixed.toString(),
-      syncEnabled: sourcePlatform.syncEnabled,
-      deliveryEnabled: sourcePlatform.deliveryEnabled,
       status: sourcePlatform.status,
       remark: sourcePlatform.remark,
       createdAt: sourcePlatform.createdAt,

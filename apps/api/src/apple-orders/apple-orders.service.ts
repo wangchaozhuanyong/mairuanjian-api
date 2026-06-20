@@ -79,16 +79,13 @@ const orderInclude = {
     select: {
       id: true,
       name: true,
-      contactName: true,
       wechat: true
     }
   },
   sourcePlatform: {
     select: {
       id: true,
-      name: true,
-      code: true,
-      type: true
+      name: true
     }
   },
   service: {

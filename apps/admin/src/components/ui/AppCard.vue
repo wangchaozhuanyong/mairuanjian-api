@@ -7,8 +7,17 @@
   >
     <header v-if="title || subtitle || tag || $slots.actions" class="app-card__header">
       <div class="app-card__heading">
-        <h3 v-if="title" class="app-card__title">{{ title }}</h3>
-        <p v-if="subtitle" class="app-card__subtitle">{{ subtitle }}</p>
+        <h3 v-if="title" class="app-card__title">
+          <span>{{ title }}</span>
+          <FeatureHelp
+            v-if="subtitle"
+            class="app-card__title-help"
+            placement="right"
+            :title="title"
+            :text="subtitle"
+          />
+        </h3>
+        <p v-else-if="subtitle" class="app-card__subtitle">{{ subtitle }}</p>
       </div>
       <div v-if="tag || $slots.actions" class="app-card__actions">
         <StatusChip v-if="tag" :tone="tagTone">{{ tag }}</StatusChip>
@@ -33,6 +42,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import AppState from '@/components/ui/AppState.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 
 type AppCardTagTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';

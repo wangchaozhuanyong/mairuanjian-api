@@ -1,20 +1,19 @@
 <template>
   <PageScaffold
-    title="消息模板"
-    group="系统管理"
+    title="发货模板"
+    group="兑换码业务"
     phase="Phase 2"
-    description="维护续费询问、发货、售后、通知等模板。模板变量使用 {{ variable }} 格式。"
+    description="维护淘宝、闲鱼客户付款后收到的发货回复内容。模板变量使用 {{ variable }} 格式。"
   >
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>消息模板列表</h3>
-          <p>集中维护续费、发货、售后和通知话术，变量按模板配置展示。</p>
-        </div>
+        <PanelTitleHelp
+          title="发货模板列表"
+          help="这些话术是给淘宝、闲鱼客户付款后自动回复用的，只服务兑换码发货，不和代充订单、通知提醒混在一起。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>模板 {{ total }}</StatusChip>
           <StatusChip tone="green">启用 {{ activeTemplateCount }}</StatusChip>
-          <StatusChip tone="purple">Telegram {{ telegramTemplateCount }}</StatusChip>
           <StatusChip tone="orange">含变量 {{ variableTemplateCount }}</StatusChip>
         </div>
       </div>
@@ -22,7 +21,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="templateColumnOptions"
@@ -32,7 +30,7 @@
         :selected-count="selectedTemplates.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
-        primary-label="新增消息模板"
+        primary-label="新增发货模板"
         placeholder="搜索模板名称、内容、备注"
         @search="handleSearch"
         @refresh="() => loadTemplates()"
@@ -43,38 +41,7 @@
         @apply-view="applySavedView"
         @export="exportList"
         @batch-action="handleBatchAction"
-      >
-        <template #filters>
-          <el-select
-            v-model="query.type"
-            class="table-toolbar__select"
-            clearable
-            placeholder="类型"
-            @change="handleSearch"
-          >
-            <el-option
-              v-for="item in templateTypes"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-          <el-select
-            v-model="query.channel"
-            class="table-toolbar__select"
-            clearable
-            placeholder="渠道"
-            @change="handleSearch"
-          >
-            <el-option
-              v-for="item in templateChannels"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </template>
-      </TableToolbar>
+      />
 
       <el-table
         v-loading="loading"
@@ -87,11 +54,11 @@
       >
         <template #empty>
           <div class="apple-core-empty-state">
-            <strong>暂无消息模板</strong>
+            <strong>暂无发货模板</strong>
             <span>可以新增模板，或清空筛选后重新查看模板列表。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-              <AppButton variant="primary" @click="openCreate">新增消息模板</AppButton>
+              <AppButton variant="primary" @click="openCreate">新增发货模板</AppButton>
             </div>
           </div>
         </template>
@@ -103,24 +70,6 @@
           min-width="160"
           sortable="custom"
         />
-        <el-table-column
-          v-if="isColumnVisible('type')"
-          prop="type"
-          label="类型"
-          width="120"
-          sortable="custom"
-        >
-          <template #default="{ row }">{{ getTypeLabel(row.type) }}</template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('channel')"
-          prop="channel"
-          label="渠道"
-          width="130"
-          sortable="custom"
-        >
-          <template #default="{ row }">{{ getChannelLabel(row.channel) }}</template>
-        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('content')"
           prop="content"
@@ -173,9 +122,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ template.name }}</strong>
-              <span
-                >{{ getTypeLabel(template.type) }} · {{ getChannelLabel(template.channel) }}</span
-              >
+              <span>淘宝 / 闲鱼发货话术</span>
             </div>
             <StatusTag :status="template.status" />
           </div>
@@ -188,14 +135,6 @@
           </div>
 
           <div class="mobile-record-card__stats">
-            <div>
-              <span>类型</span>
-              <strong>{{ getTypeLabel(template.type) }}</strong>
-            </div>
-            <div>
-              <span>渠道</span>
-              <strong>{{ getChannelLabel(template.channel) }}</strong>
-            </div>
             <div>
               <span>更新时间</span>
               <strong>{{ formatDate(template.updatedAt) }}</strong>
@@ -217,11 +156,11 @@
 
       <div v-else class="mobile-record-list">
         <div class="apple-core-empty-state">
-          <strong>暂无消息模板</strong>
+          <strong>暂无发货模板</strong>
           <span>可以新增模板，或清空筛选后重新查看模板列表。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-            <AppButton variant="primary" @click="openCreate">新增消息模板</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增发货模板</AppButton>
           </div>
         </div>
       </div>
@@ -236,32 +175,12 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingTemplate ? '编辑消息模板' : '新增消息模板'"
+      :title="editingTemplate ? '编辑发货模板' : '新增发货模板'"
       width="min(700px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="模板名称" prop="name">
           <el-input v-model.trim="form.name" />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-select v-model="form.type" class="full-input">
-            <el-option
-              v-for="item in templateTypes"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="渠道">
-          <el-select v-model="form.channel" class="full-input">
-            <el-option
-              v-for="item in templateChannels"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
         </el-form-item>
         <el-form-item label="模板内容" prop="content">
           <el-input v-model="form.content" type="textarea" :rows="6" />
@@ -309,6 +228,7 @@ import { messageTemplatesApi, userTableViewsApi } from '@/api/system';
 import type { MessageTemplateQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
@@ -317,29 +237,15 @@ import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { MessageTemplate, PageResult, TableDensity, UserTableView } from '@/types/system';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
-const templateTypes: Array<{ label: string; value: MessageTemplate['type'] }> = [
-  { label: '续费', value: 'renewal' },
-  { label: '发货', value: 'delivery' },
-  { label: '售后', value: 'after_sale' },
-  { label: '通知', value: 'notification' },
-  { label: '自定义', value: 'custom' }
-];
-
-const templateChannels: Array<{ label: string; value: MessageTemplate['channel'] }> = [
-  { label: '站内', value: 'internal' },
-  { label: 'Telegram', value: 'telegram' },
-  { label: '客服话术', value: 'customer_service' }
-];
-
-const tableKey = 'message_templates';
+const DELIVERY_TEMPLATE_TYPE = 'delivery' as const satisfies MessageTemplate['type'];
+const DELIVERY_TEMPLATE_CHANNEL = 'customer_service' as const satisfies MessageTemplate['channel'];
+const tableKey = 'delivery_templates';
 const statusOptions = [
   { label: '启用', value: 'active' },
   { label: '停用', value: 'disabled' }
 ];
 const templateColumnOptions = [
   { label: '模板', value: 'name', required: true },
-  { label: '类型', value: 'type' },
-  { label: '渠道', value: 'channel' },
   { label: '内容预览', value: 'content' },
   { label: '变量', value: 'variables' },
   { label: '状态', value: 'status' },
@@ -366,15 +272,13 @@ const query = reactive({
   page: 1,
   pageSize: 20,
   keyword: '',
-  type: '',
-  channel: '',
   status: ''
 });
 
 const form = reactive({
   name: '',
-  type: 'custom' as MessageTemplate['type'],
-  channel: 'internal' as MessageTemplate['channel'],
+  type: DELIVERY_TEMPLATE_TYPE,
+  channel: DELIVERY_TEMPLATE_CHANNEL,
   content: '',
   variables: [] as string[],
   status: 'active' as 'active' | 'disabled',
@@ -395,36 +299,13 @@ const tableSize = computed(() =>
 const activeTemplateCount = computed(
   () => templates.value.filter((template) => template.status === 'active').length
 );
-const telegramTemplateCount = computed(
-  () => templates.value.filter((template) => template.channel === 'telegram').length
-);
 const variableTemplateCount = computed(
   () => templates.value.filter((template) => template.variables.length > 0).length
 );
-const filterChips = computed(() => {
-  const chips: Array<{ key: string; label: string; value: string }> = [];
-  const typeLabel = templateTypes.find((item) => item.value === query.type)?.label;
-  const channelLabel = templateChannels.find((item) => item.value === query.channel)?.label;
-
-  if (query.type && typeLabel) {
-    chips.push({ key: 'type', label: '类型', value: typeLabel });
-  }
-  if (query.channel && channelLabel) {
-    chips.push({ key: 'channel', label: '渠道', value: channelLabel });
-  }
-  return chips;
-});
+const filterChips = computed<Array<{ key: string; label: string; value: string }>>(() => []);
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
-}
-
-function getTypeLabel(type: MessageTemplate['type']) {
-  return templateTypes.find((item) => item.value === type)?.label ?? type;
-}
-
-function getChannelLabel(channel: MessageTemplate['channel']) {
-  return templateChannels.find((item) => item.value === channel)?.label ?? channel;
 }
 
 function isColumnVisible(column: string) {
@@ -436,8 +317,8 @@ function buildTemplateParams(): MessageTemplateQuery {
     page: query.page,
     pageSize: query.pageSize,
     keyword: query.keyword || undefined,
-    type: query.type || undefined,
-    channel: query.channel || undefined,
+    type: DELIVERY_TEMPLATE_TYPE,
+    channel: DELIVERY_TEMPLATE_CHANNEL,
     status: query.status || undefined,
     sortBy: sortConfig.value.prop,
     sortOrder: mapSortOrder(sortConfig.value.order)
@@ -478,7 +359,7 @@ async function loadTemplates(options: { background?: boolean; force?: boolean } 
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载消息模板失败');
+      ElMessage.error(error instanceof Error ? error.message : '加载发货模板失败');
     }
   } finally {
     if (activeTemplatesQueryKey.value === key) {
@@ -508,24 +389,17 @@ function handleSelectionChange(rows: MessageTemplate[]) {
 function clearFilters() {
   query.page = 1;
   query.keyword = '';
-  query.type = '';
-  query.channel = '';
   query.status = '';
   savedViewId.value = '';
   sortConfig.value = {};
 }
 
 function removeFilter(key: string) {
-  if (key === 'type') {
-    query.type = '';
-  }
-  if (key === 'channel') {
-    query.channel = '';
-  }
+  void key;
 }
 
 function exportList() {
-  ElMessage.info('消息模板导出会进入数据中心导出任务，后续统一接入');
+  ElMessage.info('发货模板导出会进入数据中心导出任务，后续统一接入');
 }
 
 function handleBatchAction(action: string) {
@@ -555,8 +429,8 @@ async function loadTableViews(applyDefault = false) {
 
 async function saveTableView() {
   try {
-    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存消息模板视图', {
-      inputValue: '消息模板常用视图',
+    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存发货模板视图', {
+      inputValue: '发货模板常用视图',
       inputPattern: /^.{1,60}$/,
       inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
       confirmButtonText: '保存',
@@ -567,8 +441,6 @@ async function saveTableView() {
       viewName: value.trim(),
       filters: {
         keyword: query.keyword,
-        type: query.type,
-        channel: query.channel,
         status: query.status
       },
       sortConfig: sortConfig.value,
@@ -599,11 +471,9 @@ async function applySavedView(id: string) {
 function applyView(view: UserTableView) {
   const filters = view.filters;
   query.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
-  query.type = isTemplateType(filters.type) ? filters.type : '';
-  query.channel = isTemplateChannel(filters.channel) ? filters.channel : '';
   query.status = isTemplateStatus(filters.status) ? filters.status : '';
   query.pageSize = view.pageSize;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         templateColumnOptions.some((option) => option.value === column)
@@ -631,23 +501,6 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-function isTemplateType(value: unknown): value is MessageTemplate['type'] | '' {
-  return (
-    value === '' ||
-    value === 'renewal' ||
-    value === 'delivery' ||
-    value === 'after_sale' ||
-    value === 'notification' ||
-    value === 'custom'
-  );
-}
-
-function isTemplateChannel(value: unknown): value is MessageTemplate['channel'] | '' {
-  return (
-    value === '' || value === 'internal' || value === 'telegram' || value === 'customer_service'
-  );
-}
-
 function isTemplateStatus(value: unknown): value is MessageTemplate['status'] | '' {
   return value === '' || value === 'active' || value === 'disabled';
 }
@@ -659,8 +512,8 @@ async function initializePage() {
 
 function resetForm() {
   form.name = '';
-  form.type = 'custom';
-  form.channel = 'internal';
+  form.type = DELIVERY_TEMPLATE_TYPE;
+  form.channel = DELIVERY_TEMPLATE_CHANNEL;
   form.content = '';
   form.variables = [];
   form.status = 'active';
@@ -676,8 +529,8 @@ function openCreate() {
 function openEdit(template: MessageTemplate) {
   editingTemplate.value = template;
   form.name = template.name;
-  form.type = template.type;
-  form.channel = template.channel;
+  form.type = DELIVERY_TEMPLATE_TYPE;
+  form.channel = DELIVERY_TEMPLATE_CHANNEL;
   form.content = template.content;
   form.variables = [...template.variables];
   form.status = template.status;
@@ -695,8 +548,8 @@ async function saveTemplate() {
   try {
     const payload = {
       name: form.name,
-      type: form.type,
-      channel: form.channel,
+      type: DELIVERY_TEMPLATE_TYPE,
+      channel: DELIVERY_TEMPLATE_CHANNEL,
       content: form.content,
       variables: form.variables,
       status: form.status,
@@ -709,11 +562,11 @@ async function saveTemplate() {
       await messageTemplatesApi.create(payload);
     }
 
-    ElMessage.success('消息模板已保存');
+    ElMessage.success('发货模板已保存');
     dialogVisible.value = false;
     await loadTemplates({ force: true });
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '保存消息模板失败');
+    ElMessage.error(error instanceof Error ? error.message : '保存发货模板失败');
   } finally {
     saving.value = false;
   }

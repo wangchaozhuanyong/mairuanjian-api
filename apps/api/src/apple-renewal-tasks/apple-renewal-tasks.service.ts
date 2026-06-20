@@ -147,7 +147,6 @@ const renewalTaskInclude = {
     select: {
       id: true,
       name: true,
-      contactName: true,
       wechat: true
     }
   },
@@ -217,7 +216,6 @@ const activationForGenerationInclude = {
     select: {
       id: true,
       name: true,
-      contactName: true,
       wechat: true
     }
   },

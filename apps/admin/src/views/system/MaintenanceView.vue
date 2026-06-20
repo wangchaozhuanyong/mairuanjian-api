@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     title="系统配置"
-    group="系统管理"
+    group="系统配置"
     phase="Phase 13"
     description="集中管理系统公告、维护模式、版本信息、更新日志、功能开关、菜单配置、主题配置和系统参数。"
   >
@@ -12,10 +12,7 @@
 
     <section class="content-panel system-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>{{ activeTabMeta.title }}</h3>
-          <p>{{ activeTabMeta.description }}</p>
-        </div>
+        <PanelTitleHelp :title="activeTabMeta.title" :help="activeTabMeta.description" />
         <div class="inline-actions">
           <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
           <StatusChip tone="blue">公告 {{ overview?.enabledAnnouncementCount ?? '-' }}</StatusChip>
@@ -160,7 +157,6 @@
           <TableToolbar
             v-model:keyword="announcementQuery.keyword"
             v-model:status="announcementQuery.enabled"
-            v-model:density="announcementDensity"
             v-model:visible-columns="announcementVisibleColumns"
             v-model:saved-view-id="announcementSavedViewId"
             :column-options="announcementColumnOptions"
@@ -407,7 +403,6 @@
           <TableToolbar
             v-model:keyword="flagQuery.keyword"
             v-model:status="flagQuery.enabled"
-            v-model:density="flagDensity"
             v-model:visible-columns="flagVisibleColumns"
             v-model:saved-view-id="flagSavedViewId"
             :column-options="flagColumnOptions"
@@ -558,7 +553,6 @@
           <TableToolbar
             v-model:keyword="versionQuery.keyword"
             v-model:status="versionQuery.status"
-            v-model:density="versionDensity"
             v-model:visible-columns="versionVisibleColumns"
             v-model:saved-view-id="versionSavedViewId"
             :column-options="versionColumnOptions"
@@ -705,7 +699,6 @@
           <TableToolbar
             v-model:keyword="changelogQuery.keyword"
             v-model:status="changelogQuery.status"
-            v-model:density="changelogDensity"
             v-model:visible-columns="changelogVisibleColumns"
             v-model:saved-view-id="changelogSavedViewId"
             :column-options="versionColumnOptions"
@@ -877,7 +870,6 @@
         <el-tab-pane label="系统参数" name="parameters">
           <TableToolbar
             v-model:keyword="parameterQuery.keyword"
-            v-model:density="parameterDensity"
             v-model:visible-columns="parameterVisibleColumns"
             v-model:saved-view-id="parameterSavedViewId"
             :column-options="parameterColumnOptions"
@@ -1193,6 +1185,7 @@ import type {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -2437,7 +2430,7 @@ function applyAnnouncementView(view: UserTableView) {
   announcementQuery.level = isAnnouncementLevel(filters.level) ? filters.level : '';
   announcementQuery.enabled = typeof filters.enabled === 'string' ? filters.enabled : '';
   announcementQuery.pageSize = view.pageSize;
-  announcementDensity.value = view.density;
+  announcementDensity.value = 'default';
   announcementVisibleColumns.value = normalizeColumns(view.columns, announcementColumnOptions);
   announcementSortConfig.value = parseSortConfig(view.sortConfig);
   announcementSavedViewId.value = view.id;
@@ -2448,7 +2441,7 @@ function applyFlagView(view: UserTableView) {
   flagQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   flagQuery.enabled = typeof filters.enabled === 'string' ? filters.enabled : '';
   flagQuery.pageSize = view.pageSize;
-  flagDensity.value = view.density;
+  flagDensity.value = 'default';
   flagVisibleColumns.value = normalizeColumns(view.columns, flagColumnOptions);
   flagSortConfig.value = parseSortConfig(view.sortConfig);
   flagSavedViewId.value = view.id;
@@ -2459,7 +2452,7 @@ function applyVersionView(view: UserTableView) {
   versionQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   versionQuery.status = isAppVersionStatus(filters.status) ? filters.status : '';
   versionQuery.pageSize = view.pageSize;
-  versionDensity.value = view.density;
+  versionDensity.value = 'default';
   versionVisibleColumns.value = normalizeColumns(view.columns, versionColumnOptions);
   versionSortConfig.value = parseSortConfig(view.sortConfig);
   versionSavedViewId.value = view.id;
@@ -2470,7 +2463,7 @@ function applyChangelogView(view: UserTableView) {
   changelogQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   changelogQuery.status = isAppVersionStatus(filters.status) ? filters.status : '';
   changelogQuery.pageSize = view.pageSize;
-  changelogDensity.value = view.density;
+  changelogDensity.value = 'default';
   changelogVisibleColumns.value = normalizeColumns(view.columns, versionColumnOptions);
   changelogSortConfig.value = parseSortConfig(view.sortConfig);
   changelogSavedViewId.value = view.id;
@@ -2480,7 +2473,7 @@ function applyParameterView(view: UserTableView) {
   const filters = view.filters;
   parameterQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   parameterQuery.pageSize = view.pageSize;
-  parameterDensity.value = view.density;
+  parameterDensity.value = 'default';
   parameterVisibleColumns.value = normalizeColumns(view.columns, parameterColumnOptions);
   parameterSortConfig.value = parseSortConfig(view.sortConfig);
   parameterSavedViewId.value = view.id;

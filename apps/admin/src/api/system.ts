@@ -262,9 +262,7 @@ export interface CustomerQuery extends CommonPageQuery {
   sourcePlatformId?: string;
 }
 
-export interface SourcePlatformQuery extends CommonPageQuery {
-  type?: string;
-}
+export type SourcePlatformQuery = CommonPageQuery;
 
 export interface MessageTemplateQuery extends CommonPageQuery {
   type?: string;
@@ -534,6 +532,7 @@ export interface AppleAccountQuery extends CommonPageQuery {
   currency?: string;
   region?: string;
   locked?: string;
+  sourcePlatformId?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc' | '';
 }
@@ -674,7 +673,6 @@ export interface SaveUserPayload {
 
 export interface SaveCustomerPayload {
   name: string;
-  contactName?: string | null;
   phone?: string | null;
   wechat?: string | null;
   sourcePlatformId?: string | null;
@@ -689,12 +687,8 @@ export interface RevealCustomerPhonePayload {
 
 export interface SaveSourcePlatformPayload {
   name: string;
-  code: string;
-  type?: SourcePlatform['type'];
   feeRate?: string;
   feeFixed?: string;
-  syncEnabled?: boolean;
-  deliveryEnabled?: boolean;
   status?: 'active' | 'disabled';
   remark?: string | null;
 }
@@ -933,6 +927,7 @@ export interface SaveAppleAccountPayload {
   currency?: string;
   currentBalance?: string;
   balanceCostAmount?: string;
+  sourcePlatformId?: string | null;
   status?: AppleAccount['status'];
   isManuallyLocked?: boolean;
   manualLockReason?: string | null;
@@ -945,6 +940,7 @@ export interface SaveAppleAccountPayload {
 
 export interface ImportAppleAccountsPayload {
   accounts: string[];
+  sourcePlatformId?: string | null;
 }
 
 export interface CreateAppleBalanceTopupPayload {

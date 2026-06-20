@@ -14,6 +14,7 @@ import type {
 } from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AppleAccountsService } from '../apple-accounts/apple-accounts.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { getPagination, type PaginationQuery } from '../common/pagination';
@@ -77,7 +78,8 @@ export class AppleBalancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-    private readonly fieldEncryptionService: FieldEncryptionService
+    private readonly fieldEncryptionService: FieldEncryptionService,
+    private readonly appleAccountsService: AppleAccountsService
   ) {}
 
   async listTopups(accountId: string, query: PaginationQuery) {
@@ -163,6 +165,7 @@ export class AppleBalancesService {
 
       return createdTopup;
     });
+    this.appleAccountsService.invalidateListCache();
 
     await this.auditLogsService.create({
       userId: operator?.id,
@@ -251,6 +254,7 @@ export class AppleBalancesService {
 
       return createdConsumption;
     });
+    this.appleAccountsService.invalidateListCache();
 
     await this.auditLogsService.create({
       userId: operator?.id,
@@ -349,6 +353,7 @@ export class AppleBalancesService {
 
       return createdAdjustment;
     });
+    this.appleAccountsService.invalidateListCache();
 
     await this.auditLogsService.create({
       userId: operator?.id,
@@ -698,6 +703,7 @@ export class AppleBalancesService {
       avgCostBefore: topup.avgCostBefore.toString(),
       avgCostAfter: topup.avgCostAfter.toString(),
       hasGiftCardCode: Boolean(topup.giftCardCodeEncrypted),
+      giftCardCode: this.fieldEncryptionService.decrypt(topup.giftCardCodeEncrypted),
       giftCardCodeTail: topup.giftCardCodeTail,
       remark: topup.remark,
       createdAt: topup.createdAt

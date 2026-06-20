@@ -3,7 +3,7 @@
     title="Apple ID 管理"
     group="Apple ID 业务"
     phase="Phase 3"
-    description="管理 Apple ID 基础资料、余额、汇率成本、移动加权平均成本、状态和手动锁定。敏感字段加密保存，列表默认脱敏。"
+    description="管理 Apple ID 基础资料、余额、平均成本、状态和手动锁定。敏感字段加密保存，列表默认脱敏。"
   >
     <template #actions>
       <AppButton @click="openImport">批量导入</AppButton>
@@ -11,16 +11,13 @@
 
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>
-            Apple ID 资产列表
-            <FeatureHelp
-              placement="right"
-              text="这里放可以拿来开通业务的 Apple ID。先看余额够不够、状态正不正常，再决定要不要充值、锁定或查看资料。"
-            />
-          </h3>
-          <p>支持模糊搜索、排序、分页、敏感字段脱敏、余额流水和充值/消费操作。</p>
-        </div>
+        <PanelTitleHelp
+          title="Apple ID 资产列表"
+          :help="[
+            '这里放可以拿来开通业务的 Apple ID。先看余额够不够、状态正不正常，再决定要不要充值、锁定或查看资料。',
+            '也可以搜索、排序、翻页，看余额流水和充值、消费记录。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 个ID</StatusChip>
           <StatusChip tone="green">可用 {{ normalAccountsCount }}</StatusChip>
@@ -32,7 +29,7 @@
           </StatusChip>
           <StatusChip tone="purple">资料 {{ secretReadyCount }}</StatusChip>
           <StatusChip tone="cyan">余额 {{ totalBalance }}</StatusChip>
-          <StatusChip tone="orange">汇率 {{ exchangeRateCostSummary }}</StatusChip>
+          <StatusChip tone="orange">均价 {{ averageCostSummary }}</StatusChip>
         </div>
       </div>
 
@@ -49,6 +46,9 @@
         :selected-count="selectedAccounts.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        show-density
+        show-filter-chips
+        show-toolbar-meta
         primary-label="新增 Apple ID"
         placeholder="搜索 Apple ID、地区、币种、备注"
         @search="applyFilters"
@@ -88,6 +88,21 @@
               :key="item.value"
               :label="item.label"
               :value="item.value"
+            />
+          </el-select>
+          <el-select
+            v-model="query.sourcePlatformId"
+            class="table-toolbar__select"
+            placeholder="渠道"
+            clearable
+            filterable
+            @change="applyFilters"
+          >
+            <el-option
+              v-for="item in sourcePlatforms"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
             />
           </el-select>
           <el-select
@@ -133,6 +148,14 @@
         >
           <template #default="{ row }">{{ row.appleIdMasked }}</template>
         </el-table-column>
+        <el-table-column v-if="isColumnVisible('sourcePlatform')" label="渠道" min-width="150">
+          <template #default="{ row }">
+            <StatusChip v-if="row.sourcePlatform" tone="blue">
+              {{ row.sourcePlatform.name }}
+            </StatusChip>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('region')"
           prop="region"
@@ -167,25 +190,6 @@
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('balanceCostAmount')"
-          prop="averageCost"
-          label="汇率成本"
-          width="130"
-          sortable="custom"
-        >
-          <template #header>
-            <span class="help-label">
-              汇率成本
-              <FeatureHelp
-                text="这里看的是 1 美元余额大约花了多少人民币。比如填 5，就是 1 美元按 5 元人民币成本算。"
-              />
-            </span>
-          </template>
-          <template #default="{ row }">
-            {{ getAccountExchangeRateCost(row) }}
-          </template>
-        </el-table-column>
-        <el-table-column
           v-if="isColumnVisible('averageCost')"
           prop="averageCost"
           label="平均成本"
@@ -196,12 +200,12 @@
             <span class="help-label">
               平均成本
               <FeatureHelp
-                text="系统按充值和消费自动算出来的当前成本。简单说，就是现在每用掉 1 美元余额，大概算多少人民币成本。"
+                text="现在每 1 美元余额大概花了多少人民币成本。系统会按充值前的余额和成本，加上本次充值成本后自动算。"
               />
             </span>
           </template>
           <template #default="{ row }">
-            {{ getAccountExchangeRateCost(row) }}
+            {{ getAccountAverageCost(row) }}
           </template>
         </el-table-column>
         <el-table-column
@@ -308,16 +312,16 @@
               <strong>{{ account.currentBalance }}</strong>
             </div>
             <div>
-              <span>汇率成本</span>
-              <strong>{{ getAccountExchangeRateCost(account) }}</strong>
-            </div>
-            <div>
               <span>平均成本</span>
-              <strong>{{ getAccountExchangeRateCost(account) }}</strong>
+              <strong>{{ getAccountAverageCost(account) }}</strong>
             </div>
           </div>
 
           <div class="mobile-record-card__meta">
+            <div>
+              <span>渠道</span>
+              <strong>{{ account.sourcePlatform?.name ?? '-' }}</strong>
+            </div>
             <div>
               <span>锁定状态</span>
               <StatusChip :tone="account.isManuallyLocked ? 'red' : 'green'" dot>
@@ -402,12 +406,8 @@
               <strong>{{ selectedAccount.currentBalance }}</strong>
             </div>
             <div>
-              <span>汇率</span>
-              <strong>{{ getAccountExchangeRateCost(selectedAccount) }}</strong>
-            </div>
-            <div>
               <span>均价</span>
-              <strong>{{ getAccountExchangeRateCost(selectedAccount) }}</strong>
+              <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
             </div>
           </div>
         </div>
@@ -451,7 +451,7 @@
               @click="openTopup(selectedAccount)"
             >
               <strong>充值</strong>
-              <span>录入充值面值和汇率成本，系统会自动换算总成本并更新均价。</span>
+              <span>录入充值面值和本次平均成本，系统会自动换算总成本并更新均价。</span>
             </button>
             <button
               type="button"
@@ -463,7 +463,7 @@
             </button>
             <button type="button" class="account-action-card" @click="openRecords(selectedAccount)">
               <strong>流水</strong>
-              <span>查看充值记录、消费记录和礼品卡尾号。</span>
+              <span>查看充值记录、消费记录和完整礼品卡代码。</span>
             </button>
           </div>
         </div>
@@ -486,12 +486,8 @@
             <strong>{{ selectedAccount.currentBalance }}</strong>
           </div>
           <div>
-            <span>汇率成本</span>
-            <strong>{{ getAccountExchangeRateCost(selectedAccount) }}</strong>
-          </div>
-          <div>
             <span>平均成本</span>
-            <strong>{{ getAccountExchangeRateCost(selectedAccount) }}</strong>
+            <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
           </div>
         </div>
 
@@ -503,6 +499,9 @@
             </el-descriptions-item>
             <el-descriptions-item label="地区/币种">
               {{ formatRegionCurrency(selectedAccount.region, selectedAccount.currency) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="渠道">
+              {{ selectedAccount.sourcePlatform?.name ?? '-' }}
             </el-descriptions-item>
             <el-descriptions-item label="状态">
               <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
@@ -574,6 +573,22 @@
         <el-form-item v-if="!editingAccount" label="Apple ID" prop="appleId">
           <el-input v-model.trim="form.appleId" placeholder="example@icloud.com" />
         </el-form-item>
+        <el-form-item label="渠道">
+          <el-select
+            v-model="form.sourcePlatformId"
+            class="full-input"
+            clearable
+            filterable
+            placeholder="请选择来源渠道"
+          >
+            <el-option
+              v-for="item in sourcePlatforms"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
         <div class="form-grid">
           <el-form-item label="地区" prop="region">
             <el-select v-model="form.region" class="full-input" @change="handleFormRegionChange">
@@ -593,10 +608,10 @@
           <el-form-item label="当前余额" prop="currentBalance">
             <el-input v-model.trim="form.currentBalance" />
           </el-form-item>
-          <el-form-item label="汇率成本" prop="balanceCostAmount">
+          <el-form-item label="平均成本" prop="balanceCostAmount">
             <el-input
               v-model.trim="form.balanceCostAmount"
-              placeholder="例如 5.9，表示 1 美元成本 5.9 元人民币"
+              placeholder="例如 5.90，表示每 1 美元余额成本 5.90 元人民币"
             />
           </el-form-item>
         </div>
@@ -660,12 +675,28 @@
             <p>密码、手机号、备用邮箱会加密保存；导入结果会逐行返回成功和失败原因。</p>
           </div>
         </div>
+        <el-form-item label="默认导入渠道">
+          <el-select
+            v-model="importForm.sourcePlatformId"
+            class="full-input"
+            clearable
+            filterable
+            placeholder="不选择则导入为未设置渠道"
+          >
+            <el-option
+              v-for="item in sourcePlatforms"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="导入内容" prop="accountsText">
           <el-input
             v-model="importForm.accountsText"
             type="textarea"
             :rows="10"
-            placeholder="支持逗号或制表符分隔，可带表头。字段顺序：appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark。这里的 balanceCostAmount 是接口字段，仍然填余额的总人民币成本；如果只知道汇率成本，请用余额 × 汇率先算成总成本。"
+            placeholder="支持逗号或制表符分隔，可带表头。字段顺序：appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark,sourcePlatform。sourcePlatform 可选，可填渠道名称或渠道ID；留空时使用上方默认导入渠道。balanceCostAmount 仍填余额的人民币总成本；如果只知道平均成本，请用余额 × 平均成本先算成总成本。"
           />
         </el-form-item>
       </el-form>
@@ -735,7 +766,7 @@
     <AppDrawer
       v-model="topupDialogVisible"
       :title="`录入充值 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      description="记录充值面值和这次的汇率成本，保存时系统会自动换算成人民币总成本。"
+      description="记录充值面值和本次平均成本，保存时系统会自动换算成人民币总成本。"
       eyebrow="余额处理"
       size="620px"
       confirm-text="保存充值"
@@ -747,10 +778,10 @@
           <el-form-item label="充值面值" prop="faceValue">
             <el-input v-model.trim="topupForm.faceValue" />
           </el-form-item>
-          <el-form-item label="汇率成本" prop="costAmount">
+          <el-form-item label="本次平均成本" prop="costAmount">
             <el-input
               v-model.trim="topupForm.costAmount"
-              placeholder="例如 5.9，表示 1 美元成本 5.9 元人民币"
+              placeholder="例如 5.90，表示这次每 1 美元成本 5.90 元人民币"
             />
           </el-form-item>
         </div>
@@ -847,7 +878,7 @@
     <AppDrawer
       v-model="recordsDrawerVisible"
       :title="`余额流水 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      description="集中查看充值和消费记录，需要完整充值代码时会单独记录审计。"
+      description="集中查看充值和消费记录，充值记录直接显示完整礼品卡代码。"
       eyebrow="余额流水"
       size="760px"
       confirm-text="刷新流水"
@@ -859,12 +890,8 @@
           <strong>{{ selectedAccount?.currentBalance ?? '-' }}</strong>
         </div>
         <div>
-          <span>汇率成本</span>
-          <strong>{{ selectedAccount ? getAccountExchangeRateCost(selectedAccount) : '-' }}</strong>
-        </div>
-        <div>
           <span>平均成本</span>
-          <strong>{{ selectedAccount ? getAccountExchangeRateCost(selectedAccount) : '-' }}</strong>
+          <strong>{{ selectedAccount ? getAccountAverageCost(selectedAccount) : '-' }}</strong>
         </div>
       </div>
 
@@ -880,26 +907,20 @@
               row-key="id"
             >
               <el-table-column prop="faceValue" label="面值" width="90" />
-              <el-table-column label="汇率成本" width="100">
-                <template #default="{ row }">{{ getTopupExchangeRateCost(row) }}</template>
+              <el-table-column label="本次均价" width="100">
+                <template #default="{ row }">{{ getTopupAverageCost(row) }}</template>
               </el-table-column>
               <el-table-column label="人民币总成本" width="120">
                 <template #default="{ row }">{{ getTopupTotalCostAmountFromRecord(row) }}</template>
               </el-table-column>
-              <el-table-column prop="avgCostAfter" label="充值后均价" width="120" />
-              <el-table-column label="礼品卡代码" width="190">
+              <el-table-column label="充值后均价" width="120">
+                <template #default="{ row }">{{ formatAverageCost(row.avgCostAfter) }}</template>
+              </el-table-column>
+              <el-table-column label="礼品卡代码" min-width="240">
                 <template #default="{ row }">
-                  <div v-if="row.hasGiftCardCode" class="inline-actions">
-                    <StatusChip tone="purple">尾号 {{ row.giftCardCodeTail ?? '-' }}</StatusChip>
-                    <AppButton
-                      v-if="canRevealGiftCardCode"
-                      size="small"
-                      variant="ghost"
-                      @click="openGiftCodeDialog(row)"
-                    >
-                      查看完整
-                    </AppButton>
-                  </div>
+                  <span v-if="row.hasGiftCardCode" class="gift-card-code-text">
+                    {{ row.giftCardCode ?? '-' }}
+                  </span>
                   <span v-else>-</span>
                 </template>
               </el-table-column>
@@ -914,15 +935,13 @@
                     <strong>充值 {{ topup.faceValue }}</strong>
                     <span>{{ formatDate(topup.createdAt) }}</span>
                   </div>
-                  <StatusChip v-if="topup.hasGiftCardCode" tone="purple">
-                    尾号 {{ topup.giftCardCodeTail ?? '-' }}
-                  </StatusChip>
+                  <StatusChip v-if="topup.hasGiftCardCode" tone="purple">有代码</StatusChip>
                   <StatusChip v-else tone="neutral">无代码</StatusChip>
                 </div>
                 <div class="mobile-record-card__stats">
                   <div>
-                    <span>汇率成本</span>
-                    <strong>{{ getTopupExchangeRateCost(topup) }}</strong>
+                    <span>本次均价</span>
+                    <strong>{{ getTopupAverageCost(topup) }}</strong>
                   </div>
                   <div>
                     <span>总成本</span>
@@ -930,16 +949,14 @@
                   </div>
                   <div>
                     <span>充值后均价</span>
-                    <strong>{{ topup.avgCostAfter }}</strong>
+                    <strong>{{ formatAverageCost(topup.avgCostAfter) }}</strong>
                   </div>
                 </div>
-                <div
-                  v-if="topup.hasGiftCardCode && canRevealGiftCardCode"
-                  class="mobile-record-card__actions"
-                >
-                  <AppButton size="small" variant="ghost" @click="openGiftCodeDialog(topup)">
-                    查看完整代码
-                  </AppButton>
+                <div v-if="topup.hasGiftCardCode" class="mobile-record-card__meta">
+                  <div>
+                    <span>礼品卡代码</span>
+                    <strong class="gift-card-code-text">{{ topup.giftCardCode ?? '-' }}</strong>
+                  </div>
                 </div>
               </article>
             </div>
@@ -960,7 +977,9 @@
             >
               <el-table-column prop="amount" label="消费" width="90" />
               <el-table-column prop="costAmount" label="成本" width="90" />
-              <el-table-column prop="avgUnitCost" label="消费均价" width="110" />
+              <el-table-column label="消费均价" width="110">
+                <template #default="{ row }">{{ formatAverageCost(row.avgUnitCost) }}</template>
+              </el-table-column>
               <el-table-column prop="balanceAfter" label="消费后余额" width="120" />
               <el-table-column prop="createdAt" label="时间" min-width="160">
                 <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
@@ -990,7 +1009,7 @@
                   </div>
                   <div>
                     <span>消费均价</span>
-                    <strong>{{ consumption.avgUnitCost }}</strong>
+                    <strong>{{ formatAverageCost(consumption.avgUnitCost) }}</strong>
                   </div>
                   <div>
                     <span>消费后余额</span>
@@ -1066,49 +1085,6 @@
         </el-form-item>
       </el-form>
     </AppDrawer>
-
-    <AppDrawer
-      v-model="giftCodeDialogVisible"
-      title="查看完整礼品卡代码"
-      description="完整代码只用于核对充值记录，查看时会写入审计日志。"
-      eyebrow="敏感资料"
-      size="560px"
-      confirm-text="查看完整代码"
-      confirm-variant="danger"
-      :confirm-loading="revealingGiftCode"
-      @closed="resetGiftCodeDialog"
-      @confirm="revealGiftCardCode"
-    >
-      <div class="apple-core-alert apple-core-alert--orange">
-        <StatusChip tone="orange">审计</StatusChip>
-        <div>
-          <strong>敏感字段查看会写入审计日志</strong>
-          <p>完整代码只用于核对充值记录，不会出现在列表、导出和操作日志明文中。</p>
-        </div>
-      </div>
-      <el-form
-        ref="giftCodeFormRef"
-        class="sensitive-form"
-        :model="giftCodeForm"
-        :rules="giftCodeRules"
-        label-position="top"
-      >
-        <el-form-item label="充值记录">
-          <el-input :model-value="giftCodeRecordLabel" disabled />
-        </el-form-item>
-        <el-form-item label="查看原因" prop="reason">
-          <el-input
-            v-model.trim="giftCodeForm.reason"
-            type="textarea"
-            :rows="3"
-            placeholder="例如 售后核对 / 财务对账 / 重复充值排查"
-          />
-        </el-form-item>
-        <el-form-item v-if="giftCodeForm.code" label="完整礼品卡代码">
-          <el-input v-model="giftCodeForm.code" type="textarea" :rows="3" readonly />
-        </el-form-item>
-      </el-form>
-    </AppDrawer>
   </PageScaffold>
 </template>
 
@@ -1117,11 +1093,12 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { appleAccountsApi, userTableViewsApi } from '@/api/system';
+import { appleAccountsApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -1132,6 +1109,7 @@ import type {
   AppleAccountSecretField,
   AppleBalanceConsumption,
   AppleBalanceTopup,
+  SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
@@ -1170,9 +1148,9 @@ const accountStatusOptions = statusOptions.map((item) => ({
 }));
 const accountColumnOptions = [
   { label: 'Apple ID', value: 'appleId', required: true },
+  { label: '渠道', value: 'sourcePlatform' },
   { label: '地区/币种', value: 'region' },
   { label: '余额', value: 'currentBalance' },
-  { label: '汇率成本', value: 'balanceCostAmount' },
   { label: '平均成本', value: 'averageCost' },
   { label: '状态', value: 'status' },
   { label: '敏感资料', value: 'secrets' },
@@ -1191,7 +1169,6 @@ const importing = ref(false);
 const savingBalanceRecord = ref(false);
 const savingStatusCheck = ref(false);
 const revealingAccountSecret = ref(false);
-const revealingGiftCode = ref(false);
 const dialogVisible = ref(false);
 const importDialogVisible = ref(false);
 const topupDialogVisible = ref(false);
@@ -1201,19 +1178,17 @@ const accountActionsDrawerVisible = ref(false);
 const detailDrawerVisible = ref(false);
 const recordsDrawerVisible = ref(false);
 const accountSecretDialogVisible = ref(false);
-const giftCodeDialogVisible = ref(false);
 const recordsLoading = ref(false);
 const editingAccount = ref<AppleAccount | null>(null);
 const selectedAccount = ref<AppleAccount | null>(null);
-const selectedTopup = ref<AppleBalanceTopup | null>(null);
 const formRef = ref<FormInstance>();
 const importFormRef = ref<FormInstance>();
 const topupFormRef = ref<FormInstance>();
 const consumptionFormRef = ref<FormInstance>();
 const statusCheckFormRef = ref<FormInstance>();
 const accountSecretFormRef = ref<FormInstance>();
-const giftCodeFormRef = ref<FormInstance>();
 const accounts = ref<AppleAccount[]>([]);
+const sourcePlatforms = ref<SourcePlatform[]>([]);
 const topups = ref<AppleBalanceTopup[]>([]);
 const consumptions = ref<AppleBalanceConsumption[]>([]);
 const importResult = ref<AppleAccountImportResult | null>(null);
@@ -1238,6 +1213,7 @@ const query = reactive({
   status: '',
   region: '',
   currency: '',
+  sourcePlatformId: '',
   locked: '',
   sortBy: '',
   sortOrder: '' as '' | 'asc' | 'desc'
@@ -1249,6 +1225,7 @@ const form = reactive({
   currency: 'CNY',
   currentBalance: '0',
   balanceCostAmount: '0',
+  sourcePlatformId: '',
   status: 'normal' as AppleAccount['status'],
   isManuallyLocked: false,
   manualLockReason: '',
@@ -1260,6 +1237,7 @@ const form = reactive({
 });
 
 const importForm = reactive({
+  sourcePlatformId: '',
   accountsText: ''
 });
 
@@ -1282,11 +1260,6 @@ const statusCheckForm = reactive({
   remark: ''
 });
 
-const giftCodeForm = reactive({
-  reason: '',
-  code: ''
-});
-
 const accountSecretForm = reactive({
   field: 'appleId' as AppleAccountSecretField,
   reason: '',
@@ -1298,7 +1271,7 @@ const rules: FormRules<typeof form> = {
   region: [{ required: true, message: '请选择地区', trigger: 'change' }],
   currency: [{ required: true, message: '请选择币种', trigger: 'change' }],
   currentBalance: [{ required: true, message: '请输入余额', trigger: 'blur' }],
-  balanceCostAmount: [{ required: true, message: '请输入汇率成本', trigger: 'blur' }],
+  balanceCostAmount: [{ required: true, message: '请输入平均成本', trigger: 'blur' }],
   phone: [
     {
       validator: (_rule, value: string, callback) => {
@@ -1326,7 +1299,7 @@ const importRules: FormRules<typeof importForm> = {
 
 const topupRules: FormRules<typeof topupForm> = {
   faceValue: [{ required: true, message: '请输入充值面值', trigger: 'blur' }],
-  costAmount: [{ required: true, message: '请输入汇率成本', trigger: 'blur' }]
+  costAmount: [{ required: true, message: '请输入本次平均成本', trigger: 'blur' }]
 };
 
 const consumptionRules: FormRules<typeof consumptionForm> = {
@@ -1335,10 +1308,6 @@ const consumptionRules: FormRules<typeof consumptionForm> = {
 
 const statusCheckRules: FormRules<typeof statusCheckForm> = {
   resultStatus: [{ required: true, message: '请选择检测结果', trigger: 'change' }]
-};
-
-const giftCodeRules: FormRules<typeof giftCodeForm> = {
-  reason: [{ required: true, message: '请输入查看原因', trigger: 'blur' }]
 };
 
 const accountSecretRules: FormRules<typeof accountSecretForm> = {
@@ -1352,8 +1321,8 @@ const totalBalance = computed(() =>
 const totalCost = computed(() =>
   sumDecimal(accounts.value.map((account) => getAccountTotalCostAmount(account)))
 );
-const exchangeRateCostSummary = computed(() =>
-  divideDecimalInputs(totalCost.value, totalBalance.value, 4)
+const averageCostSummary = computed(() =>
+  formatAverageCost(divideDecimalInputs(totalCost.value, totalBalance.value))
 );
 const lockedCount = computed(
   () => accounts.value.filter((account) => account.isManuallyLocked).length
@@ -1393,17 +1362,20 @@ const filterChips = computed(() => {
     chips.push({ key: 'currency', label: '币种', value: query.currency });
   }
 
+  if (query.sourcePlatformId) {
+    chips.push({
+      key: 'sourcePlatformId',
+      label: '渠道',
+      value: getSourcePlatformName(query.sourcePlatformId)
+    });
+  }
+
   if (query.locked && lockedLabel) {
     chips.push({ key: 'locked', label: '手动锁定', value: lockedLabel });
   }
 
   return chips;
 });
-const canRevealGiftCardCode = computed(
-  () =>
-    authStore.user?.roles.includes('admin') ||
-    authStore.user?.permissions.includes('apple.topup.gift_code.view_full')
-);
 const accountSecretOptions = computed(() =>
   selectedAccount.value ? getAccountSecretOptions(selectedAccount.value) : []
 );
@@ -1412,15 +1384,6 @@ const accountSecretFieldLabel = computed(
     accountSecretOptions.value.find((item) => item.value === accountSecretForm.field)?.label ??
     '完整资料'
 );
-const giftCodeRecordLabel = computed(() => {
-  if (!selectedTopup.value) {
-    return '-';
-  }
-
-  return `${formatDate(selectedTopup.value.createdAt)} / 面值 ${selectedTopup.value.faceValue} / 尾号 ${
-    selectedTopup.value.giftCardCodeTail ?? '-'
-  }`;
-});
 const selectedRegionOption = computed(() => getAppleAccountRegionOption(form.region));
 const selectedCurrencyLabel = computed(() => formatCurrencyLabel(form.currency));
 
@@ -1483,12 +1446,16 @@ function isLikelyLegacyRateCost(account: AppleAccount) {
   );
 }
 
-function getAccountExchangeRateCost(account: AppleAccount) {
+function formatAverageCost(value: string | null | undefined) {
+  return parseDecimalInput(value).toFixed(2);
+}
+
+function getAccountAverageCost(account: AppleAccount) {
   if (isLikelyLegacyRateCost(account)) {
-    return formatDecimalInput(parseDecimalInput(account.balanceCostAmount), 4);
+    return formatAverageCost(account.balanceCostAmount);
   }
 
-  return formatDecimalInput(parseDecimalInput(account.averageCost), 4);
+  return formatAverageCost(account.averageCost);
 }
 
 function getAccountTotalCostAmount(account: AppleAccount) {
@@ -1510,24 +1477,20 @@ function getTopupTotalCostAmount() {
 function isLikelyLegacyTopupRateCost(topup: AppleBalanceTopup) {
   const faceValue = parseDecimalInput(topup.faceValue);
   const storedCost = parseDecimalInput(topup.costAmount);
-  const exchangeRateCost = faceValue > 0 ? storedCost / faceValue : 0;
+  const averageCost = faceValue > 0 ? storedCost / faceValue : 0;
   const currency = selectedAccount.value?.currency ?? '';
 
   return (
-    currency !== 'CNY' &&
-    faceValue > 1 &&
-    storedCost >= 1 &&
-    exchangeRateCost > 0 &&
-    exchangeRateCost < 1
+    currency !== 'CNY' && faceValue > 1 && storedCost >= 1 && averageCost > 0 && averageCost < 1
   );
 }
 
-function getTopupExchangeRateCost(topup: AppleBalanceTopup) {
+function getTopupAverageCost(topup: AppleBalanceTopup) {
   if (isLikelyLegacyTopupRateCost(topup)) {
-    return formatDecimalInput(parseDecimalInput(topup.costAmount), 4);
+    return formatAverageCost(topup.costAmount);
   }
 
-  return divideDecimalInputs(topup.costAmount, topup.faceValue, 4);
+  return formatAverageCost(divideDecimalInputs(topup.costAmount, topup.faceValue));
 }
 
 function getTopupTotalCostAmountFromRecord(topup: AppleBalanceTopup) {
@@ -1553,6 +1516,10 @@ function getStatusTone(status: AppleAccount['status']) {
   if (type === 'warning') return 'orange';
   if (type === 'danger') return 'red';
   return 'neutral';
+}
+
+function getSourcePlatformName(id: string) {
+  return sourcePlatforms.value.find((item) => item.id === id)?.name ?? id;
 }
 
 function isColumnVisible(column: string) {
@@ -1592,6 +1559,7 @@ function buildAccountListParams(): AppleAccountListParams {
     status: query.status || undefined,
     region: query.region || undefined,
     currency: query.currency || undefined,
+    sourcePlatformId: query.sourcePlatformId || undefined,
     locked: query.locked || undefined,
     sortBy: query.sortBy || undefined,
     sortOrder: query.sortOrder || undefined
@@ -1601,6 +1569,18 @@ function buildAccountListParams(): AppleAccountListParams {
 function applyAccountListResult(data: AppleAccountPage) {
   accounts.value = data.items;
   total.value = data.total;
+}
+
+async function loadSourcePlatforms() {
+  try {
+    const data = await sourcePlatformsApi.list({
+      page: 1,
+      pageSize: 200
+    });
+    sourcePlatforms.value = data.items.filter((item) => item.status === 'active');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载渠道失败');
+  }
 }
 
 function applyFilters() {
@@ -1619,6 +1599,7 @@ function clearFilters() {
   query.status = '';
   query.region = '';
   query.currency = '';
+  query.sourcePlatformId = '';
   query.locked = '';
   query.sortBy = '';
   query.sortOrder = '';
@@ -1636,6 +1617,9 @@ function removeFilter(key: string) {
   }
   if (key === 'currency') {
     query.currency = '';
+  }
+  if (key === 'sourcePlatformId') {
+    query.sourcePlatformId = '';
   }
   if (key === 'locked') {
     query.locked = '';
@@ -1708,6 +1692,7 @@ async function saveTableView() {
         status: query.status,
         region: query.region,
         currency: query.currency,
+        sourcePlatformId: query.sourcePlatformId,
         locked: query.locked
       },
       sortConfig: {
@@ -1745,6 +1730,8 @@ function applyView(view: UserTableView) {
   query.status = typeof filters.status === 'string' ? filters.status : '';
   query.region = typeof filters.region === 'string' ? filters.region : '';
   query.currency = typeof filters.currency === 'string' ? filters.currency : '';
+  query.sourcePlatformId =
+    typeof filters.sourcePlatformId === 'string' ? filters.sourcePlatformId : '';
   query.locked = typeof filters.locked === 'string' ? filters.locked : '';
   query.pageSize = view.pageSize;
   query.page = 1;
@@ -1772,6 +1759,7 @@ function resetForm() {
   syncFormCurrency();
   form.currentBalance = '0';
   form.balanceCostAmount = '0';
+  form.sourcePlatformId = '';
   form.status = 'normal';
   form.isManuallyLocked = false;
   form.manualLockReason = '';
@@ -1801,6 +1789,7 @@ function openCreate() {
 }
 
 function openImport() {
+  importForm.sourcePlatformId = '';
   importForm.accountsText = '';
   importResult.value = null;
   importDialogVisible.value = true;
@@ -1813,7 +1802,8 @@ function openEdit(account: AppleAccount) {
   form.region = getAppleAccountRegionOption(account.region)?.code ?? 'CN';
   syncFormCurrency();
   form.currentBalance = account.currentBalance;
-  form.balanceCostAmount = getAccountExchangeRateCost(account);
+  form.balanceCostAmount = getAccountAverageCost(account);
+  form.sourcePlatformId = account.sourcePlatformId ?? '';
   form.status = account.status;
   form.isManuallyLocked = account.isManuallyLocked;
   form.manualLockReason = account.manualLockReason ?? '';
@@ -1843,12 +1833,6 @@ function resetStatusCheckForm(account?: AppleAccount) {
   statusCheckForm.resultStatus = account?.status ?? 'normal';
   statusCheckForm.balanceSnapshot = account?.currentBalance ?? '';
   statusCheckForm.remark = '';
-}
-
-function resetGiftCodeDialog() {
-  selectedTopup.value = null;
-  giftCodeForm.reason = '';
-  giftCodeForm.code = '';
 }
 
 function resetAccountSecretDialog() {
@@ -1979,13 +1963,6 @@ function openSelectedDetailPage() {
   });
 }
 
-function openGiftCodeDialog(topup: AppleBalanceTopup) {
-  selectedTopup.value = topup;
-  giftCodeForm.reason = '';
-  giftCodeForm.code = '';
-  giftCodeDialogVisible.value = true;
-}
-
 async function loadBalanceRecords() {
   if (!selectedAccount.value) {
     return;
@@ -2051,6 +2028,7 @@ async function saveAccount() {
       currency: form.currency,
       currentBalance: form.currentBalance,
       balanceCostAmount: getAccountFormTotalCostAmount(),
+      sourcePlatformId: form.sourcePlatformId || null,
       status: form.status,
       isManuallyLocked: form.isManuallyLocked,
       manualLockReason: form.manualLockReason || null,
@@ -2099,7 +2077,10 @@ async function submitImport() {
 
   importing.value = true;
   try {
-    const result = await appleAccountsApi.importAccounts({ accounts });
+    const result = await appleAccountsApi.importAccounts({
+      accounts,
+      sourcePlatformId: importForm.sourcePlatformId || null
+    });
     importResult.value = result;
     ElMessage.success(`成功导入 ${result.successCount} 个 Apple ID`);
     invalidateSmartQueries('apple-accounts');
@@ -2225,26 +2206,6 @@ async function saveStatusCheck() {
   }
 }
 
-async function revealGiftCardCode() {
-  const valid = await giftCodeFormRef.value?.validate().catch(() => false);
-  if (!valid || !selectedTopup.value) {
-    return;
-  }
-
-  revealingGiftCode.value = true;
-  try {
-    const data = await appleAccountsApi.revealGiftCardCode(selectedTopup.value.id, {
-      reason: giftCodeForm.reason
-    });
-    giftCodeForm.code = data.giftCardCode;
-    ElMessage.success('完整礼品卡代码已显示，审计日志已记录');
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '查看完整礼品卡代码失败');
-  } finally {
-    revealingGiftCode.value = false;
-  }
-}
-
 async function revealAccountSecret() {
   const valid = await accountSecretFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedAccount.value) {
@@ -2267,10 +2228,12 @@ async function revealAccountSecret() {
 }
 
 async function loadPageData() {
+  const sourcePlatformsPromise = loadSourcePlatforms();
   const tableViewsPromise = loadTableViews(true);
   const accountsPromise = loadAccounts({ force: false });
   const defaultViewApplied = await tableViewsPromise;
 
+  await sourcePlatformsPromise;
   await accountsPromise;
 
   if (defaultViewApplied) {
@@ -2286,6 +2249,7 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
 onActivated(() => {
   if (!activatedOnce.value) {
     activatedOnce.value = true;

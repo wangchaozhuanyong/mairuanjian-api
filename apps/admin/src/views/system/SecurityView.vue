@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     :title="activeTabMeta.title"
-    group="系统管理"
+    group="安全与风控"
     phase="Phase 10"
     :description="activeTabMeta.description"
   >
@@ -17,10 +17,7 @@
 
     <section class="content-panel system-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>{{ activeTabMeta.title }}</h3>
-          <p>{{ activeTabMeta.description }}</p>
-        </div>
+        <PanelTitleHelp :title="activeTabMeta.title" :help="activeTabMeta.description" />
         <div class="inline-actions">
           <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
           <StatusChip :tone="(overview?.failedLoginCount ?? 0) > 0 ? 'red' : 'green'" dot>
@@ -101,7 +98,6 @@
           <TableToolbar
             v-model:keyword="loginQuery.keyword"
             v-model:status="loginQuery.status"
-            v-model:density="loginDensity"
             v-model:visible-columns="loginVisibleColumns"
             v-model:saved-view-id="loginSavedViewId"
             :column-options="loginColumnOptions"
@@ -265,7 +261,6 @@
           <TableToolbar
             v-model:keyword="sessionQuery.keyword"
             v-model:status="sessionQuery.revoked"
-            v-model:density="sessionDensity"
             v-model:visible-columns="sessionVisibleColumns"
             v-model:saved-view-id="sessionSavedViewId"
             :column-options="sessionColumnOptions"
@@ -554,7 +549,6 @@
           <TableToolbar
             v-model:keyword="ipQuery.keyword"
             v-model:status="ipQuery.enabled"
-            v-model:density="ipDensity"
             v-model:visible-columns="ipVisibleColumns"
             v-model:saved-view-id="ipSavedViewId"
             :column-options="ipColumnOptions"
@@ -710,7 +704,6 @@
           <TableToolbar
             v-model:keyword="approvalQuery.keyword"
             v-model:status="approvalQuery.status"
-            v-model:density="approvalDensity"
             v-model:visible-columns="approvalVisibleColumns"
             v-model:saved-view-id="approvalSavedViewId"
             :column-options="approvalColumnOptions"
@@ -908,7 +901,6 @@
           <TableToolbar
             v-model:keyword="accessLogQuery.keyword"
             v-model:status="accessLogQuery.approved"
-            v-model:density="accessLogDensity"
             v-model:visible-columns="accessLogVisibleColumns"
             v-model:saved-view-id="accessLogSavedViewId"
             :column-options="accessLogColumnOptions"
@@ -1134,6 +1126,7 @@ import type {
 import AppButton from '@/components/ui/AppButton.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
@@ -2294,7 +2287,7 @@ function applyLoginView(view: UserTableView) {
   loginQuery.status = isLoginStatus(filters.status) ? filters.status : '';
   loginQuery.abnormal = typeof filters.abnormal === 'string' ? filters.abnormal : '';
   loginQuery.pageSize = view.pageSize;
-  loginDensity.value = view.density;
+  loginDensity.value = 'default';
   loginVisibleColumns.value = normalizeColumns(view.columns, loginColumnOptions);
   loginSortConfig.value = parseSortConfig(view.sortConfig);
   loginSavedViewId.value = view.id;
@@ -2305,7 +2298,7 @@ function applySessionView(view: UserTableView) {
   sessionQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   sessionQuery.revoked = typeof filters.revoked === 'string' ? filters.revoked : '';
   sessionQuery.pageSize = view.pageSize;
-  sessionDensity.value = view.density;
+  sessionDensity.value = 'default';
   sessionVisibleColumns.value = normalizeColumns(view.columns, sessionColumnOptions);
   sessionSortConfig.value = parseSortConfig(view.sortConfig);
   sessionSavedViewId.value = view.id;
@@ -2317,7 +2310,7 @@ function applyIpView(view: UserTableView) {
   ipQuery.scope = isIpScope(filters.scope) ? filters.scope : '';
   ipQuery.enabled = typeof filters.enabled === 'string' ? filters.enabled : '';
   ipQuery.pageSize = view.pageSize;
-  ipDensity.value = view.density;
+  ipDensity.value = 'default';
   ipVisibleColumns.value = normalizeColumns(view.columns, ipColumnOptions);
   ipSortConfig.value = parseSortConfig(view.sortConfig);
   ipSavedViewId.value = view.id;
@@ -2329,7 +2322,7 @@ function applyApprovalView(view: UserTableView) {
   approvalQuery.status = isApprovalStatus(filters.status) ? filters.status : '';
   approvalQuery.module = typeof filters.module === 'string' ? filters.module : '';
   approvalQuery.pageSize = view.pageSize;
-  approvalDensity.value = view.density;
+  approvalDensity.value = 'default';
   approvalVisibleColumns.value = normalizeColumns(view.columns, approvalColumnOptions);
   approvalSortConfig.value = parseSortConfig(view.sortConfig);
   approvalSavedViewId.value = view.id;
@@ -2342,7 +2335,7 @@ function applyAccessLogView(view: UserTableView) {
   accessLogQuery.fieldName = typeof filters.fieldName === 'string' ? filters.fieldName : '';
   accessLogQuery.approved = typeof filters.approved === 'string' ? filters.approved : '';
   accessLogQuery.pageSize = view.pageSize;
-  accessLogDensity.value = view.density;
+  accessLogDensity.value = 'default';
   accessLogVisibleColumns.value = normalizeColumns(view.columns, accessLogColumnOptions);
   accessLogSortConfig.value = parseSortConfig(view.sortConfig);
   accessLogSavedViewId.value = view.id;

@@ -122,22 +122,20 @@
 
 ### 2.7 source_platforms
 
-| 字段                  | 类型          | 说明                              |
-| --------------------- | ------------- | --------------------------------- |
-| id                    | uuid          | 主键                              |
-| name                  | varchar       | 平台名称                          |
-| code                  | varchar       | taobao/xianyu/wechat/manual/other |
-| account_name          | varchar       | 店铺或账号名称                    |
-| platform_type         | varchar       | ecommerce/private/manual          |
-| enabled               | boolean       | 是否启用                          |
-| support_order_sync    | boolean       | 是否支持订单同步                  |
-| support_auto_delivery | boolean       | 是否支持自动发货                  |
-| auth_status           | varchar       | none/authorized/expired           |
-| fee_type              | varchar       | none/fixed/percent/manual         |
-| fee_value             | decimal(18,4) | 手续费值                          |
-| remark                | text          | 备注                              |
-| created_at            | timestamptz   | 创建时间                          |
-| updated_at            | timestamptz   | 更新时间                          |
+| 字段        | 类型          | 说明                      |
+| ----------- | ------------- | ------------------------- |
+| id          | uuid          | 主键                      |
+| name        | varchar       | 平台名称                  |
+| fee_rate    | Decimal(8,4)  | 平台费率                  |
+| fee_fixed   | Decimal(12,2) | 固定费用                  |
+| status      | enum          | active/disabled           |
+| remark      | text          | 备注                      |
+| auth_status | varchar       | none/authorized/expired   |
+| fee_type    | varchar       | none/fixed/percent/manual |
+| fee_value   | decimal(18,4) | 手续费值                  |
+| remark      | text          | 备注                      |
+| created_at  | timestamptz   | 创建时间                  |
+| updated_at  | timestamptz   | 更新时间                  |
 
 ### 2.8 message_templates
 
@@ -292,7 +290,7 @@
 | apple_account_id | uuid          | Apple ID       |
 | face_value       | decimal(18,4) | 充值面值       |
 | currency         | varchar       | 币种           |
-| exchange_rate    | decimal(18,6) | 成本汇率       |
+| unit_avg_cost    | decimal(18,6) | 本次平均成本   |
 | cost_rmb         | decimal(18,2) | 人民币成本     |
 | balance_before   | decimal(18,4) | 充值前余额     |
 | balance_after    | decimal(18,4) | 充值后余额     |
@@ -1517,7 +1515,6 @@ OAuth state 第一版也复用 `system_parameters`，只作为短期授权流程
 | ------------------ | ----------- | -------------------- |
 | id                 | uuid        | 主键                 |
 | name               | varchar     | 客户名称             |
-| contact_name       | varchar     | 联系人               |
 | phone              | varchar     | 手机号，列表默认脱敏 |
 | phone_tail         | varchar     | 手机号后 4 位        |
 | wechat             | varchar     | 微信                 |
@@ -1541,28 +1538,22 @@ OAuth state 第一版也复用 `system_parameters`，只作为短期授权流程
 
 ### 14.2 source_platforms
 
-| 字段               | 类型          | 说明                              |
-| ------------------ | ------------- | --------------------------------- |
-| id                 | uuid          | 主键                              |
-| name               | varchar       | 平台名称                          |
-| code               | varchar       | 平台编码，唯一                    |
-| type               | enum          | taobao/xianyu/wechat/manual/other |
-| fee_rate           | Decimal(8,4)  | 平台费率                          |
-| fee_fixed          | Decimal(12,2) | 固定费用                          |
-| sync_enabled       | boolean       | 是否支持订单同步                  |
-| delivery_enabled   | boolean       | 是否支持自动发货                  |
-| status             | enum          | active/disabled                   |
-| remark             | text          | 备注                              |
-| created_by_user_id | uuid          | 创建人                            |
-| updated_by_user_id | uuid          | 更新人                            |
-| created_at         | timestamptz   | 创建时间                          |
-| updated_at         | timestamptz   | 更新时间                          |
-| deleted_at         | timestamptz   | 软删除时间                        |
+| 字段               | 类型          | 说明            |
+| ------------------ | ------------- | --------------- |
+| id                 | uuid          | 主键            |
+| name               | varchar       | 平台名称        |
+| fee_rate           | Decimal(8,4)  | 平台费率        |
+| fee_fixed          | Decimal(12,2) | 固定费用        |
+| status             | enum          | active/disabled |
+| remark             | text          | 备注            |
+| created_by_user_id | uuid          | 创建人          |
+| updated_by_user_id | uuid          | 更新人          |
+| created_at         | timestamptz   | 创建时间        |
+| updated_at         | timestamptz   | 更新时间        |
+| deleted_at         | timestamptz   | 软删除时间      |
 
 约束和索引：
 
-- unique(code)
-- index(type)
 - index(status)
 - index(deleted_at)
 

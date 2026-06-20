@@ -1,7 +1,7 @@
-import type { CodeDeliveryMethod, SourcePlatformType } from '@prisma/client';
+import type { CodeDeliveryMethod } from '@prisma/client';
 import type { AuthenticatedUser } from '../../auth/auth.types';
 
-export type DeliveryPlatform = Extract<SourcePlatformType, 'taobao' | 'xianyu' | 'manual'>;
+export type DeliveryPlatform = 'taobao' | 'xianyu' | 'manual';
 
 export interface DeliveryAdapterSyncResult {
   platform: DeliveryPlatform;

@@ -35,6 +35,12 @@ const MESSAGE_TEMPLATE_SORT_FIELDS: Record<
   updatedAt: 'updatedAt'
 };
 const MESSAGE_TEMPLATE_LIST_CACHE_TTL_MS = 120_000;
+const DELIVERY_TEMPLATE_TYPE = 'delivery' satisfies MessageTemplateType;
+const DELIVERY_TEMPLATE_CHANNEL = 'customer_service' satisfies MessageTemplateChannel;
+const DELIVERY_TEMPLATE_SCOPE = {
+  type: DELIVERY_TEMPLATE_TYPE,
+  channel: DELIVERY_TEMPLATE_CHANNEL
+} satisfies Pick<Prisma.MessageTemplateWhereInput, 'type' | 'channel'>;
 
 @Injectable()
 export class MessageTemplatesService {
@@ -55,14 +61,13 @@ export class MessageTemplatesService {
 
   private async listUncached(query: ListMessageTemplatesQuery) {
     const pagination = getPagination(query);
-    const type = this.parseType(query.type, false);
-    const channel = this.parseChannel(query.channel, false);
+    this.assertDeliveryTemplateType(query.type);
+    this.assertDeliveryTemplateChannel(query.channel);
     const status = this.parseStatus(query.status, false);
     const keyword = query.keyword?.trim();
     const where: Prisma.MessageTemplateWhereInput = {
       deletedAt: null,
-      type: type ?? undefined,
-      channel: channel ?? undefined,
+      ...DELIVERY_TEMPLATE_SCOPE,
       status: status ?? undefined,
       OR: keyword
         ? [
@@ -95,7 +100,8 @@ export class MessageTemplatesService {
     const template = await this.prisma.messageTemplate.findFirst({
       where: {
         id,
-        deletedAt: null
+        deletedAt: null,
+        ...DELIVERY_TEMPLATE_SCOPE
       }
     });
 
@@ -109,12 +115,13 @@ export class MessageTemplatesService {
   async create(dto: CreateMessageTemplateDto, operator?: AuthenticatedUser) {
     this.assertRequiredString(dto.name, 'name');
     this.assertRequiredString(dto.content, 'content');
+    this.assertDeliveryTemplateType(dto.type);
+    this.assertDeliveryTemplateChannel(dto.channel);
 
     const template = await this.prisma.messageTemplate.create({
       data: {
         name: dto.name.trim(),
-        type: this.parseType(dto.type, true) ?? 'custom',
-        channel: this.parseChannel(dto.channel, true) ?? 'internal',
+        ...DELIVERY_TEMPLATE_SCOPE,
         content: dto.content.trim(),
         variables: this.normalizeVariables(dto.content, dto.variables),
         status: this.parseStatus(dto.status, true) ?? 'active',
@@ -143,7 +150,8 @@ export class MessageTemplatesService {
     const existingTemplate = await this.prisma.messageTemplate.findFirst({
       where: {
         id,
-        deletedAt: null
+        deletedAt: null,
+        ...DELIVERY_TEMPLATE_SCOPE
       }
     });
 
@@ -167,13 +175,8 @@ export class MessageTemplatesService {
       data.name = dto.name.trim();
     }
 
-    if (dto.type !== undefined) {
-      data.type = this.parseType(dto.type, true);
-    }
-
-    if (dto.channel !== undefined) {
-      data.channel = this.parseChannel(dto.channel, true);
-    }
+    this.assertDeliveryTemplateType(dto.type);
+    this.assertDeliveryTemplateChannel(dto.channel);
 
     if (dto.content !== undefined) {
       this.assertRequiredString(dto.content, 'content');
@@ -222,7 +225,8 @@ export class MessageTemplatesService {
     const existingTemplate = await this.prisma.messageTemplate.findFirst({
       where: {
         id,
-        deletedAt: null
+        deletedAt: null,
+        ...DELIVERY_TEMPLATE_SCOPE
       }
     });
 
@@ -293,42 +297,24 @@ export class MessageTemplatesService {
       .sort();
   }
 
-  private parseType(value: unknown, strict: boolean) {
+  private assertDeliveryTemplateType(value: unknown) {
     if (value === undefined || value === null || value === '') {
-      return undefined;
+      return;
     }
 
-    if (
-      value === 'renewal' ||
-      value === 'delivery' ||
-      value === 'after_sale' ||
-      value === 'notification' ||
-      value === 'custom'
-    ) {
-      return value satisfies MessageTemplateType;
+    if (value !== DELIVERY_TEMPLATE_TYPE) {
+      throw new BadRequestException('Delivery templates only support type=delivery');
     }
-
-    if (strict) {
-      throw new BadRequestException('Invalid message template type');
-    }
-
-    return undefined;
   }
 
-  private parseChannel(value: unknown, strict: boolean) {
+  private assertDeliveryTemplateChannel(value: unknown) {
     if (value === undefined || value === null || value === '') {
-      return undefined;
+      return;
     }
 
-    if (value === 'internal' || value === 'telegram' || value === 'customer_service') {
-      return value satisfies MessageTemplateChannel;
+    if (value !== DELIVERY_TEMPLATE_CHANNEL) {
+      throw new BadRequestException('Delivery templates only support channel=customer_service');
     }
-
-    if (strict) {
-      throw new BadRequestException('Invalid message template channel');
-    }
-
-    return undefined;
   }
 
   private parseStatus(value: unknown, strict: boolean) {

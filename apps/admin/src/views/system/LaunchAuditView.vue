@@ -93,10 +93,10 @@
 
     <section class="content-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>上线门禁清单</h3>
-          <p>逐项确认生产配置、真实测试、备份恢复、敏感字段和上线阻塞项，保存结果作为发布证据。</p>
-        </div>
+        <PanelTitleHelp
+          title="上线门禁清单"
+          help="发布前一项项确认：生产配置有没有配好、真实测试有没有过、备份能不能恢复、敏感字段有没有保护、还有没有阻塞问题。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>上线检查</StatusChip>
           <StatusChip :tone="blockedCount > 0 ? 'red' : 'green'" dot>
@@ -301,9 +301,10 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { maintenanceApi } from '@/api/system';
-import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
+import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { LaunchChecklistItem, LaunchChecklistStatus } from '@/types/system';

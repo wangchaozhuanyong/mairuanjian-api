@@ -7,16 +7,13 @@
   >
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>
-            兑换码库存池
-            <FeatureHelp
-              placement="right"
-              text="这里放所有导入进来的兑换码。平时只看尾号和状态，完整码需要有权限并填写查看原因。"
-            />
-          </h3>
-          <p>按批次、业务、面值、成本和发货状态管理库存，完整兑换码加密保存并默认只展示尾号。</p>
-        </div>
+        <PanelTitleHelp
+          title="兑换码库存池"
+          :help="[
+            '这里放所有导入进来的兑换码。平时只看尾号和状态，完整码需要有权限并填写查看原因。',
+            '可以按批次、业务、面值、成本和发货状态管理库存。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 条库存</StatusChip>
           <StatusChip tone="green">未售 {{ unsoldCount }}</StatusChip>
@@ -33,7 +30,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="inventoryColumnOptions"
@@ -457,9 +453,11 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { useAuthStore } from '@/stores/auth';
 import type {
   CodeService,
@@ -696,11 +694,19 @@ function handleSelectionChange(rows: RedeemCodeInventoryItem[]) {
   selectedCodes.value = rows;
 }
 
-async function reloadAll() {
+async function reloadAll(options: { background?: boolean; force?: boolean } = {}) {
   try {
-    await Promise.all([loadServices(), loadInventory({ force: true })]);
+    await Promise.all([
+      loadServices(),
+      loadInventory({
+        background: options.background,
+        force: options.force ?? true
+      })
+    ]);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '刷新兑换码库存失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '刷新兑换码库存失败');
+    }
   }
 }
 
@@ -805,7 +811,7 @@ function applyView(view: UserTableView) {
   query.serviceId = typeof filters.serviceId === 'string' ? filters.serviceId : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         inventoryColumnOptions.some((option) => option.value === column)
@@ -953,6 +959,16 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    reloadAll({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '兑换码库存' }
+);
+
 onActivated(() => {
   if (!activatedOnce.value) {
     activatedOnce.value = true;

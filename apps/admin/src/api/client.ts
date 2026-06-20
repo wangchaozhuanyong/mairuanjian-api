@@ -55,7 +55,7 @@ const serverTermMap: Record<string, string> = {
   'import job': '导入任务',
   'import error report': '导入错误报告',
   'ip whitelist': 'IP 白名单',
-  'message template': '消息模板',
+  'message template': '发货模板',
   'notification log': '通知日志',
   'notification rule': '通知规则',
   'notification template': '通知模板',

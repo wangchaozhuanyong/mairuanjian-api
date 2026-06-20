@@ -39,7 +39,6 @@ describe('CustomersService', () => {
     const customer = {
       id: '11111111-1111-4111-8111-111111111111',
       name: '测试客户',
-      contactName: '联系人',
       phone: '13800001111',
       phoneTail: '1111',
       wechat: null,

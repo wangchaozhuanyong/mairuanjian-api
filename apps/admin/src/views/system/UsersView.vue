@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     title="用户管理"
-    group="系统管理"
+    group="安全与风控"
     phase="Phase 1"
     description="管理员工账号、启停状态、角色分配和基础身份信息。"
   >
@@ -32,17 +32,16 @@
 
     <section class="content-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>员工账号列表</h3>
-          <p>管理后台登录账号、启停状态和角色分配，敏感权限变更进入审计日志。</p>
-        </div>
+        <PanelTitleHelp
+          title="员工账号列表"
+          help="这里管理谁能登录后台、账号是启用还是停用、绑定了哪些角色。涉及敏感权限的变化会进审计日志。"
+        />
         <StatusChip tone="blue" dot>权限基础</StatusChip>
       </div>
 
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="userColumnOptions"
@@ -255,6 +254,7 @@ import { rolesApi, userTableViewsApi, usersApi } from '@/api/system';
 import type { UserQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -529,7 +529,7 @@ function applyView(view: UserTableView) {
   query.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   query.status = isUserStatus(filters.status) ? filters.status : '';
   query.pageSize = view.pageSize;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) => userColumnOptions.some((option) => option.value === column))
     : userColumnOptions.map((column) => column.value);

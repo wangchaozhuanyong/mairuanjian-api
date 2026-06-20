@@ -41,8 +41,6 @@ type CodePlatformMappingWithRelations = CodePlatformMapping & {
   platform: {
     id: string;
     name: string;
-    code: string;
-    type: string;
     status: string;
   };
   service: {
@@ -715,13 +713,17 @@ export class CodeServicesService {
       where: {
         id: deliveryTemplateId,
         deletedAt: null,
-        status: 'active'
+        status: 'active',
+        type: 'delivery',
+        channel: 'customer_service'
       },
       select: { id: true }
     });
 
     if (!template) {
-      throw new BadRequestException('Delivery template does not exist or is disabled');
+      throw new BadRequestException(
+        'Delivery template does not exist, is disabled, or is not a delivery reply template'
+      );
     }
   }
 
@@ -769,8 +771,6 @@ export class CodeServicesService {
         select: {
           id: true,
           name: true,
-          code: true,
-          type: true,
           status: true
         }
       },
@@ -822,8 +822,6 @@ export class CodeServicesService {
       platform: {
         id: mapping.platform.id,
         name: mapping.platform.name,
-        code: mapping.platform.code,
-        type: mapping.platform.type,
         status: mapping.platform.status
       },
       shopId: mapping.shopId,

@@ -1,16 +1,16 @@
 <template>
   <PageScaffold
     title="审计日志中心"
-    group="系统管理"
+    group="数据与审计"
     phase="Phase 14"
     description="统一查看操作日志、敏感查看日志、登录日志、导出日志、权限变更日志、自动化任务日志和平台接口日志。"
   >
     <section class="content-panel system-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>审计日志工作台</h3>
-          <p>集中筛选操作、敏感查看、登录、导出、权限变更、自动化和平台接口日志。</p>
-        </div>
+        <PanelTitleHelp
+          title="审计日志工作台"
+          help="这里集中查后台发生过的事情，比如谁操作了数据、谁看了敏感资料、谁登录了系统、谁导出了文件。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>审计中心</StatusChip>
           <StatusChip tone="blue">操作 {{ operationTotal }}</StatusChip>
@@ -30,7 +30,6 @@
         <el-tab-pane label="操作日志" name="operation">
           <TableToolbar
             v-model:keyword="operationQuery.keyword"
-            v-model:density="operationDensity"
             v-model:visible-columns="operationVisibleColumns"
             v-model:saved-view-id="operationSavedViewId"
             :column-options="operationColumnOptions"
@@ -177,7 +176,6 @@
           <TableToolbar
             v-model:keyword="sensitiveQuery.keyword"
             v-model:status="sensitiveQuery.approved"
-            v-model:density="sensitiveDensity"
             v-model:visible-columns="sensitiveVisibleColumns"
             v-model:saved-view-id="sensitiveSavedViewId"
             :column-options="sensitiveColumnOptions"
@@ -351,7 +349,6 @@
           <TableToolbar
             v-model:keyword="loginQuery.keyword"
             v-model:status="loginQuery.status"
-            v-model:density="loginDensity"
             v-model:visible-columns="loginVisibleColumns"
             v-model:saved-view-id="loginSavedViewId"
             :column-options="loginColumnOptions"
@@ -509,7 +506,6 @@
           <TableToolbar
             v-model:keyword="exportQuery.keyword"
             v-model:status="exportQuery.status"
-            v-model:density="exportDensity"
             v-model:visible-columns="exportVisibleColumns"
             v-model:saved-view-id="exportSavedViewId"
             :column-options="exportColumnOptions"
@@ -682,7 +678,6 @@
         <el-tab-pane label="权限变更日志" name="permission">
           <TableToolbar
             v-model:keyword="permissionQuery.keyword"
-            v-model:density="permissionDensity"
             v-model:visible-columns="permissionVisibleColumns"
             v-model:saved-view-id="permissionSavedViewId"
             :column-options="permissionColumnOptions"
@@ -812,7 +807,6 @@
           <TableToolbar
             v-model:keyword="automationQuery.keyword"
             v-model:status="automationQuery.level"
-            v-model:density="automationDensity"
             v-model:visible-columns="automationVisibleColumns"
             v-model:saved-view-id="automationSavedViewId"
             :column-options="automationColumnOptions"
@@ -963,7 +957,6 @@
           <TableToolbar
             v-model:keyword="platformQuery.keyword"
             v-model:status="platformQuery.status"
-            v-model:density="platformDensity"
             v-model:visible-columns="platformVisibleColumns"
             v-model:saved-view-id="platformSavedViewId"
             :column-options="platformColumnOptions"
@@ -1152,6 +1145,7 @@ import type {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -1701,7 +1695,7 @@ function applyOperationView(view: UserTableView) {
   operationQuery.module = typeof filters.module === 'string' ? filters.module : '';
   operationQuery.action = typeof filters.action === 'string' ? filters.action : '';
   operationQuery.pageSize = view.pageSize;
-  operationDensity.value = view.density;
+  operationDensity.value = 'default';
   operationVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         operationColumnOptions.some((option) => option.value === column)
@@ -1895,7 +1889,7 @@ function applySensitiveView(view: UserTableView) {
   sensitiveQuery.fieldName = typeof filters.fieldName === 'string' ? filters.fieldName : '';
   sensitiveQuery.approved = typeof filters.approved === 'string' ? filters.approved : '';
   sensitiveQuery.pageSize = view.pageSize;
-  sensitiveDensity.value = view.density;
+  sensitiveDensity.value = 'default';
   sensitiveVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         sensitiveColumnOptions.some((option) => option.value === column)
@@ -2081,7 +2075,7 @@ function applyLoginView(view: UserTableView) {
   loginQuery.status = isLoginStatus(filters.status) ? filters.status : '';
   loginQuery.abnormal = typeof filters.abnormal === 'string' ? filters.abnormal : '';
   loginQuery.pageSize = view.pageSize;
-  loginDensity.value = view.density;
+  loginDensity.value = 'default';
   loginVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) => loginColumnOptions.some((option) => option.value === column))
     : loginColumnOptions.map((column) => column.value);
@@ -2272,7 +2266,7 @@ function applyExportView(view: UserTableView) {
   exportQuery.containsSensitive =
     typeof filters.containsSensitive === 'string' ? filters.containsSensitive : '';
   exportQuery.pageSize = view.pageSize;
-  exportDensity.value = view.density;
+  exportDensity.value = 'default';
   exportVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) => exportColumnOptions.some((option) => option.value === column))
     : exportColumnOptions.map((column) => column.value);
@@ -2446,7 +2440,7 @@ function applyPermissionView(view: UserTableView) {
   const filters = view.filters;
   permissionQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   permissionQuery.pageSize = view.pageSize;
-  permissionDensity.value = view.density;
+  permissionDensity.value = 'default';
   permissionVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         permissionColumnOptions.some((option) => option.value === column)
@@ -2625,7 +2619,7 @@ function applyAutomationView(view: UserTableView) {
   automationQuery.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   automationQuery.level = isAutomationLogLevel(filters.level) ? filters.level : '';
   automationQuery.pageSize = view.pageSize;
-  automationDensity.value = view.density;
+  automationDensity.value = 'default';
   automationVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         automationColumnOptions.some((option) => option.value === column)
@@ -2811,7 +2805,7 @@ function applyPlatformView(view: UserTableView) {
   platformQuery.platform = typeof filters.platform === 'string' ? filters.platform : '';
   platformQuery.status = isPlatformSyncStatus(filters.status) ? filters.status : '';
   platformQuery.pageSize = view.pageSize;
-  platformDensity.value = view.density;
+  platformDensity.value = 'default';
   platformVisibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         platformColumnOptions.some((option) => option.value === column)

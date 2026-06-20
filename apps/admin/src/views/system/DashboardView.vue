@@ -384,7 +384,7 @@ const dashboardMetrics = computed(() => [
     label: 'Apple ID总余额',
     value: appleBalanceTotal.value ? formatNumber(appleBalanceTotal.value) : '-',
     hint: appleBalanceTotal.value
-      ? `汇率成本 ¥${formatDecimal(appleAverageCost.value)} / 1美元`
+      ? `平均成本 ¥${formatDecimal(appleAverageCost.value)} / 1美元`
       : '暂无余额样本',
     tag: appleAccountDataReady.value ? '多币种' : '读取中',
     tagTone: 'blue' as const

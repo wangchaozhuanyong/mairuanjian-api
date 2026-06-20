@@ -17,14 +17,6 @@ enum CustomerStatus {
   disabled
 }
 
-enum SourcePlatformType {
-  taobao
-  xianyu
-  wechat
-  manual
-  other
-}
-
 enum SourcePlatformStatus {
   active
   disabled
@@ -486,7 +478,6 @@ model User {
 model Customer {
   id               String         @id @default(uuid()) @db.Uuid
   name             String         @db.VarChar(120)
-  contactName      String?        @map("contact_name") @db.VarChar(120)
   phone            String?        @db.VarChar(50)
   phoneTail        String?        @map("phone_tail") @db.VarChar(8)
   wechat           String?        @db.VarChar(120)
@@ -520,12 +511,8 @@ model Customer {
 model SourcePlatform {
   id              String               @id @default(uuid()) @db.Uuid
   name            String               @db.VarChar(120)
-  code            String               @unique @db.VarChar(80)
-  type            SourcePlatformType   @default(other)
   feeRate         Decimal              @default(0) @map("fee_rate") @db.Decimal(8, 4)
   feeFixed        Decimal              @default(0) @map("fee_fixed") @db.Decimal(12, 2)
-  syncEnabled     Boolean              @default(false) @map("sync_enabled")
-  deliveryEnabled Boolean              @default(false) @map("delivery_enabled")
   status          SourcePlatformStatus @default(active)
   remark          String?              @db.Text
   createdByUserId String?              @map("created_by_user_id") @db.Uuid
@@ -543,10 +530,10 @@ model SourcePlatform {
   codePlatformOrders           CodePlatformOrder[]
   codeDeliveryLogs             CodeDeliveryLog[]
   codeRefundRecords            CodeRefundRecord[]
+  appleAccounts                AppleAccount[]
   createdBy                    User?                         @relation("SourcePlatformCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedBy                    User?                         @relation("SourcePlatformUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
-  @@index([type])
   @@index([status])
   @@index([deletedAt])
   @@map("source_platforms")
@@ -590,6 +577,7 @@ model AppleAccount {
   status                 AppleAccountStatus @default(normal)
   isManuallyLocked       Boolean            @default(false) @map("is_manually_locked")
   manualLockReason       String?            @map("manual_lock_reason") @db.Text
+  sourcePlatformId       String?            @map("source_platform_id") @db.Uuid
   lockedAt               DateTime?          @map("locked_at") @db.Timestamptz(6)
   lockedByUserId         String?            @map("locked_by_user_id") @db.Uuid
   passwordEncrypted      String?            @map("password_encrypted") @db.Text
@@ -606,6 +594,7 @@ model AppleAccount {
   createdBy       User?                     @relation("AppleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedBy       User?                     @relation("AppleAccountUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   lockedBy        User?                     @relation("AppleAccountLockedBy", fields: [lockedByUserId], references: [id], onDelete: SetNull)
+  sourcePlatform  SourcePlatform?           @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
   topups          AppleBalanceTopup[]
   consumptions    AppleBalanceConsumption[]
   adjustments     AppleBalanceAdjustment[]
@@ -620,6 +609,7 @@ model AppleAccount {
   @@index([status])
   @@index([currency])
   @@index([isManuallyLocked])
+  @@index([sourcePlatformId])
   @@index([deletedAt])
   @@map("apple_accounts")
 }

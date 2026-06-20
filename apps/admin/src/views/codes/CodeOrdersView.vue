@@ -7,16 +7,13 @@
   >
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>
-            兑换码发货队列
-            <FeatureHelp
-              placement="right"
-              text="这里处理买家下单后的发货。先匹配业务，再锁住兑换码，最后生成内容并确认发货。"
-            />
-          </h3>
-          <p>处理平台识别、兑换码锁定、半自动发货和失败重试，防止重复发货和库存误消耗。</p>
-        </div>
+        <PanelTitleHelp
+          title="兑换码发货队列"
+          :help="[
+            '这里处理买家下单后的发货。先匹配业务，再锁住兑换码，最后生成内容并确认发货。',
+            '系统会尽量防止重复发货和库存误消耗，失败的订单可以在这里重试或转人工。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 单</StatusChip>
           <StatusChip :tone="pendingCount > 0 ? 'orange' : 'green'">
@@ -33,7 +30,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.deliveryStatus"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="orderColumnOptions"
@@ -550,9 +546,11 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodeDeliveryLog,
@@ -945,7 +943,7 @@ function applyView(view: UserTableView) {
   query.deliveryStatus = typeof filters.deliveryStatus === 'string' ? filters.deliveryStatus : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) => orderColumnOptions.some((option) => option.value === column))
     : orderColumnOptions.map((column) => column.value);
@@ -1152,6 +1150,15 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    reloadAll({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '兑换码订单列表' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   ['code-orders', 'code-services', 'code-order-dependencies'],

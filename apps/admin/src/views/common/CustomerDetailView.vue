@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     title="客户详情"
-    group="系统管理"
+    group="客户与来源"
     phase="Phase 2"
     description="聚合客户基础资料、来源平台、Apple ID 订单、开通记录和续费任务。"
   >
@@ -64,13 +64,14 @@
 
       <section class="content-panel">
         <div class="panel-title-row">
-          <div>
-            <h3>{{ customer.name }}</h3>
-            <p>
-              {{ customer.contactName || '未填写联系人' }} ·
-              {{ customer.maskedPhone || '未填写手机号' }}
-            </p>
-          </div>
+          <PanelTitleHelp
+            :title="customer.name"
+            :help="
+              customer.maskedPhone
+                ? `这里是客户基础资料，当前手机号是 ${customer.maskedPhone}。`
+                : '这里是客户基础资料，这个客户还没有填写手机号。'
+            "
+          />
           <div class="inline-actions">
             <StatusChip tone="blue">{{ customer.sourcePlatform?.name ?? '无来源平台' }}</StatusChip>
             <StatusChip :tone="customer.status === 'active' ? 'green' : 'neutral'" dot>
@@ -83,10 +84,6 @@
           <div>
             <span>客户名称</span>
             <strong>{{ customer.name }}</strong>
-          </div>
-          <div>
-            <span>联系人</span>
-            <strong>{{ customer.contactName || '-' }}</strong>
           </div>
           <div>
             <span>手机号</span>
@@ -128,10 +125,10 @@
 
       <section v-loading="relatedLoading" class="content-panel">
         <div class="panel-title-row">
-          <div>
-            <h3>关联业务数据</h3>
-            <p>展示最近记录，完整处理仍在对应业务模块完成。</p>
-          </div>
+          <PanelTitleHelp
+            title="关联业务数据"
+            help="这里只放最近几条记录，方便快速看看这个客户发生过什么。真正处理订单、开通和续费，还是去对应业务页面。"
+          />
           <StatusChip tone="green" dot>真实接口</StatusChip>
         </div>
 
@@ -349,7 +346,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   appleActivationsApi,
@@ -360,6 +357,7 @@ import {
 import AppButton from '@/components/ui/AppButton.vue';
 import AppState from '@/components/ui/AppState.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleOrder, Customer, RenewalTask, ServiceActivation } from '@/types/system';
@@ -463,7 +461,13 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(CUSTOMER_DETAIL_SCOPES, (
   void loadDetail({ silent: true, dedupeMs: 0 });
 });
 
-onMounted(() => loadDetail({ force: false }));
+watch(
+  customerId,
+  () => {
+    void loadDetail({ force: false });
+  },
+  { immediate: true }
+);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();

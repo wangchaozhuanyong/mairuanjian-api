@@ -25,8 +25,9 @@ const fallbackScopesByModuleKey: Record<string, string[]> = {
   'apple-automation': ['apple-automation-tasks'],
   'apple-reports': ['apple-reports', 'apple-orders', 'apple-activations'],
   'code-inventory': ['code-inventory', 'code-services'],
-  'code-settings': ['code-services', 'code-service-mappings'],
+  'code-settings': ['code-services', 'code-service-mappings', 'message-templates'],
   'code-orders': ['code-orders', 'code-order-dependencies'],
+  'delivery-templates': ['message-templates'],
   'delivery-exceptions': ['code-delivery-exceptions'],
   'after-sales': ['code-after-sales'],
   'taobao-orders': ['platform-code-orders-taobao'],
@@ -34,7 +35,6 @@ const fallbackScopesByModuleKey: Record<string, string[]> = {
   'code-reports': ['code-reports'],
   customers: ['customers', 'source-platforms'],
   'source-platforms': ['source-platforms'],
-  'message-templates': ['message-templates'],
   attachments: ['attachments'],
   notifications: [
     'notification-overview',

@@ -7,16 +7,13 @@
   >
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>
-            余额对账工作台
-            <FeatureHelp
-              placement="right"
-              text="这里不是给 ID 充值，而是当你实际查到的余额和系统里记的不一样时，用来把账改准。"
-            />
-          </h3>
-          <p>核对系统余额、实际余额和人民币总成本，所有修正记录单独留痕并进入审计链路。</p>
-        </div>
+        <PanelTitleHelp
+          title="余额对账工作台"
+          :help="[
+            '这里不是给 ID 充值，而是实际查到的余额和系统里记的不一样时，用来把账改准。',
+            '会一起核对系统余额、实际余额和人民币总成本，每次修正都会留下记录，方便以后追查。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>账号 {{ total }}</StatusChip>
           <StatusChip tone="green">余额 {{ totalBalance }}</StatusChip>
@@ -32,7 +29,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="accountColumnOptions"
@@ -143,7 +139,7 @@
             <span class="help-label">
               人民币总成本
               <FeatureHelp
-                text="系统认为这些剩余余额一共对应多少人民币成本。这里不是填汇率，是总金额。"
+                text="系统认为这些剩余余额一共对应多少人民币成本。这里不是平均成本，是总金额。"
               />
             </span>
           </template>
@@ -164,7 +160,7 @@
               />
             </span>
           </template>
-          <template #default="{ row }">{{ getAccountExchangeRateCostAmount(row) }}</template>
+          <template #default="{ row }">{{ getAccountAverageCost(row) }}</template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('status')"
@@ -241,7 +237,7 @@
             </div>
             <div>
               <span>平均成本</span>
-              <strong>{{ getAccountExchangeRateCostAmount(account) }}</strong>
+              <strong>{{ getAccountAverageCost(account) }}</strong>
             </div>
           </div>
 
@@ -319,7 +315,7 @@
             </div>
             <div>
               <span>均价</span>
-              <strong>{{ getAccountExchangeRateCostAmount(selectedAccount) }}</strong>
+              <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
             </div>
           </div>
         </div>
@@ -377,7 +373,7 @@
           </div>
           <div>
             <span>平均成本</span>
-            <strong>{{ getAccountExchangeRateCostAmount(selectedAccount) }}</strong>
+            <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
           </div>
           <div>
             <span>锁定状态</span>
@@ -447,9 +443,7 @@
         </div>
         <div>
           <span>原均价</span>
-          <strong>{{
-            selectedAccount ? getAccountExchangeRateCostAmount(selectedAccount) : '-'
-          }}</strong>
+          <strong>{{ selectedAccount ? getAccountAverageCost(selectedAccount) : '-' }}</strong>
         </div>
       </div>
 
@@ -613,6 +607,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -748,7 +743,7 @@ const averageCostPreview = computed(() => {
     return '-';
   }
 
-  return (cost / balance).toFixed(4);
+  return (cost / balance).toFixed(2);
 });
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
@@ -776,7 +771,7 @@ const previewNewCost = computed(() => {
   const oldCost = getAccountTotalCostNumber(selectedAccount.value);
   const oldBalance = Number(selectedAccount.value.currentBalance);
   const newBalance = Number(form.newBalance);
-  const averageCost = getAccountExchangeRateCostNumber(selectedAccount.value);
+  const averageCost = getAccountAverageCostNumber(selectedAccount.value);
 
   if (Number.isNaN(newBalance)) return '-';
   if (form.costAdjustMethod === 'none') return oldCost.toFixed(4);
@@ -811,7 +806,7 @@ function isLikelyLegacyRateCost(account: AppleAccount) {
   );
 }
 
-function getAccountExchangeRateCostNumber(account: AppleAccount) {
+function getAccountAverageCostNumber(account: AppleAccount) {
   if (isLikelyLegacyRateCost(account)) {
     return parseDecimalInput(account.balanceCostAmount);
   }
@@ -819,8 +814,8 @@ function getAccountExchangeRateCostNumber(account: AppleAccount) {
   return parseDecimalInput(account.averageCost);
 }
 
-function getAccountExchangeRateCostAmount(account: AppleAccount) {
-  return getAccountExchangeRateCostNumber(account).toFixed(4);
+function getAccountAverageCost(account: AppleAccount) {
+  return getAccountAverageCostNumber(account).toFixed(2);
 }
 
 function getAccountTotalCostNumber(account: AppleAccount) {
@@ -1011,7 +1006,7 @@ function applyView(view: UserTableView) {
   query.locked = typeof filters.locked === 'string' ? filters.locked : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         accountColumnOptions.some((option) => option.value === column)

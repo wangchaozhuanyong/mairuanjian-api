@@ -14,7 +14,7 @@ const HEARTBEAT_INTERVAL_MS = 25_000;
 const modulePermissionHints: Record<RealtimeEventModule, string[]> = {
   apple: ['apple.account.view', 'apple.renewal_task.view', 'apple.order.view'],
   code: ['code.inventory.view', 'code.order.view', 'code.delivery.view', 'code.service.manage'],
-  common: ['customer.view', 'source_platform.view', 'message_template.manage', 'attachment.view'],
+  common: ['customer.view', 'source_platform.view', 'attachment.view'],
   data: ['data.overview.view', 'data.backup.view', 'data.export.view'],
   maintenance: [
     'maintenance.announcement.view',

@@ -32,9 +32,7 @@ const customerInclude = {
   sourcePlatform: {
     select: {
       id: true,
-      name: true,
-      code: true,
-      type: true
+      name: true
     }
   },
   createdBy: {
@@ -55,7 +53,6 @@ const customerInclude = {
 
 const CUSTOMER_SORT_FIELDS: Record<string, keyof Prisma.CustomerOrderByWithRelationInput> = {
   name: 'name',
-  contactName: 'contactName',
   phoneTail: 'phoneTail',
   wechat: 'wechat',
   status: 'status',
@@ -88,7 +85,6 @@ export class CustomersService {
           OR: keyword
             ? [
                 { name: { contains: keyword, mode: 'insensitive' } },
-                { contactName: { contains: keyword, mode: 'insensitive' } },
                 { wechat: { contains: keyword, mode: 'insensitive' } },
                 { phoneTail: { contains: keyword.slice(-8), mode: 'insensitive' } }
               ]
@@ -140,7 +136,6 @@ export class CustomersService {
     const customer = await this.prisma.customer.create({
       data: {
         name: dto.name.trim(),
-        contactName: this.normalizeNullableString(dto.contactName),
         phone: this.normalizeNullableString(dto.phone),
         phoneTail: this.getTail(dto.phone),
         wechat: this.normalizeNullableString(dto.wechat),
@@ -197,10 +192,6 @@ export class CustomersService {
     if (dto.name !== undefined) {
       this.assertRequiredString(dto.name, 'name');
       data.name = dto.name.trim();
-    }
-
-    if (dto.contactName !== undefined) {
-      data.contactName = this.normalizeNullableString(dto.contactName);
     }
 
     if (dto.phone !== undefined) {
@@ -498,7 +489,6 @@ export class CustomersService {
     return {
       id: customer.id,
       name: customer.name,
-      contactName: customer.contactName,
       maskedPhone: this.maskPhone(customer.phone),
       phoneTail: customer.phoneTail,
       wechat: customer.wechat,

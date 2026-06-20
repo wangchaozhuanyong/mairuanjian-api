@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -19,7 +18,7 @@ describe('PlatformDeliveryService', () => {
     permissions: []
   };
 
-  function createService(platformType: 'manual' | 'taobao' | 'xianyu', deliveryEnabled = true) {
+  function createService() {
     const cronLog = {
       id: '33333333-3333-4333-8333-333333333333',
       jobName: 'platform.taobao.poll',
@@ -39,11 +38,7 @@ describe('PlatformDeliveryService', () => {
     const prisma = {
       codePlatformOrder: {
         findUnique: jest.fn().mockResolvedValue({
-          id: orderId,
-          platform: {
-            type: platformType,
-            deliveryEnabled
-          }
+          id: orderId
         }),
         findFirst: jest.fn()
       },
@@ -121,7 +116,7 @@ describe('PlatformDeliveryService', () => {
   }
 
   it('delegates manual delivery to ManualDeliveryAdapter', async () => {
-    const { service, manualAdapter } = createService('manual');
+    const { service, manualAdapter } = createService();
 
     const result = await service.deliver('manual', orderId, {
       deliveryContent: 'CODE-1',
@@ -139,7 +134,7 @@ describe('PlatformDeliveryService', () => {
   });
 
   it('routes unsupported Taobao delivery to manual-required adapter result', async () => {
-    const { service, taobaoAdapter } = createService('taobao', true);
+    const { service, taobaoAdapter } = createService();
 
     const result = await service.deliver('taobao', orderId, {});
 
@@ -152,26 +147,8 @@ describe('PlatformDeliveryService', () => {
     );
   });
 
-  it('adds auto-delivery switch reason when platform delivery is disabled', async () => {
-    const { service, taobaoAdapter } = createService('taobao', false);
-
-    await service.deliver('taobao', orderId, {});
-
-    expect(taobaoAdapter.deliver).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: '淘宝自动发货开关未启用，订单已转入人工处理'
-      })
-    );
-  });
-
-  it('rejects platform delivery when order belongs to another platform', async () => {
-    const { service } = createService('xianyu', true);
-
-    await expect(service.deliver('taobao', orderId, {})).rejects.toThrow(BadRequestException);
-  });
-
   it('records platform sync log for unsupported Taobao order sync', async () => {
-    const { service, prisma, notificationsService } = createService('taobao', true);
+    const { service, prisma, notificationsService } = createService();
 
     const result = await service.syncOrders('taobao');
 
@@ -196,7 +173,7 @@ describe('PlatformDeliveryService', () => {
   });
 
   it('executes platform polling with cron log, platform log and audit log', async () => {
-    const { service, prisma, auditLogsService } = createService('taobao', true);
+    const { service, prisma, auditLogsService } = createService();
 
     const result = await service.pollPlatform(
       'taobao',

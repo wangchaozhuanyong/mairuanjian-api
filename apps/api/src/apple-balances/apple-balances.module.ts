@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { AppleAccountsModule } from '../apple-accounts/apple-accounts.module';
 import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 import { PrismaModule } from '../common/prisma/prisma.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -7,7 +8,7 @@ import { AppleBalancesController, AppleTopupsController } from './apple-balances
 import { AppleBalancesService } from './apple-balances.service';
 
 @Module({
-  imports: [AuditLogsModule, PrismaModule, RealtimeModule],
+  imports: [AuditLogsModule, AppleAccountsModule, PrismaModule, RealtimeModule],
   controllers: [AppleBalancesController, AppleTopupsController],
   providers: [AppleBalancesService, FieldEncryptionService]
 })

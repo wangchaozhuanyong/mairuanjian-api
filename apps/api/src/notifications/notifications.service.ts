@@ -65,21 +65,21 @@ type NavBadgeSectionKey =
 
 const NAV_BADGE_SECTION_LABELS: Record<NavBadgeSectionKey, string> = {
   workspace: '工作台',
-  common: '客户与公共资料',
+  common: '客户与来源',
   'id-business': 'ID 业务',
   codes: '兑换码业务',
-  security: '安全与权限',
+  security: '安全与风控',
   'data-audit': '数据与审计',
   'ops-platform': '运维与平台',
   'system-config': '系统配置'
 };
 
 const NAV_BADGE_MODULE_SECTION_MAP: Record<string, NavBadgeSectionKey> = {
-  attachment: 'common',
+  attachment: 'data-audit',
   customer: 'common',
   customers: 'common',
-  message_template: 'common',
-  notification: 'common',
+  message_template: 'codes',
+  notification: 'system-config',
   source_platform: 'common',
 
   apple: 'id-business',
@@ -344,8 +344,6 @@ export class NotificationsService {
           appleAutomation,
           codeOrders,
           deliveryExceptions,
-          taobaoOrders,
-          xianyuOrders,
           afterSales,
           notifications,
           sensitiveApprovals,
@@ -415,18 +413,6 @@ export class NotificationsService {
           }),
           this.prisma.codePlatformOrder.count({
             where: { deliveryStatus: { in: ['failed', 'manual'] } }
-          }),
-          this.prisma.codePlatformOrder.count({
-            where: {
-              platform: { type: 'taobao' },
-              deliveryStatus: { in: ['pending', 'failed', 'manual'] }
-            }
-          }),
-          this.prisma.codePlatformOrder.count({
-            where: {
-              platform: { type: 'xianyu' },
-              deliveryStatus: { in: ['pending', 'failed', 'manual'] }
-            }
           }),
           this.prisma.codeAfterSale.count({
             where: { status: 'pending' }
@@ -569,20 +555,6 @@ export class NotificationsService {
             description: '发货失败或已转人工的兑换码订单'
           }),
           this.createNavItemBadge({
-            itemKey: 'taobao-orders',
-            label: '淘宝订单',
-            count: taobaoOrders,
-            tone: taobaoOrders > 0 ? 'orange' : 'neutral',
-            description: '淘宝待发货、失败或人工处理订单'
-          }),
-          this.createNavItemBadge({
-            itemKey: 'xianyu-orders',
-            label: '闲鱼订单',
-            count: xianyuOrders,
-            tone: xianyuOrders > 0 ? 'orange' : 'neutral',
-            description: '闲鱼待发货、失败或人工处理订单'
-          }),
-          this.createNavItemBadge({
             itemKey: 'after-sales',
             label: '售后补发',
             count: afterSales,
@@ -591,7 +563,7 @@ export class NotificationsService {
           }),
           this.createNavItemBadge({
             itemKey: 'notifications',
-            label: '通知中心',
+            label: '通知设置',
             count: notifications,
             tone: notifications > 0 ? 'orange' : 'neutral',
             description: '未读、待发送或失败通知'

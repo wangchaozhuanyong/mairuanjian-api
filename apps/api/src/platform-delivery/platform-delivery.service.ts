@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { SourcePlatformType } from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -176,18 +175,13 @@ export class PlatformDeliveryService {
     );
     const order = await this.prisma.codePlatformOrder.findFirst({
       where: {
-        externalOrderNo: normalizedExternalOrderNo,
-        platform: {
-          type: platform
-        }
+        externalOrderNo: normalizedExternalOrderNo
       },
       include: {
         platform: {
           select: {
             id: true,
             name: true,
-            code: true,
-            type: true,
             status: true
           }
         },
@@ -286,32 +280,12 @@ export class PlatformDeliveryService {
     const order = await this.prisma.codePlatformOrder.findUnique({
       where: { id: normalizedOrderId },
       select: {
-        id: true,
-        platform: {
-          select: {
-            type: true,
-            deliveryEnabled: true
-          }
-        }
+        id: true
       }
     });
 
     if (!order) {
       throw new NotFoundException('Code order not found');
-    }
-
-    if (platform !== 'manual' && order.platform.type !== platform) {
-      throw new BadRequestException('Order does not belong to requested platform');
-    }
-
-    if (platform !== 'manual' && !order.platform.deliveryEnabled) {
-      const result = await this.getAdapter(platform).deliver({
-        orderId: normalizedOrderId,
-        reason: `${this.getPlatformLabel(platform)}自动发货开关未启用，订单已转入人工处理`,
-        operator
-      });
-      await this.notifyPlatformDeliveryResult(platform, normalizedOrderId, result);
-      return result;
     }
 
     const result = await this.getAdapter(platform).deliver({
@@ -548,7 +522,7 @@ export class PlatformDeliveryService {
     return this.adapters[platform];
   }
 
-  private getPlatformLabel(platform: SourcePlatformType) {
+  private getPlatformLabel(platform: DeliveryPlatform) {
     if (platform === 'taobao') {
       return '淘宝';
     }

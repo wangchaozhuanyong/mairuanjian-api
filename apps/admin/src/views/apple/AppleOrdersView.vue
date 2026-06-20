@@ -11,16 +11,13 @@
 
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>
-            Apple ID 订单队列
-            <FeatureHelp
-              placement="right"
-              text="这里看每一单有没有开通、用了哪个 ID、客户付了多少、系统算出来赚了多少。"
-            />
-          </h3>
-          <p>跟踪订单、客户、业务、Apple ID、余额消耗和利润，开通与消费流水保持分区独立。</p>
-        </div>
+        <PanelTitleHelp
+          title="Apple ID 订单队列"
+          :help="[
+            '这里看每一单有没有开通、用了哪个 ID、客户付了多少、系统算出来赚了多少。',
+            '订单、开通记录和余额消费会分开记账，不会和兑换码发货混在一起。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 单</StatusChip>
           <StatusChip :tone="pendingOrderCount > 0 ? 'orange' : 'green'">
@@ -41,7 +38,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="orderColumnOptions"
@@ -346,9 +342,11 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { AppleOrder, PageResult, TableDensity, UserTableView } from '@/types/system';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
@@ -594,7 +592,7 @@ function applyView(view: UserTableView) {
   query.status = typeof filters.status === 'string' ? filters.status : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) => orderColumnOptions.some((option) => option.value === column))
     : orderColumnOptions.map((column) => column.value);
@@ -632,6 +630,15 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    loadOrders({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: 'Apple ID 订单列表' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-orders'], () => {
   void loadOrders({

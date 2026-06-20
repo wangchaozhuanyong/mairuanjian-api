@@ -1,16 +1,16 @@
 <template>
   <PageScaffold
-    title="附件管理"
-    group="系统管理"
+    title="附件中心"
+    group="数据与审计"
     phase="Phase 1"
     description="查看上传凭证、截图、售后材料和导入导出附件元数据。第一版先支持本地上传和列表查询。"
   >
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>附件列表</h3>
-          <p>集中管理凭证、截图、售后材料和导入导出附件元数据。</p>
-        </div>
+        <PanelTitleHelp
+          title="附件列表"
+          help="这里统一看凭证、截图、售后材料，还有导入导出产生的附件记录。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>附件 {{ total }}</StatusChip>
           <StatusChip tone="green">图片 {{ imageAttachmentCount }}</StatusChip>
@@ -21,7 +21,6 @@
 
       <TableToolbar
         v-model:keyword="query.keyword"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="attachmentColumnOptions"
@@ -272,6 +271,7 @@ import { attachmentsApi, userTableViewsApi } from '@/api/system';
 import type { AttachmentQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -611,7 +611,7 @@ function applyView(view: UserTableView) {
   query.purpose = typeof filters.purpose === 'string' ? filters.purpose : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         attachmentColumnOptions.some((option) => option.value === column)

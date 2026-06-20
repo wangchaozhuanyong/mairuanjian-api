@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
     title="运维监控"
-    group="系统管理"
+    group="运维与平台"
     phase="Phase 12"
     description="监控 API、数据库、Redis、队列、定时任务、平台同步、Worker、文件存储、磁盘空间和最近错误。"
   >
@@ -47,10 +47,7 @@
 
     <section class="content-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>{{ activeTabMeta.title }}</h3>
-          <p>{{ activeTabMeta.description }}</p>
-        </div>
+        <PanelTitleHelp :title="activeTabMeta.title" :help="activeTabMeta.description" />
         <div class="inline-actions">
           <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
         </div>
@@ -636,6 +633,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import OpsStatusTag from '@/components/ui/OpsStatusTag.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import type {
   CronJobLog,

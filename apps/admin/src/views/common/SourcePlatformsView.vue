@@ -1,34 +1,28 @@
 <template>
   <PageScaffold
     title="来源平台设置"
-    group="系统管理"
+    group="客户与来源"
     phase="Phase 2"
-    description="配置淘宝、闲鱼、微信、手工等客户来源和平台能力。手续费字段会按 Decimal 字符串提交。"
+    description="配置客户和订单来源平台，手续费字段会按 Decimal 字符串提交。"
   >
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>
-            来源平台列表
-            <FeatureHelp
-              placement="right"
-              text="这里设置客户和订单从哪里来，比如淘宝、闲鱼、微信。平台费用会影响后面算利润。"
-            />
-          </h3>
-          <p>维护平台编码、手续费和同步/发货能力，供订单与客户模块共用。</p>
-        </div>
+        <PanelTitleHelp
+          title="来源平台列表"
+          :help="[
+            '这里设置客户和订单从哪里来，比如淘宝、闲鱼、微信。',
+            '平台名称、手续费和状态会给客户、订单和利润计算一起使用。'
+          ]"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>平台 {{ total }}</StatusChip>
           <StatusChip tone="green">启用 {{ activePlatformCount }}</StatusChip>
-          <StatusChip tone="purple">支持同步 {{ syncPlatformCount }}</StatusChip>
-          <StatusChip tone="orange">支持发货 {{ deliveryPlatformCount }}</StatusChip>
         </div>
       </div>
 
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="platformColumnOptions"
@@ -39,7 +33,7 @@
         :batch-actions="batchActions"
         :show-date-shortcut="false"
         primary-label="新增来源平台"
-        placeholder="搜索平台名称、编码、备注"
+        placeholder="搜索平台名称、备注"
         @search="handleSearch"
         @refresh="() => loadPlatforms()"
         @primary="openCreate"
@@ -50,22 +44,6 @@
         @export="exportList"
         @batch-action="handleBatchAction"
       >
-        <template #filters>
-          <el-select
-            v-model="query.type"
-            class="table-toolbar__select"
-            clearable
-            placeholder="类型"
-            @change="handleSearch"
-          >
-            <el-option
-              v-for="item in platformTypes"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </template>
       </TableToolbar>
 
       <el-table
@@ -91,26 +69,10 @@
         <el-table-column
           v-if="isColumnVisible('name')"
           prop="name"
-          label="平台"
+          label="平台名称"
           min-width="150"
           sortable="custom"
         />
-        <el-table-column
-          v-if="isColumnVisible('code')"
-          prop="code"
-          label="编码"
-          min-width="120"
-          sortable="custom"
-        />
-        <el-table-column
-          v-if="isColumnVisible('type')"
-          prop="type"
-          label="类型"
-          width="110"
-          sortable="custom"
-        >
-          <template #default="{ row }">{{ getTypeLabel(row.type) }}</template>
-        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('feeRate')"
           prop="feeRate"
@@ -138,34 +100,6 @@
               固定费用
               <FeatureHelp text="每单固定扣掉的钱，比如平台每单都收一笔服务费时填这里。" />
             </span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="isColumnVisible('syncEnabled')" label="同步" width="90">
-          <template #header>
-            <span class="help-label">
-              同步
-              <FeatureHelp text="开启后，后面接入平台接口时可以从这个平台拉订单或状态。" />
-            </span>
-          </template>
-          <template #default="{ row }">
-            <StatusChip :tone="row.syncEnabled ? 'green' : 'neutral'" dot>
-              {{ row.syncEnabled ? '支持' : '关闭' }}
-            </StatusChip>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="isColumnVisible('deliveryEnabled')" label="发货" width="90">
-          <template #header>
-            <span class="help-label">
-              发货
-              <FeatureHelp
-                text="开启后，后面接入平台接口时可以走自动或半自动发货；关闭就只做记录。"
-              />
-            </span>
-          </template>
-          <template #default="{ row }">
-            <StatusChip :tone="row.deliveryEnabled ? 'green' : 'neutral'" dot>
-              {{ row.deliveryEnabled ? '支持' : '关闭' }}
-            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -200,16 +134,12 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ platform.name }}</strong>
-              <span>{{ platform.code }} · {{ getTypeLabel(platform.type) }}</span>
+              <span>{{ platform.remark || '无备注' }}</span>
             </div>
             <StatusTag :status="platform.status" />
           </div>
 
           <div class="mobile-record-card__stats">
-            <div>
-              <span>类型</span>
-              <strong>{{ getTypeLabel(platform.type) }}</strong>
-            </div>
             <div>
               <span>费率</span>
               <strong>{{ platform.feeRate }}</strong>
@@ -218,15 +148,6 @@
               <span>固定费用</span>
               <strong>{{ platform.feeFixed }}</strong>
             </div>
-          </div>
-
-          <div class="mobile-record-card__chips">
-            <StatusChip :tone="platform.syncEnabled ? 'green' : 'neutral'" dot>
-              {{ platform.syncEnabled ? '支持同步' : '同步关闭' }}
-            </StatusChip>
-            <StatusChip :tone="platform.deliveryEnabled ? 'green' : 'neutral'" dot>
-              {{ platform.deliveryEnabled ? '支持发货' : '发货关闭' }}
-            </StatusChip>
           </div>
 
           <div class="mobile-record-card__meta">
@@ -270,28 +191,11 @@
         <el-form-item label="平台名称" prop="name">
           <el-input v-model.trim="form.name" />
         </el-form-item>
-        <el-form-item label="平台编码" prop="code">
-          <el-input v-model.trim="form.code" placeholder="例如 taobao_main" />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-select v-model="form.type" class="full-input">
-            <el-option
-              v-for="item in platformTypes"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item label="手续费率">
           <el-input v-model.trim="form.feeRate" placeholder="例如 0.006" />
         </el-form-item>
         <el-form-item label="固定手续费">
           <el-input v-model.trim="form.feeFixed" placeholder="例如 0.00" />
-        </el-form-item>
-        <el-form-item label="能力">
-          <el-checkbox v-model="form.syncEnabled">支持订单同步</el-checkbox>
-          <el-checkbox v-model="form.deliveryEnabled">支持自动发货</el-checkbox>
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
@@ -320,21 +224,15 @@ import type { SourcePlatformQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { PageResult, SourcePlatform, TableDensity, UserTableView } from '@/types/system';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
-
-const platformTypes: Array<{ label: string; value: SourcePlatform['type'] }> = [
-  { label: '淘宝', value: 'taobao' },
-  { label: '闲鱼', value: 'xianyu' },
-  { label: '微信', value: 'wechat' },
-  { label: '手工', value: 'manual' },
-  { label: '其他', value: 'other' }
-];
 
 const tableKey = 'source_platforms';
 const statusOptions = [
@@ -342,13 +240,9 @@ const statusOptions = [
   { label: '停用', value: 'disabled' }
 ];
 const platformColumnOptions = [
-  { label: '平台', value: 'name', required: true },
-  { label: '编码', value: 'code' },
-  { label: '类型', value: 'type' },
+  { label: '平台名称', value: 'name', required: true },
   { label: '费率', value: 'feeRate' },
   { label: '固定费用', value: 'feeFixed' },
-  { label: '同步', value: 'syncEnabled' },
-  { label: '发货', value: 'deliveryEnabled' },
   { label: '状态', value: 'status' },
   { label: '更新时间', value: 'updatedAt' }
 ];
@@ -373,18 +267,13 @@ const query = reactive({
   page: 1,
   pageSize: 20,
   keyword: '',
-  status: '',
-  type: ''
+  status: ''
 });
 
 const form = reactive({
   name: '',
-  code: '',
-  type: 'other' as SourcePlatform['type'],
   feeRate: '0',
   feeFixed: '0',
-  syncEnabled: false,
-  deliveryEnabled: false,
   status: 'active' as 'active' | 'disabled',
   remark: ''
 });
@@ -395,32 +284,14 @@ const tableSize = computed(() =>
 const activePlatformCount = computed(
   () => platforms.value.filter((platform) => platform.status === 'active').length
 );
-const syncPlatformCount = computed(
-  () => platforms.value.filter((platform) => platform.syncEnabled).length
-);
-const deliveryPlatformCount = computed(
-  () => platforms.value.filter((platform) => platform.deliveryEnabled).length
-);
-const filterChips = computed(() => {
-  const chips: Array<{ key: string; label: string; value: string }> = [];
-  const typeLabel = platformTypes.find((item) => item.value === query.type)?.label;
-  if (query.type && typeLabel) {
-    chips.push({ key: 'type', label: '类型', value: typeLabel });
-  }
-  return chips;
-});
+const filterChips = computed<Array<{ key: string; label: string; value: string }>>(() => []);
 
 const rules: FormRules<typeof form> = {
-  name: [{ required: true, message: '请输入平台名称', trigger: 'blur' }],
-  code: [{ required: true, message: '请输入平台编码', trigger: 'blur' }]
+  name: [{ required: true, message: '请输入平台名称', trigger: 'blur' }]
 };
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
-}
-
-function getTypeLabel(type: SourcePlatform['type']) {
-  return platformTypes.find((item) => item.value === type)?.label ?? type;
 }
 
 function isColumnVisible(column: string) {
@@ -433,7 +304,6 @@ function buildPlatformParams(): SourcePlatformQuery {
     pageSize: query.pageSize,
     keyword: query.keyword || undefined,
     status: query.status || undefined,
-    type: query.type || undefined,
     sortBy: sortConfig.value.prop,
     sortOrder: mapSortOrder(sortConfig.value.order)
   };
@@ -504,15 +374,12 @@ function clearFilters() {
   query.page = 1;
   query.keyword = '';
   query.status = '';
-  query.type = '';
   savedViewId.value = '';
   sortConfig.value = {};
 }
 
-function removeFilter(key: string) {
-  if (key === 'type') {
-    query.type = '';
-  }
+function removeFilter() {
+  clearFilters();
 }
 
 function exportList() {
@@ -558,8 +425,7 @@ async function saveTableView() {
       viewName: value.trim(),
       filters: {
         keyword: query.keyword,
-        status: query.status,
-        type: query.type
+        status: query.status
       },
       sortConfig: sortConfig.value,
       columns: visibleColumns.value.length
@@ -590,9 +456,8 @@ function applyView(view: UserTableView) {
   const filters = view.filters;
   query.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
   query.status = typeof filters.status === 'string' ? filters.status : '';
-  query.type = typeof filters.type === 'string' ? filters.type : '';
   query.pageSize = view.pageSize;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         platformColumnOptions.some((option) => option.value === column)
@@ -627,12 +492,8 @@ async function initializePage() {
 
 function resetForm() {
   form.name = '';
-  form.code = '';
-  form.type = 'other';
   form.feeRate = '0';
   form.feeFixed = '0';
-  form.syncEnabled = false;
-  form.deliveryEnabled = false;
   form.status = 'active';
   form.remark = '';
 }
@@ -646,12 +507,8 @@ function openCreate() {
 function openEdit(platform: SourcePlatform) {
   editingPlatform.value = platform;
   form.name = platform.name;
-  form.code = platform.code;
-  form.type = platform.type;
   form.feeRate = platform.feeRate;
   form.feeFixed = platform.feeFixed;
-  form.syncEnabled = platform.syncEnabled;
-  form.deliveryEnabled = platform.deliveryEnabled;
   form.status = platform.status;
   form.remark = platform.remark ?? '';
   dialogVisible.value = true;
@@ -667,12 +524,8 @@ async function savePlatform() {
   try {
     const payload = {
       name: form.name,
-      code: form.code,
-      type: form.type,
       feeRate: form.feeRate,
       feeFixed: form.feeFixed,
-      syncEnabled: form.syncEnabled,
-      deliveryEnabled: form.deliveryEnabled,
       status: form.status,
       remark: form.remark || null
     };
@@ -694,6 +547,15 @@ async function savePlatform() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    loadPlatforms({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '来源平台列表' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['source-platforms'], () => {
   void loadPlatforms({

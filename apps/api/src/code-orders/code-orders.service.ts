@@ -54,14 +54,14 @@ interface AuditRequestMeta {
 }
 
 type CodeOrderWithRelations = CodePlatformOrder & {
-  platform: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type' | 'status'>;
+  platform: Pick<SourcePlatform, 'id' | 'name' | 'status'>;
   service?: Pick<CodeService, 'id' | 'name' | 'faceValue' | 'defaultCost' | 'status'> | null;
   lockedCodes: Array<Pick<RedeemCode, 'id' | 'codeTail' | 'faceValue' | 'cost' | 'status'>>;
   deliveredCodes: Array<Pick<RedeemCode, 'id' | 'codeTail' | 'faceValue' | 'cost' | 'status'>>;
 };
 
 type CodeDeliveryLogWithRelations = CodeDeliveryLog & {
-  platform: Pick<SourcePlatform, 'id' | 'name' | 'code' | 'type'>;
+  platform: Pick<SourcePlatform, 'id' | 'name'>;
   order: Pick<CodePlatformOrder, 'id' | 'externalOrderNo' | 'deliveryStatus'>;
   code: Pick<RedeemCode, 'id' | 'codeTail' | 'status'>;
 };
@@ -1071,9 +1071,7 @@ export class CodeOrdersService {
       platform: {
         select: {
           id: true,
-          name: true,
-          code: true,
-          type: true
+          name: true
         }
       },
       order: {
@@ -1099,8 +1097,6 @@ export class CodeOrdersService {
         select: {
           id: true,
           name: true,
-          code: true,
-          type: true,
           status: true
         }
       },
@@ -1151,8 +1147,6 @@ export class CodeOrdersService {
       platform: {
         id: order.platform.id,
         name: order.platform.name,
-        code: order.platform.code,
-        type: order.platform.type,
         status: order.platform.status
       },
       externalOrderNo: order.externalOrderNo,
@@ -1216,9 +1210,7 @@ export class CodeOrdersService {
       platformId: log.platformId,
       platform: {
         id: log.platform.id,
-        name: log.platform.name,
-        code: log.platform.code,
-        type: log.platform.type
+        name: log.platform.name
       },
       externalOrderNo: log.externalOrderNo,
       codeId: log.codeId,

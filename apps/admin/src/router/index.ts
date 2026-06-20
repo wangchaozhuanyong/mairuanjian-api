@@ -19,7 +19,7 @@ const DashboardView = () => import('@/views/system/DashboardView.vue');
 const LaunchAuditView = () => import('@/views/system/LaunchAuditView.vue');
 const CustomersView = () => import('@/views/common/CustomersView.vue');
 const SourcePlatformsView = () => import('@/views/common/SourcePlatformsView.vue');
-const MessageTemplatesView = () => import('@/views/common/MessageTemplatesView.vue');
+const DeliveryTemplatesView = () => import('@/views/common/MessageTemplatesView.vue');
 const AttachmentsView = () => import('@/views/common/AttachmentsView.vue');
 const AppleAccountsView = () => import('@/views/apple/AppleAccountsView.vue');
 const AppleAccountDetailView = () => import('@/views/apple/AppleAccountDetailView.vue');
@@ -60,7 +60,7 @@ const readyPageComponents = {
   'launch-audit': LaunchAuditView,
   customers: CustomersView,
   'source-platforms': SourcePlatformsView,
-  'message-templates': MessageTemplatesView,
+  'delivery-templates': DeliveryTemplatesView,
   attachments: AttachmentsView,
   'apple-list': AppleAccountsView,
   'apple-detail': AppleAccountDetailView,
@@ -121,6 +121,7 @@ type NavigatorConnectionLike = {
 };
 
 const prefetchedRouteLoaders = new Set<RouteComponentLoader>();
+const pendingRouteLoaderPromises = new Map<RouteComponentLoader, Promise<unknown>>();
 const routeComponentLoaders = new Map<string, RouteComponentLoader>();
 let readyRoutePrefetchStarted = false;
 const SECURITY_CENTER_MODULE_KEYS = new Set([
@@ -145,19 +146,59 @@ for (const module of allModules) {
   }
 }
 
+routeComponentLoaders.set('/login', LoginView as RouteComponentLoader);
+routeComponentLoaders.set('/system/customers/detail', CustomerDetailView as RouteComponentLoader);
+
 function normalizeRoutePath(routePath: string) {
   return routePath.split(/[?#]/)[0] || routePath;
 }
 
-function prefetchRouteLoader(loader: RouteComponentLoader) {
+function loadRouteLoader(loader: RouteComponentLoader) {
   if (prefetchedRouteLoaders.has(loader)) {
-    return;
+    return Promise.resolve();
   }
 
-  prefetchedRouteLoaders.add(loader);
-  void loader().catch(() => {
-    prefetchedRouteLoaders.delete(loader);
-  });
+  const pending = pendingRouteLoaderPromises.get(loader);
+
+  if (pending) {
+    return pending;
+  }
+
+  const promise = loader()
+    .then((result) => {
+      prefetchedRouteLoaders.add(loader);
+      return result;
+    })
+    .finally(() => {
+      pendingRouteLoaderPromises.delete(loader);
+    });
+
+  pendingRouteLoaderPromises.set(loader, promise);
+  return promise;
+}
+
+function prefetchRouteLoader(loader: RouteComponentLoader) {
+  void loadRouteLoader(loader).catch(() => undefined);
+}
+
+function isRouteComponentReady(routePath: string) {
+  const loader = routeComponentLoaders.get(normalizeRoutePath(routePath));
+  return !loader || prefetchedRouteLoaders.has(loader);
+}
+
+export async function loadRouteComponent(routePath: string) {
+  const loader = routeComponentLoaders.get(normalizeRoutePath(routePath));
+
+  if (!loader) {
+    return false;
+  }
+
+  try {
+    await loadRouteLoader(loader);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function getNavigatorConnection() {
@@ -430,6 +471,14 @@ export const router = createRouter({
       path: '/',
       component: AdminLayout,
       children: [
+        {
+          path: 'system/message-templates',
+          redirect: '/codes/delivery-templates'
+        },
+        {
+          path: 'system/work-orders',
+          redirect: '/workspace/work-orders'
+        },
         ...moduleRoutes,
         {
           path: 'system/customers/detail',
@@ -437,7 +486,7 @@ export const router = createRouter({
           component: CustomerDetailView,
           meta: {
             title: '客户详情',
-            group: '系统管理',
+            group: '客户与来源',
             phase: 'Phase 2',
             description: '聚合客户基础资料、来源平台、ID 订单、开通记录和续费任务。',
             permission: 'customer.view',
@@ -452,6 +501,21 @@ export const router = createRouter({
     }
   ]
 });
+
+const rawRouterPush = router.push.bind(router);
+const rawRouterReplace = router.replace.bind(router);
+
+router.push = (async (to) => {
+  const target = router.resolve(to);
+  await loadRouteComponent(target.path);
+  return rawRouterPush(to);
+}) as typeof router.push;
+
+router.replace = (async (to) => {
+  const target = router.resolve(to);
+  await loadRouteComponent(target.path);
+  return rawRouterReplace(to);
+}) as typeof router.replace;
 
 function redirectToLogin(targetFullPath: string) {
   return {
@@ -511,7 +575,7 @@ function refreshCurrentUserForRoute(targetRoute: RouteLocationNormalized) {
 }
 
 router.beforeEach((to, from) => {
-  if (to.fullPath !== from.fullPath) {
+  if (to.fullPath !== from.fullPath && !isRouteComponentReady(to.path)) {
     startRoutePending();
   }
 

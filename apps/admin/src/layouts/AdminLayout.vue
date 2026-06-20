@@ -1,6 +1,10 @@
 <template>
   <div class="app-shell">
-    <div class="route-progress" :class="{ active: isRoutePending }" aria-hidden="true">
+    <div
+      class="route-progress"
+      :class="{ active: isRoutePending || isPageRefreshing }"
+      aria-hidden="true"
+    >
       <span />
     </div>
 
@@ -99,7 +103,6 @@
           </el-icon>
         </AppButton>
         <div class="page-head">
-          <small>当前位置 / {{ routeGroup }}</small>
           <div class="page-title-row">
             <h2>{{ routeTitle }}</h2>
             <FeatureHelp
@@ -170,6 +173,8 @@
             icon-only
             title="刷新"
             aria-label="刷新"
+            :loading="isPageRefreshing"
+            :disabled="isPageRefreshing"
             @click="showRefresh"
           >
             <el-icon>
@@ -266,18 +271,41 @@
         </div>
 
         <div class="workspace-tabs__actions" aria-label="页签操作">
-          <AppButton size="small" :disabled="!activeWorkspaceTab" @click="closeActiveWorkspaceTab">
-            关闭当前
+          <AppButton
+            class="workspace-tabs__action workspace-tabs__action--current"
+            size="small"
+            title="关闭当前页签"
+            :disabled="!activeWorkspaceTab"
+            @click="closeActiveWorkspaceTab"
+          >
+            <el-icon class="workspace-tabs__action-icon">
+              <Close />
+            </el-icon>
+            <span>关闭当前</span>
           </AppButton>
           <AppButton
+            class="workspace-tabs__action workspace-tabs__action--others"
             size="small"
+            title="只保留当前页签"
             :disabled="workspaceTabs.length <= 1 || !activeWorkspaceTab"
             @click="closeOtherWorkspaceTabs"
           >
-            关闭其他
+            <el-icon class="workspace-tabs__action-icon">
+              <FolderRemove />
+            </el-icon>
+            <span>关闭其他</span>
           </AppButton>
-          <AppButton size="small" variant="danger" @click="closeAllWorkspaceTabs">
-            关闭全部
+          <AppButton
+            class="workspace-tabs__action workspace-tabs__action--all"
+            size="small"
+            title="关闭全部页签"
+            variant="danger"
+            @click="closeAllWorkspaceTabs"
+          >
+            <el-icon class="workspace-tabs__action-icon">
+              <Delete />
+            </el-icon>
+            <span>关闭全部</span>
           </AppButton>
         </div>
       </div>
@@ -349,8 +377,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from
 import { ElMessage } from 'element-plus';
 import {
   Bell,
+  Close,
   CloseBold,
   DataAnalysis,
+  Delete,
+  FolderRemove,
   House,
   Iphone,
   Lock,
@@ -370,6 +401,7 @@ import PageActionsPortal from '@/components/ui/PageActionsPortal.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import WorkspaceRouteSkeleton from '@/components/ui/WorkspaceRouteSkeleton.vue';
 import { providePageActionsHost } from '@/composables/pageActions';
+import { providePageRefreshHost } from '@/composables/pageRefresh';
 import {
   type AppModuleItem,
   type MenuSection,
@@ -437,6 +469,7 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 providePageActionsHost();
+const pageRefresh = providePageRefreshHost();
 const sidebarOpen = ref(false);
 const menuKeyword = ref('');
 const globalKeyword = ref('');
@@ -481,9 +514,9 @@ const sectionIconMap = {
 
 const routeTitle = computed(() => String(route.meta.title ?? '后台管理'));
 const routeDescription = computed(() => String(route.meta.description ?? ''));
-const routeGroup = computed(() => String(route.meta.group ?? '工作台'));
 const routeModuleKey = computed(() => String(route.meta.moduleKey ?? ''));
 const hasRouteHelp = computed(() => Boolean(routeDescription.value));
+const isPageRefreshing = computed(() => pageRefresh.refreshing.value);
 const activeWorkspaceTabPath = computed(() => route.fullPath);
 const globalKeywordTrimmed = computed(() => globalKeyword.value.trim());
 const sessionStatusText = computed(() => {
@@ -502,7 +535,6 @@ const sessionStatusText = computed(() => {
   return '在线';
 });
 const workspaceTabs = ref<WorkspaceTab[]>(readStoredWorkspaceTabs());
-const workspaceRouteRefreshVersions = ref<Record<string, number>>({});
 const activeWorkspaceTab = computed(() =>
   workspaceTabs.value.find((tab) => tab.fullPath === activeWorkspaceTabPath.value)
 );
@@ -706,10 +738,13 @@ function addCurrentWorkspaceTab() {
 
   if (existingIndex >= 0) {
     const existingTab = workspaceTabs.value[existingIndex];
-    const nextTabs = workspaceTabs.value.filter((tab) => tab.fullPath !== fullPath);
-    const updatedTab = existingTab.title === title ? existingTab : { ...existingTab, title };
 
-    workspaceTabs.value = [...nextTabs, updatedTab];
+    if (existingTab.title !== title) {
+      workspaceTabs.value = workspaceTabs.value.map((tab, index) =>
+        index === existingIndex ? { ...tab, title } : tab
+      );
+    }
+
     return;
   }
 
@@ -1045,22 +1080,41 @@ function toggleMenuKey(key: string) {
   }
 }
 
-function showRefresh() {
-  const fullPath = route.fullPath;
-  const currentVersion = workspaceRouteRefreshVersions.value[fullPath] ?? 0;
+async function showRefresh() {
+  if (isPageRefreshing.value) {
+    return;
+  }
 
-  workspaceRouteRefreshVersions.value = {
-    ...workspaceRouteRefreshVersions.value,
-    [fullPath]: currentVersion + 1
-  };
+  try {
+    const refreshed = await pageRefresh.run({
+      background: false,
+      force: true,
+      reason: 'manual'
+    });
 
-  ElMessage.success('已刷新当前页面');
+    if (refreshed) {
+      void refreshNavigationBadges({ silent: true });
+      ElMessage.success(`${pageRefresh.active.value?.label ?? routeTitle.value}已刷新`);
+      return;
+    }
+
+    const scopes = getRealtimeFallbackScopesForModule(routeModuleKey.value);
+
+    if (scopes.length) {
+      notifyRealtimeScopesInvalidated(scopes, 'manual');
+      void refreshNavigationBadges({ silent: true });
+      ElMessage.success('已请求当前页面后台刷新');
+      return;
+    }
+
+    ElMessage.info('当前页面暂无可刷新的数据');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '刷新当前页面失败');
+  }
 }
 
 function getWorkspaceViewKey(viewRoute: { path: string; fullPath: string }) {
-  const refreshVersion = workspaceRouteRefreshVersions.value[viewRoute.fullPath] ?? 0;
-
-  return `${viewRoute.path}:${refreshVersion}`;
+  return viewRoute.path;
 }
 
 async function goToOrderEntry() {

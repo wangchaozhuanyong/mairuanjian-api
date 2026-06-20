@@ -7,10 +7,10 @@
   >
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>兑换码业务规则</h3>
-          <p>配置面值、成本、售价、发货方式和平台 SKU 映射，业务逻辑与 Apple ID 模块保持隔离。</p>
-        </div>
+        <PanelTitleHelp
+          title="兑换码业务规则"
+          help="这里配置兑换码商品怎么卖、成本多少、怎么发货，以及淘宝/闲鱼 SKU 怎么识别。它只服务兑换码自动发货，不和 Apple ID 代充混用。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 个业务</StatusChip>
           <StatusChip tone="green">启用 {{ enabledCount }}</StatusChip>
@@ -24,7 +24,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="serviceColumnOptions"
@@ -321,7 +320,7 @@
           <el-table-column label="平台/店铺" min-width="170">
             <template #default="{ row }">
               {{ row.platform.name }}
-              <div class="muted-block">{{ row.shopId || row.platform.code }}</div>
+              <div class="muted-block">{{ row.shopId || row.platform.name }}</div>
             </template>
           </el-table-column>
           <el-table-column label="商品/SKU" min-width="190">
@@ -411,7 +410,7 @@
               <el-option
                 v-for="platform in sourcePlatforms"
                 :key="platform.id"
-                :label="`${platform.name} · ${platform.code}`"
+                :label="platform.name"
                 :value="platform.id"
               />
             </el-select>
@@ -470,6 +469,7 @@ import type { CodePlatformMappingQuery, CodeServiceQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -801,7 +801,7 @@ function applyView(view: UserTableView) {
   query.status = isServiceStatus(filters.status) ? filters.status : '';
   query.deliveryMode = isDeliveryMode(filters.deliveryMode) ? filters.deliveryMode : '';
   query.pageSize = view.pageSize;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         serviceColumnOptions.some((option) => option.value === column)
@@ -853,7 +853,8 @@ async function loadMappingDependencies() {
       page: 1,
       pageSize: 100,
       status: 'active',
-      type: 'delivery'
+      type: 'delivery',
+      channel: 'customer_service'
     })
   ]);
   sourcePlatforms.value = platformData.items;

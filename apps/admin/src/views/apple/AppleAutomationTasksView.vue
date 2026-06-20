@@ -11,10 +11,10 @@
 
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>自动化任务队列</h3>
-          <p>管理余额查询、状态检测、充值、取消订阅和资料变更任务，失败或高风险任务转人工验证。</p>
-        </div>
+        <PanelTitleHelp
+          title="自动化任务队列"
+          help="这里看系统自动跑的任务，比如查余额、检测状态、充值、取消订阅和资料变更。失败或风险高的任务会转人工确认。"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 个任务</StatusChip>
           <StatusChip tone="orange">队列中 {{ queuedCount }}</StatusChip>
@@ -35,7 +35,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="automationColumnOptions"
@@ -530,6 +529,7 @@ import {
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -877,7 +877,7 @@ function applyView(view: UserTableView) {
   query.manualRequired = typeof filters.manualRequired === 'string' ? filters.manualRequired : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         automationColumnOptions.some((option) => option.value === column)

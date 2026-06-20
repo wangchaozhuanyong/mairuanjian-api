@@ -106,21 +106,6 @@ describe('OpsService', () => {
         }),
         create: jest.fn().mockResolvedValue(platformLog)
       },
-      sourcePlatform: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: '55555555-5555-4555-8555-555555555555',
-          type: 'taobao',
-          syncEnabled: true,
-          deliveryEnabled: false
-        }),
-        findMany: jest.fn().mockResolvedValue([
-          {
-            type: 'taobao',
-            syncEnabled: true,
-            deliveryEnabled: false
-          }
-        ])
-      },
       telegramConfig: {
         count: jest.fn().mockResolvedValue(0)
       },
@@ -128,7 +113,26 @@ describe('OpsService', () => {
         findUnique: jest.fn().mockResolvedValue({ lastTriggeredAt: null })
       },
       systemParameter: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn(async (args: { where?: { key?: string } }) => {
+          if (args.where?.key === 'platform_auth_taobao') {
+            return {
+              id: '77777777-7777-4777-8777-777777777777',
+              key: 'platform_auth_taobao',
+              value: {
+                authMode: 'oauth',
+                appKeyEncrypted: 'encrypted:taobao-app-key',
+                appSecretEncrypted: 'encrypted:taobao-app-secret',
+                accessTokenEncrypted: 'encrypted:access-token-123456'
+              },
+              group: 'platform_auth',
+              remark: '淘宝平台授权配置',
+              updatedByUserId: user.id,
+              createdAt: now,
+              updatedAt: now
+            };
+          }
+          return null;
+        }),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({
           id: '77777777-7777-4777-8777-777777777777',
@@ -494,7 +498,7 @@ describe('OpsService', () => {
 
   it('triggers platform authorization invalid notification for required unconfigured platform', async () => {
     const { service, prisma, notificationsService } = createService();
-    jest.spyOn(prisma.sourcePlatform, 'findFirst').mockResolvedValue(null);
+    jest.spyOn(prisma.systemParameter, 'findUnique').mockResolvedValue(null);
 
     const result = await service.platformStatus('taobao');
     await new Promise((resolve) => setImmediate(resolve));

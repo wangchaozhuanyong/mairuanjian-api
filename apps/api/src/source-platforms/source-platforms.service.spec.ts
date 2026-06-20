@@ -4,11 +4,9 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { SourcePlatformsService } from './source-platforms.service';
 
 describe('SourcePlatformsService', () => {
-  it('rejects invalid source platform code', async () => {
+  it('requires source platform name', async () => {
     const service = new SourcePlatformsService({} as PrismaService, {} as AuditLogsService);
 
-    await expect(service.create({ name: '淘宝', code: 'taobao 店铺' })).rejects.toBeInstanceOf(
-      BadRequestException
-    );
+    await expect(service.create({ name: '' })).rejects.toBeInstanceOf(BadRequestException);
   });
 });

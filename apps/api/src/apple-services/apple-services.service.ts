@@ -38,8 +38,6 @@ type AppleServicePlatformMappingWithRelations = AppleServicePlatformMapping & {
   sourcePlatform: {
     id: string;
     name: string;
-    code: string;
-    type: string;
     feeRate: Prisma.Decimal;
     feeFixed: Prisma.Decimal;
     status: string;
@@ -84,11 +82,12 @@ export class AppleServicesService {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();
     const status = this.parseStatus(query.status, false);
+    const category = this.normalizeCategoryFilter(query.category);
     const where: Prisma.AppleServiceWhereInput = {
       deletedAt: null,
       status: status ?? undefined,
       currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
-      category: query.category?.trim() || undefined,
+      category,
       OR: keyword
         ? [
             { name: { contains: keyword, mode: 'insensitive' } },
@@ -506,8 +505,6 @@ export class AppleServicesService {
         select: {
           id: true,
           name: true,
-          code: true,
-          type: true,
           feeRate: true,
           feeFixed: true,
           status: true
@@ -519,7 +516,7 @@ export class AppleServicesService {
   private buildCreateData(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
     return {
       name: dto.name.trim(),
-      category: this.normalizeCode(dto.category, 'default', false),
+      category: this.normalizeCategory(dto.category),
       defaultPrice: this.normalizeDecimal(dto.defaultPrice, 'defaultPrice', '0'),
       officialCostValue: this.normalizeDecimal(dto.officialCostValue, 'officialCostValue', '0'),
       currency: this.normalizeCode(dto.currency, 'USD', true),
@@ -554,7 +551,7 @@ export class AppleServicesService {
     }
 
     if (dto.category !== undefined) {
-      data.category = this.normalizeCode(dto.category, 'default', false);
+      data.category = this.normalizeCategory(dto.category);
     }
 
     if (dto.defaultPrice !== undefined) {
@@ -672,6 +669,32 @@ export class AppleServicesService {
     }
 
     return formatted;
+  }
+
+  private normalizeCategory(value: string | undefined) {
+    const normalized = (value || '通用').trim();
+    const formatted = normalized === 'default' ? '通用' : normalized;
+
+    if (formatted.length > 40 || !/^[\p{L}\p{N}_\-\s]+$/u.test(formatted)) {
+      throw new BadRequestException('Invalid category format');
+    }
+
+    return formatted;
+  }
+
+  private normalizeCategoryFilter(
+    value: string | undefined
+  ): Prisma.StringFilter | string | undefined {
+    const normalized = value?.trim();
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (normalized === '通用' || normalized === 'default') {
+      return { in: ['通用', 'default'] };
+    }
+
+    return normalized;
   }
 
   private normalizeRegions(regions?: string[]) {
@@ -819,8 +842,6 @@ export class AppleServicesService {
       sourcePlatform: {
         id: mapping.sourcePlatform.id,
         name: mapping.sourcePlatform.name,
-        code: mapping.sourcePlatform.code,
-        type: mapping.sourcePlatform.type,
         feeRate: mapping.sourcePlatform.feeRate.toString(),
         feeFixed: mapping.sourcePlatform.feeFixed.toString(),
         status: mapping.sourcePlatform.status

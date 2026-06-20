@@ -1330,7 +1330,7 @@ export class OpsService {
           }
         });
       } catch {
-        // 运维快照不能因为通知中心异常而写入失败。
+        // 运维快照不能因为系统通知异常而写入失败。
       }
     }
   }
@@ -1633,7 +1633,6 @@ export class OpsService {
       latestFailures,
       statsByAlias,
       authorizationParameters,
-      sourcePlatforms,
       telegramEnabledCount,
       fileStorageStatus,
       automationWorkerStatus
@@ -1654,17 +1653,6 @@ export class OpsService {
             where: { key: { in: authorizationKeys } }
           })
         : Promise.resolve([]),
-      this.prisma.sourcePlatform.findMany({
-        where: {
-          type: { in: ['taobao', 'xianyu'] },
-          deletedAt: null
-        },
-        select: {
-          type: true,
-          syncEnabled: true,
-          deliveryEnabled: true
-        }
-      }),
       this.prisma.telegramConfig.count({
         where: { enabled: true, deletedAt: null }
       }),
@@ -1675,7 +1663,6 @@ export class OpsService {
     const authorizationParameterByKey = new Map(
       authorizationParameters.map((parameter) => [parameter.key, parameter])
     );
-    const sourcePlatformByType = new Map(sourcePlatforms.map((item) => [item.type, item]));
     const componentStatusByPlatform = new Map<string, ComponentStatus>([
       [
         'telegram',
@@ -1698,7 +1685,6 @@ export class OpsService {
         latestFailures,
         statsByAlias,
         authorizationParameterByKey,
-        sourcePlatformByType,
         telegramEnabledCount,
         componentStatusByPlatform
       })
@@ -1711,7 +1697,6 @@ export class OpsService {
     latestFailures: PlatformSyncLog[];
     statsByAlias: Map<string, PlatformLogStats>;
     authorizationParameterByKey: Map<string, { value: Prisma.JsonValue; updatedAt: Date }>;
-    sourcePlatformByType: Map<string, { syncEnabled: boolean; deliveryEnabled: boolean }>;
     telegramEnabledCount: number;
     componentStatusByPlatform: Map<string, ComponentStatus>;
   }): PlatformInterfaceStatus {
@@ -1721,7 +1706,6 @@ export class OpsService {
       latestFailures,
       statsByAlias,
       authorizationParameterByKey,
-      sourcePlatformByType,
       telegramEnabledCount,
       componentStatusByPlatform
     } = input;
@@ -1744,7 +1728,6 @@ export class OpsService {
     const baseAuthorizationStatus = this.getPlatformAuthorizationStatusFromSnapshot({
       definition,
       authorization: platformAuthorization,
-      sourcePlatform: sourcePlatformByType.get(definition.platform),
       telegramEnabledCount
     });
     const componentStatus = componentStatusByPlatform.get(definition.platform) ?? {
@@ -1800,21 +1783,16 @@ export class OpsService {
   private getPlatformAuthorizationStatusFromSnapshot(input: {
     definition: PlatformDefinition;
     authorization: PlatformAuthorizationResponse | null;
-    sourcePlatform?: { syncEnabled: boolean; deliveryEnabled: boolean };
     telegramEnabledCount: number;
   }): PlatformInterfaceStatus['authorizationStatus'] {
-    const { definition, authorization, sourcePlatform, telegramEnabledCount } = input;
+    const { definition, authorization, telegramEnabledCount } = input;
 
     if (definition.authorizationStatus === 'not_required') return 'not_required';
     if (definition.platform === 'telegram') {
       return telegramEnabledCount > 0 ? 'configured' : 'not_configured';
     }
     if (definition.platform === 'taobao' || definition.platform === 'xianyu') {
-      if (authorization?.configured) return 'configured';
-      if (!sourcePlatform) return 'not_configured';
-      return sourcePlatform.syncEnabled || sourcePlatform.deliveryEnabled
-        ? 'configured'
-        : 'not_configured';
+      return authorization?.configured ? 'configured' : 'not_configured';
     }
     return 'unknown';
   }
@@ -1876,7 +1854,7 @@ export class OpsService {
         }
       });
     } catch {
-      // 平台状态页不能因为通知中心异常而加载失败。
+      // 平台状态页不能因为系统通知异常而加载失败。
     }
   }
 
@@ -1960,18 +1938,7 @@ export class OpsService {
     }
     if (definition.platform === 'taobao' || definition.platform === 'xianyu') {
       const authorization = await this.getPlatformAuthorizationResponse(definition);
-      if (authorization.configured) return 'configured';
-
-      const sourcePlatform = await this.prisma.sourcePlatform.findFirst({
-        where: {
-          type: definition.platform,
-          deletedAt: null
-        }
-      });
-      if (!sourcePlatform) return 'not_configured';
-      return sourcePlatform.syncEnabled || sourcePlatform.deliveryEnabled
-        ? 'configured'
-        : 'not_configured';
+      return authorization.configured ? 'configured' : 'not_configured';
     }
     return 'unknown';
   }

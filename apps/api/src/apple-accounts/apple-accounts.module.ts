@@ -9,6 +9,7 @@ import { AppleAccountsService } from './apple-accounts.service';
 @Module({
   imports: [AuditLogsModule, PrismaModule, RealtimeModule],
   controllers: [AppleAccountsController],
-  providers: [AppleAccountsService, FieldEncryptionService]
+  providers: [AppleAccountsService, FieldEncryptionService],
+  exports: [AppleAccountsService]
 })
 export class AppleAccountsModule {}

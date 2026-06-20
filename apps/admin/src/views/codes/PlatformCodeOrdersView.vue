@@ -14,10 +14,10 @@
 
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
-        <div>
-          <h3>{{ platformTitle }}同步与发货队列</h3>
-          <p>查看平台订单同步、SKU 识别、兑换码锁定和发货状态，真实授权未接入时转人工处理。</p>
-        </div>
+        <PanelTitleHelp
+          :title="`${platformTitle}同步与发货队列`"
+          :help="`这里看 ${platformTitle} 订单同步、SKU 识别、兑换码锁定和发货状态。真实授权没接好时，订单会转人工处理。`"
+        />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>{{ platformTitle }} {{ total }} 单</StatusChip>
           <StatusChip tone="cyan">店铺 {{ platforms.length }}</StatusChip>
@@ -34,7 +34,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.deliveryStatus"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="platformOrderColumnOptions"
@@ -279,6 +278,7 @@ import {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
@@ -404,7 +404,6 @@ async function loadPlatforms(options: { force?: boolean } = {}) {
     {
       page: 1,
       pageSize: 100,
-      type: props.platform,
       status: 'active'
     },
     options
@@ -602,7 +601,7 @@ function applyView(view: UserTableView) {
   query.deliveryStatus = typeof filters.deliveryStatus === 'string' ? filters.deliveryStatus : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
+  density.value = 'default';
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         platformOrderColumnOptions.some((option) => option.value === column)

@@ -569,11 +569,7 @@ describe('NotificationsService', () => {
     (prisma.appleAccount.count as jest.Mock).mockResolvedValue(4);
     (prisma.appleOrder.count as jest.Mock).mockResolvedValue(6);
     (prisma.automationTask.count as jest.Mock).mockResolvedValue(2);
-    (prisma.codePlatformOrder.count as jest.Mock)
-      .mockResolvedValueOnce(7)
-      .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(3)
-      .mockResolvedValueOnce(0);
+    (prisma.codePlatformOrder.count as jest.Mock).mockResolvedValueOnce(7).mockResolvedValueOnce(1);
     (prisma.codeAfterSale.count as jest.Mock).mockResolvedValue(4);
     (prisma.notificationLog.count as jest.Mock).mockResolvedValue(8);
     (prisma.sensitiveAccessApproval.count as jest.Mock).mockResolvedValue(2);
@@ -607,7 +603,6 @@ describe('NotificationsService', () => {
         expect.objectContaining({ itemKey: 'apple-automation', count: 2 }),
         expect.objectContaining({ itemKey: 'code-orders', count: 7 }),
         expect.objectContaining({ itemKey: 'delivery-exceptions', count: 1 }),
-        expect.objectContaining({ itemKey: 'taobao-orders', count: 3 }),
         expect.objectContaining({ itemKey: 'after-sales', count: 4 }),
         expect.objectContaining({ itemKey: 'notifications', count: 8 }),
         expect.objectContaining({ itemKey: 'sensitive-approvals', count: 2 }),
@@ -622,6 +617,7 @@ describe('NotificationsService', () => {
       expect.arrayContaining([
         expect.objectContaining({ itemKey: 'work-orders' }),
         expect.objectContaining({ itemKey: 'risk-control' }),
+        expect.objectContaining({ itemKey: 'taobao-orders' }),
         expect.objectContaining({ itemKey: 'xianyu-orders' })
       ])
     );

@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -38,8 +38,6 @@ describe('CodeServicesService platform mappings', () => {
           platform: {
             id: '22222222-2222-4222-8222-222222222222',
             name: '淘宝店',
-            code: 'taobao-main',
-            type: 'taobao',
             status: 'active'
           },
           service: {
@@ -138,6 +136,16 @@ describe('CodeServicesService platform mappings', () => {
     expect(result.platformSkuId).toBe('');
     expect(result.faceValue).toBe('100');
     expect(result.platform.name).toBe('淘宝店');
+    expect(prisma.messageTemplate.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: '33333333-3333-4333-8333-333333333333',
+          status: 'active',
+          type: 'delivery',
+          channel: 'customer_service'
+        })
+      })
+    );
     expect(prisma.codePlatformMapping.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -173,5 +181,22 @@ describe('CodeServicesService platform mappings', () => {
         serviceId: '11111111-1111-4111-8111-111111111111'
       })
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects platform mappings when the template is not an active customer-service delivery template', async () => {
+    const { service } = createService({
+      messageTemplate: {
+        findFirst: jest.fn().mockResolvedValue(null)
+      }
+    } as unknown as Partial<PrismaService>);
+
+    await expect(
+      service.createPlatformMapping({
+        platformId: '22222222-2222-4222-8222-222222222222',
+        platformItemId: 'item-1',
+        serviceId: '11111111-1111-4111-8111-111111111111',
+        deliveryTemplateId: '33333333-3333-4333-8333-333333333333'
+      })
+    ).rejects.toThrow(BadRequestException);
   });
 });
