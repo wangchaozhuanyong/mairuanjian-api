@@ -6,7 +6,7 @@ export const REALTIME_QUERY_INVALIDATED_EVENT = 'apple-business:realtime-query-i
 export interface RealtimeQueryInvalidatedDetail {
   event: RealtimeEvent;
   scopes: string[];
-  reason?: 'push' | 'fallback-poll' | 'manual';
+  reason?: 'push' | 'fallback-poll' | 'manual' | 'route-enter';
 }
 
 export function notifyRealtimeQueryInvalidated(

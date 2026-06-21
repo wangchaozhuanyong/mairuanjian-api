@@ -29,6 +29,21 @@ interface RefreshSmartQueryResourceOptions<TData> extends RefreshSmartQueryOptio
 }
 
 type SmartQueryMatcher = string | RegExp | ((key: string) => boolean);
+
+export interface SmartQueryActivitySnapshot {
+  pendingCount: number;
+  activeKeys: string[];
+  lastStartedAt?: number;
+  lastFinishedAt?: number;
+  lastSuccessAt?: number;
+  lastSuccessKey?: string;
+  lastErrorAt?: number;
+  lastErrorKey?: string;
+  lastErrorMessage?: string;
+}
+
+type SmartQueryActivityListener = (snapshot: SmartQueryActivitySnapshot) => void;
+
 interface InFlightSmartQuery<TData> {
   promise: Promise<SmartQueryResult<TData>>;
   startedAt: number;
@@ -37,6 +52,11 @@ interface InFlightSmartQuery<TData> {
 const queryCache = new Map<string, SmartQueryCacheEntry<unknown>>();
 const inFlightQueries = new Map<string, InFlightSmartQuery<unknown>>();
 const staleQueryKeys = new Map<string, number>();
+const activityListeners = new Set<SmartQueryActivityListener>();
+const activeQueryKeys = new Set<string>();
+const smartQueryActivity: Omit<SmartQueryActivitySnapshot, 'activeKeys'> = {
+  pendingCount: 0
+};
 const DEFAULT_FORCE_DEDUPE_MS = 1_200;
 const DEFAULT_STALE_MS = 120_000;
 
@@ -99,6 +119,23 @@ export function clearSmartQueryCache() {
   staleQueryKeys.clear();
 }
 
+export function getSmartQueryActivitySnapshot(): SmartQueryActivitySnapshot {
+  return {
+    ...smartQueryActivity,
+    activeKeys: [...activeQueryKeys],
+    pendingCount: activeQueryKeys.size
+  };
+}
+
+export function subscribeSmartQueryActivity(listener: SmartQueryActivityListener) {
+  activityListeners.add(listener);
+  listener(getSmartQueryActivitySnapshot());
+
+  return () => {
+    activityListeners.delete(listener);
+  };
+}
+
 export async function refreshSmartQuery<TData>({
   key,
   fetcher,
@@ -151,6 +188,7 @@ export async function refreshSmartQuery<TData>({
   }
 
   const startedAt = Date.now();
+  markSmartQueryStarted(key, startedAt);
   const promise = fetcher()
     .then((data) => {
       const signature = stableSerialize(data);
@@ -168,6 +206,8 @@ export async function refreshSmartQuery<TData>({
         if (!shouldRemainStale) {
           staleQueryKeys.delete(key);
         }
+
+        markSmartQuerySucceeded(key, updatedAt);
 
         return {
           data: previous.data,
@@ -188,6 +228,8 @@ export async function refreshSmartQuery<TData>({
         staleQueryKeys.delete(key);
       }
 
+      markSmartQuerySucceeded(key, updatedAt);
+
       return {
         data,
         changed: true,
@@ -196,8 +238,13 @@ export async function refreshSmartQuery<TData>({
         updatedAt
       };
     })
+    .catch((error: unknown) => {
+      markSmartQueryFailed(key, error);
+      throw error;
+    })
     .finally(() => {
       inFlightQueries.delete(key);
+      markSmartQueryFinished(key);
     });
 
   inFlightQueries.set(key, {
@@ -250,6 +297,49 @@ function matchesSmartQueryKey(key: string, matcher: SmartQueryMatcher) {
   }
 
   return matcher(key);
+}
+
+function markSmartQueryStarted(key: string, startedAt: number) {
+  activeQueryKeys.add(key);
+  smartQueryActivity.pendingCount = activeQueryKeys.size;
+  smartQueryActivity.lastStartedAt = startedAt;
+  emitSmartQueryActivity();
+}
+
+function markSmartQuerySucceeded(key: string, updatedAt: number) {
+  smartQueryActivity.lastSuccessAt = updatedAt;
+  smartQueryActivity.lastSuccessKey = key;
+  smartQueryActivity.lastErrorAt = undefined;
+  smartQueryActivity.lastErrorKey = undefined;
+  smartQueryActivity.lastErrorMessage = undefined;
+  emitSmartQueryActivity();
+}
+
+function markSmartQueryFailed(key: string, error: unknown) {
+  smartQueryActivity.lastErrorAt = Date.now();
+  smartQueryActivity.lastErrorKey = key;
+  smartQueryActivity.lastErrorMessage =
+    error instanceof Error ? error.message : '数据更新失败，请稍后重试';
+  emitSmartQueryActivity();
+}
+
+function markSmartQueryFinished(key: string) {
+  activeQueryKeys.delete(key);
+  smartQueryActivity.pendingCount = activeQueryKeys.size;
+  smartQueryActivity.lastFinishedAt = Date.now();
+  emitSmartQueryActivity();
+}
+
+function emitSmartQueryActivity() {
+  if (!activityListeners.size) {
+    return;
+  }
+
+  const snapshot = getSmartQueryActivitySnapshot();
+
+  for (const listener of activityListeners) {
+    listener(snapshot);
+  }
 }
 
 function stableSerialize(value: unknown): string {

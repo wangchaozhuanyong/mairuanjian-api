@@ -2,7 +2,7 @@
   <div class="app-shell">
     <div
       class="route-progress"
-      :class="{ active: isRoutePending || isPageRefreshing }"
+      :class="{ active: isRoutePending || isDataRefreshing }"
       aria-hidden="true"
     >
       <span />
@@ -113,6 +113,15 @@
               :text="routeDescription"
             />
           </div>
+          <div
+            class="page-data-status"
+            :class="`page-data-status--${dataStatusTone}`"
+            :title="dataStatusTitle"
+            aria-live="polite"
+          >
+            <span class="page-data-status__dot" />
+            <span>{{ dataStatusText }}</span>
+          </div>
         </div>
 
         <el-popover
@@ -173,8 +182,8 @@
             icon-only
             title="刷新"
             aria-label="刷新"
-            :loading="isPageRefreshing"
-            :disabled="isPageRefreshing"
+            :loading="isPageRefreshBusy"
+            :disabled="isPageRefreshBusy"
             @click="showRefresh"
           >
             <el-icon>
@@ -431,6 +440,11 @@ import {
 import { notifyRealtimeScopesInvalidated } from '@/realtime/realtimeQueryEvents';
 import { getRealtimeFallbackScopesForModule } from '@/realtime/realtimeRouteScopes';
 import type { NavigationItemBadge, NavigationNotificationBadge } from '@/types/system';
+import {
+  markSmartQueriesStale,
+  subscribeSmartQueryActivity,
+  type SmartQueryActivitySnapshot
+} from '@/utils/smartQuery';
 
 const NAV_OPEN_STORAGE_KEY = 'apple_business_sidebar_open_keys';
 const WORKSPACE_TABS_STORAGE_KEY = 'apple_business_workspace_tabs';
@@ -442,6 +456,7 @@ const WORKSPACE_TABS_LIMIT = WORKSPACE_TABS_PER_ROW * WORKSPACE_TABS_ROWS;
 const WORKSPACE_CACHE_LIMIT = WORKSPACE_TABS_LIMIT;
 const STARTUP_BADGE_REFRESH_DELAY_MS = 900;
 const STARTUP_ROUTE_PREFETCH_DELAY_MS = 1_800;
+const ROUTE_AUTO_REFRESH_DELAY_MS = 80;
 const SECURITY_CENTER_ROUTE = '/system/security';
 const SYSTEM_CONFIG_ROUTE = '/system/maintenance';
 const SECURITY_CENTER_ROUTES = new Set([
@@ -480,10 +495,16 @@ const workspaceCacheVersion = ref(0);
 const navigationNotificationBadges = ref<Record<string, NavigationNotificationBadge>>({});
 const navigationItemBadges = ref<Record<string, NavigationItemBadge>>({});
 const realtimeStatus = ref(getRealtimeSnapshot().status);
+const smartQueryActivity = ref<SmartQueryActivitySnapshot>({
+  pendingCount: 0,
+  activeKeys: []
+});
 let notificationBadgeTimer: number | undefined;
 let startupBadgeRefreshTimer: number | undefined;
 let startupRoutePrefetchTimer: number | undefined;
+let routeAutoRefreshTimer: number | undefined;
 let realtimeFallbackTimer: number | undefined;
+let unsubscribeSmartQueryActivity: (() => void) | undefined;
 const globalSearchScopes = [
   {
     mark: 'CU',
@@ -516,7 +537,41 @@ const routeTitle = computed(() => String(route.meta.title ?? '后台管理'));
 const routeDescription = computed(() => String(route.meta.description ?? ''));
 const routeModuleKey = computed(() => String(route.meta.moduleKey ?? ''));
 const hasRouteHelp = computed(() => Boolean(routeDescription.value));
-const isPageRefreshing = computed(() => pageRefresh.refreshing.value);
+const isPageRefreshBusy = computed(
+  () => pageRefresh.refreshing.value || pageRefresh.backgroundRefreshing.value
+);
+const isDataRefreshing = computed(
+  () => isPageRefreshBusy.value || smartQueryActivity.value.pendingCount > 0
+);
+const hasLatestDataError = computed(() => {
+  const { lastErrorAt, lastSuccessAt } = smartQueryActivity.value;
+  return Boolean(lastErrorAt && (!lastSuccessAt || lastErrorAt > lastSuccessAt));
+});
+const dataStatusTone = computed(() => {
+  if (isDataRefreshing.value) return 'syncing';
+  if (hasLatestDataError.value) return 'error';
+  if (smartQueryActivity.value.lastSuccessAt) return 'fresh';
+  return 'idle';
+});
+const dataStatusText = computed(() => {
+  if (isDataRefreshing.value) {
+    const count = smartQueryActivity.value.pendingCount;
+    return count > 1 ? `正在更新 ${count} 项` : '正在更新数据';
+  }
+
+  if (hasLatestDataError.value) {
+    return '更新失败';
+  }
+
+  return formatDataStatusTime(smartQueryActivity.value.lastSuccessAt);
+});
+const dataStatusTitle = computed(() => {
+  if (hasLatestDataError.value) {
+    return smartQueryActivity.value.lastErrorMessage ?? '数据更新失败';
+  }
+
+  return `${pageRefresh.active.value?.label ?? routeTitle.value}：${dataStatusText.value}`;
+});
 const activeWorkspaceTabPath = computed(() => route.fullPath);
 const globalKeywordTrimmed = computed(() => globalKeyword.value.trim());
 const sessionStatusText = computed(() => {
@@ -617,6 +672,14 @@ watch(activePath, () => {
 watch(activeWorkspaceTabPath, () => addCurrentWorkspaceTab(), { immediate: true });
 
 watch(
+  [activeWorkspaceTabPath, () => pageRefresh.activeVersion.value],
+  () => {
+    scheduleActivePageRefresh();
+  },
+  { flush: 'post' }
+);
+
+watch(
   [realtimeStatus, routeModuleKey, () => authStore.isAuthenticated],
   () => {
     syncRealtimeFallbackPolling();
@@ -633,6 +696,10 @@ watch(
 );
 
 onMounted(() => {
+  unsubscribeSmartQueryActivity = subscribeSmartQueryActivity((snapshot) => {
+    smartQueryActivity.value = snapshot;
+  });
+
   startupRoutePrefetchTimer = window.setTimeout(() => {
     prefetchReadyRouteComponents(getInitialPrefetchRoutes());
   }, STARTUP_ROUTE_PREFETCH_DELAY_MS);
@@ -656,6 +723,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.clearTimeout(startupBadgeRefreshTimer);
   window.clearTimeout(startupRoutePrefetchTimer);
+  window.clearTimeout(routeAutoRefreshTimer);
+  unsubscribeSmartQueryActivity?.();
 
   if (notificationBadgeTimer) {
     window.clearInterval(notificationBadgeTimer);
@@ -865,6 +934,81 @@ function handleMenuItemClick(item: AppModuleItem) {
 
 function prefetchWorkspaceRoute(routePath: string) {
   prefetchRouteComponent(routePath);
+  prewarmWorkspaceRouteData(routePath);
+}
+
+function scheduleActivePageRefresh() {
+  window.clearTimeout(routeAutoRefreshTimer);
+
+  if (!authStore.isAuthenticated || route.meta.public) {
+    return;
+  }
+
+  const hasRegisteredPageRefresh = Boolean(pageRefresh.active.value);
+  const scopes = getRealtimeFallbackScopesForModule(routeModuleKey.value);
+
+  if (!hasRegisteredPageRefresh && !scopes.length) {
+    return;
+  }
+
+  const targetFullPath = route.fullPath;
+
+  routeAutoRefreshTimer = window.setTimeout(() => {
+    routeAutoRefreshTimer = undefined;
+
+    if (
+      route.fullPath !== targetFullPath ||
+      !authStore.isAuthenticated ||
+      document.visibilityState !== 'visible'
+    ) {
+      return;
+    }
+
+    if (hasRegisteredPageRefresh) {
+      void pageRefresh
+        .run({
+          background: true,
+          force: true,
+          reason: 'route-enter'
+        })
+        .then((refreshed) => {
+          if (refreshed) {
+            void refreshNavigationBadges({ silent: true });
+          }
+        });
+      return;
+    }
+
+    notifyRealtimeScopesInvalidated(scopes, 'route-enter');
+    void refreshNavigationBadges({ silent: true });
+  }, ROUTE_AUTO_REFRESH_DELAY_MS);
+}
+
+function prewarmWorkspaceRouteData(routePath: string) {
+  if (!authStore.isAuthenticated) {
+    return;
+  }
+
+  const moduleKey = getMenuItemModuleKey(routePath);
+  const scopes = getRealtimeFallbackScopesForModule(moduleKey);
+
+  for (const scope of scopes) {
+    markSmartQueriesStale(scope);
+  }
+}
+
+function getMenuItemModuleKey(routePath: string) {
+  const normalizedRoutePath = routePath.split(/[?#]/)[0];
+
+  for (const section of menuSections) {
+    const item = section.items.find((menuItem) => menuItem.route === normalizedRoutePath);
+
+    if (item) {
+      return item.key;
+    }
+  }
+
+  return undefined;
 }
 
 function prefetchMenuSection(section: MenuSection) {
@@ -939,6 +1083,31 @@ function getSectionToggleLabel(section: MenuSection) {
 
 function formatNotificationCount(count: number) {
   return count > 99 ? '99+' : String(count);
+}
+
+function formatDataStatusTime(timestamp?: number) {
+  if (!timestamp) {
+    return '数据待同步';
+  }
+
+  const elapsedMs = Date.now() - timestamp;
+
+  if (elapsedMs < 15_000) {
+    return '刚刚更新';
+  }
+
+  if (elapsedMs < 60_000) {
+    return `${Math.max(1, Math.floor(elapsedMs / 1_000))} 秒前更新`;
+  }
+
+  if (elapsedMs < 60 * 60_000) {
+    return `${Math.floor(elapsedMs / 60_000)} 分钟前更新`;
+  }
+
+  return `${new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })} 更新`;
 }
 
 function getNotificationItemDescription(item: NavigationNotificationBadge) {
@@ -1081,7 +1250,7 @@ function toggleMenuKey(key: string) {
 }
 
 async function showRefresh() {
-  if (isPageRefreshing.value) {
+  if (isPageRefreshBusy.value) {
     return;
   }
 

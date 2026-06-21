@@ -122,9 +122,19 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+            <div class="table-action-group">
+              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingPlatformId === row.id"
+                @click="deletePlatform(row)"
+              >
+                删除
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -159,6 +169,14 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openEdit(platform)">编辑</AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingPlatformId === platform.id"
+              @click="deletePlatform(platform)"
+            >
+              删除
+            </AppButton>
           </div>
         </article>
       </div>
@@ -250,6 +268,7 @@ const batchActions = [{ label: '批量导出', value: 'export' }];
 
 const loading = ref(false);
 const saving = ref(false);
+const deletingPlatformId = ref('');
 const dialogVisible = ref(false);
 const editingPlatform = ref<SourcePlatform | null>(null);
 const formRef = ref<FormInstance>();
@@ -543,6 +562,36 @@ async function savePlatform() {
     ElMessage.error(error instanceof Error ? error.message : '保存来源平台失败');
   } finally {
     saving.value = false;
+  }
+}
+
+async function deletePlatform(platform: SourcePlatform) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除“${platform.name}”？删除后它不会再出现在来源平台列表和新建资料的下拉里，历史记录只保留原来的关联。`,
+      '删除来源平台',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    );
+
+    deletingPlatformId.value = platform.id;
+    await sourcePlatformsApi.remove(platform.id);
+    ElMessage.success('来源平台已删除');
+
+    if (platforms.value.length === 1 && query.page > 1) {
+      query.page -= 1;
+    }
+
+    await loadPlatforms({ force: true });
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error instanceof Error ? error.message : '删除来源平台失败');
+    }
+  } finally {
+    deletingPlatformId.value = '';
   }
 }
 
