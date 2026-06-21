@@ -28,12 +28,15 @@
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { ElConfigProvider } from 'element-plus/es/components/config-provider/index.mjs';
 import zhCn from 'element-plus/es/locale/lang/zh-cn.mjs';
+import { AUTH_SESSION_EXPIRED_EVENT } from '@/auth/session';
 import { isRoutePending, router } from '@/router';
 import { useRealtimeConnection } from '@/realtime/useRealtime';
+import { useAuthStore } from '@/stores/auth';
 
 const isRouterReady = ref(false);
 const isBootVisible = ref(false);
 const isSlowBoot = ref(false);
+const authStore = useAuthStore();
 const messageConfig = {
   duration: 2600,
   grouping: true,
@@ -54,6 +57,25 @@ const slowBootTimer = window.setTimeout(() => {
 
 useRealtimeConnection();
 
+function handleAuthSessionExpired() {
+  const currentRoute = router.currentRoute.value;
+
+  authStore.clearLocalSession();
+
+  if (currentRoute.path === '/login') {
+    return;
+  }
+
+  void router
+    .replace({
+      path: '/login',
+      query: currentRoute.fullPath === '/login' ? undefined : { redirect: currentRoute.fullPath }
+    })
+    .catch(() => undefined);
+}
+
+window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleAuthSessionExpired);
+
 router
   .isReady()
   .catch(() => undefined)
@@ -71,5 +93,6 @@ const bootMessage = computed(() =>
 onBeforeUnmount(() => {
   window.clearTimeout(bootDelayTimer);
   window.clearTimeout(slowBootTimer);
+  window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleAuthSessionExpired);
 });
 </script>

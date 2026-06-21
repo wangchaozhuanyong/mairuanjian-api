@@ -1,9 +1,13 @@
 import { defineStore } from 'pinia';
 import { authApi } from '@/api/system';
-import { TOKEN_STORAGE_KEY } from '@/api/client';
+import {
+  clearStoredAuthSession,
+  CURRENT_USER_STORAGE_KEY,
+  markAuthSessionFresh,
+  TOKEN_STORAGE_KEY
+} from '@/auth/session';
 import type { CurrentUser } from '@/types/system';
 
-const CURRENT_USER_STORAGE_KEY = 'apple_business_current_user';
 const CURRENT_USER_REFRESH_INTERVAL_MS = 60_000;
 
 interface AuthState {
@@ -79,6 +83,7 @@ export const useAuthStore = defineStore('auth', {
       this.userLoadedAt = Date.now();
       localStorage.setItem(TOKEN_STORAGE_KEY, data.accessToken);
       persistCurrentUser(data.user);
+      markAuthSessionFresh();
     },
     async loadCurrentUser(options: { force?: boolean } = {}) {
       if (!this.token) {
@@ -108,8 +113,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = null;
       this.userLoadedAt = 0;
       this.userRefreshing = false;
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      persistCurrentUser(null);
+      clearStoredAuthSession();
     },
     async logout(options: { remote?: boolean } = {}) {
       const shouldNotifyRemote = options.remote ?? true;

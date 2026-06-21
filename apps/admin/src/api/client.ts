@@ -1,7 +1,8 @@
 import type { ApiResponse } from '@apple-business/shared';
 import axios, { AxiosError } from 'axios';
+import { notifyAuthSessionExpired, TOKEN_STORAGE_KEY } from '@/auth/session';
 
-export const TOKEN_STORAGE_KEY = 'apple_business_access_token';
+export { TOKEN_STORAGE_KEY };
 
 export const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
@@ -253,7 +254,17 @@ export async function request<TData>(promise: Promise<{ data: ApiResponse<TData>
     return body.data;
   } catch (error) {
     if (error instanceof AxiosError) {
-      throw new Error(getAxiosErrorMessage(error as AxiosError<ApiResponse<unknown>>), {
+      const axiosError = error as AxiosError<ApiResponse<unknown>>;
+      const message = getAxiosErrorMessage(axiosError);
+
+      if (axiosError.response?.status === 401 && localStorage.getItem(TOKEN_STORAGE_KEY)) {
+        notifyAuthSessionExpired({
+          message,
+          reason: 'unauthorized'
+        });
+      }
+
+      throw new Error(message, {
         cause: error
       });
     }
