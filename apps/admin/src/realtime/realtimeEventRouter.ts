@@ -48,6 +48,7 @@ function getRealtimeSmartQueryScopes(event: RealtimeEvent) {
     scopes.add('dashboard-overview');
     scopes.add('code-services');
     scopes.add('code-service-mappings');
+    scopes.add('message-templates');
     scopes.add('code-order-dependencies');
     scopes.add('code-inventory');
     scopes.add('code-orders');

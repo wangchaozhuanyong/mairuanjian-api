@@ -17,7 +17,7 @@ Apple ID 代充业务管理系统 + 兑换码自动发货系统
 - 来源平台设置
 - 员工账号
 - 角色权限
-- 消息模板
+- 系统通知设置
 - 操作日志
 - 附件上传
 - 系统设置
@@ -65,6 +65,7 @@ Apple ID 业务区处理：
 - 商品/SKU 映射
 - 自动匹配兑换码
 - 自动发货
+- 发货模板
 - 发货失败处理
 - 售后补发
 - 兑换码利润报表
@@ -75,7 +76,9 @@ Apple ID 业务区处理：
 - Apple ID 模块不得依赖兑换码库存表。
 - 兑换码订单不得生成 Apple ID 开通记录。
 - Apple ID 订单不得消耗兑换码库存。
-- 两个业务区可以共用 customers、source_platforms、users、roles、permissions、audit_logs、attachments、message_templates。
+- 发货模板属于兑换码业务，只服务淘宝/闲鱼自动发货和售后补发。
+- 系统通知模板属于系统通知设置，不允许绑定到兑换码发货流程。
+- 两个业务区可以共用 customers、source_platforms、users、roles、permissions、audit_logs、attachments。
 
 ## 推荐技术栈
 

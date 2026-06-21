@@ -78,6 +78,7 @@ const NAV_BADGE_MODULE_SECTION_MAP: Record<string, NavBadgeSectionKey> = {
   attachment: 'data-audit',
   customer: 'common',
   customers: 'common',
+  delivery_template: 'codes',
   message_template: 'codes',
   notification: 'system-config',
   source_platform: 'common',

@@ -18,7 +18,8 @@ const modulePermissionHints: Record<RealtimeEventModule, string[]> = {
     'code.order.view',
     'code.delivery.view',
     'code.service.manage',
-    'code.delivery_template.manage'
+    'code.delivery_template.manage',
+    'message_template.manage'
   ],
   common: ['customer.view', 'source_platform.view', 'attachment.view'],
   data: ['data.overview.view', 'data.backup.view', 'data.export.view'],
