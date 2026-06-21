@@ -1,9 +1,9 @@
 <template>
   <PageScaffold
-    title="快捷设置"
+    title="下拉选项设置"
     group="客户与来源"
     phase="Phase 2"
-    description="集中管理网站里常用下拉选项，比如来源平台、客户标签、Apple ID 业务分类、地区币种、兑换码发货方式、通知选项、系统维护选项、运维错误级别和附件选项。"
+    description="这里只放日常会改的下拉内容，比如来源平台、客户标签、Apple ID 分类、地区币种和兑换码发货方式。系统内部用的技术字典不放在这里。"
   >
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
@@ -212,7 +212,7 @@
       />
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section v-if="false" class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
           :title="activeSystemOptionGroup.title"
@@ -330,7 +330,7 @@
       </div>
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section v-if="false" class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
           :title="activeNotificationOptionGroup.title"
@@ -375,7 +375,8 @@
               <AppButton
                 variant="primary"
                 @click="
-                  () => loadNotificationOptionGroup(selectedNotificationOptionGroup, { force: true })
+                  () =>
+                    loadNotificationOptionGroup(selectedNotificationOptionGroup, { force: true })
                 "
               >
                 刷新选项
@@ -529,7 +530,9 @@
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
-              <AppButton size="small" variant="ghost" @click="openEditCategory(row)">编辑</AppButton>
+              <AppButton size="small" variant="ghost" @click="openEditCategory(row)"
+                >编辑</AppButton
+              >
               <AppButton
                 size="small"
                 :variant="row.status === 'active' ? 'danger' : 'soft'"
@@ -590,7 +593,7 @@
       />
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section v-if="false" class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
           :title="`Apple ID ${activeAppleServiceOptionGroup.title}`"
@@ -612,7 +615,10 @@
             {{ group.title }}
           </el-radio-button>
         </el-radio-group>
-        <AppButton variant="soft" @click="() => loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup)">
+        <AppButton
+          variant="soft"
+          @click="() => loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup)"
+        >
           刷新
         </AppButton>
       </div>
@@ -631,7 +637,10 @@
             <div class="apple-core-empty-state__actions">
               <AppButton
                 variant="primary"
-                @click="() => loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup, { force: true })"
+                @click="
+                  () =>
+                    loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup, { force: true })
+                "
               >
                 刷新选项
               </AppButton>
@@ -1115,7 +1124,10 @@
             <strong>暂无发货模式</strong>
             <span>系统会自动补齐默认发货模式，刷新后即可管理。</span>
             <div class="apple-core-empty-state__actions">
-              <AppButton variant="primary" @click="() => loadCodeServiceDeliveryModes({ force: true })">
+              <AppButton
+                variant="primary"
+                @click="() => loadCodeServiceDeliveryModes({ force: true })"
+              >
                 刷新发货模式
               </AppButton>
             </div>
@@ -1372,11 +1384,7 @@
       </el-form>
       <template #footer>
         <AppButton @click="categoryDialogVisible = false">取消</AppButton>
-        <AppButton
-          variant="primary"
-          :loading="categorySaving"
-          @click="saveAppleServiceCategory"
-        >
+        <AppButton variant="primary" :loading="categorySaving" @click="saveAppleServiceCategory">
           保存
         </AppButton>
       </template>
@@ -2012,13 +2020,17 @@ const deliveryModeFormRef = ref<FormInstance>();
 const platforms = ref<SourcePlatform[]>([]);
 const customerTags = ref<DataDictionary[]>([]);
 const appleServiceCategories = ref<DataDictionary[]>([]);
-const appleServiceOptionDictionaries = reactive<Record<AppleServiceQuickOptionGroupKey, DataDictionary[]>>({
+const appleServiceOptionDictionaries = reactive<
+  Record<AppleServiceQuickOptionGroupKey, DataDictionary[]>
+>({
   periodType: [],
   expireCalcType: [],
   lockRule: [],
   platformFeeType: []
 });
-const notificationOptionDictionaries = reactive<Record<NotificationQuickOptionGroupKey, DataDictionary[]>>({
+const notificationOptionDictionaries = reactive<
+  Record<NotificationQuickOptionGroupKey, DataDictionary[]>
+>({
   module: [],
   level: [],
   channel: []
@@ -2053,17 +2065,21 @@ const deliveryModeTotal = ref(0);
 const activePlatformsQueryKey = ref('');
 const activeCustomerTagsQueryKey = ref('');
 const activeAppleServiceCategoriesQueryKey = ref('');
-const activeAppleServiceOptionQueryKeys = reactive<Record<AppleServiceQuickOptionGroupKey, string>>({
-  periodType: '',
-  expireCalcType: '',
-  lockRule: '',
-  platformFeeType: ''
-});
-const activeNotificationOptionQueryKeys = reactive<Record<NotificationQuickOptionGroupKey, string>>({
-  module: '',
-  level: '',
-  channel: ''
-});
+const activeAppleServiceOptionQueryKeys = reactive<Record<AppleServiceQuickOptionGroupKey, string>>(
+  {
+    periodType: '',
+    expireCalcType: '',
+    lockRule: '',
+    platformFeeType: ''
+  }
+);
+const activeNotificationOptionQueryKeys = reactive<Record<NotificationQuickOptionGroupKey, string>>(
+  {
+    module: '',
+    level: '',
+    channel: ''
+  }
+);
 const activeSystemOptionQueryKeys = reactive<Record<SystemQuickOptionGroupKey, string>>({
   ipScope: '',
   platformAuthMode: '',
@@ -2205,8 +2221,9 @@ const activeCategoryCount = computed(
 );
 const activeAppleServiceOptionGroup = computed(
   () =>
-    appleServiceQuickOptionGroups.find((group) => group.key === selectedAppleServiceOptionGroup.value) ??
-    appleServiceQuickOptionGroups[0]
+    appleServiceQuickOptionGroups.find(
+      (group) => group.key === selectedAppleServiceOptionGroup.value
+    ) ?? appleServiceQuickOptionGroups[0]
 );
 const currentAppleServiceOptionDictionaries = computed(
   () => appleServiceOptionDictionaries[selectedAppleServiceOptionGroup.value]
@@ -2219,8 +2236,9 @@ const activeAppleServiceOptionCount = computed(
 );
 const activeNotificationOptionGroup = computed(
   () =>
-    notificationQuickOptionGroups.find((group) => group.key === selectedNotificationOptionGroup.value) ??
-    notificationQuickOptionGroups[0]
+    notificationQuickOptionGroups.find(
+      (group) => group.key === selectedNotificationOptionGroup.value
+    ) ?? notificationQuickOptionGroups[0]
 );
 const currentNotificationOptionDictionaries = computed(
   () => notificationOptionDictionaries[selectedNotificationOptionGroup.value]
@@ -2250,8 +2268,7 @@ const activeMethodCount = computed(
   () => codeDeliveryMethodDictionaries.value.filter((method) => method.status === 'active').length
 );
 const activeDeliveryModeCount = computed(
-  () =>
-    codeServiceDeliveryModeDictionaries.value.filter((mode) => mode.status === 'active').length
+  () => codeServiceDeliveryModeDictionaries.value.filter((mode) => mode.status === 'active').length
 );
 const filterChips = computed<Array<{ key: string; label: string; value: string }>>(() => []);
 
@@ -2360,7 +2377,9 @@ function getAppleServiceOptionGroup(groupKey: AppleServiceQuickOptionGroupKey) {
   );
 }
 
-function buildAppleServiceOptionParams(groupKey: AppleServiceQuickOptionGroupKey): DataDictionaryQuery {
+function buildAppleServiceOptionParams(
+  groupKey: AppleServiceQuickOptionGroupKey
+): DataDictionaryQuery {
   return {
     page: 1,
     pageSize: 20,
@@ -2377,7 +2396,9 @@ function getNotificationOptionGroup(groupKey: NotificationQuickOptionGroupKey) {
   );
 }
 
-function buildNotificationOptionParams(groupKey: NotificationQuickOptionGroupKey): DataDictionaryQuery {
+function buildNotificationOptionParams(
+  groupKey: NotificationQuickOptionGroupKey
+): DataDictionaryQuery {
   return {
     page: 1,
     pageSize: 20,
@@ -2389,8 +2410,7 @@ function buildNotificationOptionParams(groupKey: NotificationQuickOptionGroupKey
 
 function getSystemOptionGroup(groupKey: SystemQuickOptionGroupKey) {
   return (
-    systemQuickOptionGroups.find((group) => group.key === groupKey) ??
-    systemQuickOptionGroups[0]
+    systemQuickOptionGroups.find((group) => group.key === groupKey) ?? systemQuickOptionGroups[0]
   );
 }
 
@@ -2893,7 +2913,9 @@ async function loadCodeDeliveryMethods(options: { background?: boolean; force?: 
   }
 }
 
-async function loadCodeServiceDeliveryModes(options: { background?: boolean; force?: boolean } = {}) {
+async function loadCodeServiceDeliveryModes(
+  options: { background?: boolean; force?: boolean } = {}
+) {
   const params = buildCodeServiceDeliveryModeParams();
   const key = createSmartQueryKey('code-service-delivery-modes', params);
   const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
@@ -3645,7 +3667,9 @@ async function toggleAppleServiceCategoryStatus(category: DataDictionary) {
     await loadAppleServiceCategories({ force: true });
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error instanceof Error ? error.message : `${actionLabel}Apple ID 业务分类失败`);
+      ElMessage.error(
+        error instanceof Error ? error.message : `${actionLabel}Apple ID 业务分类失败`
+      );
     }
   } finally {
     updatingCategoryId.value = '';
@@ -4026,7 +4050,9 @@ async function toggleCodeServiceDeliveryModeStatus(mode: DataDictionary) {
     await loadCodeServiceDeliveryModes({ force: true });
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error instanceof Error ? error.message : `${actionLabel}兑换码业务发货模式失败`);
+      ElMessage.error(
+        error instanceof Error ? error.message : `${actionLabel}兑换码业务发货模式失败`
+      );
     }
   } finally {
     updatingDeliveryModeId.value = '';
@@ -4076,7 +4102,7 @@ usePageRefresh(
       })
     ]);
   },
-  { label: '快捷设置' }
+  { label: '下拉选项设置' }
 );
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(

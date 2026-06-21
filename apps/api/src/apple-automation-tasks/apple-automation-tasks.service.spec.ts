@@ -19,6 +19,15 @@ describe('AppleAutomationTasksService', () => {
     permissions: []
   };
 
+  function restoreEnvValue(key: string, value: string | undefined) {
+    if (value === undefined) {
+      delete process.env[key];
+      return;
+    }
+
+    process.env[key] = value;
+  }
+
   const accountRelation = {
     id: appleAccountId,
     appleId: 'apple.user@example.com',
@@ -137,10 +146,15 @@ describe('AppleAutomationTasksService', () => {
           currency: 'USD',
           status: 'normal'
         }),
+        findMany: jest.fn().mockResolvedValue([{ id: appleAccountId, region: 'US' }]),
         update: jest.fn().mockResolvedValue({})
       },
       appleAccountStatusCheck: {
         create: jest.fn().mockResolvedValue({})
+      },
+      systemParameter: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({})
       }
     } as unknown as PrismaService;
 
@@ -230,6 +244,439 @@ describe('AppleAutomationTasksService', () => {
     expect(JSON.stringify((auditLogsService.create as jest.Mock).mock.calls[0][0])).not.toContain(
       '123456'
     );
+  });
+
+  it('creates batch Apple web status check tasks with matching region gateway plan', async () => {
+    const previousGatewayRegions = process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS;
+    process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS = 'US';
+    const { service, tx, auditLogsService, fieldEncryptionService } = createService();
+
+    (tx.automationTask.create as jest.Mock).mockImplementation(({ data }) =>
+      Promise.resolve({
+        ...taskBase,
+        ...data,
+        resultPayload: data.resultPayload,
+        appleAccount: accountRelation
+      })
+    );
+
+    try {
+      const result = await service.batchStatusCheck(
+        {
+          appleAccountIds: [appleAccountId],
+          priority: 'high',
+          note: '日常批量检查'
+        },
+        operator
+      );
+
+      expect(result.createdCount).toBe(1);
+      expect(result.queuedCount).toBe(1);
+      expect(result.manualRequiredCount).toBe(0);
+      expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith(
+        expect.stringContaining('apple_web_status_check')
+      );
+      expect(tx.automationTask.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            taskType: 'check_status',
+            appleAccountId,
+            priority: 'high',
+            status: 'queued',
+            manualRequired: false,
+            errorCode: null
+          })
+        })
+      );
+      expect(tx.automationTaskLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            level: 'info',
+            message: 'Apple 官网状态检查任务已按账号地区进入队列'
+          })
+        })
+      );
+      expect(auditLogsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'apple_automation_task.batch_status_check'
+        })
+      );
+    } finally {
+      restoreEnvValue('APPLE_WEB_CHECK_GATEWAY_REGIONS', previousGatewayRegions);
+    }
+  });
+
+  it('moves batch Apple web status checks to manual verification when region gateway is missing', async () => {
+    const previousGatewayRegions = process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS;
+    process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS = '';
+    const { service, tx } = createService();
+
+    (tx.automationTask.create as jest.Mock).mockImplementation(({ data }) =>
+      Promise.resolve({
+        ...taskBase,
+        ...data,
+        resultPayload: data.resultPayload,
+        appleAccount: accountRelation
+      })
+    );
+
+    try {
+      const result = await service.batchStatusCheck(
+        {
+          appleAccountIds: [appleAccountId],
+          priority: 'medium'
+        },
+        operator
+      );
+
+      expect(result.createdCount).toBe(1);
+      expect(result.queuedCount).toBe(0);
+      expect(result.manualRequiredCount).toBe(1);
+      expect(tx.automationTask.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'waiting_manual_verify',
+            manualRequired: true,
+            errorCode: 'gateway_region_not_configured'
+          })
+        })
+      );
+      expect(tx.automationTaskLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            level: 'warning',
+            message: 'Apple 官网状态检查缺少同国家出口 IP，已转人工验证'
+          })
+        })
+      );
+    } finally {
+      restoreEnvValue('APPLE_WEB_CHECK_GATEWAY_REGIONS', previousGatewayRegions);
+    }
+  });
+
+  it('uses synced Apple web gateway nodes before environment fallback', async () => {
+    const previousGatewayRegions = process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS;
+    process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS = '';
+    const { service, prisma, tx } = createService();
+
+    (prisma.systemParameter.findUnique as jest.Mock).mockResolvedValue({
+      id: 'gateway-nodes',
+      key: 'apple_web_gateway_nodes',
+      value: {
+        items: [
+          {
+            id: 'awg_us_1',
+            name: 'US Los Angeles',
+            countryCode: 'US',
+            protocol: 'trojan',
+            status: 'available',
+            rawEncrypted: 'encrypted-node'
+          }
+        ],
+        syncedAt: '2026-06-18T00:00:00.000Z',
+        sourceHash: 'hash'
+      },
+      group: 'apple_web_gateway',
+      remark: 'Apple 官网检查 Worker 节点池',
+      updatedByUserId: null,
+      createdAt: now,
+      updatedAt: now
+    });
+    (tx.automationTask.create as jest.Mock).mockImplementation(({ data }) =>
+      Promise.resolve({
+        ...taskBase,
+        ...data,
+        resultPayload: data.resultPayload,
+        appleAccount: accountRelation
+      })
+    );
+
+    try {
+      const result = await service.batchStatusCheck(
+        {
+          appleAccountIds: [appleAccountId],
+          priority: 'medium',
+          gatewayRegion: 'US'
+        },
+        operator
+      );
+
+      expect(result.queuedCount).toBe(1);
+      expect(result.manualRequiredCount).toBe(0);
+      expect(tx.automationTask.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'queued',
+            manualRequired: false,
+            resultPayload: expect.objectContaining({
+              executionPlan: expect.objectContaining({
+                gatewayConfigured: true,
+                gatewayProfileCode: 'awg_us_1',
+                gatewayNodeId: 'awg_us_1',
+                gatewayNodeName: 'US Los Angeles',
+                gatewayNodeCandidates: [
+                  {
+                    id: 'awg_us_1',
+                    name: 'US Los Angeles',
+                    countryCode: 'US',
+                    status: 'available'
+                  }
+                ]
+              })
+            })
+          })
+        })
+      );
+    } finally {
+      restoreEnvValue('APPLE_WEB_CHECK_GATEWAY_REGIONS', previousGatewayRegions);
+    }
+  });
+
+  it('returns web check gateway candidates without exposing encrypted proxy config', async () => {
+    const { service, prisma, fieldEncryptionService } = createService({
+      taskType: 'check_status',
+      inputPayloadEncrypted: 'encrypted-web-check-input'
+    });
+    (fieldEncryptionService.decrypt as jest.Mock).mockReturnValue(
+      JSON.stringify({
+        executionPlan: {
+          adapterVersion: 'apple-web-v1',
+          accountRegion: 'US',
+          exitCountry: 'US',
+          countryCode: 'US',
+          locale: 'en-US',
+          timezone: 'America/Los_Angeles',
+          appleCountryUrl: 'https://www.apple.com/',
+          appleAccountSignInUrl: 'https://account.apple.com/sign-in',
+          gatewayProfileCode: 'awg_us_1',
+          gatewayNodeId: 'awg_us_1',
+          gatewayNodeName: 'US Los Angeles',
+          gatewayNodeCandidates: [
+            {
+              id: 'awg_us_1',
+              name: 'US Los Angeles',
+              countryCode: 'US',
+              status: 'available'
+            }
+          ],
+          gatewayConfigured: true,
+          regionMatched: true,
+          manualChallengeMode: 'operator_prompt'
+        }
+      })
+    );
+    (prisma.systemParameter.findUnique as jest.Mock).mockResolvedValue({
+      id: 'gateway-nodes',
+      key: 'apple_web_gateway_nodes',
+      value: {
+        items: [
+          {
+            id: 'awg_us_1',
+            name: 'US Los Angeles',
+            countryCode: 'US',
+            protocol: 'trojan',
+            status: 'available',
+            rawEncrypted: 'encrypted:trojan://secret@us.example.com:443#US'
+          }
+        ]
+      },
+      group: 'apple_web_gateway',
+      remark: 'Apple 官网检查 Worker 节点池',
+      updatedByUserId: null,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    const result = await service.webCheckGateways(taskId);
+
+    expect(result.canRunWithSyncedNode).toBe(true);
+    expect(result.candidates).toEqual([
+      expect.objectContaining({
+        id: 'awg_us_1',
+        countryCode: 'US',
+        protocol: 'trojan',
+        hasEncryptedConfig: true
+      })
+    ]);
+    expect(JSON.stringify(result)).not.toContain('trojan://secret');
+    expect(JSON.stringify(result)).not.toContain('rawEncrypted');
+  });
+
+  it('marks gateway node unavailable and moves task to manual verification on exit country mismatch', async () => {
+    const { service, prisma, tx, auditLogsService, fieldEncryptionService } = createService({
+      taskType: 'check_status',
+      inputPayloadEncrypted: 'encrypted-web-check-input',
+      status: 'running'
+    });
+    (fieldEncryptionService.decrypt as jest.Mock).mockReturnValue(
+      JSON.stringify({
+        executionPlan: {
+          adapterVersion: 'apple-web-v1',
+          accountRegion: 'US',
+          exitCountry: 'US',
+          countryCode: 'US',
+          locale: 'en-US',
+          timezone: 'America/Los_Angeles',
+          appleCountryUrl: 'https://www.apple.com/',
+          appleAccountSignInUrl: 'https://account.apple.com/sign-in',
+          gatewayProfileCode: 'awg_us_1',
+          gatewayNodeId: 'awg_us_1',
+          gatewayNodeName: 'US Los Angeles',
+          gatewayNodeCandidates: [
+            {
+              id: 'awg_us_1',
+              name: 'US Los Angeles',
+              countryCode: 'US',
+              status: 'available'
+            }
+          ],
+          gatewayConfigured: true,
+          regionMatched: true,
+          manualChallengeMode: 'operator_prompt'
+        }
+      })
+    );
+    (prisma.systemParameter.findUnique as jest.Mock).mockResolvedValue({
+      id: 'gateway-nodes',
+      key: 'apple_web_gateway_nodes',
+      value: {
+        items: [
+          {
+            id: 'awg_us_1',
+            name: 'US Los Angeles',
+            countryCode: 'US',
+            protocol: 'trojan',
+            status: 'available',
+            rawEncrypted: 'encrypted-node'
+          }
+        ]
+      },
+      group: 'apple_web_gateway',
+      remark: 'Apple 官网检查 Worker 节点池',
+      updatedByUserId: null,
+      createdAt: now,
+      updatedAt: now
+    });
+    (tx.automationTask.update as jest.Mock).mockImplementation(({ data }) =>
+      Promise.resolve({
+        ...taskBase,
+        ...data,
+        appleAccount: accountRelation,
+        logs: []
+      })
+    );
+
+    const result = await service.recordWebCheckGatewayAttempt(
+      taskId,
+      {
+        nodeId: 'awg_us_1',
+        status: 'success',
+        exitIp: '203.0.113.10',
+        exitCountry: 'SG',
+        latencyMs: 120
+      },
+      operator
+    );
+
+    expect(result.task.status).toBe('waiting_manual_verify');
+    expect(result.gatewayAttempt).toEqual(
+      expect.objectContaining({
+        nodeId: 'awg_us_1',
+        status: 'failed',
+        expectedExitCountry: 'US',
+        detectedExitCountry: 'SG',
+        exitCountryMatched: false,
+        exitIpProvided: true
+      })
+    );
+    expect(JSON.stringify(result.gatewayAttempt)).not.toContain('203.0.113.10');
+    expect(prisma.systemParameter.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'apple_web_gateway_nodes' },
+        data: expect.objectContaining({
+          value: expect.objectContaining({
+            items: [
+              expect.objectContaining({
+                id: 'awg_us_1',
+                status: 'unavailable',
+                latencyMs: 120,
+                failureReason: '出口国家不匹配：期望 US，实际 SG'
+              })
+            ]
+          })
+        })
+      })
+    );
+    expect(tx.automationTask.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'waiting_manual_verify',
+          manualRequired: true,
+          errorCode: 'gateway_exit_check_failed'
+        })
+      })
+    );
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_automation_task.web_check_gateway_attempt'
+      })
+    );
+  });
+
+  it('allows batch Apple web status checks to use a stable gateway country different from account region', async () => {
+    const previousGatewayRegions = process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS;
+    process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS = 'US';
+    const { service, prisma, tx } = createService({
+      appleAccount: {
+        region: 'MY'
+      }
+    });
+
+    (prisma.appleAccount.findMany as jest.Mock).mockResolvedValue([
+      { id: appleAccountId, region: 'MY' }
+    ]);
+    (tx.automationTask.create as jest.Mock).mockImplementation(({ data }) =>
+      Promise.resolve({
+        ...taskBase,
+        ...data,
+        resultPayload: data.resultPayload,
+        appleAccount: {
+          ...accountRelation,
+          region: 'MY'
+        }
+      })
+    );
+
+    try {
+      const result = await service.batchStatusCheck(
+        {
+          appleAccountIds: [appleAccountId],
+          gatewayRegion: 'US'
+        },
+        operator
+      );
+
+      expect(result.queuedCount).toBe(1);
+      expect(result.manualRequiredCount).toBe(0);
+      expect(tx.automationTask.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'queued',
+            manualRequired: false,
+            resultPayload: expect.objectContaining({
+              executionPlan: expect.objectContaining({
+                accountRegion: 'MY',
+                exitCountry: 'US',
+                regionMatched: false,
+                gatewayConfigured: true
+              })
+            })
+          })
+        })
+      );
+    } finally {
+      restoreEnvValue('APPLE_WEB_CHECK_GATEWAY_REGIONS', previousGatewayRegions);
+    }
   });
 
   it('runs check balance placeholder with system balance snapshot', async () => {

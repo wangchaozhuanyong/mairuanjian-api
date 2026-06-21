@@ -12,6 +12,20 @@ interface RawEnv {
   PLATFORM_POLL_ENABLED?: string;
   PLATFORM_POLL_INTERVAL_MS?: string;
   PLATFORM_POLL_RUN_ON_STARTUP?: string;
+  APPLE_OFFICIAL_PRICE_POLL_ENABLED?: string;
+  APPLE_OFFICIAL_PRICE_POLL_INTERVAL_MS?: string;
+  APPLE_OFFICIAL_PRICE_POLL_RUN_ON_STARTUP?: string;
+  APPLE_WEB_CHECK_WORKER_ENABLED?: string;
+  APPLE_WEB_CHECK_WORKER_INTERVAL_MS?: string;
+  APPLE_WEB_CHECK_WORKER_RUN_ON_STARTUP?: string;
+  APPLE_WEB_CHECK_WORKER_MAX_BATCH?: string;
+  APPLE_WEB_CHECK_TIMEOUT_MS?: string;
+  APPLE_WEB_CHECK_HEADLESS?: string;
+  APPLE_WEB_CHECK_PROXY_SERVER?: string;
+  APPLE_WEB_CHECK_SING_BOX_API_URL?: string;
+  APPLE_WEB_CHECK_SING_BOX_SELECTOR?: string;
+  APPLE_WEB_CHECK_SING_BOX_API_SECRET?: string;
+  APPLE_WEB_CHECK_IP_CHECK_URL?: string;
 }
 
 function assertUrl(name: string, value: string) {
@@ -86,6 +100,26 @@ export function validateEnv(config: RawEnv) {
   assertNotPlaceholder('HASH_SECRET', config.HASH_SECRET, nodeEnv);
   assertBooleanString('PLATFORM_POLL_ENABLED', config.PLATFORM_POLL_ENABLED);
   assertBooleanString('PLATFORM_POLL_RUN_ON_STARTUP', config.PLATFORM_POLL_RUN_ON_STARTUP);
+  assertBooleanString(
+    'APPLE_OFFICIAL_PRICE_POLL_ENABLED',
+    config.APPLE_OFFICIAL_PRICE_POLL_ENABLED
+  );
+  assertBooleanString(
+    'APPLE_OFFICIAL_PRICE_POLL_RUN_ON_STARTUP',
+    config.APPLE_OFFICIAL_PRICE_POLL_RUN_ON_STARTUP
+  );
+  assertBooleanString('APPLE_WEB_CHECK_WORKER_ENABLED', config.APPLE_WEB_CHECK_WORKER_ENABLED);
+  assertBooleanString(
+    'APPLE_WEB_CHECK_WORKER_RUN_ON_STARTUP',
+    config.APPLE_WEB_CHECK_WORKER_RUN_ON_STARTUP
+  );
+  assertBooleanString('APPLE_WEB_CHECK_HEADLESS', config.APPLE_WEB_CHECK_HEADLESS);
+  if (config.APPLE_WEB_CHECK_SING_BOX_API_URL) {
+    assertUrl('APPLE_WEB_CHECK_SING_BOX_API_URL', config.APPLE_WEB_CHECK_SING_BOX_API_URL);
+  }
+  if (config.APPLE_WEB_CHECK_IP_CHECK_URL) {
+    assertUrl('APPLE_WEB_CHECK_IP_CHECK_URL', config.APPLE_WEB_CHECK_IP_CHECK_URL);
+  }
 
   const platformPollIntervalMs = Number(config.PLATFORM_POLL_INTERVAL_MS ?? 300000);
   if (
@@ -96,11 +130,53 @@ export function validateEnv(config: RawEnv) {
     throw new Error('PLATFORM_POLL_INTERVAL_MS must be between 60000 and 86400000');
   }
 
+  const officialPricePollIntervalMs = Number(
+    config.APPLE_OFFICIAL_PRICE_POLL_INTERVAL_MS ?? 21600000
+  );
+  if (
+    !Number.isInteger(officialPricePollIntervalMs) ||
+    officialPricePollIntervalMs < 60000 ||
+    officialPricePollIntervalMs > 7 * 24 * 60 * 60 * 1000
+  ) {
+    throw new Error('APPLE_OFFICIAL_PRICE_POLL_INTERVAL_MS must be between 60000 and 604800000');
+  }
+
+  const appleWebCheckIntervalMs = Number(config.APPLE_WEB_CHECK_WORKER_INTERVAL_MS ?? 60000);
+  if (
+    !Number.isInteger(appleWebCheckIntervalMs) ||
+    appleWebCheckIntervalMs < 30000 ||
+    appleWebCheckIntervalMs > 24 * 60 * 60 * 1000
+  ) {
+    throw new Error('APPLE_WEB_CHECK_WORKER_INTERVAL_MS must be between 30000 and 86400000');
+  }
+
+  const appleWebCheckMaxBatch = Number(config.APPLE_WEB_CHECK_WORKER_MAX_BATCH ?? 3);
+  if (
+    !Number.isInteger(appleWebCheckMaxBatch) ||
+    appleWebCheckMaxBatch <= 0 ||
+    appleWebCheckMaxBatch > 20
+  ) {
+    throw new Error('APPLE_WEB_CHECK_WORKER_MAX_BATCH must be between 1 and 20');
+  }
+
+  const appleWebCheckTimeoutMs = Number(config.APPLE_WEB_CHECK_TIMEOUT_MS ?? 45000);
+  if (
+    !Number.isInteger(appleWebCheckTimeoutMs) ||
+    appleWebCheckTimeoutMs < 10000 ||
+    appleWebCheckTimeoutMs > 5 * 60 * 1000
+  ) {
+    throw new Error('APPLE_WEB_CHECK_TIMEOUT_MS must be between 10000 and 300000');
+  }
+
   return {
     ...config,
     NODE_ENV: nodeEnv,
     APP_PORT: String(appPort),
     FIRST_RELEASE_MODE: firstReleaseMode,
-    PLATFORM_POLL_INTERVAL_MS: String(platformPollIntervalMs)
+    PLATFORM_POLL_INTERVAL_MS: String(platformPollIntervalMs),
+    APPLE_OFFICIAL_PRICE_POLL_INTERVAL_MS: String(officialPricePollIntervalMs),
+    APPLE_WEB_CHECK_WORKER_INTERVAL_MS: String(appleWebCheckIntervalMs),
+    APPLE_WEB_CHECK_WORKER_MAX_BATCH: String(appleWebCheckMaxBatch),
+    APPLE_WEB_CHECK_TIMEOUT_MS: String(appleWebCheckTimeoutMs)
   };
 }

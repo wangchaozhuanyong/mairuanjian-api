@@ -643,6 +643,50 @@ export interface SavePlatformAuthorizationPayload {
   clearSecrets?: boolean;
 }
 
+export type AppleWebGatewayNodeStatus = 'available' | 'unavailable' | 'unknown';
+
+export interface AppleWebGatewayNode {
+  id: string;
+  name: string;
+  countryCode: string;
+  protocol: string;
+  status: AppleWebGatewayNodeStatus;
+  latencyMs?: number | null;
+  lastCheckedAt?: string | null;
+  failureReason?: string | null;
+}
+
+export interface AppleWebGatewayCountrySummary {
+  countryCode: string;
+  total: number;
+  available: number;
+  unavailable: number;
+  unknown: number;
+}
+
+export interface AppleWebGatewayStatus {
+  configured: boolean;
+  subscriptionHost?: string | null;
+  subscriptionUrlMasked?: string | null;
+  updatedAt?: string | null;
+  lastSyncedAt?: string | null;
+  nodeCount: number;
+  availableNodeCount: number;
+  countrySummary: AppleWebGatewayCountrySummary[];
+  nodes: AppleWebGatewayNode[];
+  sidecar: {
+    engine: 'sing-box';
+    mode: 'external_sidecar';
+    managedByApi: false;
+    message: string;
+  };
+}
+
+export interface SaveAppleWebGatewaySubscriptionPayload {
+  subscriptionUrl?: string | null;
+  clearSubscription?: boolean;
+}
+
 export interface StartPlatformOAuthPayload {
   authorizationUrl?: string | null;
   redirectUri?: string | null;
@@ -975,6 +1019,82 @@ export interface AppleServicePlatformMapping {
   updatedAt: string;
 }
 
+export type AppleOfficialPriceCollectMethod = 'manual' | 'webpage' | 'api';
+export type AppleOfficialPriceSourceStatus = 'enabled' | 'disabled';
+export type ApplePriceChangeType =
+  | 'price_changed'
+  | 'new_plan'
+  | 'removed_plan'
+  | 'period_changed'
+  | 'currency_changed';
+export type ApplePriceChangeReviewStatus = 'pending' | 'approved' | 'ignored';
+
+export interface AppleOfficialPriceSource {
+  id: string;
+  name: string;
+  region: string;
+  currency: string;
+  sourceUrl?: string | null;
+  collectMethod: AppleOfficialPriceCollectMethod;
+  checkIntervalHours: number;
+  status: AppleOfficialPriceSourceStatus;
+  lastCheckedAt?: string | null;
+  remark?: string | null;
+  createdBy?: Pick<ManagedUser, 'id' | 'username' | 'displayName'> | null;
+  updatedBy?: Pick<ManagedUser, 'id' | 'username' | 'displayName'> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AppleOfficialPriceSnapshot {
+  id: string;
+  sourceId: string;
+  source?: Pick<AppleOfficialPriceSource, 'id' | 'name' | 'region' | 'currency'> | null;
+  appleServiceId?: string | null;
+  appleService?: Pick<AppleService, 'id' | 'name' | 'category' | 'currency'> | null;
+  serviceName: string;
+  category: string;
+  region: string;
+  currency: string;
+  officialPrice: string;
+  periodType: AppleService['defaultPeriodType'];
+  periodValue: number;
+  rawPayload?: Record<string, unknown> | null;
+  collectedAt: string;
+}
+
+export interface ApplePriceChangeReview {
+  id: string;
+  sourceId: string;
+  source?: Pick<AppleOfficialPriceSource, 'id' | 'name' | 'region' | 'currency'> | null;
+  snapshotId?: string | null;
+  snapshot?: Pick<
+    AppleOfficialPriceSnapshot,
+    'id' | 'serviceName' | 'region' | 'currency' | 'officialPrice' | 'collectedAt'
+  > | null;
+  appleServiceId?: string | null;
+  appleService?: Pick<
+    AppleService,
+    | 'id'
+    | 'name'
+    | 'category'
+    | 'currency'
+    | 'officialCostValue'
+    | 'defaultPeriodType'
+    | 'defaultPeriodValue'
+    | 'status'
+  > | null;
+  changeType: ApplePriceChangeType;
+  oldValue?: Record<string, unknown> | null;
+  newValue: Record<string, unknown>;
+  status: ApplePriceChangeReviewStatus;
+  reviewedBy?: Pick<ManagedUser, 'id' | 'username' | 'displayName'> | null;
+  reviewedAt?: string | null;
+  remark?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AvailableAppleAccount {
   appleAccountId: string;
   accountMasked: string;
@@ -1225,7 +1345,8 @@ export type AutomationTaskType =
   | 'cancel_subscription'
   | 'change_phone'
   | 'change_security'
-  | 'check_renewal';
+  | 'check_renewal'
+  | 'official_price_check';
 
 export type AutomationTaskStatus =
   | 'pending'

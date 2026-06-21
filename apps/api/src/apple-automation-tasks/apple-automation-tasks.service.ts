@@ -21,8 +21,10 @@ import { FieldEncryptionService } from '../common/crypto/field-encryption.servic
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
+import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
+import type { WebCheckGatewayAttemptDto } from './dto/web-check-gateway-attempt.dto';
 
 interface ListAutomationTasksQuery extends PaginationQuery {
   keyword?: string;
@@ -50,12 +52,81 @@ const AUTOMATION_TASK_SORT_FIELDS: Record<
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+const APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY = 'apple_web_gateway_nodes';
+
+interface AppleWebCheckRegionProfile {
+  countryCode: string;
+  locale: string;
+  timezone: string;
+  appleCountryUrl: string;
+  appleAccountSignInUrl: string;
+}
+
+interface AppleWebCheckExecutionPlan extends AppleWebCheckRegionProfile {
+  adapterVersion: string;
+  accountRegion: string;
+  exitCountry: string;
+  gatewayProfileCode: string | null;
+  gatewayNodeId: string | null;
+  gatewayNodeName: string | null;
+  gatewayNodeCandidates: AppleWebGatewayNodeCandidate[];
+  gatewayConfigured: boolean;
+  regionMatched: boolean;
+  manualChallengeMode: 'operator_prompt';
+}
+
+export interface AppleWebGatewayNodeCandidate {
+  id: string;
+  name: string;
+  countryCode: string;
+  status: 'available' | 'unknown' | 'unavailable';
+}
+
+interface AppleWebGatewayStoredNode extends AppleWebGatewayNodeCandidate {
+  protocol: string;
+  rawEncrypted: string | null;
+  latencyMs: number | null;
+  lastCheckedAt: string | null;
+  failureReason: string | null;
+}
+
+export interface AppleWebGatewayCandidateResponse extends AppleWebGatewayNodeCandidate {
+  protocol: string | null;
+  hasEncryptedConfig: boolean;
+  latencyMs: number | null;
+  lastCheckedAt: string | null;
+  failureReason: string | null;
+}
+
+const APPLE_WEB_CHECK_REGION_PROFILES: Record<string, AppleWebCheckRegionProfile> = {
+  US: {
+    countryCode: 'US',
+    locale: 'en-US',
+    timezone: 'America/Los_Angeles',
+    appleCountryUrl: 'https://www.apple.com/',
+    appleAccountSignInUrl: 'https://account.apple.com/sign-in'
+  },
+  MY: {
+    countryCode: 'MY',
+    locale: 'en-MY',
+    timezone: 'Asia/Kuala_Lumpur',
+    appleCountryUrl: 'https://www.apple.com/my/',
+    appleAccountSignInUrl: 'https://account.apple.com/sign-in'
+  },
+  CN: {
+    countryCode: 'CN',
+    locale: 'zh-CN',
+    timezone: 'Asia/Shanghai',
+    appleCountryUrl: 'https://www.apple.com.cn/',
+    appleAccountSignInUrl: 'https://account.apple.com/sign-in'
+  }
+};
 
 type AutomationTaskWithRelations = AutomationTask & {
-  appleAccount: Pick<
+  appleAccount?: Pick<
     AppleAccount,
     'id' | 'appleId' | 'region' | 'currency' | 'currentBalance' | 'status'
-  >;
+  > | null;
   customer?: {
     id: string;
     name: string;
@@ -159,19 +230,29 @@ export class AppleAutomationTasksService {
 
   async create(dto: CreateAutomationTaskDto, operator?: AuthenticatedUser) {
     const taskType = this.parseTaskType(dto.taskType, true);
-    const appleAccountId = this.normalizeRequiredUuid(dto.appleAccountId, 'appleAccountId');
+    const requiresAppleAccount = taskType !== 'official_price_check';
+    const appleAccountId = dto.appleAccountId
+      ? this.normalizeRequiredUuid(dto.appleAccountId, 'appleAccountId')
+      : null;
+
+    if (requiresAppleAccount && !appleAccountId) {
+      throw new BadRequestException('appleAccountId is required');
+    }
+
     const priority = this.parsePriority(dto.priority ?? 'medium', true);
     const inputPayloadEncrypted = this.encryptPayload(dto.inputPayload);
     const queueJobId = this.createQueueJobId(taskType);
 
     const created = await this.prisma.$transaction(async (tx) => {
-      const appleAccount = await tx.appleAccount.findFirst({
-        where: { id: appleAccountId, deletedAt: null },
-        select: { id: true }
-      });
+      if (appleAccountId) {
+        const appleAccount = await tx.appleAccount.findFirst({
+          where: { id: appleAccountId, deletedAt: null },
+          select: { id: true }
+        });
 
-      if (!appleAccount) {
-        throw new NotFoundException('Apple account not found');
+        if (!appleAccount) {
+          throw new NotFoundException('Apple account not found');
+        }
       }
 
       const task = await tx.automationTask.create({
@@ -218,6 +299,148 @@ export class AppleAutomationTasksService {
     return this.toResponse(created);
   }
 
+  async batchStatusCheck(dto: BatchStatusCheckDto, operator?: AuthenticatedUser) {
+    const appleAccountIds = this.normalizeAccountIdList(dto.appleAccountIds);
+    const priority = this.parsePriority(dto.priority ?? 'medium', true);
+    const gatewayRegion = this.normalizeOptionalRegionCode(dto.gatewayRegion);
+    const note = this.normalizeNullableString(dto.note);
+    const accounts = await this.prisma.appleAccount.findMany({
+      where: {
+        id: { in: appleAccountIds },
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        region: true
+      }
+    });
+    const accountsById = new Map(accounts.map((account) => [account.id, account]));
+    const missingIds = appleAccountIds.filter((id) => !accountsById.has(id));
+
+    if (missingIds.length) {
+      throw new NotFoundException(`Apple account not found: ${missingIds.join(', ')}`);
+    }
+
+    const gatewayNodeCandidatesByCountry = await this.getAppleWebGatewayNodeCandidatesByCountry();
+    const created = await this.prisma.$transaction(async (tx) => {
+      const tasks: AutomationTaskWithRelations[] = [];
+
+      for (const appleAccountId of appleAccountIds) {
+        const account = accountsById.get(appleAccountId)!;
+        const executionPlan = this.buildWebCheckExecutionPlan(
+          account.region,
+          gatewayRegion,
+          gatewayNodeCandidatesByCountry
+        );
+        const status: AutomationTaskStatus = executionPlan.gatewayConfigured
+          ? 'queued'
+          : 'waiting_manual_verify';
+        const queueJobId = this.createQueueJobId('check_status');
+        const inputPayloadEncrypted = this.encryptPayload({
+          automationIntent: 'apple_web_status_check',
+          operatorNote: note,
+          executionPlan,
+          expectedResultStatuses: [
+            'normal',
+            'need_verify',
+            'locked',
+            'password_error',
+            'risk',
+            'unknown'
+          ],
+          safety: {
+            prefersStableExitCountry: true,
+            requiresMatchingExitCountry: false,
+            manualChallengeMode: executionPlan.manualChallengeMode,
+            doNotBypassTwoFactor: true
+          }
+        });
+        const errorMessage = executionPlan.gatewayConfigured
+          ? null
+          : `缺少 ${executionPlan.countryCode} 国家/地区出口 IP 配置，已转人工验证`;
+
+        const task = await tx.automationTask.create({
+          data: {
+            taskType: 'check_status',
+            appleAccountId,
+            priority,
+            status,
+            inputPayloadEncrypted,
+            resultPayload: this.toAuditJson({
+              executionPlan,
+              workerStatus: executionPlan.gatewayConfigured
+                ? 'ready_for_real_worker'
+                : 'blocked_by_gateway',
+              officialSiteUpdateRisk: 'Apple 官网登录流程更新后，需要更新 Playwright Worker 适配器'
+            }),
+            errorCode: executionPlan.gatewayConfigured ? null : 'gateway_region_not_configured',
+            errorMessage,
+            manualRequired: !executionPlan.gatewayConfigured,
+            queueJobId,
+            createdByUserId: operator?.id
+          },
+          include: this.getInclude(false)
+        });
+
+        await this.createLog(
+          tx,
+          task.id,
+          executionPlan.gatewayConfigured ? 'info' : 'warning',
+          executionPlan.gatewayConfigured
+            ? 'Apple 官网状态检查任务已按账号地区进入队列'
+            : 'Apple 官网状态检查缺少同国家出口 IP，已转人工验证',
+          {
+            queueJobId,
+            accountRegion: executionPlan.accountRegion,
+            exitCountry: executionPlan.exitCountry,
+            requiredExitCountry: executionPlan.countryCode,
+            regionMatched: executionPlan.regionMatched,
+            gatewayConfigured: executionPlan.gatewayConfigured,
+            gatewayProfileCode: executionPlan.gatewayProfileCode,
+            gatewayNodeId: executionPlan.gatewayNodeId,
+            gatewayNodeCandidates: executionPlan.gatewayNodeCandidates.map((node) => node.id),
+            locale: executionPlan.locale,
+            timezone: executionPlan.timezone
+          }
+        );
+
+        tasks.push(task);
+      }
+
+      return tasks;
+    });
+
+    const queuedCount = created.filter((task) => task.status === 'queued').length;
+    const manualRequiredCount = created.filter((task) => task.manualRequired).length;
+    const regions = Array.from(
+      new Set(created.map((task) => task.appleAccount?.region).filter(Boolean))
+    ).sort();
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.batch_status_check',
+      objectType: 'automation_task',
+      objectId: created[0]?.id,
+      afterData: this.toAuditJson({
+        createdCount: created.length,
+        queuedCount,
+        manualRequiredCount,
+        regions,
+        gatewayRegion: gatewayRegion ?? 'account_region_default',
+        hasOperatorNote: Boolean(note)
+      }),
+      remark: `Created ${created.length} Apple web status check tasks`
+    });
+
+    return {
+      createdCount: created.length,
+      queuedCount,
+      manualRequiredCount,
+      items: created.map((task) => this.toResponse(task))
+    };
+  }
+
   async runPlaceholder(id: string, operator?: AuthenticatedUser) {
     const task = await this.findTaskOrThrow(id, false);
 
@@ -249,6 +472,38 @@ export class AppleAutomationTasksService {
         })
       }
     });
+
+    if (!task.appleAccountId) {
+      const message =
+        task.taskType === 'official_price_check'
+          ? '官方价格巡检请从 Apple ID 业务设置里的巡检入口执行，避免没有官方来源就乱改价格。'
+          : '这个自动化任务缺少 Apple ID，已转人工确认。';
+      const updated = await this.prisma.automationTask.update({
+        where: { id: task.id },
+        data: {
+          status: 'waiting_manual_verify',
+          manualRequired: true,
+          errorCode: 'apple_account_not_bound',
+          errorMessage: message,
+          finishedAt: new Date()
+        },
+        include: this.getInclude(true)
+      });
+
+      await this.prisma.automationTaskLog.create({
+        data: {
+          taskId: task.id,
+          level: 'warning',
+          message,
+          payload: this.toAuditJson({
+            taskType: task.taskType,
+            operatorId: operator?.id ?? null
+          })
+        }
+      });
+
+      return this.toResponse(updated);
+    }
 
     const account = await this.prisma.appleAccount.findFirst({
       where: { id: task.appleAccountId, deletedAt: null },
@@ -450,7 +705,7 @@ export class AppleAutomationTasksService {
         screenshotAttachmentId
       );
 
-      if (status === 'success' && task.taskType === 'check_status') {
+      if (status === 'success' && task.taskType === 'check_status' && task.appleAccountId) {
         const resultStatus = this.getResultStatus(dto.resultPayload);
         if (resultStatus) {
           await tx.appleAccountStatusCheck.create({
@@ -459,7 +714,7 @@ export class AppleAutomationTasksService {
               checkType: 'automation',
               resultStatus,
               remark: '自动化任务结果回写',
-              evidenceAttachmentId: screenshotAttachmentId,
+              evidenceAttachmentId: screenshotAttachmentId ?? undefined,
               operatorId: operator?.id
             }
           });
@@ -476,6 +731,129 @@ export class AppleAutomationTasksService {
 
     const updated = await this.findTaskOrThrow(task.id, true);
     return this.toResponse(updated);
+  }
+
+  async webCheckGateways(id: string) {
+    const task = await this.findTaskOrThrow(id, false);
+    const executionPlan = this.getWebCheckExecutionPlanFromTask(task);
+    const storedNodes = await this.getAppleWebGatewayStoredNodes();
+    const candidates = this.resolveWebCheckGatewayCandidates(executionPlan, storedNodes);
+
+    return {
+      taskId: task.id,
+      queueJobId: task.queueJobId,
+      accountRegion: executionPlan.accountRegion,
+      exitCountry: executionPlan.exitCountry,
+      gatewayConfigured: executionPlan.gatewayConfigured,
+      gatewayProfileCode: executionPlan.gatewayProfileCode,
+      selectedNodeId: executionPlan.gatewayNodeId,
+      fallbackGatewayProfileCode:
+        executionPlan.gatewayNodeId || candidates.length ? null : executionPlan.gatewayProfileCode,
+      canRunWithSyncedNode: candidates.some(
+        (node) => node.hasEncryptedConfig && node.status !== 'unavailable'
+      ),
+      candidates
+    };
+  }
+
+  async recordWebCheckGatewayAttempt(
+    id: string,
+    dto: WebCheckGatewayAttemptDto,
+    operator?: AuthenticatedUser
+  ) {
+    const task = await this.findTaskOrThrow(id, false);
+    const executionPlan = this.getWebCheckExecutionPlanFromTask(task);
+    const nodeId = this.normalizeOptionalNodeId(dto.nodeId);
+    const attemptStatus = this.parseGatewayAttemptStatus(dto.status);
+    const detectedExitCountry = this.normalizeOptionalRegionCode(dto.exitCountry);
+    const latencyMs = this.parseOptionalLatency(dto.latencyMs);
+    const failureReason = this.normalizeNullableString(dto.failureReason);
+    const expectedExitCountry = executionPlan.countryCode;
+    const exitCountryMatched = !detectedExitCountry || detectedExitCountry === expectedExitCountry;
+    const effectiveStatus =
+      attemptStatus === 'success' && exitCountryMatched ? 'success' : 'failed';
+    const effectiveFailureReason =
+      attemptStatus === 'success' && !exitCountryMatched
+        ? `出口国家不匹配：期望 ${expectedExitCountry}，实际 ${detectedExitCountry}`
+        : failureReason;
+
+    if (nodeId) {
+      await this.updateAppleWebGatewayNodeAttempt(nodeId, {
+        status: effectiveStatus,
+        latencyMs,
+        failureReason: effectiveFailureReason
+      });
+    }
+
+    const storedNodes = await this.getAppleWebGatewayStoredNodes();
+    const remainingCandidates = this.resolveWebCheckGatewayCandidates(executionPlan, storedNodes)
+      .filter((node) => node.id !== nodeId && node.status !== 'unavailable')
+      .map((node) => node.id);
+    const shouldManual = effectiveStatus === 'failed' && !remainingCandidates.length;
+    const checkedAt = new Date();
+    const gatewayAttempt = {
+      nodeId,
+      status: effectiveStatus,
+      expectedExitCountry,
+      detectedExitCountry,
+      exitCountryMatched,
+      latencyMs,
+      failureReason: effectiveFailureReason,
+      exitIpProvided: Boolean(this.normalizeNullableString(dto.exitIp)),
+      remainingCandidateIds: remainingCandidates,
+      checkedAt: checkedAt.toISOString()
+    };
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedTask = await tx.automationTask.update({
+        where: { id: task.id },
+        data: {
+          status: shouldManual ? 'waiting_manual_verify' : 'running',
+          startedAt: task.startedAt ?? checkedAt,
+          finishedAt: shouldManual ? checkedAt : null,
+          manualRequired: shouldManual,
+          errorCode: shouldManual ? 'gateway_exit_check_failed' : null,
+          errorMessage: shouldManual
+            ? (effectiveFailureReason ?? `Apple 官网检查缺少可用的 ${expectedExitCountry} 出口节点`)
+            : null,
+          resultPayload: this.mergeTaskResultPayload(task.resultPayload, {
+            gatewayAttempt,
+            workerStatus: shouldManual ? 'blocked_by_gateway' : 'gateway_checked'
+          })
+        },
+        include: this.getInclude(true)
+      });
+
+      await this.createLog(
+        tx,
+        task.id,
+        effectiveStatus === 'success' ? 'success' : 'warning',
+        effectiveStatus === 'success'
+          ? 'Apple 官网 Worker 出口 IP 检测通过'
+          : shouldManual
+            ? 'Apple 官网 Worker 出口节点不可用，已转人工验证'
+            : 'Apple 官网 Worker 出口节点失败，准备切换同国家候选节点',
+        gatewayAttempt
+      );
+
+      return updatedTask;
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.web_check_gateway_attempt',
+      objectType: 'automation_task',
+      objectId: task.id,
+      afterData: this.toAuditJson(gatewayAttempt),
+      remark: `Recorded Apple web gateway attempt for task ${task.id}`
+    });
+
+    return {
+      task: this.toResponse(updated),
+      gatewayAttempt,
+      remainingCandidateIds: remainingCandidates
+    };
   }
 
   async listLogs(id: string) {
@@ -675,7 +1053,7 @@ export class AppleAutomationTasksService {
 
   private parseTaskType(value: unknown, strict: true): AutomationTaskType;
   private parseTaskType(value: unknown, strict: false): AutomationTaskType | undefined;
-  private parseTaskType(value: unknown, strict: boolean) {
+  private parseTaskType(value: unknown, strict: boolean): AutomationTaskType | undefined {
     if (value === undefined || value === null || value === '') {
       if (strict) {
         throw new BadRequestException('taskType is required');
@@ -690,7 +1068,8 @@ export class AppleAutomationTasksService {
       value === 'cancel_subscription' ||
       value === 'change_phone' ||
       value === 'change_security' ||
-      value === 'check_renewal'
+      value === 'check_renewal' ||
+      value === 'official_price_check'
     ) {
       return value;
     }
@@ -810,6 +1189,22 @@ export class AppleAutomationTasksService {
     return normalized;
   }
 
+  private normalizeAccountIdList(value: unknown) {
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new BadRequestException('appleAccountIds is required');
+    }
+
+    if (value.length > 50) {
+      throw new BadRequestException('appleAccountIds cannot exceed 50 items');
+    }
+
+    const normalized = value.map((item, index) =>
+      this.normalizeRequiredUuid(item, `appleAccountIds[${index}]`)
+    );
+
+    return Array.from(new Set(normalized));
+  }
+
   private normalizeOptionalUuid(value: string | undefined, field: string) {
     if (!value) {
       return undefined;
@@ -839,6 +1234,351 @@ export class AppleAutomationTasksService {
     return `apple-${taskType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  private buildWebCheckExecutionPlan(
+    region: string,
+    gatewayRegion?: string | null,
+    gatewayNodeCandidatesByCountry: Map<string, AppleWebGatewayNodeCandidate[]> = new Map()
+  ): AppleWebCheckExecutionPlan {
+    const accountRegion = this.normalizeRegionCode(region);
+    const exitCountry = this.normalizeRegionCode(gatewayRegion) || accountRegion;
+    const profile = APPLE_WEB_CHECK_REGION_PROFILES[exitCountry] ?? {
+      countryCode: exitCountry || 'UNKNOWN',
+      locale: 'en-US',
+      timezone: 'UTC',
+      appleCountryUrl: 'https://www.apple.com/',
+      appleAccountSignInUrl: 'https://account.apple.com/sign-in'
+    };
+    const configuredRegions = this.getConfiguredWebCheckGatewayRegions();
+    const gatewayNodeCandidates = gatewayNodeCandidatesByCountry.get(profile.countryCode) ?? [];
+    const selectedGatewayNode = gatewayNodeCandidates[0] ?? null;
+    const gatewayConfigured =
+      Boolean(selectedGatewayNode) || configuredRegions.has(profile.countryCode);
+
+    return {
+      ...profile,
+      accountRegion,
+      exitCountry,
+      adapterVersion: process.env.APPLE_WEB_CHECK_ADAPTER_VERSION || 'apple-web-v1',
+      gatewayProfileCode:
+        selectedGatewayNode?.id ??
+        (gatewayConfigured ? `apple-${profile.countryCode.toLowerCase()}-web` : null),
+      gatewayNodeId: selectedGatewayNode?.id ?? null,
+      gatewayNodeName: selectedGatewayNode?.name ?? null,
+      gatewayNodeCandidates,
+      gatewayConfigured,
+      regionMatched: accountRegion === exitCountry,
+      manualChallengeMode: 'operator_prompt'
+    };
+  }
+
+  private getConfiguredWebCheckGatewayRegions() {
+    return new Set(
+      (process.env.APPLE_WEB_CHECK_GATEWAY_REGIONS || '')
+        .split(',')
+        .map((item) => this.normalizeRegionCode(item))
+        .filter(Boolean)
+    );
+  }
+
+  private async getAppleWebGatewayNodeCandidatesByCountry() {
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY }
+    });
+    const data = this.toObject(parameter?.value);
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const result = new Map<string, AppleWebGatewayNodeCandidate[]>();
+
+    for (const item of items) {
+      const node = this.toObject(item);
+      const id = this.getObjectString(node, 'id');
+      const name = this.getObjectString(node, 'name');
+      const countryCode = this.normalizeRegionCode(this.getObjectString(node, 'countryCode'));
+      const status = this.getObjectString(node, 'status');
+
+      if (!id || !name || !countryCode || countryCode === 'UNKNOWN') continue;
+      if (status === 'unavailable') continue;
+
+      const candidates = result.get(countryCode) ?? [];
+      candidates.push({
+        id,
+        name,
+        countryCode,
+        status: status === 'available' ? 'available' : 'unknown'
+      });
+      result.set(countryCode, candidates);
+    }
+
+    for (const [countryCode, candidates] of result.entries()) {
+      result.set(
+        countryCode,
+        candidates.sort((left, right) => {
+          if (left.status !== right.status) return left.status === 'available' ? -1 : 1;
+          return left.name.localeCompare(right.name);
+        })
+      );
+    }
+
+    return result;
+  }
+
+  private async getAppleWebGatewayStoredNodes(): Promise<AppleWebGatewayStoredNode[]> {
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY }
+    });
+    const data = this.toObject(parameter?.value);
+    const items = Array.isArray(data?.items) ? data.items : [];
+
+    return items
+      .map((item) => this.toAppleWebGatewayStoredNode(item))
+      .filter((item): item is AppleWebGatewayStoredNode => Boolean(item));
+  }
+
+  private toAppleWebGatewayStoredNode(value: unknown): AppleWebGatewayStoredNode | null {
+    const node = this.toObject(value);
+    const id = this.getObjectString(node, 'id');
+    const name = this.getObjectString(node, 'name');
+    const countryCode = this.normalizeRegionCode(this.getObjectString(node, 'countryCode'));
+    const protocol = this.getObjectString(node, 'protocol');
+
+    if (!id || !name || !countryCode || !protocol) return null;
+
+    return {
+      id,
+      name,
+      countryCode,
+      protocol,
+      status: this.parseGatewayNodeStatus(this.getObjectString(node, 'status')),
+      rawEncrypted: this.getObjectString(node, 'rawEncrypted'),
+      latencyMs: this.getNumberOrNull(node?.latencyMs),
+      lastCheckedAt: this.getObjectString(node, 'lastCheckedAt'),
+      failureReason: this.getObjectString(node, 'failureReason')
+    };
+  }
+
+  private resolveWebCheckGatewayCandidates(
+    executionPlan: AppleWebCheckExecutionPlan,
+    storedNodes: AppleWebGatewayStoredNode[]
+  ): AppleWebGatewayCandidateResponse[] {
+    const storedById = new Map(storedNodes.map((node) => [node.id, node]));
+    const candidates =
+      executionPlan.gatewayNodeCandidates.length > 0
+        ? executionPlan.gatewayNodeCandidates
+        : storedNodes
+            .filter((node) => node.countryCode === executionPlan.countryCode)
+            .map((node) => ({
+              id: node.id,
+              name: node.name,
+              countryCode: node.countryCode,
+              status: node.status
+            }));
+
+    const uniqueCandidates = new Map<string, AppleWebGatewayCandidateResponse>();
+    for (const candidate of candidates) {
+      const stored = storedById.get(candidate.id);
+      uniqueCandidates.set(candidate.id, {
+        id: candidate.id,
+        name: stored?.name ?? candidate.name,
+        countryCode: stored?.countryCode ?? candidate.countryCode,
+        status: stored?.status ?? candidate.status,
+        protocol: stored?.protocol ?? null,
+        hasEncryptedConfig: Boolean(stored?.rawEncrypted),
+        latencyMs: stored?.latencyMs ?? null,
+        lastCheckedAt: stored?.lastCheckedAt ?? null,
+        failureReason: stored?.failureReason ?? null
+      });
+    }
+
+    return Array.from(uniqueCandidates.values()).sort((left, right) => {
+      if (left.status !== right.status) {
+        if (left.status === 'available') return -1;
+        if (right.status === 'available') return 1;
+        if (left.status === 'unknown') return -1;
+        if (right.status === 'unknown') return 1;
+      }
+      return left.name.localeCompare(right.name);
+    });
+  }
+
+  private getWebCheckExecutionPlanFromTask(
+    task: Pick<AutomationTask, 'id' | 'taskType' | 'inputPayloadEncrypted' | 'resultPayload'>
+  ): AppleWebCheckExecutionPlan {
+    if (task.taskType !== 'check_status') {
+      throw new BadRequestException('Only check_status tasks have Apple web gateway context');
+    }
+
+    const inputPayload = this.decryptTaskInputPayload(task.inputPayloadEncrypted);
+    const inputPlan = this.toObject(inputPayload?.executionPlan);
+    const resultPlan = this.toObject(this.toObject(task.resultPayload)?.executionPlan);
+    const plan = inputPlan ?? resultPlan;
+
+    if (!plan) {
+      throw new BadRequestException('Apple web check execution plan is missing');
+    }
+
+    const countryCode = this.normalizeRegionCode(this.getObjectString(plan, 'countryCode'));
+    const accountRegion = this.normalizeRegionCode(this.getObjectString(plan, 'accountRegion'));
+    const exitCountry = this.normalizeRegionCode(this.getObjectString(plan, 'exitCountry'));
+    const locale = this.getObjectString(plan, 'locale') ?? 'en-US';
+    const timezone = this.getObjectString(plan, 'timezone') ?? 'UTC';
+    const appleCountryUrl =
+      this.getObjectString(plan, 'appleCountryUrl') ?? 'https://www.apple.com/';
+    const appleAccountSignInUrl =
+      this.getObjectString(plan, 'appleAccountSignInUrl') ?? 'https://account.apple.com/sign-in';
+
+    if (!countryCode || !accountRegion || !exitCountry) {
+      throw new BadRequestException('Apple web check execution plan is incomplete');
+    }
+
+    return {
+      countryCode,
+      accountRegion,
+      exitCountry,
+      locale,
+      timezone,
+      appleCountryUrl,
+      appleAccountSignInUrl,
+      adapterVersion: this.getObjectString(plan, 'adapterVersion') ?? 'apple-web-v1',
+      gatewayProfileCode: this.getObjectString(plan, 'gatewayProfileCode'),
+      gatewayNodeId: this.getObjectString(plan, 'gatewayNodeId'),
+      gatewayNodeName: this.getObjectString(plan, 'gatewayNodeName'),
+      gatewayNodeCandidates: this.parseGatewayNodeCandidates(plan.gatewayNodeCandidates),
+      gatewayConfigured: plan.gatewayConfigured === true,
+      regionMatched: plan.regionMatched === true,
+      manualChallengeMode: 'operator_prompt'
+    };
+  }
+
+  private parseGatewayNodeCandidates(value: unknown): AppleWebGatewayNodeCandidate[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => {
+        const node = this.toObject(item);
+        const id = this.getObjectString(node, 'id');
+        const name = this.getObjectString(node, 'name');
+        const countryCode = this.normalizeRegionCode(this.getObjectString(node, 'countryCode'));
+        if (!id || !name || !countryCode) return null;
+        return {
+          id,
+          name,
+          countryCode,
+          status: this.parseGatewayNodeStatus(this.getObjectString(node, 'status'))
+        };
+      })
+      .filter((item): item is AppleWebGatewayNodeCandidate => Boolean(item));
+  }
+
+  private decryptTaskInputPayload(value: string | null) {
+    if (!value) return null;
+    const decrypted = this.fieldEncryptionService.decrypt(value);
+    if (!decrypted) return null;
+    try {
+      return JSON.parse(decrypted) as Record<string, unknown>;
+    } catch {
+      throw new BadRequestException('Apple web check input payload is invalid');
+    }
+  }
+
+  private async updateAppleWebGatewayNodeAttempt(
+    nodeId: string,
+    input: {
+      status: 'success' | 'failed';
+      latencyMs: number | null;
+      failureReason: string | null;
+    }
+  ) {
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY }
+    });
+    const data = this.toObject(parameter?.value) ?? {};
+    const items = Array.isArray(data.items) ? data.items : [];
+    let found = false;
+    const checkedAt = new Date().toISOString();
+    const nextItems = items.map((item) => {
+      const node = this.toObject(item);
+      if (this.getObjectString(node, 'id') !== nodeId) return item;
+      found = true;
+      return {
+        ...node,
+        status: input.status === 'success' ? 'available' : 'unavailable',
+        latencyMs: input.latencyMs,
+        lastCheckedAt: checkedAt,
+        failureReason: input.status === 'success' ? null : input.failureReason
+      };
+    });
+
+    if (!parameter || !found) {
+      throw new BadRequestException('Apple web gateway node not found');
+    }
+
+    await this.prisma.systemParameter.update({
+      where: { key: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY },
+      data: {
+        value: this.toAuditJson({
+          ...data,
+          items: nextItems
+        })
+      }
+    });
+  }
+
+  private mergeTaskResultPayload(value: Prisma.JsonValue | null, patch: Record<string, unknown>) {
+    return this.toAuditJson({
+      ...(this.toObject(value) ?? {}),
+      ...patch
+    });
+  }
+
+  private parseGatewayAttemptStatus(value: unknown): 'success' | 'failed' {
+    if (value === 'success' || value === 'failed') return value;
+    throw new BadRequestException('status is invalid');
+  }
+
+  private parseGatewayNodeStatus(value: string | null): 'available' | 'unknown' | 'unavailable' {
+    if (value === 'available' || value === 'unavailable' || value === 'unknown') return value;
+    return 'unknown';
+  }
+
+  private parseOptionalLatency(value: unknown) {
+    if (value === undefined || value === null || value === '') return null;
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue) || numberValue < 0) {
+      throw new BadRequestException('latencyMs is invalid');
+    }
+    return Math.round(numberValue);
+  }
+
+  private normalizeOptionalNodeId(value: string | null | undefined) {
+    const normalized = this.normalizeNullableString(value);
+    if (!normalized) return null;
+    if (!/^[a-zA-Z0-9_.:-]+$/.test(normalized)) {
+      throw new BadRequestException('nodeId format is invalid');
+    }
+    return normalized;
+  }
+
+  private getNumberOrNull(value: unknown) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : null;
+  }
+
+  private normalizeRegionCode(value: string | null | undefined) {
+    return (value || '').trim().toUpperCase();
+  }
+
+  private normalizeOptionalRegionCode(value: unknown) {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    const normalized = this.normalizeRequiredString(value, 'gatewayRegion').toUpperCase();
+
+    if (!/^[A-Z]{2}$/.test(normalized)) {
+      throw new BadRequestException('gatewayRegion must be a country code');
+    }
+
+    return normalized;
+  }
+
   private getResultStatus(payload: Record<string, unknown> | null | undefined) {
     const resultStatus = payload?.resultStatus;
     if (
@@ -857,6 +1597,17 @@ export class AppleAutomationTasksService {
 
   private toAuditJson(data: unknown) {
     return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
+  }
+
+  private toObject(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private getObjectString(value: Record<string, unknown> | null, key: string) {
+    const item = value?.[key];
+    return typeof item === 'string' && item.trim() ? item.trim() : null;
   }
 
   private maskAppleId(value: string) {
@@ -917,14 +1668,23 @@ export class AppleAutomationTasksService {
       id: task.id,
       taskType: task.taskType,
       appleAccountId: task.appleAccountId,
-      appleAccount: {
-        id: task.appleAccount.id,
-        appleIdMasked: this.maskAppleId(task.appleAccount.appleId),
-        region: task.appleAccount.region,
-        currency: task.appleAccount.currency,
-        currentBalance: task.appleAccount.currentBalance.toString(),
-        status: task.appleAccount.status
-      },
+      appleAccount: task.appleAccount
+        ? {
+            id: task.appleAccount.id,
+            appleIdMasked: this.maskAppleId(task.appleAccount.appleId),
+            region: task.appleAccount.region,
+            currency: task.appleAccount.currency,
+            currentBalance: task.appleAccount.currentBalance.toString(),
+            status: task.appleAccount.status
+          }
+        : {
+            id: '',
+            appleIdMasked: '-',
+            region: '-',
+            currency: '-',
+            currentBalance: '0',
+            status: 'unknown'
+          },
       customerId: task.customerId,
       customer: task.customer,
       serviceId: task.serviceId,

@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import type {
   CreateErrorLogInput,
   ReauthorizePlatformInput,
+  SaveAppleWebGatewaySubscriptionInput,
   SavePlatformAuthorizationInput,
   StartPlatformOAuthInput,
   TestPlatformConnectionInput
@@ -158,6 +159,35 @@ export class OpsController {
   @RequirePermissions('ops.platform_sync.view')
   platform(@Param('platform') platform: string) {
     return this.opsService.platformStatus(platform);
+  }
+
+  @Get('apple-web-gateways')
+  @RequirePermissions('ops.worker_status.view')
+  appleWebGateways() {
+    return this.opsService.getAppleWebGateways();
+  }
+
+  @Post('apple-web-gateways/subscription')
+  @RequirePermissions('ops.platform.reauthorize')
+  async saveAppleWebGatewaySubscription(
+    @Body() dto: SaveAppleWebGatewaySubscriptionInput,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.opsService.saveAppleWebGatewaySubscription(dto, operator);
+    this.publishOpsEvent(
+      'ops.apple_web_gateway.subscription.updated',
+      'apple_web_gateway',
+      'updated'
+    );
+    return result;
+  }
+
+  @Post('apple-web-gateways/sync')
+  @RequirePermissions('ops.platform.reauthorize')
+  async syncAppleWebGateways(@CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.opsService.syncAppleWebGateways(operator);
+    this.publishOpsEvent('ops.apple_web_gateway.nodes.synced', 'apple_web_gateway', 'synced');
+    return result;
   }
 
   @Get('platforms/:platform/authorization')

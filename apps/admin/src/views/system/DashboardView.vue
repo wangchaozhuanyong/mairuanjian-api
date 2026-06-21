@@ -275,6 +275,7 @@ interface DashboardNotice {
 const DASHBOARD_REQUEST_COUNT = 7;
 const LOW_STOCK_THRESHOLD = 20;
 const DASHBOARD_REALTIME_SCOPES = ['dashboard-overview'];
+const INTERNAL_MODULE_KEYS = new Set(['data-dictionaries', 'ops-monitor', 'automation-logs']);
 
 const router = useRouter();
 const previewDrawerVisible = ref(false);
@@ -298,7 +299,9 @@ const availableCodeTotal = ref(0);
 const lockedCodeTotal = ref(0);
 const failedCodeTotal = ref(0);
 
-const moduleRows = computed(() => allModules.filter((item) => item.group !== '异常页面'));
+const moduleRows = computed(() =>
+  allModules.filter((item) => item.group !== '异常页面' && !INTERNAL_MODULE_KEYS.has(item.key))
+);
 const readyCount = computed(
   () => moduleRows.value.filter((item) => item.status === 'ready').length
 );

@@ -58,5 +58,9 @@ export function getCodeServiceDeliveryModeLabel(
   dictionaries: DataDictionary[]
 ) {
   const dictionary = dictionaries.find((item) => item.code === mode);
-  return dictionary?.label || defaultCodeServiceDeliveryModes.find((item) => item.value === mode)?.label || mode;
+  return (
+    dictionary?.label ||
+    defaultCodeServiceDeliveryModes.find((item) => item.value === mode)?.label ||
+    mode
+  );
 }

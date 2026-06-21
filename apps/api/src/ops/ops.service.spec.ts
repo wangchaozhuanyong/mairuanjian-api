@@ -77,6 +77,22 @@ describe('OpsService', () => {
       metadata: { retryCount: 1 },
       createdAt: now
     };
+    const systemParameters = new Map<string, Record<string, unknown>>();
+    systemParameters.set('platform_auth_taobao', {
+      id: '77777777-7777-4777-8777-777777777777',
+      key: 'platform_auth_taobao',
+      value: {
+        authMode: 'oauth',
+        appKeyEncrypted: 'encrypted:taobao-app-key',
+        appSecretEncrypted: 'encrypted:taobao-app-secret',
+        accessTokenEncrypted: 'encrypted:access-token-123456'
+      },
+      group: 'platform_auth',
+      remark: '淘宝平台授权配置',
+      updatedByUserId: user.id,
+      createdAt: now,
+      updatedAt: now
+    });
     const prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ ok: 1 }]),
       $transaction: jest.fn((input: unknown) => {
@@ -114,24 +130,7 @@ describe('OpsService', () => {
       },
       systemParameter: {
         findUnique: jest.fn(async (args: { where?: { key?: string } }) => {
-          if (args.where?.key === 'platform_auth_taobao') {
-            return {
-              id: '77777777-7777-4777-8777-777777777777',
-              key: 'platform_auth_taobao',
-              value: {
-                authMode: 'oauth',
-                appKeyEncrypted: 'encrypted:taobao-app-key',
-                appSecretEncrypted: 'encrypted:taobao-app-secret',
-                accessTokenEncrypted: 'encrypted:access-token-123456'
-              },
-              group: 'platform_auth',
-              remark: '淘宝平台授权配置',
-              updatedByUserId: user.id,
-              createdAt: now,
-              updatedAt: now
-            };
-          }
-          return null;
+          return args.where?.key ? (systemParameters.get(args.where.key) ?? null) : null;
         }),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({
@@ -144,16 +143,28 @@ describe('OpsService', () => {
           createdAt: now,
           updatedAt: now
         }),
-        upsert: jest.fn().mockResolvedValue({
-          id: '77777777-7777-4777-8777-777777777777',
-          key: 'platform_auth_taobao',
-          value: {},
-          group: 'platform_auth',
-          remark: '淘宝平台授权配置',
-          updatedByUserId: user.id,
-          createdAt: now,
-          updatedAt: now
-        })
+        upsert: jest.fn(
+          async (args: {
+            where: { key: string };
+            update: Record<string, unknown>;
+            create: Record<string, unknown>;
+          }) => {
+            const existing = systemParameters.get(args.where.key);
+            const parameter = {
+              id:
+                typeof existing?.id === 'string'
+                  ? existing.id
+                  : '77777777-7777-4777-8777-777777777777',
+              ...(existing ?? {}),
+              ...(existing ? args.update : args.create),
+              key: args.where.key,
+              createdAt: existing?.createdAt ?? now,
+              updatedAt: now
+            };
+            systemParameters.set(args.where.key, parameter);
+            return parameter;
+          }
+        )
       }
     } as unknown as PrismaService;
     const auditLogsService = {
@@ -371,6 +382,89 @@ describe('OpsService', () => {
     expect(auditPayload).not.toContain('taobao-app-secret');
     expect(auditPayload).not.toContain('access-token-123456');
     expect(auditPayload).not.toContain('refresh-token-654321');
+  });
+
+  it('saves Apple web gateway subscription encrypted and returns only masked URL', async () => {
+    const { service, prisma, auditLogsService, fieldEncryptionService } = createService();
+    const subscriptionUrl = 'https://app.example.com/?sid=197974&token=secret-token';
+
+    const result = await service.saveAppleWebGatewaySubscription({ subscriptionUrl }, user);
+
+    expect(result.configured).toBe(true);
+    expect(result.subscriptionHost).toBe('app.example.com');
+    expect(result.subscriptionUrlMasked).toBe('https://app.example.com/?sid=***&token=***');
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith(subscriptionUrl);
+    expect(prisma.systemParameter.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          key: 'apple_web_gateway_subscription',
+          group: 'apple_web_gateway',
+          value: expect.objectContaining({
+            subscriptionUrlEncrypted: `encrypted:${subscriptionUrl}`,
+            subscriptionUrlMasked: 'https://app.example.com/?sid=***&token=***'
+          })
+        })
+      })
+    );
+    const auditPayload = JSON.stringify((auditLogsService.create as jest.Mock).mock.calls);
+    expect(auditPayload).not.toContain('secret-token');
+    expect(auditPayload).not.toContain(subscriptionUrl);
+  });
+
+  it('syncs Apple web gateway nodes from subscription without exposing raw node secrets', async () => {
+    const { service, prisma, auditLogsService, fieldEncryptionService } = createService();
+    const subscriptionUrl = 'https://app.example.com/?sid=197974&token=secret-token';
+    const subscriptionBody = Buffer.from(
+      [
+        'trojan://password@us.example.com:443#US%20Los%20Angeles',
+        'vless://uuid@my.example.com:443#MY%20Kuala%20Lumpur'
+      ].join('\n')
+    ).toString('base64');
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: jest.fn().mockResolvedValue(subscriptionBody)
+    } as unknown as Response);
+
+    await service.saveAppleWebGatewaySubscription({ subscriptionUrl }, user);
+    const result = await service.syncAppleWebGateways(user);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      subscriptionUrl,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'user-agent': 'AppleBusinessGatewaySync/1.0'
+        })
+      })
+    );
+    expect(result.nodeCount).toBe(2);
+    expect(result.countrySummary.map((item) => item.countryCode)).toEqual(['MY', 'US']);
+    expect(result.nodes.every((node) => node.status === 'available')).toBe(true);
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith(
+      'trojan://password@us.example.com:443#US%20Los%20Angeles'
+    );
+    expect(prisma.systemParameter.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          key: 'apple_web_gateway_nodes',
+          value: expect.objectContaining({
+            items: expect.arrayContaining([
+              expect.objectContaining({
+                countryCode: 'US',
+                rawEncrypted: 'encrypted:trojan://password@us.example.com:443#US%20Los%20Angeles'
+              })
+            ])
+          })
+        })
+      })
+    );
+    const apiPayload = JSON.stringify(result);
+    const auditPayload = JSON.stringify((auditLogsService.create as jest.Mock).mock.calls);
+    expect(apiPayload).not.toContain('password@us.example.com');
+    expect(apiPayload).not.toContain('secret-token');
+    expect(auditPayload).not.toContain('password@us.example.com');
+    expect(auditPayload).not.toContain('secret-token');
+    fetchMock.mockRestore();
   });
 
   it('starts platform OAuth with encrypted app key and stores state', async () => {

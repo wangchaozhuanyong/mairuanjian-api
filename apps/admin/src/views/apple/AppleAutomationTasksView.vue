@@ -29,6 +29,7 @@
           <StatusChip :tone="automationFocusTasks.length ? 'orange' : 'green'">
             待处理 {{ automationFocusTasks.length }}
           </StatusChip>
+          <AppButton variant="primary" @click="openBatchCheckDialog">批量检查状态</AppButton>
         </div>
       </div>
 
@@ -45,7 +46,7 @@
         :batch-actions="batchActions"
         :show-date-shortcut="false"
         primary-label="创建自动化任务"
-        placeholder="搜索 Apple ID、任务、错误、队列号"
+        placeholder="搜索 Apple ID、任务、错误说明"
         @search="handleSearch"
         @refresh="loadTasks"
         @primary="openCreateDialog"
@@ -132,7 +133,6 @@
         >
           <template #default="{ row }">
             <strong>{{ getTaskTypeLabel(row.taskType) }}</strong>
-            <div class="muted-block">{{ row.queueJobId || '未分配队列号' }}</div>
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('appleAccount')" label="Apple ID" min-width="190">
@@ -233,8 +233,8 @@
             <div class="mobile-record-card__title">
               <strong>{{ getTaskTypeLabel(task.taskType) }}</strong>
               <span
-                >{{ task.appleAccount.appleIdMasked }} ·
-                {{ task.queueJobId || '未分配队列号' }}</span
+                >{{ task.appleAccount.appleIdMasked }} · 余额
+                {{ task.appleAccount.currentBalance }}</span
               >
             </div>
             <StatusChip :tone="getPriorityTone(task.priority)">
@@ -354,12 +354,6 @@
       <div class="drawer-section">
         <div class="drawer-section__title">任务信息</div>
         <el-descriptions class="detail-descriptions" :column="1" border>
-          <el-descriptions-item label="队列号">
-            {{ selectedTask?.queueJobId ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="异常代码">
-            {{ selectedTask?.errorCode ?? '-' }}
-          </el-descriptions-item>
           <el-descriptions-item label="异常说明">
             {{ selectedTask?.errorMessage ?? '-' }}
           </el-descriptions-item>
@@ -399,11 +393,6 @@
             取消任务
           </AppButton>
         </div>
-      </div>
-
-      <div class="drawer-section">
-        <div class="drawer-section__title">结果数据</div>
-        <pre class="json-preview">{{ formatJson(selectedTask?.resultPayload ?? null) }}</pre>
       </div>
 
       <div class="drawer-section">
@@ -458,6 +447,35 @@
           </div>
         </div>
       </div>
+
+      <div
+        v-if="selectedTaskTechnicalRows.length || selectedTask?.resultPayload"
+        class="drawer-section"
+      >
+        <div class="drawer-section__title">技术信息</div>
+        <el-collapse class="technical-info-collapse">
+          <el-collapse-item title="展开查看内部排查信息" name="technical">
+            <el-descriptions
+              v-if="selectedTaskTechnicalRows.length"
+              class="detail-descriptions"
+              :column="1"
+              border
+            >
+              <el-descriptions-item
+                v-for="item in selectedTaskTechnicalRows"
+                :key="item.key"
+                :label="item.label"
+              >
+                {{ item.value }}
+              </el-descriptions-item>
+            </el-descriptions>
+            <div v-if="selectedTask?.resultPayload" class="technical-json-block">
+              <div class="drawer-section__description">原始结果数据</div>
+              <pre class="json-preview">{{ formatJson(selectedTask.resultPayload) }}</pre>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
     </AppDrawer>
 
     <el-dialog
@@ -466,7 +484,14 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-position="top">
-        <el-form-item label="任务类型" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="任务类型"
+              purpose="选择要让系统或人工队列处理的 Apple ID 自动化动作。"
+              example="查余额选查询余额；需要取消订阅选取消订阅。"
+            />
+          </template>
           <el-select v-model="createForm.taskType" class="full-width">
             <el-option
               v-for="item in taskTypeOptions"
@@ -476,7 +501,14 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="Apple ID" required>
+        <el-form-item v-if="createForm.taskType !== 'official_price_check'" required>
+          <template #label>
+            <FieldHelpLabel
+              label="Apple ID"
+              purpose="选择这条自动化任务要处理的账号。"
+              example="优先选择余额、地区和业务都匹配的 Apple ID。"
+            />
+          </template>
           <el-select
             v-model="createForm.appleAccountId"
             class="full-width"
@@ -491,7 +523,31 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="优先级">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="出口 IP 国家"
+              purpose="选择 Worker 访问 Apple 官网时使用哪个国家的出口 IP。"
+              example="如果账号平时在马来系统用美国 IP 登录，这里选美国。"
+            />
+          </template>
+          <el-select v-model="batchCheckForm.gatewayRegion" class="full-width">
+            <el-option
+              v-for="item in gatewayRegionOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="优先级"
+              purpose="决定任务排队时的紧急程度，越高越应该优先处理。"
+              example="客户正在等待开通选高；日常巡检选中或低。"
+            />
+          </template>
           <el-select v-model="createForm.priority" class="full-width">
             <el-option
               v-for="item in priorityOptions"
@@ -501,7 +557,14 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="输入参数 JSON">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="输入参数 JSON"
+              purpose="给自动化任务传额外参数，只有任务需要特殊输入时才填写。"
+              example='查余额一般可留空；需要指定预期余额时可填 {"expectedBalance":"100"}。'
+            />
+          </template>
           <el-input
             v-model="createForm.inputPayloadJson"
             type="textarea"
@@ -513,6 +576,84 @@
       <template #footer>
         <AppButton @click="createDialogVisible = false">取消</AppButton>
         <AppButton variant="primary" :loading="saving" @click="createTask">创建任务</AppButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="batchCheckDialogVisible"
+      title="批量检查 Apple ID 状态"
+      width="min(640px, calc(100vw - 24px))"
+    >
+      <el-form label-position="top">
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="Apple ID"
+              purpose="选择要进入 Apple 官网状态检查队列的账号。"
+              example="同一批可以混选多个地区，系统会按每个账号自己的地区匹配出口 IP。"
+            />
+          </template>
+          <el-select
+            v-model="batchCheckForm.appleAccountIds"
+            class="full-width"
+            collapse-tags
+            collapse-tags-tooltip
+            filterable
+            multiple
+            placeholder="选择 Apple ID"
+          >
+            <el-option
+              v-for="account in appleAccounts"
+              :key="account.id"
+              :label="`${account.appleIdMasked} / ${account.region} / 余额 ${account.currentBalance}`"
+              :value="account.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="优先级"
+              purpose="决定这批状态检查任务的排队紧急程度。"
+              example="客户催处理选高；日常巡检选中。"
+            />
+          </template>
+          <el-select v-model="batchCheckForm.priority" class="full-width">
+            <el-option
+              v-for="item in priorityOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="给这批检查任务留下内部说明，不会作为验证码或密码保存。"
+              example="例如：周一巡检、客户投诉前置检查。"
+            />
+          </template>
+          <el-input
+            v-model="batchCheckForm.note"
+            maxlength="120"
+            placeholder="可留空"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-alert
+          title="系统会按这里选择的出口 IP 国家做门禁；缺少对应出口 IP 时会自动转人工验证。"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+      </el-form>
+      <template #footer>
+        <AppButton @click="batchCheckDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingBatchCheck" @click="createBatchStatusCheck">
+          生成检查任务
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -528,6 +669,7 @@ import {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -544,6 +686,8 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { buildTechnicalFieldRows } from '@/utils/internalTechnicalFields';
+import { appleAccountRegionOptions } from '@/utils/appleAccountRegion';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartAppleAccounts } from '@/utils/smartSystemQueries';
 
@@ -552,7 +696,9 @@ const appleAccounts = ref<AppleAccount[]>([]);
 const total = ref(0);
 const loading = ref(false);
 const saving = ref(false);
+const savingBatchCheck = ref(false);
 const createDialogVisible = ref(false);
+const batchCheckDialogVisible = ref(false);
 const detailDrawerVisible = ref(false);
 const selectedTasks = ref<AppleAutomationTask[]>([]);
 const selectedTask = ref<AppleAutomationTask | null>(null);
@@ -588,6 +734,18 @@ const createForm = reactive<{
   inputPayloadJson: ''
 });
 
+const batchCheckForm = reactive<{
+  appleAccountIds: string[];
+  priority: AutomationTaskPriority;
+  gatewayRegion: string;
+  note: string;
+}>({
+  appleAccountIds: [],
+  priority: 'medium',
+  gatewayRegion: 'US',
+  note: ''
+});
+
 const taskTypeOptions: Array<{ label: string; value: AutomationTaskType }> = [
   { label: '检测状态', value: 'check_status' },
   { label: '查询余额', value: 'check_balance' },
@@ -595,7 +753,8 @@ const taskTypeOptions: Array<{ label: string; value: AutomationTaskType }> = [
   { label: '取消订阅', value: 'cancel_subscription' },
   { label: '修改手机号', value: 'change_phone' },
   { label: '修改密保', value: 'change_security' },
-  { label: '检查续费', value: 'check_renewal' }
+  { label: '检查续费', value: 'check_renewal' },
+  { label: '官方价格巡检', value: 'official_price_check' }
 ];
 
 const statusOptions: Array<{ label: string; value: AutomationTaskStatus }> = [
@@ -616,6 +775,11 @@ const priorityOptions: Array<{ label: string; value: AutomationTaskPriority }> =
   { label: '中', value: 'medium' },
   { label: '低', value: 'low' }
 ];
+
+const gatewayRegionOptions = appleAccountRegionOptions.map((item) => ({
+  label: `${item.labelZh} ${item.code}`,
+  value: item.code
+}));
 
 const manualRequiredOptions = [
   { label: '需要人工', value: 'true' },
@@ -658,6 +822,15 @@ const automationFocusTasks = computed(() =>
     .slice()
     .sort((a, b) => getAutomationPriorityValue(a) - getAutomationPriorityValue(b))
     .slice(0, 4)
+);
+const selectedTaskTechnicalRows = computed(() =>
+  selectedTask.value
+    ? buildTechnicalFieldRows({
+        taskId: selectedTask.value.id,
+        queueJobId: selectedTask.value.queueJobId,
+        errorCode: selectedTask.value.errorCode
+      })
+    : []
 );
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
@@ -943,8 +1116,16 @@ function openCreateDialog() {
   createDialogVisible.value = true;
 }
 
+function openBatchCheckDialog() {
+  batchCheckForm.appleAccountIds = appleAccounts.value.map((account) => account.id).slice(0, 10);
+  batchCheckForm.priority = 'medium';
+  batchCheckForm.gatewayRegion = 'US';
+  batchCheckForm.note = '';
+  batchCheckDialogVisible.value = true;
+}
+
 async function createTask() {
-  if (!createForm.appleAccountId) {
+  if (createForm.taskType !== 'official_price_check' && !createForm.appleAccountId) {
     ElMessage.warning('请先选择 Apple ID');
     return;
   }
@@ -958,7 +1139,8 @@ async function createTask() {
   try {
     const created = await appleAutomationTasksApi.create({
       taskType: createForm.taskType,
-      appleAccountId: createForm.appleAccountId,
+      appleAccountId:
+        createForm.taskType === 'official_price_check' ? null : createForm.appleAccountId,
       priority: createForm.priority,
       inputPayload
     });
@@ -970,6 +1152,35 @@ async function createTask() {
     ElMessage.error(error instanceof Error ? error.message : '创建自动化任务失败');
   } finally {
     saving.value = false;
+  }
+}
+
+async function createBatchStatusCheck() {
+  if (!batchCheckForm.appleAccountIds.length) {
+    ElMessage.warning('请先选择要检查的 Apple ID');
+    return;
+  }
+
+  savingBatchCheck.value = true;
+  try {
+    const result = await appleAutomationTasksApi.batchStatusCheck({
+      appleAccountIds: batchCheckForm.appleAccountIds,
+      priority: batchCheckForm.priority,
+      gatewayRegion: batchCheckForm.gatewayRegion,
+      note: batchCheckForm.note.trim() || null
+    });
+    ElMessage.success(
+      `已生成 ${result.createdCount} 个检查任务，排队 ${result.queuedCount} 个，转人工 ${result.manualRequiredCount} 个`
+    );
+    batchCheckDialogVisible.value = false;
+    selectedTask.value = result.items[0] ?? null;
+    query.taskType = 'check_status';
+    query.page = 1;
+    await loadTasks();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量检查任务创建失败');
+  } finally {
+    savingBatchCheck.value = false;
   }
 }
 

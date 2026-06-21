@@ -27,8 +27,10 @@ docs/FIRST_RELEASE_HANDOFF.md
 ## 2. 生产文件
 
 - `docker-compose.prod.yml`：生产服务编排
+- `docker-compose.apple-worker.yml`：Apple 官网检查 Worker 可选编排，不随普通生产启动自动启用
 - `.env.production.example`：生产环境变量模板
 - `apps/api/Dockerfile`：后端生产镜像
+- `apps/api/Dockerfile.worker`：Apple 官网检查 Worker 镜像，包含 Playwright Chromium runtime
 - `apps/admin/Dockerfile`：前端生产镜像
 - `deploy/nginx/admin.conf`：Admin 容器内 Nginx 配置
 - `deploy/nginx/edge-ssl.example.conf`：服务器外层 HTTPS 反代示例
@@ -47,6 +49,8 @@ docs/FIRST_RELEASE_HANDOFF.md
 - `scripts/release-review.mjs`：只读发布审查聚合，普通模式集中输出上线状态、手工门禁、清单项和 Git 候选文件摘要；strict 模式作为 `npm run release:ready` 发布就绪硬门禁
 - `scripts/release-blockers.mjs`：只读输出当前上线阻塞项、处理动作、验证命令和证据记录命令
 - `scripts/git-readiness.mjs`：Git 基线提交前检查，防止私有环境变量、备份、上传文件、构建产物、Telegram Bot Token 或常见密钥误提交；`--verbose` 可输出候选文件摘要，便于首次提交审查
+- `scripts/generate-apple-web-sing-box-config.mjs`：从加密节点池生成 sing-box 配置，不打印节点密钥
+- `scripts/apple-web-worker-runtime-check.mjs`：验证 Playwright Chromium 和出口 IP 检测 runtime
 
 ## 3. 服务器准备
 
@@ -190,6 +194,43 @@ BASE_URL=https://example.com npm run prod:smoke
 - Admin 首页
 - `/api/health/live`
 - `/api/health/ready`
+
+## 6.1 Apple 官网检查 Worker
+
+Apple 官网检查 Worker 不随普通生产 Compose 自动启用。启用前必须完成：
+
+- 后台“运维监控 -> Apple 节点”已保存并同步节点订阅。
+- 已重置任何暴露过的节点订阅 token。
+- `.runtime/apple-web-sing-box.json` 已由 `npm run apple-web:sing-box-config` 生成。
+- Playwright runtime 可用，可先运行 `npm run apple-web:runtime-check`。
+- 确认 `.env.production` 里的 `APPLE_WEB_CHECK_WORKER_ENABLED` 保持默认 `false`，只由单独 Worker 容器覆盖为 `true`，避免多个 API 实例重复消费任务。
+
+启动 Worker：
+
+```bash
+docker compose --env-file .env.production \
+  -f docker-compose.prod.yml \
+  -f docker-compose.apple-worker.yml \
+  up -d sing-box apple-web-worker
+```
+
+查看 Worker 日志：
+
+```bash
+docker compose --env-file .env.production \
+  -f docker-compose.prod.yml \
+  -f docker-compose.apple-worker.yml \
+  logs -f apple-web-worker
+```
+
+关闭 Worker：
+
+```bash
+docker compose --env-file .env.production \
+  -f docker-compose.prod.yml \
+  -f docker-compose.apple-worker.yml \
+  stop apple-web-worker
+```
 
 ## 7. HTTPS 反代
 

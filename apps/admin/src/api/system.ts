@@ -20,6 +20,15 @@ import type {
   CodeDeliveryLog,
   AppleService,
   AppleServicePlatformMapping,
+  AppleWebGatewayNodeStatus,
+  AppleWebGatewayStatus,
+  AppleOfficialPriceSource,
+  AppleOfficialPriceSnapshot,
+  ApplePriceChangeReview,
+  AppleOfficialPriceCollectMethod,
+  AppleOfficialPriceSourceStatus,
+  ApplePriceChangeReviewStatus,
+  ApplePriceChangeType,
   AppAnnouncement,
   AppAnnouncementLevel,
   AppVersion,
@@ -99,6 +108,7 @@ import type {
   SecuritySetting,
   ServiceActivation,
   SavePlatformAuthorizationPayload,
+  SaveAppleWebGatewaySubscriptionPayload,
   StartPlatformOAuthPayload,
   SensitiveAccessApproval,
   SensitiveAccessApprovalStatus,
@@ -163,6 +173,12 @@ function markMutatedSmartQueriesStale(url?: string) {
     scopes.add('dashboard-overview');
   }
 
+  if (path.startsWith('/data/dictionaries')) {
+    scopes.add('data-dictionaries');
+    scopes.add('customers');
+    scopes.add('apple-accounts');
+  }
+
   if (path.startsWith('/message-templates')) {
     scopes.add('message-templates');
     scopes.add('code-service-mappings');
@@ -176,6 +192,13 @@ function markMutatedSmartQueriesStale(url?: string) {
 
   if (path.startsWith('/apple-accounts')) {
     scopes.add('apple-accounts');
+    scopes.add('dashboard-overview');
+  }
+
+  if (path.startsWith('/apple/official-prices')) {
+    scopes.add('apple-official-prices');
+    scopes.add('apple-services');
+    scopes.add('apple-automation-tasks');
     scopes.add('dashboard-overview');
   }
 
@@ -542,6 +565,25 @@ export interface AppleServiceQuery extends CommonPageQuery {
   category?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc' | '';
+}
+
+export interface AppleOfficialPriceSourceQuery extends CommonPageQuery {
+  region?: string;
+  currency?: string;
+  collectMethod?: AppleOfficialPriceCollectMethod | '';
+  status?: AppleOfficialPriceSourceStatus | '';
+}
+
+export interface AppleOfficialPriceSnapshotQuery extends CommonPageQuery {
+  sourceId?: string;
+  appleServiceId?: string;
+}
+
+export interface ApplePriceChangeReviewQuery extends CommonPageQuery {
+  sourceId?: string;
+  appleServiceId?: string;
+  status?: ApplePriceChangeReviewStatus | '';
+  changeType?: ApplePriceChangeType | '';
 }
 
 export interface AppleOrderQuery extends CommonPageQuery {
@@ -1015,6 +1057,36 @@ export interface SaveAppleServicePlatformMappingPayload {
   enabled?: boolean;
 }
 
+export interface SaveAppleOfficialPriceSourcePayload {
+  name: string;
+  region: string;
+  currency: string;
+  sourceUrl?: string | null;
+  collectMethod?: AppleOfficialPriceCollectMethod;
+  checkIntervalHours?: number;
+  status?: AppleOfficialPriceSourceStatus;
+  remark?: string | null;
+}
+
+export interface OfficialPriceCollectedItemPayload {
+  appleServiceId?: string | null;
+  serviceName: string;
+  category?: string | null;
+  region?: string | null;
+  currency?: string | null;
+  officialPrice: string;
+  periodType?: AppleService['defaultPeriodType'];
+  periodValue?: number;
+  rawPayload?: Record<string, unknown> | null;
+}
+
+export interface CheckOfficialPriceSourcePayload {
+  trigger?: 'manual' | 'worker' | 'system';
+  items?: OfficialPriceCollectedItemPayload[];
+  scanRemovedPlans?: boolean;
+  remark?: string | null;
+}
+
 export interface SaveCodeServicePayload {
   name: string;
   faceValue: string;
@@ -1206,12 +1278,66 @@ export interface CompleteActionPlanPayload {
 
 export interface CreateAppleAutomationTaskPayload {
   taskType: AutomationTaskType;
-  appleAccountId: string;
+  appleAccountId?: string | null;
   customerId?: string | null;
   serviceId?: string | null;
   activationId?: string | null;
   priority?: AutomationTaskPriority;
   inputPayload?: Record<string, unknown> | null;
+}
+
+export interface BatchAppleStatusCheckPayload {
+  appleAccountIds: string[];
+  priority?: AutomationTaskPriority;
+  gatewayRegion?: string | null;
+  note?: string | null;
+}
+
+export interface BatchAppleStatusCheckResult {
+  createdCount: number;
+  queuedCount: number;
+  manualRequiredCount: number;
+  items: AppleAutomationTask[];
+}
+
+export interface AppleWebCheckGatewayCandidate {
+  id: string;
+  name: string;
+  countryCode: string;
+  status: AppleWebGatewayNodeStatus;
+  protocol?: string | null;
+  hasEncryptedConfig: boolean;
+  latencyMs?: number | null;
+  lastCheckedAt?: string | null;
+  failureReason?: string | null;
+}
+
+export interface AppleWebCheckGatewayContext {
+  taskId: string;
+  queueJobId?: string | null;
+  accountRegion: string;
+  exitCountry: string;
+  gatewayConfigured: boolean;
+  gatewayProfileCode?: string | null;
+  selectedNodeId?: string | null;
+  fallbackGatewayProfileCode?: string | null;
+  canRunWithSyncedNode: boolean;
+  candidates: AppleWebCheckGatewayCandidate[];
+}
+
+export interface AppleWebCheckGatewayAttemptPayload {
+  nodeId?: string | null;
+  status?: 'success' | 'failed';
+  exitIp?: string | null;
+  exitCountry?: string | null;
+  latencyMs?: number | null;
+  failureReason?: string | null;
+}
+
+export interface AppleWebCheckGatewayAttemptResult {
+  task: AppleAutomationTask;
+  gatewayAttempt: Record<string, unknown>;
+  remainingCandidateIds: string[];
 }
 
 export interface WriteAppleAutomationTaskResultPayload {
@@ -1722,6 +1848,17 @@ export const opsApi = {
   platform(platform: string) {
     return request<PlatformInterfaceStatus>(http.get(`/ops/platforms/${platform}`));
   },
+  appleWebGateways() {
+    return request<AppleWebGatewayStatus>(http.get('/ops/apple-web-gateways'));
+  },
+  saveAppleWebGatewaySubscription(payload: SaveAppleWebGatewaySubscriptionPayload) {
+    return request<AppleWebGatewayStatus>(
+      http.post('/ops/apple-web-gateways/subscription', payload)
+    );
+  },
+  syncAppleWebGateways() {
+    return request<AppleWebGatewayStatus>(http.post('/ops/apple-web-gateways/sync'));
+  },
   platformAuthorization(platform: string) {
     return request<PlatformAuthorizationConfig>(
       http.get(`/ops/platforms/${platform}/authorization`)
@@ -1951,6 +2088,56 @@ export const appleServicesApi = {
   },
   removePlatformMapping(id: string) {
     return request<{ deleted: boolean }>(http.delete(`/apple/service-platform-mappings/${id}`));
+  }
+};
+
+export const appleOfficialPricesApi = {
+  listSources(params: AppleOfficialPriceSourceQuery) {
+    return request<PageResult<AppleOfficialPriceSource>>(
+      http.get('/apple/official-prices/sources', { params })
+    );
+  },
+  createSource(payload: SaveAppleOfficialPriceSourcePayload) {
+    return request<AppleOfficialPriceSource>(http.post('/apple/official-prices/sources', payload));
+  },
+  updateSource(id: string, payload: Partial<SaveAppleOfficialPriceSourcePayload>) {
+    return request<AppleOfficialPriceSource>(
+      http.patch(`/apple/official-prices/sources/${id}`, payload)
+    );
+  },
+  removeSource(id: string) {
+    return request<{ deleted: boolean }>(http.delete(`/apple/official-prices/sources/${id}`));
+  },
+  checkSource(id: string, payload: CheckOfficialPriceSourcePayload = {}) {
+    return request<{
+      status: 'checked' | 'manual_required';
+      taskId: string;
+      source: AppleOfficialPriceSource;
+      snapshotCount: number;
+      reviewCount: number;
+      pendingReviewCount?: number;
+      message: string;
+    }>(http.post(`/apple/official-prices/sources/${id}/check`, payload));
+  },
+  listSnapshots(params: AppleOfficialPriceSnapshotQuery) {
+    return request<PageResult<AppleOfficialPriceSnapshot>>(
+      http.get('/apple/official-prices/snapshots', { params })
+    );
+  },
+  listReviews(params: ApplePriceChangeReviewQuery) {
+    return request<PageResult<ApplePriceChangeReview>>(
+      http.get('/apple/official-prices/reviews', { params })
+    );
+  },
+  approveReview(id: string) {
+    return request<ApplePriceChangeReview>(
+      http.post(`/apple/official-prices/reviews/${id}/approve`)
+    );
+  },
+  ignoreReview(id: string, remark?: string | null) {
+    return request<ApplePriceChangeReview>(
+      http.post(`/apple/official-prices/reviews/${id}/ignore`, { remark })
+    );
   }
 };
 
@@ -2191,9 +2378,24 @@ export const appleAutomationTasksApi = {
   create(payload: CreateAppleAutomationTaskPayload) {
     return request<AppleAutomationTask>(http.post('/apple/automation-tasks', payload));
   },
+  batchStatusCheck(payload: BatchAppleStatusCheckPayload) {
+    return request<BatchAppleStatusCheckResult>(
+      http.post('/apple/automation-tasks/batch-status-check', payload)
+    );
+  },
   listLogs(id: string) {
     return request<{ items: NonNullable<AppleAutomationTask['logs']> }>(
       http.get(`/apple/automation-tasks/${id}/logs`)
+    );
+  },
+  webCheckGateways(id: string) {
+    return request<AppleWebCheckGatewayContext>(
+      http.get(`/apple/automation-tasks/${id}/web-check-gateways`)
+    );
+  },
+  recordWebCheckGatewayAttempt(id: string, payload: AppleWebCheckGatewayAttemptPayload) {
+    return request<AppleWebCheckGatewayAttemptResult>(
+      http.post(`/apple/automation-tasks/${id}/web-check-gateway-attempt`, payload)
     );
   },
   runPlaceholder(id: string) {

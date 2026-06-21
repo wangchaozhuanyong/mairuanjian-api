@@ -503,7 +503,9 @@ function formatAssociation(attachment: Attachment) {
 }
 
 function formatAttachmentBusinessModule(value?: string | null) {
-  return value ? getAttachmentBusinessModuleLabel(value, attachmentBusinessModuleDictionaries.value) : '-';
+  return value
+    ? getAttachmentBusinessModuleLabel(value, attachmentBusinessModuleDictionaries.value)
+    : '-';
 }
 
 function formatAttachmentPurpose(value?: string | null) {
@@ -514,18 +516,21 @@ function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-const stopRealtimeRefresh = onRealtimeQueryInvalidated(['attachments', 'data-dictionaries'], ({ scopes }) => {
-  if (scopes.includes('data-dictionaries')) {
-    void loadAttachmentOptions({ background: true, force: true });
-  }
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['attachments', 'data-dictionaries'],
+  ({ scopes }) => {
+    if (scopes.includes('data-dictionaries')) {
+      void loadAttachmentOptions({ background: true, force: true });
+    }
 
-  if (scopes.includes('attachments')) {
-    void loadAttachments({
-      background: attachments.value.length > 0,
-      force: true
-    });
+    if (scopes.includes('attachments')) {
+      void loadAttachments({
+        background: attachments.value.length > 0,
+        force: true
+      });
+    }
   }
-});
+);
 
 onBeforeUnmount(stopRealtimeRefresh);
 
@@ -629,7 +634,9 @@ async function loadAttachmentOptions(options: LoadOptions = {}) {
       dataCenterApi.listDictionaries(
         buildAttachmentOptionParams(ATTACHMENT_BUSINESS_MODULE_DICTIONARY_GROUP)
       ),
-      dataCenterApi.listDictionaries(buildAttachmentOptionParams(ATTACHMENT_PURPOSE_DICTIONARY_GROUP))
+      dataCenterApi.listDictionaries(
+        buildAttachmentOptionParams(ATTACHMENT_PURPOSE_DICTIONARY_GROUP)
+      )
     ]);
     attachmentBusinessModuleDictionaries.value = businessModules.items;
     attachmentPurposeDictionaries.value = purposes.items;

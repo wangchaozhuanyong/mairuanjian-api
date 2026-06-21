@@ -2,7 +2,7 @@ import type { AutomationTaskPriority, AutomationTaskType } from '@prisma/client'
 
 export interface CreateAutomationTaskDto {
   taskType: AutomationTaskType;
-  appleAccountId: string;
+  appleAccountId?: string | null;
   customerId?: string | null;
   serviceId?: string | null;
   activationId?: string | null;

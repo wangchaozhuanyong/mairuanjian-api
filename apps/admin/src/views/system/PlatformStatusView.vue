@@ -1,9 +1,9 @@
 <template>
   <PageScaffold
-    title="平台接口状态"
-    group="运维与平台"
+    title="平台连接状态"
+    group="平台连接"
     phase="Phase 14"
-    description="查看淘宝、闲鱼、Telegram、文件存储和自动化服务的授权状态、最近同步、失败原因、调用次数和错误率。"
+    description="查看淘宝、闲鱼、Telegram 等外部平台有没有连上，授权有没有过期，同步有没有失败。"
   >
     <template #actions>
       <AppButton @click="() => loadPlatforms({ force: true })">刷新</AppButton>
@@ -571,9 +571,7 @@ import type {
 } from '@/types/system';
 import { PLATFORM_AUTH_MODE_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
-import {
-  buildPlatformAuthModeOptions
-} from '@/utils/systemQuickOptions';
+import { buildPlatformAuthModeOptions } from '@/utils/systemQuickOptions';
 
 const tableKey = 'ops_platform_interface_status';
 const healthStatusOptions = [

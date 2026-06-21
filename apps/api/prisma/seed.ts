@@ -44,6 +44,7 @@ const permissionDefinitions = [
   ['录入 Apple ID 充值', 'apple.balance.topup', 'apple.balance', 'topup'],
   ['修正 Apple ID 余额', 'apple.balance.adjust', 'apple.balance', 'adjust'],
   ['管理 Apple ID 业务设置', 'apple.service.manage', 'apple.service', 'manage'],
+  ['管理 Apple ID 官方价格巡检', 'apple.official_price.manage', 'apple.official_price', 'manage'],
   [
     '查看 Apple ID 充值礼品卡尾号',
     'apple.topup.gift_code.view_tail',

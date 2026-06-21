@@ -1,9 +1,9 @@
 <template>
   <PageScaffold
-    title="数据中心"
-    group="数据与审计"
+    title="数据备份"
+    group="数据与记录"
     phase="Phase 11"
-    description="集中管理备份、恢复、导入、导出、回收站、数据清理、重复合并、数据字典和系统参数。"
+    description="这里处理数据备份、恢复、导入、导出、回收站和数据清理。系统内部字典不放给普通用户看。"
   >
     <template #actions>
       <AppButton variant="soft" @click="() => refreshCurrentTab()">刷新</AppButton>
@@ -24,13 +24,6 @@
       </AppButton>
       <AppButton v-if="activeTab === 'duplicates'" variant="primary" @click="openDuplicateDialog">
         新建合并
-      </AppButton>
-      <AppButton
-        v-if="activeTab === 'dictionaries'"
-        variant="primary"
-        @click="() => openDictionaryDialog()"
-      >
-        新增字典
       </AppButton>
       <AppButton
         v-if="activeTab === 'parameters'"
@@ -56,7 +49,6 @@
           <StatusChip tone="orange">导入 {{ overview?.runningImportCount ?? '-' }}</StatusChip>
           <StatusChip tone="blue">导出 {{ overview?.runningExportCount ?? '-' }}</StatusChip>
           <StatusChip tone="purple">回收站 {{ overview?.recycleBinCount ?? '-' }}</StatusChip>
-          <StatusChip tone="green">字典 {{ overview?.dictionaryCount ?? '-' }}</StatusChip>
         </div>
       </div>
 
@@ -1521,7 +1513,7 @@
           />
         </el-tab-pane>
 
-        <el-tab-pane label="数据字典" name="dictionaries">
+        <el-tab-pane v-if="false" label="数据字典" name="dictionaries">
           <TableToolbar
             v-model:keyword="dictionaryQuery.keyword"
             v-model:status="dictionaryQuery.status"
@@ -2833,9 +2825,15 @@ function buildDataCenterOptionParams(group: string): DataDictionaryQuery {
 async function loadDataCenterOptions(options: LoadOptions = {}) {
   try {
     const [backupTypes, importModules, exportModules] = await Promise.all([
-      dataCenterApi.listDictionaries(buildDataCenterOptionParams(DATA_BACKUP_TYPE_DICTIONARY_GROUP)),
-      dataCenterApi.listDictionaries(buildDataCenterOptionParams(DATA_IMPORT_MODULE_DICTIONARY_GROUP)),
-      dataCenterApi.listDictionaries(buildDataCenterOptionParams(DATA_EXPORT_MODULE_DICTIONARY_GROUP))
+      dataCenterApi.listDictionaries(
+        buildDataCenterOptionParams(DATA_BACKUP_TYPE_DICTIONARY_GROUP)
+      ),
+      dataCenterApi.listDictionaries(
+        buildDataCenterOptionParams(DATA_IMPORT_MODULE_DICTIONARY_GROUP)
+      ),
+      dataCenterApi.listDictionaries(
+        buildDataCenterOptionParams(DATA_EXPORT_MODULE_DICTIONARY_GROUP)
+      )
     ]);
     backupTypeDictionaries.value = backupTypes.items;
     importModuleDictionaries.value = importModules.items;
@@ -4525,7 +4523,7 @@ function getInitialTab() {
   const key = String(route.name ?? '');
   if (key === 'data-imports') return 'imports';
   if (key === 'data-exports') return 'exports';
-  if (key === 'data-dictionaries') return 'dictionaries';
+  if (key === 'data-dictionaries') return 'overview';
   if (key === 'recycle-bin') return 'recycle';
   return 'overview';
 }

@@ -478,6 +478,8 @@
 
 补充验证记录：第一版上线策略已固化为“半自动可运营优先”，详见 `docs/LAUNCH_STRATEGY.md`。配置项 `FIRST_RELEASE_MODE=semi_auto` 已写入 `.env.example` 和 `.env.production.example`，并纳入后端环境校验与 `npm run launch:status` 展示。该策略下淘宝/闲鱼真实开放平台和 Apple ID 真实自动化 Worker 不阻断第一版内部上线；如果改为 `FIRST_RELEASE_MODE=full_auto`，则 T1702、T1703、T1705、T1706 必须在正式上线前完成。
 
+补充设计记录：Apple ID 官网状态检查已先落地真实 Worker 前置底座，详见 `docs/APPLE_ID_WEB_CHECK_WORKER.md`。后台可批量生成 `check_status` 官网检查任务，后端将 Apple ID `region` 和 Worker 出口 IP 国家分开记录；运维监控新增 Apple 节点配置，订阅 URL 和原始节点配置加密保存到 `system_parameters`，同步后只返回脱敏节点摘要。批量检查会优先按 `gatewayRegion` 从同国家节点池选择候选节点，`APPLE_WEB_CHECK_GATEWAY_REGIONS` 仅作为临时兜底；缺少对应出口 IP 时自动转人工验证。任务接口已补充 `GET /api/apple/automation-tasks/:id/web-check-gateways` 和 `POST /api/apple/automation-tasks/:id/web-check-gateway-attempt`，用于 Worker 获取脱敏候选节点、回写出口国家检测和节点尝试结果；检测失败会标记节点不可用，同国家候选耗尽后转人工。真实 Playwright Worker 第一版代码和 sing-box 配置生成脚本已接入，默认关闭；生产 sing-box sidecar 部署、Playwright Chromium 安装、验证码会话续跑和真实 Apple 页面联调仍属于 T1705 的上线前剩余事项。
+
 补充验证记录：平台轮询任务已接入 `POST /api/platforms/taobao/poll`、`POST /api/platforms/xianyu/poll`、`POST /api/platforms/poll-all` 和默认关闭的 `PlatformPollingWorker`。生产可通过 `PLATFORM_POLL_ENABLED=true` 与 `PLATFORM_POLL_INTERVAL_MS` 开启定时轮询。每次轮询会写 `cron_job_logs`、`platform_sync_logs` 和 `audit_logs`；当前淘宝/闲鱼真实开放平台适配器仍未接入，因此轮询会保留失败/不支持状态，真实 OAuth、签名、订单同步、发货、退款同步仍属于 T1702/T1703/T1706。
 
 补充验证记录：平台接口状态已基于最近 30 天 `platform_sync_logs` 统计调用次数、失败请求数、失败日志数、最近失败时间、重试记录数、最近重试时间和加权错误率；错误率按失败请求数 / 总请求数计算，不再使用简单日志平均值。前端平台接口状态页已补充对应列展示、列配置和排序能力。淘宝/闲鱼真实 OAuth、真实订单同步、真实发货和退款同步仍属于 T1702/T1703/T1706。

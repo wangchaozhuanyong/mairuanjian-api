@@ -1,0 +1,53 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+    max-file: '${DOCKER_LOG_MAX_FILE:-10}'
+
+services:
+  sing-box:
+    image: ghcr.io/sagernet/sing-box:latest
+    restart: unless-stopped
+    logging: *default-logging
+    command: ['run', '-c', '/etc/sing-box/config.json']
+    volumes:
+      - ./.runtime/apple-web-sing-box.json:/etc/sing-box/config.json:ro
+    expose:
+      - '2080'
+      - '9090'
+
+  apple-web-worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.worker
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ${PROD_ENV_FILE:-.env.production}
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: 'false'
+      ATTACHMENT_STORAGE_DIR: uploads
+      APPLE_WEB_CHECK_WORKER_ENABLED: 'true'
+      APPLE_WEB_CHECK_WORKER_RUN_ON_STARTUP: 'true'
+      APPLE_WEB_CHECK_PROXY_SERVER: socks5://sing-box:2080
+      APPLE_WEB_CHECK_SING_BOX_API_URL: http://sing-box:9090
+      APPLE_WEB_CHECK_SING_BOX_SELECTOR: ${APPLE_WEB_CHECK_SING_BOX_SELECTOR:-apple-web}
+      APPLE_WEB_CHECK_SING_BOX_API_SECRET: ${APPLE_WEB_CHECK_SING_BOX_API_SECRET:-}
+    volumes:
+      - api_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      sing-box:
+        condition: service_started

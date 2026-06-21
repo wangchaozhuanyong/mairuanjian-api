@@ -463,23 +463,24 @@ const systemModules: AppModuleItem[] = [
   },
   {
     key: 'source-platforms',
-    title: '快捷设置',
+    title: '下拉选项设置',
     route: '/system/source-platforms',
     mark: 'QS',
     group: '客户与来源',
     phase: 'Phase 2',
     status: 'ready',
-    description: '这里统一设置网站常用下拉选项，集中管理来源平台、客户标签、业务选项、通知选项、附件选项和系统固定选项。',
-    features: ['来源平台', '客户标签', '业务选项', '通知选项', '附件选项'],
-    primaryAction: '新增快捷选项',
-    tableColumns: ['名称', '分组', '状态', '排序', '备注']
+    description:
+      '这里只放日常会改的下拉内容，比如来源平台、客户标签、Apple ID 分类和兑换码发货方式。',
+    features: ['来源平台', '客户标签', 'Apple ID 分类', '地区币种', '发货方式'],
+    primaryAction: '新增选项',
+    tableColumns: ['名称', '用途', '状态', '排序', '备注']
   },
   {
     key: 'attachments',
     title: '附件中心',
     route: '/system/attachments',
     mark: 'FM',
-    group: '数据与审计',
+    group: '数据与记录',
     phase: 'Phase 1',
     status: 'ready',
     description: '查看上传凭证、截图、售后材料和导入导出附件元数据。',
@@ -579,14 +580,14 @@ const systemModules: AppModuleItem[] = [
   },
   {
     key: 'data-center',
-    title: '数据中心',
+    title: '数据备份',
     route: '/system/data-center',
     mark: 'DC',
-    group: '数据与审计',
+    group: '数据与记录',
     phase: 'Phase 11',
     status: 'ready',
-    description: '管理备份、恢复、导入、导出、回收站、数据清理和数据字典。',
-    features: ['数据备份', '数据恢复', '导入任务', '导出任务', '数据字典'],
+    description: '管理备份、恢复、导入、导出、回收站和数据清理。',
+    features: ['数据备份', '数据恢复', '导入任务', '导出任务', '回收站'],
     primaryAction: '创建备份',
     tableColumns: ['任务', '范围', '状态', '发起人', '时间']
   },
@@ -595,7 +596,7 @@ const systemModules: AppModuleItem[] = [
     title: '数据导入任务',
     route: '/system/data-imports',
     mark: 'DI',
-    group: '数据与审计',
+    group: '数据与记录',
     phase: 'Phase 11',
     status: 'ready',
     description: '管理客户、Apple ID、兑换码等导入任务和错误行报告。',
@@ -608,7 +609,7 @@ const systemModules: AppModuleItem[] = [
     title: '数据导出任务',
     route: '/system/data-exports',
     mark: 'EX',
-    group: '数据与审计',
+    group: '数据与记录',
     phase: 'Phase 11',
     status: 'ready',
     description: '管理导出任务、敏感字段标记、下载有效期和导出审计。',
@@ -621,7 +622,7 @@ const systemModules: AppModuleItem[] = [
     title: '数据字典',
     route: '/system/data-dictionaries',
     mark: 'DD',
-    group: '数据与审计',
+    group: '内部维护',
     phase: 'Phase 11',
     status: 'ready',
     description: '维护状态枚举、业务分类、任务类型等字典数据。',
@@ -634,7 +635,7 @@ const systemModules: AppModuleItem[] = [
     title: '回收站',
     route: '/system/recycle-bin',
     mark: 'RB',
-    group: '数据与审计',
+    group: '数据与记录',
     phase: 'Phase 11',
     status: 'ready',
     description: '查看软删除数据，并支持恢复或永久清理。',
@@ -647,7 +648,7 @@ const systemModules: AppModuleItem[] = [
     title: '运维监控',
     route: '/system/ops-monitor',
     mark: 'OM',
-    group: '运维与平台',
+    group: '内部维护',
     phase: 'Phase 12',
     status: 'ready',
     description: '监控 API、数据库、Redis、队列、定时任务、自动化服务、文件存储和磁盘。',
@@ -725,7 +726,7 @@ const systemModules: AppModuleItem[] = [
     title: '审计日志中心',
     route: '/system/audit-logs',
     mark: 'AL',
-    group: '数据与审计',
+    group: '数据与记录',
     phase: 'Phase 14',
     status: 'ready',
     description: '统一查看操作日志、敏感查看、导出、权限变更、自动化和平台接口日志。',
@@ -735,27 +736,27 @@ const systemModules: AppModuleItem[] = [
   },
   {
     key: 'platform-status',
-    title: '平台接口状态',
+    title: '平台连接状态',
     route: '/system/platform-status',
     mark: 'PS',
-    group: '运维与平台',
+    group: '平台连接',
     phase: 'Phase 14',
     status: 'ready',
-    description: '查看淘宝、闲鱼、Telegram、文件存储和自动化服务接口状态。',
-    features: ['授权状态', 'Token 有效期', '最近同步', '错误率', '测试连接'],
+    description: '查看淘宝、闲鱼、Telegram 等外部平台有没有连上、有没有报错。',
+    features: ['连接状态', '授权状态', '最近同步', '失败原因', '测试连接'],
     primaryAction: '测试连接',
     tableColumns: ['平台', '授权', 'Token 有效期', '最近同步', '错误率']
   },
   {
     key: 'platform-interface-logs',
-    title: '平台接口日志',
+    title: '平台请求记录',
     route: '/system/platform-interface-logs',
     mark: 'PL',
-    group: '运维与平台',
+    group: '平台连接',
     phase: 'Phase 14',
     status: 'ready',
-    description: '查看淘宝、闲鱼、Telegram、文件存储等接口调用日志。',
-    features: ['请求记录', '响应摘要', '错误原因', '重试记录', '关联对象'],
+    description: '查看系统和淘宝、闲鱼、Telegram 等平台沟通时留下的成功和失败记录。',
+    features: ['请求记录', '返回结果', '失败原因', '重试记录', '关联对象'],
     tableColumns: ['平台', '接口', '状态', '耗时', '错误', '时间']
   },
   {
@@ -763,7 +764,7 @@ const systemModules: AppModuleItem[] = [
     title: '自动化任务日志',
     route: '/system/automation-logs',
     mark: 'AU',
-    group: '运维与平台',
+    group: '内部维护',
     phase: 'Phase 14',
     status: 'ready',
     description: '查看自动化服务执行日志、截图凭证和失败原因。',
@@ -909,13 +910,7 @@ export const menuSections: MenuSection[] = [
     defaultOpen: true,
     items: selectModules(
       [...workspaceModules, ...systemModules],
-      [
-        'dashboard',
-        'renewal',
-        'action-plans',
-        'work-orders',
-        'launch-audit'
-      ]
+      ['dashboard', 'renewal', 'action-plans', 'work-orders', 'launch-audit']
     )
   },
   {
@@ -964,13 +959,12 @@ export const menuSections: MenuSection[] = [
   },
   {
     key: 'data-audit',
-    title: '数据与审计',
+    title: '数据与记录',
     icon: 'data',
     items: selectModules(systemModules, [
       'data-center',
       'data-imports',
       'data-exports',
-      'data-dictionaries',
       'recycle-bin',
       'attachments',
       'audit-log'
@@ -978,14 +972,9 @@ export const menuSections: MenuSection[] = [
   },
   {
     key: 'ops-platform',
-    title: '运维与平台',
+    title: '平台连接',
     icon: 'ops',
-    items: selectModules(systemModules, [
-      'ops-monitor',
-      'platform-status',
-      'platform-interface-logs',
-      'automation-logs'
-    ])
+    items: selectModules(systemModules, ['platform-status', 'platform-interface-logs'])
   },
   {
     key: 'system-config',

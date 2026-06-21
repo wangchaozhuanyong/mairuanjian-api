@@ -402,6 +402,97 @@
           </div>
         </el-tab-pane>
 
+        <el-tab-pane label="Apple 节点" name="gateways">
+          <div class="toolbar">
+            <AppButton variant="primary" @click="openGatewayDialog">配置订阅</AppButton>
+            <AppButton :loading="gatewaySyncing" @click="syncAppleGateways">同步节点</AppButton>
+          </div>
+          <div class="current-box">
+            <div>
+              <span>订阅来源</span>
+              <strong>{{ appleGatewayStatus?.subscriptionHost ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>可用 / 总节点</span>
+              <strong>{{ appleGatewayAvailability }}</strong>
+            </div>
+            <div>
+              <span>国家分组</span>
+              <strong>{{ appleGatewayCountryText }}</strong>
+            </div>
+            <StatusChip :tone="appleGatewayStatus?.configured ? 'green' : 'orange'" dot>
+              {{ appleGatewayStatus?.configured ? '已配置' : '未配置' }}
+            </StatusChip>
+          </div>
+          <el-table
+            v-loading="gatewayLoading"
+            class="desktop-data-table"
+            :data="appleGatewayStatus?.nodes ?? []"
+            row-key="id"
+          >
+            <el-table-column label="节点" min-width="220" prop="name" />
+            <el-table-column label="国家" width="90" prop="countryCode" />
+            <el-table-column label="协议" width="110" prop="protocol" />
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <StatusChip :tone="getGatewayStatusTone(row.status)" dot>
+                  {{ formatGatewayStatus(row.status) }}
+                </StatusChip>
+              </template>
+            </el-table-column>
+            <el-table-column label="延迟" width="100">
+              <template #default="{ row }">{{ row.latencyMs ?? '-' }} ms</template>
+            </el-table-column>
+            <el-table-column label="最近检测" width="180">
+              <template #default="{ row }">{{ formatDate(row.lastCheckedAt) }}</template>
+            </el-table-column>
+            <el-table-column label="失败原因" min-width="220" prop="failureReason" />
+          </el-table>
+          <div
+            v-if="appleGatewayStatus?.nodes.length"
+            class="mobile-record-list"
+            aria-label="Apple 节点移动列表"
+          >
+            <article
+              v-for="node in appleGatewayStatus.nodes"
+              :key="node.id"
+              class="mobile-record-card"
+            >
+              <div class="mobile-record-card__head">
+                <div class="mobile-record-card__title">
+                  <strong>{{ node.name }}</strong>
+                  <span>{{ node.countryCode }} · {{ node.protocol }}</span>
+                </div>
+                <StatusChip :tone="getGatewayStatusTone(node.status)" dot>
+                  {{ formatGatewayStatus(node.status) }}
+                </StatusChip>
+              </div>
+              <div class="mobile-record-card__stats">
+                <div>
+                  <span>延迟</span>
+                  <strong>{{ node.latencyMs ?? '-' }} ms</strong>
+                </div>
+                <div>
+                  <span>最近检测</span>
+                  <strong>{{ formatDate(node.lastCheckedAt) }}</strong>
+                </div>
+              </div>
+              <div v-if="node.failureReason" class="mobile-record-card__meta">
+                <div>
+                  <span>失败原因</span>
+                  <strong>{{ node.failureReason }}</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="mobile-record-list">
+            <div class="apple-core-empty-state">
+              <strong>暂无 Apple 检查节点</strong>
+              <span>保存订阅并同步后显示按国家识别的节点。</span>
+            </div>
+          </div>
+        </el-tab-pane>
+
         <el-tab-pane label="Worker / 存储 / 磁盘" name="resources">
           <el-table class="desktop-data-table" :data="resourceRows" row-key="name">
             <el-table-column label="资源" min-width="160" prop="name" />
@@ -463,10 +554,12 @@
               placeholder="级别"
               clearable
             >
-              <el-option label="Info" value="info" />
-              <el-option label="Warn" value="warn" />
-              <el-option label="Error" value="error" />
-              <el-option label="Fatal" value="fatal" />
+              <el-option
+                v-for="option in errorLevelOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
             </el-select>
             <AppButton @click="() => loadErrors()">查询</AppButton>
           </div>
@@ -474,7 +567,7 @@
             <el-table-column label="级别" width="100">
               <template #default="{ row }">
                 <StatusChip :tone="getErrorTone(row.level)" dot>
-                  {{ row.level }}
+                  {{ formatErrorLevel(row.level) }}
                 </StatusChip>
               </template>
             </el-table-column>
@@ -492,7 +585,7 @@
                   <span>{{ error.module }} · {{ formatDate(error.occurredAt) }}</span>
                 </div>
                 <StatusChip :tone="getErrorTone(error.level)" dot>
-                  {{ error.level }}
+                  {{ formatErrorLevel(error.level) }}
                 </StatusChip>
               </div>
               <div v-if="error.stack" class="mobile-record-card__meta">
@@ -596,24 +689,89 @@
     </section>
 
     <el-dialog
+      v-model="gatewayDialogVisible"
+      title="Apple 检查节点订阅"
+      width="min(640px, calc(100vw - 24px))"
+    >
+      <el-form label-width="110px">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="订阅 URL"
+              purpose="保存 Apple 官网检查 Worker 使用的节点订阅，后台会加密保存。"
+              example="粘贴节点平台提供的订阅链接，保存后列表只显示脱敏摘要。"
+            />
+          </template>
+          <el-input
+            v-model="gatewayForm.subscriptionUrl"
+            type="password"
+            show-password
+            placeholder="https://example.com/sub?token=..."
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="gatewayForm.clearSubscription">清空当前订阅和节点</el-checkbox>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <AppButton @click="gatewayDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="gatewaySaving" @click="saveGatewaySubscription">
+          保存
+        </AppButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="errorDialogVisible"
       title="记录运维错误"
       width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-width="90px">
-        <el-form-item label="级别">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="级别"
+              purpose="标记这条运维错误的严重程度，便于排序和排查。"
+              example="普通记录选 Info，影响功能选 Error，系统不可用选 Fatal。"
+            />
+          </template>
           <el-select v-model="errorForm.level">
-            <el-option label="Info" value="info" />
-            <el-option label="Warn" value="warn" />
-            <el-option label="Error" value="error" />
-            <el-option label="Fatal" value="fatal" />
+            <el-option
+              v-for="option in errorLevelOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="模块" required><el-input v-model="errorForm.module" /></el-form-item>
-        <el-form-item label="信息" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模块"
+              purpose="错误发生的模块或服务名称。"
+              example="可以填 api、admin、worker、platform-sync。"
+            />
+          </template>
+          <el-input v-model="errorForm.module" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="信息"
+              purpose="错误的简短描述，方便列表中快速判断问题。"
+              example="可以写平台同步失败、数据库连接异常、队列积压。"
+            />
+          </template>
           <el-input v-model="errorForm.message" type="textarea" :rows="3" />
         </el-form-item>
-        <el-form-item label="上下文 JSON">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="上下文 JSON"
+              purpose="补充错误上下文，必须是合法 JSON，便于后续排查。"
+              example='可以填 {"platform":"taobao","reason":"同步失败"}；没有上下文可留空。'
+            />
+          </template>
           <el-input v-model="errorForm.contextText" type="textarea" :rows="4" />
         </el-form-item>
       </el-form>
@@ -628,16 +786,20 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { opsApi } from '@/api/system';
+import { dataCenterApi, opsApi, type DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import OpsStatusTag from '@/components/ui/OpsStatusTag.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { OPS_ERROR_LEVEL_DICTIONARY_GROUP } from '@/config/quickSettings';
 import type {
+  AppleWebGatewayStatus,
   CronJobLog,
   CronJobLogStatus,
+  DataDictionary,
   ErrorLog,
   ErrorLogLevel,
   OpsComponentStatus,
@@ -653,6 +815,11 @@ import {
   refreshSmartQuery
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import {
+  buildOpsErrorLevelOptions,
+  getOpsErrorLevelLabel,
+  isOpsErrorLevel
+} from '@/utils/systemQuickOptions';
 
 const overview = ref<OpsOverview | null>(null);
 const overviewLoading = ref(false);
@@ -662,14 +829,17 @@ const activeOverviewQueryKey = ref('');
 const activeQueueQueryKey = ref('');
 const activeCronQueryKey = ref('');
 const activePlatformQueryKey = ref('');
+const activeGatewayQueryKey = ref('');
 const activeResourcesQueryKey = ref('');
 const activeErrorsQueryKey = ref('');
 const activeSnapshotsQueryKey = ref('');
 const activatedOnce = ref(false);
+const errorLevelDictionaries = ref<DataDictionary[]>([]);
 
 type OpsQueueStatusResult = Awaited<ReturnType<typeof opsApi.queueStatus>>;
 type OpsCronJobsPage = Awaited<ReturnType<typeof opsApi.cronJobs>>;
 type OpsPlatformSyncResult = Awaited<ReturnType<typeof opsApi.platformSyncStatus>>;
+type OpsAppleWebGatewayStatus = Awaited<ReturnType<typeof opsApi.appleWebGateways>>;
 type OpsResourcesResult = OpsComponentStatus[];
 type OpsErrorLogsPage = Awaited<ReturnType<typeof opsApi.errorLogs>>;
 type OpsHealthSnapshotsPage = Awaited<ReturnType<typeof opsApi.healthSnapshots>>;
@@ -699,6 +869,16 @@ const platformQuery = reactive({
   status: '' as PlatformSyncLogStatus | ''
 });
 
+const appleGatewayStatus = ref<AppleWebGatewayStatus | null>(null);
+const gatewayLoading = ref(false);
+const gatewaySyncing = ref(false);
+const gatewayDialogVisible = ref(false);
+const gatewaySaving = ref(false);
+const gatewayForm = reactive({
+  subscriptionUrl: '',
+  clearSubscription: false
+});
+
 const resourceRows = ref<OpsComponentStatus[]>([]);
 
 const errors = ref<ErrorLog[]>([]);
@@ -724,6 +904,8 @@ const errorForm = reactive({
   contextText: '{}'
 });
 
+const errorLevelOptions = computed(() => buildOpsErrorLevelOptions(errorLevelDictionaries.value));
+
 const queueHint = computed(() => {
   const queue = overview.value?.queue;
   if (!queue) return '等待数据';
@@ -734,6 +916,16 @@ const queueCounts = computed(() => {
   const queue = queueResult.value?.current;
   if (!queue) return '-';
   return `${queue.waitingCount} / ${queue.activeCount} / ${queue.failedCount} / ${queue.delayedCount}`;
+});
+const appleGatewayAvailability = computed(() => {
+  const status = appleGatewayStatus.value;
+  if (!status) return '-';
+  return `${status.availableNodeCount} / ${status.nodeCount}`;
+});
+const appleGatewayCountryText = computed(() => {
+  const summary = appleGatewayStatus.value?.countrySummary ?? [];
+  if (!summary.length) return '-';
+  return summary.map((item) => `${item.countryCode} ${item.available}/${item.total}`).join(' · ');
 });
 const activeTabMeta = computed(() => {
   const metaMap: Record<
@@ -768,6 +960,12 @@ const activeTabMeta = computed(() => {
       description: '监控淘宝、闲鱼、Telegram、文件存储和自动化服务接口状态。',
       badge: '接口',
       tone: 'cyan'
+    },
+    gateways: {
+      title: 'Apple 检查节点',
+      description: '管理 Apple 官网检查 Worker 使用的节点订阅、国家分组和可用状态。',
+      badge: '节点',
+      tone: 'green'
     },
     resources: {
       title: 'Worker / 存储 / 磁盘',
@@ -813,13 +1011,19 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
     'ops-queue-status',
     'ops-cron-jobs',
     'ops-platform-sync',
+    'ops-apple-web-gateways',
     'ops-resources',
     'ops-error-logs',
-    'ops-health-snapshots'
+    'ops-health-snapshots',
+    'data-dictionaries'
   ],
   ({ scopes }) => {
     const scopeSet = new Set(scopes);
     const requests: Array<Promise<void>> = [];
+
+    if (scopeSet.has('data-dictionaries')) {
+      requests.push(loadOpsOptions({ background: true, force: true }));
+    }
 
     if (scopeSet.has('ops-overview')) {
       requests.push(loadOverview({ background: Boolean(overview.value), force: true }));
@@ -835,6 +1039,12 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 
     if (activeTab.value === 'platforms' && scopeSet.has('ops-platform-sync')) {
       requests.push(loadPlatformSync({ background: Boolean(platformResult.value), force: true }));
+    }
+
+    if (activeTab.value === 'gateways' && scopeSet.has('ops-apple-web-gateways')) {
+      requests.push(
+        loadAppleWebGateways({ background: Boolean(appleGatewayStatus.value), force: true })
+      );
     }
 
     if (activeTab.value === 'resources' && scopeSet.has('ops-resources')) {
@@ -856,6 +1066,7 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 onBeforeUnmount(stopRealtimeRefresh);
 
 async function refreshCurrentTab(options: { background?: boolean; force?: boolean } = {}) {
+  await loadOpsOptions(options);
   await loadOverview({ background: options.background, force: options.force ?? true });
   if (activeTab.value === 'queue') {
     await loadQueueStatus({ background: options.background, force: options.force ?? true });
@@ -866,6 +1077,9 @@ async function refreshCurrentTab(options: { background?: boolean; force?: boolea
   if (activeTab.value === 'platforms') {
     await loadPlatformSync({ background: options.background, force: options.force ?? true });
   }
+  if (activeTab.value === 'gateways') {
+    await loadAppleWebGateways({ background: options.background, force: options.force ?? true });
+  }
   if (activeTab.value === 'resources') {
     await loadResources({ background: options.background, force: options.force ?? true });
   }
@@ -874,6 +1088,29 @@ async function refreshCurrentTab(options: { background?: boolean; force?: boolea
   }
   if (activeTab.value === 'snapshots') {
     await loadSnapshots({ background: options.background, force: options.force ?? true });
+  }
+}
+
+function buildOpsOptionParams(group: string): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 50,
+    group,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadOpsOptions(options: { background?: boolean; force?: boolean } = {}) {
+  try {
+    const errorLevels = await dataCenterApi.listDictionaries(
+      buildOpsOptionParams(OPS_ERROR_LEVEL_DICTIONARY_GROUP)
+    );
+    errorLevelDictionaries.value = errorLevels.items;
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载运维选项失败');
+    }
   }
 }
 
@@ -985,6 +1222,35 @@ async function loadPlatformSync(options: { background?: boolean; force?: boolean
 
   if (activePlatformQueryKey.value === key && (result.changed || !cached)) {
     platformResult.value = result.data;
+  }
+}
+
+async function loadAppleWebGateways(options: { background?: boolean; force?: boolean } = {}) {
+  const key = createSmartQueryKey('ops-apple-web-gateways');
+  const cached = getSmartQueryData<OpsAppleWebGatewayStatus>(key);
+
+  activeGatewayQueryKey.value = key;
+
+  if (cached) {
+    appleGatewayStatus.value = cached;
+  }
+
+  gatewayLoading.value = !cached && !options.background;
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => opsApi.appleWebGateways(),
+      force: options.force ?? true
+    });
+
+    if (activeGatewayQueryKey.value === key && (result.changed || !cached)) {
+      appleGatewayStatus.value = result.data;
+    }
+  } finally {
+    if (activeGatewayQueryKey.value === key) {
+      gatewayLoading.value = false;
+    }
   }
 }
 
@@ -1104,9 +1370,49 @@ async function testPlatform(platform: string) {
   await loadPlatformSync();
 }
 
+function openGatewayDialog() {
+  Object.assign(gatewayForm, {
+    subscriptionUrl: '',
+    clearSubscription: false
+  });
+  gatewayDialogVisible.value = true;
+}
+
+async function saveGatewaySubscription() {
+  if (!gatewayForm.clearSubscription && !gatewayForm.subscriptionUrl.trim()) {
+    ElMessage.error('请输入订阅 URL');
+    return;
+  }
+
+  gatewaySaving.value = true;
+  try {
+    appleGatewayStatus.value = await opsApi.saveAppleWebGatewaySubscription({
+      subscriptionUrl: gatewayForm.clearSubscription ? undefined : gatewayForm.subscriptionUrl,
+      clearSubscription: gatewayForm.clearSubscription
+    });
+    ElMessage.success(gatewayForm.clearSubscription ? '节点订阅已清空' : '节点订阅已保存');
+    gatewayDialogVisible.value = false;
+    invalidateSmartQueries('ops-apple-web-gateways');
+  } finally {
+    gatewaySaving.value = false;
+  }
+}
+
+async function syncAppleGateways() {
+  gatewaySyncing.value = true;
+  try {
+    appleGatewayStatus.value = await opsApi.syncAppleWebGateways();
+    ElMessage.success('Apple 检查节点已同步');
+    invalidateSmartQueries('ops-apple-web-gateways');
+    invalidateSmartQueries('ops-platform-sync');
+  } finally {
+    gatewaySyncing.value = false;
+  }
+}
+
 function openErrorDialog() {
   Object.assign(errorForm, {
-    level: 'error',
+    level: getDefaultErrorLevel(),
     module: 'ops',
     message: '',
     contextText: '{}'
@@ -1155,6 +1461,21 @@ function getErrorTone(level: string) {
   return 'neutral';
 }
 
+function formatErrorLevel(level: string) {
+  if (!isOpsErrorLevel(level)) {
+    return level;
+  }
+  return getOpsErrorLevelLabel(level, errorLevelDictionaries.value);
+}
+
+function getDefaultErrorLevel() {
+  return (
+    errorLevelOptions.value.find((option) => option.value === 'error')?.value ??
+    errorLevelOptions.value[0]?.value ??
+    'error'
+  );
+}
+
 function getPlatformLabel(platform: string) {
   return (
     {
@@ -1165,6 +1486,18 @@ function getPlatformLabel(platform: string) {
       automation: '自动化'
     }[platform] ?? platform
   );
+}
+
+function getGatewayStatusTone(status: string) {
+  if (status === 'available') return 'green';
+  if (status === 'unavailable') return 'red';
+  return 'neutral';
+}
+
+function formatGatewayStatus(status: string) {
+  if (status === 'available') return '可用';
+  if (status === 'unavailable') return '不可用';
+  return '未知';
 }
 
 function formatDate(value?: string | null) {

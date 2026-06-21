@@ -8,6 +8,7 @@ import { AppleActionPlansModule } from './apple-action-plans/apple-action-plans.
 import { AppleActivationsModule } from './apple-activations/apple-activations.module';
 import { AppleAutomationTasksModule } from './apple-automation-tasks/apple-automation-tasks.module';
 import { AppleBalancesModule } from './apple-balances/apple-balances.module';
+import { AppleOfficialPricesModule } from './apple-official-prices/apple-official-prices.module';
 import { AppleOrdersModule } from './apple-orders/apple-orders.module';
 import { AppleReportsModule } from './apple-reports/apple-reports.module';
 import { AppleRenewalTasksModule } from './apple-renewal-tasks/apple-renewal-tasks.module';
@@ -51,6 +52,7 @@ import { UsersModule } from './users/users.module';
     AppleActivationsModule,
     AppleAutomationTasksModule,
     AppleBalancesModule,
+    AppleOfficialPricesModule,
     AppleReportsModule,
     AppleRenewalTasksModule,
     AppleServicesModule,

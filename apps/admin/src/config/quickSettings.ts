@@ -12,8 +12,7 @@ export const NOTIFICATION_LEVEL_DICTIONARY_GROUP = 'notification.levels';
 export const NOTIFICATION_CHANNEL_DICTIONARY_GROUP = 'notification.channels';
 export const SECURITY_IP_SCOPE_DICTIONARY_GROUP = 'security.ip_scopes';
 export const PLATFORM_AUTH_MODE_DICTIONARY_GROUP = 'platform.auth_modes';
-export const MAINTENANCE_ANNOUNCEMENT_LEVEL_DICTIONARY_GROUP =
-  'maintenance.announcement_levels';
+export const MAINTENANCE_ANNOUNCEMENT_LEVEL_DICTIONARY_GROUP = 'maintenance.announcement_levels';
 export const MAINTENANCE_VERSION_STATUS_DICTIONARY_GROUP = 'maintenance.version_statuses';
 export const DATA_BACKUP_TYPE_DICTIONARY_GROUP = 'data.backup_types';
 export const DATA_IMPORT_MODULE_DICTIONARY_GROUP = 'data.import_modules';

@@ -4,8 +4,10 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import { RealtimeService } from '../realtime/realtime.service';
 import { AppleAutomationTasksService } from './apple-automation-tasks.service';
 import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
+import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
+import type { WebCheckGatewayAttemptDto } from './dto/web-check-gateway-attempt.dto';
 
 @Controller('apple/automation-tasks')
 export class AppleAutomationTasksController {
@@ -52,6 +54,21 @@ export class AppleAutomationTasksController {
     return task;
   }
 
+  @Post('batch-status-check')
+  @RequirePermissions('apple.automation_task.manage')
+  async batchStatusCheck(
+    @Body() dto: BatchStatusCheckDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.automationTasksService.batchStatusCheck(dto, operator);
+    for (const task of result.items) {
+      this.publishAutomationTaskEvent('apple.automation_task.created', 'created', task.id, {
+        appleAccountId: task.appleAccountId
+      });
+    }
+    return result;
+  }
+
   @Get(':id')
   @RequirePermissions('apple.automation_task.manage')
   get(@Param('id') id: string) {
@@ -62,6 +79,35 @@ export class AppleAutomationTasksController {
   @RequirePermissions('apple.automation_task.manage')
   listLogs(@Param('id') id: string) {
     return this.automationTasksService.listLogs(id);
+  }
+
+  @Get(':id/web-check-gateways')
+  @RequirePermissions('apple.automation_task.manage')
+  webCheckGateways(@Param('id') id: string) {
+    return this.automationTasksService.webCheckGateways(id);
+  }
+
+  @Post(':id/web-check-gateway-attempt')
+  @RequirePermissions('apple.automation_task.manage')
+  async recordWebCheckGatewayAttempt(
+    @Param('id') id: string,
+    @Body() dto: WebCheckGatewayAttemptDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.automationTasksService.recordWebCheckGatewayAttempt(
+      id,
+      dto,
+      operator
+    );
+    this.publishAutomationTaskEvent(
+      'apple.automation_task.gateway_attempt_recorded',
+      'gateway_attempt_recorded',
+      result.task.id,
+      {
+        appleAccountId: result.task.appleAccountId
+      }
+    );
+    return result;
   }
 
   @Post(':id/run-placeholder')

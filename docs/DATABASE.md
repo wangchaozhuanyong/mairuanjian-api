@@ -646,29 +646,29 @@
 
 ### 3.16 automation_tasks
 
-| 字段                     | 类型        | 说明                                                                                            |
-| ------------------------ | ----------- | ----------------------------------------------------------------------------------------------- |
-| id                       | uuid        | 主键                                                                                            |
-| task_type                | varchar     | check_status/check_balance/topup/cancel_subscription/change_phone/change_security/check_renewal |
-| apple_account_id         | uuid        | Apple ID                                                                                        |
-| customer_id              | uuid        | 客户                                                                                            |
-| service_id               | uuid        | 业务                                                                                            |
-| activation_id            | uuid        | 开通记录                                                                                        |
-| priority                 | varchar     | 优先级                                                                                          |
-| status                   | varchar     | pending/queued/running/waiting_manual_verify/success/failed/skipped/cancelled/need_review       |
-| input_payload_encrypted  | text        | 输入参数加密                                                                                    |
-| result_payload           | jsonb       | 结果                                                                                            |
-| screenshot_attachment_id | uuid        | 截图                                                                                            |
-| error_code               | varchar     | 错误码                                                                                          |
-| error_message            | text        | 错误说明                                                                                        |
-| created_by               | uuid        | 创建人                                                                                          |
-| started_at               | timestamptz | 开始                                                                                            |
-| finished_at              | timestamptz | 结束                                                                                            |
-| retry_count              | int         | 重试次数                                                                                        |
-| manual_required          | boolean     | 是否需要人工                                                                                    |
-| queue_job_id             | varchar     | 队列任务号                                                                                      |
-| created_at               | timestamptz | 创建时间                                                                                        |
-| updated_at               | timestamptz | 更新时间                                                                                        |
+| 字段                     | 类型        | 说明                                                                                                                 |
+| ------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| id                       | uuid        | 主键                                                                                                                 |
+| task_type                | varchar     | check_status/check_balance/topup/cancel_subscription/change_phone/change_security/check_renewal/official_price_check |
+| apple_account_id         | uuid        | Apple ID，可为空。官方价格巡检这类系统级任务不绑定账号                                                               |
+| customer_id              | uuid        | 客户                                                                                                                 |
+| service_id               | uuid        | 业务                                                                                                                 |
+| activation_id            | uuid        | 开通记录                                                                                                             |
+| priority                 | varchar     | 优先级                                                                                                               |
+| status                   | varchar     | pending/queued/running/waiting_manual_verify/success/failed/skipped/cancelled/need_review                            |
+| input_payload_encrypted  | text        | 输入参数加密                                                                                                         |
+| result_payload           | jsonb       | 结果                                                                                                                 |
+| screenshot_attachment_id | uuid        | 截图                                                                                                                 |
+| error_code               | varchar     | 错误码                                                                                                               |
+| error_message            | text        | 错误说明                                                                                                             |
+| created_by               | uuid        | 创建人                                                                                                               |
+| started_at               | timestamptz | 开始                                                                                                                 |
+| finished_at              | timestamptz | 结束                                                                                                                 |
+| retry_count              | int         | 重试次数                                                                                                             |
+| manual_required          | boolean     | 是否需要人工                                                                                                         |
+| queue_job_id             | varchar     | 队列任务号                                                                                                           |
+| created_at               | timestamptz | 创建时间                                                                                                             |
+| updated_at               | timestamptz | 更新时间                                                                                                             |
 
 ### 3.17 automation_task_logs
 
@@ -687,6 +687,59 @@
 - index(task_id)
 - index(level)
 - index(created_at)
+
+### 3.18 apple_official_price_sources
+
+| 字段                 | 类型        | 说明                   |
+| -------------------- | ----------- | ---------------------- |
+| id                   | uuid        | 主键                   |
+| name                 | varchar     | 官方价格来源名称       |
+| region               | varchar     | 地区，例如 US          |
+| currency             | varchar     | 币种，例如 USD         |
+| source_url           | text        | 官方价格页面或接口地址 |
+| collect_method       | varchar     | manual/webpage/api     |
+| check_interval_hours | int         | 检查间隔小时数         |
+| status               | varchar     | enabled/disabled       |
+| last_checked_at      | timestamptz | 最近检查时间           |
+| remark               | text        | 备注                   |
+| created_at           | timestamptz | 创建时间               |
+| updated_at           | timestamptz | 更新时间               |
+| deleted_at           | timestamptz | 软删除时间             |
+
+### 3.19 apple_official_price_snapshots
+
+| 字段             | 类型          | 说明                   |
+| ---------------- | ------------- | ---------------------- |
+| id               | uuid          | 主键                   |
+| source_id        | uuid          | 官方价格来源           |
+| apple_service_id | uuid          | 匹配到的 Apple ID 业务 |
+| service_name     | varchar       | 官方套餐名称           |
+| category         | varchar       | 分类                   |
+| region           | varchar       | 地区                   |
+| currency         | varchar       | 币种                   |
+| official_price   | decimal(18,4) | 官方价格/官方消耗金额  |
+| period_type      | varchar       | month/day/manual       |
+| period_value     | int           | 周期值                 |
+| raw_payload      | jsonb         | 原始采集内容           |
+| collected_at     | timestamptz   | 采集时间               |
+
+### 3.20 apple_price_change_reviews
+
+| 字段                | 类型        | 说明                                                                |
+| ------------------- | ----------- | ------------------------------------------------------------------- |
+| id                  | uuid        | 主键                                                                |
+| source_id           | uuid        | 官方价格来源                                                        |
+| snapshot_id         | uuid        | 采集快照                                                            |
+| apple_service_id    | uuid        | 匹配到的 Apple ID 业务                                              |
+| change_type         | varchar     | price_changed/new_plan/removed_plan/period_changed/currency_changed |
+| old_value           | jsonb       | 系统当前值                                                          |
+| new_value           | jsonb       | 官方最新值                                                          |
+| status              | varchar     | pending/approved/ignored                                            |
+| reviewed_by_user_id | uuid        | 处理人                                                              |
+| reviewed_at         | timestamptz | 处理时间                                                            |
+| remark              | text        | 处理备注                                                            |
+| created_at          | timestamptz | 创建时间                                                            |
+| updated_at          | timestamptz | 更新时间                                                            |
 
 ## 4. 兑换码业务表
 

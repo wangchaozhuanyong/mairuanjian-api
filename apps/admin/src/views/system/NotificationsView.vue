@@ -915,11 +915,7 @@
             />
           </template>
           <el-checkbox-group v-model="ruleForm.channels">
-            <el-checkbox
-              v-for="item in channelOptions"
-              :key="item.value"
-              :value="item.value"
-            >
+            <el-checkbox v-for="item in channelOptions" :key="item.value" :value="item.value">
               {{ item.label }}
             </el-checkbox>
           </el-checkbox-group>
@@ -1418,9 +1414,7 @@ const templateFilterChips = computed(() => {
 });
 const logFilterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
-  const channelLabel = channelOptions.value.find(
-    (item) => item.value === logQuery.channel
-  )?.label;
+  const channelLabel = channelOptions.value.find((item) => item.value === logQuery.channel)?.label;
   const moduleLabel = moduleOptions.value.find((item) => item.value === logQuery.module)?.label;
   if (channelLabel) chips.push({ key: 'channel', label: '渠道', value: channelLabel });
   if (moduleLabel) chips.push({ key: 'module', label: '模块', value: moduleLabel });

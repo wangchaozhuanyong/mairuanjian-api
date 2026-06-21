@@ -132,6 +132,11 @@ function getRealtimeSmartQueryScopes(event: RealtimeEvent) {
     scopes.add('dashboard-overview');
     scopes.add('ops-overview');
 
+    if (event.entity === 'apple_web_gateway') {
+      scopes.add('ops-apple-web-gateways');
+      scopes.add('ops-platform-sync');
+    }
+
     if (event.entity === 'health_snapshot') {
       scopes.add('ops-health-snapshots');
       scopes.add('ops-queue-status');

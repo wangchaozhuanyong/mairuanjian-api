@@ -111,8 +111,8 @@ function buildFixedOptions<T extends string>(
   isSupported: (value: string) => value is T,
   defaults: Array<{ value: T; label: string }>
 ) {
-  const configured = dictionaries.filter(
-    (item): item is DataDictionary & { code: T } => isSupported(item.code)
+  const configured = dictionaries.filter((item): item is DataDictionary & { code: T } =>
+    isSupported(item.code)
   );
 
   if (!configured.length) {
@@ -181,10 +181,7 @@ export function getDefaultNotificationQuickOptionDictionaries(
   return getDefaultNotificationChannelDictionaries();
 }
 
-export function isNotificationQuickOptionCode(
-  key: NotificationQuickOptionGroupKey,
-  value: string
-) {
+export function isNotificationQuickOptionCode(key: NotificationQuickOptionGroupKey, value: string) {
   if (key === 'module') return isNotificationModule(value);
   if (key === 'level') return isNotificationLevel(value);
   return isNotificationChannel(value);

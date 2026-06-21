@@ -138,3 +138,27 @@ npm run check
 - high 级别依赖审计
 
 当前前端和 shared 包还没有真实测试用例，后端 Jest 也允许无测试通过。进入业务开发后，关键成本、权限、加密、去重、防重复发货逻辑必须补测试。
+
+## 9. Apple 官网检查 Worker 本地验证
+
+安装 Playwright Chromium：
+
+```bash
+npm exec playwright -- install chromium
+```
+
+不带代理验证浏览器 runtime：
+
+```bash
+npm run apple-web:runtime-check
+```
+
+带代理验证出口国家：
+
+```bash
+APPLE_WEB_CHECK_PROXY_SERVER=socks5://127.0.0.1:2080 \
+APPLE_WEB_CHECK_EXPECTED_COUNTRY=US \
+npm run apple-web:runtime-check
+```
+
+该命令只检测浏览器和出口 IP 国家，不登录 Apple ID，不读取账号密码。

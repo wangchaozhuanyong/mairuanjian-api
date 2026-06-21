@@ -136,8 +136,8 @@ function buildFixedOptions<T extends string>(
   isSupported: (value: string) => value is T,
   defaults: Array<{ value: T; label: string }>
 ) {
-  const configured = dictionaries.filter(
-    (item): item is DataDictionary & { code: T } => isSupported(item.code)
+  const configured = dictionaries.filter((item): item is DataDictionary & { code: T } =>
+    isSupported(item.code)
   );
 
   if (!configured.length) {
@@ -225,10 +225,7 @@ export function getDefaultAppleServiceQuickOptionDictionaries(
   return getDefaultAppleServicePlatformFeeTypeDictionaries();
 }
 
-export function isAppleServiceQuickOptionCode(
-  key: AppleServiceQuickOptionGroupKey,
-  value: string
-) {
+export function isAppleServiceQuickOptionCode(key: AppleServiceQuickOptionGroupKey, value: string) {
   if (key === 'periodType') return isAppleServicePeriodType(value);
   if (key === 'expireCalcType') return isAppleServiceExpireCalcType(value);
   if (key === 'lockRule') return isAppleServiceLockRule(value);

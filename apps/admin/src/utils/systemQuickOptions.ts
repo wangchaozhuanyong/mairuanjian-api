@@ -282,8 +282,8 @@ function buildFixedOptions<T extends string>(
   isSupported: (value: string) => value is T,
   defaults: Array<{ value: T; label: string }>
 ) {
-  const configured = dictionaries.filter(
-    (item): item is DataDictionary & { code: T } => isSupported(item.code)
+  const configured = dictionaries.filter((item): item is DataDictionary & { code: T } =>
+    isSupported(item.code)
   );
 
   if (!configured.length) {
@@ -316,9 +316,7 @@ export function isPlatformAuthMode(value: string): value is PlatformAuthMode {
   return supportedPlatformAuthModes.has(value as PlatformAuthMode);
 }
 
-export function isMaintenanceAnnouncementLevel(
-  value: string
-): value is AppAnnouncementLevel {
+export function isMaintenanceAnnouncementLevel(value: string): value is AppAnnouncementLevel {
   return supportedMaintenanceAnnouncementLevels.has(value as AppAnnouncementLevel);
 }
 
@@ -490,9 +488,7 @@ export function buildMaintenanceVersionStatusOptions(
   );
 }
 
-export function buildDataBackupTypeOptions(
-  dictionaries: DataDictionary[]
-): DataBackupTypeOption[] {
+export function buildDataBackupTypeOptions(dictionaries: DataDictionary[]): DataBackupTypeOption[] {
   return buildFixedOptions(dictionaries, isDataBackupType, defaultDataBackupTypes);
 }
 
@@ -512,9 +508,7 @@ export function buildDataExportModuleOptions(dictionaries: DataDictionary[]): Da
   );
 }
 
-export function buildOpsErrorLevelOptions(
-  dictionaries: DataDictionary[]
-): OpsErrorLevelOption[] {
+export function buildOpsErrorLevelOptions(dictionaries: DataDictionary[]): OpsErrorLevelOption[] {
   return buildFixedOptions(dictionaries, isOpsErrorLevel, defaultOpsErrorLevels);
 }
 

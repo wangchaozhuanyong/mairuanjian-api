@@ -542,8 +542,11 @@ POST /api/apple/action-plans/:id/complete
 ```text
 GET  /api/apple/automation-tasks
 POST /api/apple/automation-tasks
+POST /api/apple/automation-tasks/batch-status-check
 GET  /api/apple/automation-tasks/:id
 GET  /api/apple/automation-tasks/:id/logs
+GET  /api/apple/automation-tasks/:id/web-check-gateways
+POST /api/apple/automation-tasks/:id/web-check-gateway-attempt
 POST /api/apple/automation-tasks/:id/run-placeholder
 POST /api/apple/automation-tasks/:id/cancel
 POST /api/apple/automation-tasks/:id/retry
@@ -553,12 +556,38 @@ POST /api/apple/automation-tasks/:id/result
 
 说明：
 
-- 查询余额、检测状态第一版使用系统当前快照完成占位执行。
-- 自动充值、取消订阅、修改手机号、修改密保、检查续费在真实 Worker 接入前返回 `waiting_manual_verify`。
+- `POST /batch-status-check` 批量生成 Apple 官网状态检查任务，按 `gatewayRegion` 或账号地区选择出口国家。
+- `run-placeholder` 仍用于占位执行；真实官网检测由默认关闭的 Playwright Worker 消费 `check_status` 队列。
+- 自动充值、取消订阅、修改手机号、修改密保、检查续费还没有真实 Worker，当前返回 `waiting_manual_verify`。
 - `inputPayloadEncrypted` 仅服务端加密保存，不在列表和详情接口返回明文。
 - `resultPayload` 用于记录自动化或人工回写结果。
+- `GET /web-check-gateways` 返回 Apple 官网检查任务的出口国家、节点候选、是否有加密节点配置，不返回代理密码、订阅 token 或原始节点串。
+- `POST /web-check-gateway-attempt` 用于 Worker 回写出口 IP 国家检测和节点尝试结果；日志只记录节点 ID、期望国家、检测国家、是否提供 IP、失败原因，不保存出口 IP 原文。
+- `official_price_check` 是系统级任务，可以不绑定 Apple ID。它只负责官方价格巡检，不处理账号余额或订阅操作。
 
-### 5.11 Apple ID 报表
+### 5.11 Apple ID 官方价格巡检
+
+```text
+GET    /api/apple/official-prices/sources
+POST   /api/apple/official-prices/sources
+PATCH  /api/apple/official-prices/sources/:id
+DELETE /api/apple/official-prices/sources/:id
+POST   /api/apple/official-prices/sources/:id/check
+GET    /api/apple/official-prices/snapshots
+GET    /api/apple/official-prices/reviews
+POST   /api/apple/official-prices/reviews/:id/approve
+POST   /api/apple/official-prices/reviews/:id/ignore
+```
+
+说明：
+
+- 官方价格巡检只属于 Apple ID 业务，不服务兑换码业务。
+- 采集结果先进入 `apple_price_change_reviews` 待确认，不会直接改业务价格。
+- 确认后才同步 `apple_services.official_cost_value`、币种和周期；新套餐会创建为暂停状态。
+- `manual` 来源需要人工录入本次价格；`webpage` / `api` 来源会尝试访问 `sourceUrl` 并解析 JSON、结构化网页数据或页面币种价格。
+- 页面需要登录、被官方屏蔽、或没有识别到稳定价格时，巡检任务会转人工确认，避免误采集污染业务数据。
+
+### 5.12 Apple ID 报表
 
 ```text
 GET /api/apple/reports/accounts
@@ -1019,10 +1048,13 @@ GET /api/ops/error-logs
 POST /api/ops/error-logs
 GET /api/ops/health-snapshots
 POST /api/ops/health-snapshots
+GET /api/ops/apple-web-gateways
+POST /api/ops/apple-web-gateways/subscription
+POST /api/ops/apple-web-gateways/sync
 POST /api/ops/platforms/:platform/test-connection
 ```
 
-说明：第一版运维监控会实时检查 API、数据库、Redis、本地文件存储、磁盘空间和自动化任务队列；`POST /api/ops/health-snapshots` 会记录当前快照和队列状态，并在数据库异常、队列积压、磁盘不足时触发系统通知事件。淘宝、闲鱼真实授权检测和重新授权入口将在平台接口状态阶段继续完善。
+说明：第一版运维监控会实时检查 API、数据库、Redis、本地文件存储、磁盘空间和自动化任务队列；`POST /api/ops/health-snapshots` 会记录当前快照和队列状态，并在数据库异常、队列积压、磁盘不足时触发系统通知事件。`/api/ops/apple-web-gateways` 用于 Apple 官网检查 Worker 节点订阅管理，订阅 URL 和原始节点配置加密写入 `system_parameters`，接口只返回订阅主机、脱敏 URL、节点名称、国家、协议、状态和失败原因，不返回 token、密码或原始节点串。淘宝、闲鱼真实授权检测和重新授权入口将在平台接口状态阶段继续完善。
 
 ## 14. 网站维护接口
 

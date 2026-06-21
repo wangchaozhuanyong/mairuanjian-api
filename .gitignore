@@ -30,5 +30,6 @@ npm-debug.log*
 # Runtime data
 uploads/
 tmp/
+.runtime/
 backups/
 exports/

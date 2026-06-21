@@ -12,7 +12,7 @@ import type {
 } from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { execFile } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { promisify } from 'node:util';
@@ -29,9 +29,13 @@ const execFileAsync = promisify(execFile);
 const PLATFORM_STATS_WINDOW_DAYS = 30;
 const PLATFORM_AUTH_PARAMETER_PREFIX = 'platform_auth_';
 const PLATFORM_OAUTH_STATE_PARAMETER_PREFIX = 'platform_oauth_state_';
+const APPLE_WEB_GATEWAY_SUBSCRIPTION_PARAMETER_KEY = 'apple_web_gateway_subscription';
+const APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY = 'apple_web_gateway_nodes';
+const APPLE_WEB_GATEWAY_GROUP = 'apple_web_gateway';
 const PLATFORM_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const OPS_STATUS_CACHE_TTL_MS = 120_000;
 const OPS_REDIS_HEALTH_TIMEOUT_MS = 250;
+const APPLE_WEB_GATEWAY_SYNC_TIMEOUT_MS = 20_000;
 
 interface ListQueueStatusQuery extends PaginationQuery {
   queueName?: string;
@@ -93,6 +97,11 @@ export interface SavePlatformAuthorizationInput {
   metadata?: unknown;
 }
 
+export interface SaveAppleWebGatewaySubscriptionInput {
+  subscriptionUrl?: string | null;
+  clearSubscription?: boolean;
+}
+
 export interface StartPlatformOAuthInput {
   authorizationUrl?: string | null;
   redirectUri?: string | null;
@@ -144,6 +153,45 @@ export interface PlatformOAuthCallbackResponse {
   stateValid: boolean;
   codeReceived: boolean;
   message: string;
+}
+
+export type AppleWebGatewayNodeStatus = 'available' | 'unavailable' | 'unknown';
+
+export interface AppleWebGatewayNodeResponse {
+  id: string;
+  name: string;
+  countryCode: string;
+  protocol: string;
+  status: AppleWebGatewayNodeStatus;
+  latencyMs: number | null;
+  lastCheckedAt: string | null;
+  failureReason: string | null;
+}
+
+export interface AppleWebGatewayCountrySummary {
+  countryCode: string;
+  total: number;
+  available: number;
+  unavailable: number;
+  unknown: number;
+}
+
+export interface AppleWebGatewayStatusResponse {
+  configured: boolean;
+  subscriptionHost: string | null;
+  subscriptionUrlMasked: string | null;
+  updatedAt: Date | null;
+  lastSyncedAt: string | null;
+  nodeCount: number;
+  availableNodeCount: number;
+  countrySummary: AppleWebGatewayCountrySummary[];
+  nodes: AppleWebGatewayNodeResponse[];
+  sidecar: {
+    engine: 'sing-box';
+    mode: 'external_sidecar';
+    managedByApi: false;
+    message: string;
+  };
 }
 
 export interface ComponentStatus {
@@ -232,6 +280,44 @@ interface PlatformAuthorizationValue {
   redirectUri?: string | null;
   clientIdParam?: string | null;
   metadata?: unknown;
+}
+
+interface AppleWebGatewaySubscriptionValue {
+  subscriptionUrlEncrypted?: string | null;
+  subscriptionHost?: string | null;
+  subscriptionUrlMasked?: string | null;
+  updatedAt?: string | null;
+  lastSyncedAt?: string | null;
+  nodeCount?: number;
+  countryCodes?: unknown;
+}
+
+interface AppleWebGatewayNodeValue {
+  id: string;
+  name: string;
+  countryCode: string;
+  protocol: string;
+  status: AppleWebGatewayNodeStatus;
+  latencyMs?: number | null;
+  lastCheckedAt?: string | null;
+  failureReason?: string | null;
+  rawEncrypted?: string | null;
+  sourceHash?: string | null;
+}
+
+interface AppleWebGatewayNodesValue {
+  items: AppleWebGatewayNodeValue[];
+  syncedAt: string | null;
+  sourceHash: string | null;
+}
+
+interface ParsedAppleWebGatewayNode {
+  id: string;
+  name: string;
+  countryCode: string;
+  protocol: string;
+  raw: string;
+  sourceHash: string;
 }
 
 @Injectable()
@@ -509,6 +595,233 @@ export class OpsService {
     const status = await this.buildPlatformStatus(this.getPlatformDefinition(platform));
     this.emitPlatformAuthorizationIncidents([status]);
     return status;
+  }
+
+  async getAppleWebGateways(): Promise<AppleWebGatewayStatusResponse> {
+    const [subscriptionParameter, nodesParameter] = await Promise.all([
+      this.getAppleWebGatewaySubscriptionParameter(),
+      this.getAppleWebGatewayNodesParameter()
+    ]);
+    const subscription = this.normalizeAppleWebGatewaySubscriptionValue(
+      subscriptionParameter?.value
+    );
+    const nodes = this.normalizeAppleWebGatewayNodesValue(nodesParameter?.value);
+
+    return this.toAppleWebGatewayStatusResponse(
+      subscription,
+      subscriptionParameter?.updatedAt ?? null,
+      nodes
+    );
+  }
+
+  async saveAppleWebGatewaySubscription(
+    dto: SaveAppleWebGatewaySubscriptionInput,
+    operator?: AuthenticatedUser
+  ): Promise<AppleWebGatewayStatusResponse> {
+    const existing = await this.getAppleWebGatewaySubscriptionParameter();
+    const existingValue = this.normalizeAppleWebGatewaySubscriptionValue(existing?.value);
+    const clearSubscription = Boolean(dto.clearSubscription);
+    const subscriptionUrl =
+      dto.subscriptionUrl === undefined
+        ? undefined
+        : this.normalizeNullableUrl(dto.subscriptionUrl, 'subscriptionUrl');
+    const now = new Date();
+    const nextValue: AppleWebGatewaySubscriptionValue = {
+      ...existingValue,
+      updatedAt: now.toISOString()
+    };
+
+    if (clearSubscription) {
+      nextValue.subscriptionUrlEncrypted = null;
+      nextValue.subscriptionHost = null;
+      nextValue.subscriptionUrlMasked = null;
+      nextValue.lastSyncedAt = null;
+      nextValue.nodeCount = 0;
+      nextValue.countryCodes = [];
+    } else if (subscriptionUrl !== undefined) {
+      nextValue.subscriptionUrlEncrypted = subscriptionUrl
+        ? this.fieldEncryptionService.encrypt(subscriptionUrl)
+        : null;
+      nextValue.subscriptionHost = subscriptionUrl ? this.getUrlHost(subscriptionUrl) : null;
+      nextValue.subscriptionUrlMasked = subscriptionUrl
+        ? this.maskSecretUrl(subscriptionUrl)
+        : null;
+    }
+
+    const parameter = await this.prisma.systemParameter.upsert({
+      where: { key: APPLE_WEB_GATEWAY_SUBSCRIPTION_PARAMETER_KEY },
+      update: {
+        value: this.toNullableJson(nextValue),
+        group: APPLE_WEB_GATEWAY_GROUP,
+        remark: 'Apple 官网检查 Worker 节点订阅配置',
+        updatedByUserId: operator?.id
+      },
+      create: {
+        key: APPLE_WEB_GATEWAY_SUBSCRIPTION_PARAMETER_KEY,
+        value: this.toNullableJson(nextValue),
+        group: APPLE_WEB_GATEWAY_GROUP,
+        remark: 'Apple 官网检查 Worker 节点订阅配置',
+        updatedByUserId: operator?.id
+      }
+    });
+
+    if (clearSubscription) {
+      await this.saveAppleWebGatewayNodesValue(
+        {
+          items: [],
+          syncedAt: null,
+          sourceHash: null
+        },
+        operator
+      );
+    }
+
+    const response = await this.getAppleWebGateways();
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'ops',
+      action: 'ops.apple_web_gateway.subscription.save',
+      objectType: 'system_parameter',
+      objectId: parameter.id,
+      beforeData: existing
+        ? this.toAuditJson(
+            this.toAppleWebGatewaySubscriptionAuditValue(existingValue, existing.updatedAt)
+          )
+        : undefined,
+      afterData: this.toAuditJson(
+        this.toAppleWebGatewaySubscriptionAuditValue(nextValue, parameter.updatedAt)
+      ),
+      remark: clearSubscription
+        ? 'Cleared Apple web gateway subscription'
+        : 'Saved Apple web gateway subscription'
+    });
+
+    return response;
+  }
+
+  async syncAppleWebGateways(operator?: AuthenticatedUser): Promise<AppleWebGatewayStatusResponse> {
+    const subscriptionParameter = await this.getAppleWebGatewaySubscriptionParameter();
+    const subscription = this.normalizeAppleWebGatewaySubscriptionValue(
+      subscriptionParameter?.value
+    );
+    const subscriptionUrl = this.fieldEncryptionService.decrypt(
+      subscription.subscriptionUrlEncrypted
+    );
+
+    if (!subscriptionUrl) {
+      throw new BadRequestException('Apple web gateway subscription is not configured');
+    }
+
+    const startedAt = new Date();
+    try {
+      const content = await this.fetchAppleWebGatewaySubscription(subscriptionUrl);
+      const parsedNodes = this.parseAppleWebGatewaySubscription(content);
+      const existingNodes = this.normalizeAppleWebGatewayNodesValue(
+        (await this.getAppleWebGatewayNodesParameter())?.value
+      );
+      const existingById = new Map(existingNodes.items.map((item) => [item.id, item]));
+      const nodes: AppleWebGatewayNodeValue[] = parsedNodes.map((node) => {
+        const existingNode = existingById.get(node.id);
+        return {
+          id: node.id,
+          name: node.name,
+          countryCode: node.countryCode,
+          protocol: node.protocol,
+          status:
+            existingNode?.status ?? (node.countryCode === 'UNKNOWN' ? 'unknown' : 'available'),
+          latencyMs: existingNode?.latencyMs ?? null,
+          lastCheckedAt: existingNode?.lastCheckedAt ?? null,
+          failureReason:
+            existingNode?.failureReason ??
+            (node.countryCode === 'UNKNOWN' ? '无法从节点名称识别国家' : null),
+          rawEncrypted: this.fieldEncryptionService.encrypt(node.raw),
+          sourceHash: node.sourceHash
+        };
+      });
+      const syncedAt = new Date().toISOString();
+      const nodesValue: AppleWebGatewayNodesValue = {
+        items: nodes,
+        syncedAt,
+        sourceHash: this.hashText(content)
+      };
+
+      await this.saveAppleWebGatewayNodesValue(nodesValue, operator);
+      await this.prisma.systemParameter.upsert({
+        where: { key: APPLE_WEB_GATEWAY_SUBSCRIPTION_PARAMETER_KEY },
+        update: {
+          value: this.toNullableJson({
+            ...subscription,
+            lastSyncedAt: syncedAt,
+            nodeCount: nodes.length,
+            countryCodes: this.getAppleWebGatewayCountryCodes(nodes)
+          }),
+          group: APPLE_WEB_GATEWAY_GROUP,
+          remark: 'Apple 官网检查 Worker 节点订阅配置',
+          updatedByUserId: operator?.id
+        },
+        create: {
+          key: APPLE_WEB_GATEWAY_SUBSCRIPTION_PARAMETER_KEY,
+          value: this.toNullableJson({
+            ...subscription,
+            lastSyncedAt: syncedAt,
+            nodeCount: nodes.length,
+            countryCodes: this.getAppleWebGatewayCountryCodes(nodes)
+          }),
+          group: APPLE_WEB_GATEWAY_GROUP,
+          remark: 'Apple 官网检查 Worker 节点订阅配置',
+          updatedByUserId: operator?.id
+        }
+      });
+
+      await this.prisma.platformSyncLog.create({
+        data: {
+          platform: 'apple-web-gateway',
+          syncType: 'node_subscription_sync',
+          status: 'success',
+          requestCount: 1,
+          errorRate: new PrismaNamespace.Decimal(0),
+          errorMessage: null,
+          startedAt,
+          finishedAt: new Date(),
+          metadata: this.toNullableJson({
+            nodeCount: nodes.length,
+            countryCodes: this.getAppleWebGatewayCountryCodes(nodes)
+          })
+        }
+      });
+      await this.auditLogsService.create({
+        userId: operator?.id,
+        module: 'ops',
+        action: 'ops.apple_web_gateway.nodes.sync',
+        objectType: 'system_parameter',
+        objectId: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY,
+        afterData: this.toAuditJson({
+          nodeCount: nodes.length,
+          countryCodes: this.getAppleWebGatewayCountryCodes(nodes)
+        }),
+        remark: `Synced ${nodes.length} Apple web gateway nodes`
+      });
+
+      return this.getAppleWebGateways();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Apple web gateway sync failed';
+      await this.prisma.platformSyncLog.create({
+        data: {
+          platform: 'apple-web-gateway',
+          syncType: 'node_subscription_sync',
+          status: 'failed',
+          requestCount: 1,
+          errorRate: new PrismaNamespace.Decimal(1),
+          errorMessage: message,
+          startedAt,
+          finishedAt: new Date(),
+          metadata: this.toNullableJson({
+            action: 'node_subscription_sync'
+          })
+        }
+      });
+      throw new BadRequestException(message);
+    }
   }
 
   async getPlatformAuthorization(platform: string) {
@@ -1333,6 +1646,544 @@ export class OpsService {
         // 运维快照不能因为系统通知异常而写入失败。
       }
     }
+  }
+
+  private getAppleWebGatewaySubscriptionParameter() {
+    return this.prisma.systemParameter.findUnique({
+      where: { key: APPLE_WEB_GATEWAY_SUBSCRIPTION_PARAMETER_KEY }
+    });
+  }
+
+  private getAppleWebGatewayNodesParameter() {
+    return this.prisma.systemParameter.findUnique({
+      where: { key: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY }
+    });
+  }
+
+  private async saveAppleWebGatewayNodesValue(
+    value: AppleWebGatewayNodesValue,
+    operator?: AuthenticatedUser
+  ) {
+    return this.prisma.systemParameter.upsert({
+      where: { key: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY },
+      update: {
+        value: this.toNullableJson(value),
+        group: APPLE_WEB_GATEWAY_GROUP,
+        remark: 'Apple 官网检查 Worker 节点池',
+        updatedByUserId: operator?.id
+      },
+      create: {
+        key: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY,
+        value: this.toNullableJson(value),
+        group: APPLE_WEB_GATEWAY_GROUP,
+        remark: 'Apple 官网检查 Worker 节点池',
+        updatedByUserId: operator?.id
+      }
+    });
+  }
+
+  private normalizeAppleWebGatewaySubscriptionValue(
+    value: unknown
+  ): AppleWebGatewaySubscriptionValue {
+    const data = this.toObject(value) ?? {};
+    return {
+      subscriptionUrlEncrypted: this.getNullableString(data.subscriptionUrlEncrypted),
+      subscriptionHost: this.getNullableString(data.subscriptionHost),
+      subscriptionUrlMasked: this.getNullableString(data.subscriptionUrlMasked),
+      updatedAt: this.getNullableString(data.updatedAt),
+      lastSyncedAt: this.getNullableString(data.lastSyncedAt),
+      nodeCount: this.getMetricNumber(data.nodeCount) ?? 0,
+      countryCodes: this.normalizeStringArray(data.countryCodes)
+    };
+  }
+
+  private normalizeAppleWebGatewayNodesValue(value: unknown): AppleWebGatewayNodesValue {
+    const data = this.toObject(value) ?? {};
+    const rawItems = Array.isArray(data.items) ? data.items : [];
+    const items = rawItems
+      .map((item) => this.normalizeAppleWebGatewayNodeValue(item))
+      .filter((item): item is AppleWebGatewayNodeValue => Boolean(item));
+
+    return {
+      items,
+      syncedAt: this.getNullableString(data.syncedAt),
+      sourceHash: this.getNullableString(data.sourceHash)
+    };
+  }
+
+  private normalizeAppleWebGatewayNodeValue(value: unknown): AppleWebGatewayNodeValue | null {
+    const data = this.toObject(value);
+    if (!data) return null;
+    const id = this.getNullableString(data.id);
+    const name = this.getNullableString(data.name);
+    const countryCode = this.getNullableString(data.countryCode);
+    const protocol = this.getNullableString(data.protocol);
+    if (!id || !name || !countryCode || !protocol) return null;
+
+    return {
+      id,
+      name,
+      countryCode: countryCode.toUpperCase(),
+      protocol: protocol.toLowerCase(),
+      status: this.parseAppleWebGatewayNodeStatus(data.status),
+      latencyMs: this.getMetricNumber(data.latencyMs),
+      lastCheckedAt: this.getNullableString(data.lastCheckedAt),
+      failureReason: this.getNullableString(data.failureReason),
+      rawEncrypted: this.getNullableString(data.rawEncrypted),
+      sourceHash: this.getNullableString(data.sourceHash)
+    };
+  }
+
+  private parseAppleWebGatewayNodeStatus(value: unknown): AppleWebGatewayNodeStatus {
+    if (value === 'available' || value === 'unavailable' || value === 'unknown') return value;
+    return 'unknown';
+  }
+
+  private toAppleWebGatewayStatusResponse(
+    subscription: AppleWebGatewaySubscriptionValue,
+    updatedAt: Date | null,
+    nodesValue: AppleWebGatewayNodesValue
+  ): AppleWebGatewayStatusResponse {
+    const nodes = nodesValue.items
+      .map((node) => this.toAppleWebGatewayNodeResponse(node))
+      .sort((left, right) =>
+        `${left.countryCode}:${left.name}`.localeCompare(`${right.countryCode}:${right.name}`)
+      );
+
+    return {
+      configured: Boolean(subscription.subscriptionUrlEncrypted),
+      subscriptionHost: subscription.subscriptionHost ?? null,
+      subscriptionUrlMasked: subscription.subscriptionUrlMasked ?? null,
+      updatedAt,
+      lastSyncedAt: subscription.lastSyncedAt ?? nodesValue.syncedAt,
+      nodeCount: nodes.length,
+      availableNodeCount: nodes.filter((node) => node.status === 'available').length,
+      countrySummary: this.buildAppleWebGatewayCountrySummary(nodes),
+      nodes,
+      sidecar: {
+        engine: 'sing-box',
+        mode: 'external_sidecar',
+        managedByApi: false,
+        message: '当前后台只管理节点订阅和节点分配，sing-box sidecar 由服务器部署脚本管理。'
+      }
+    };
+  }
+
+  private toAppleWebGatewayNodeResponse(
+    node: AppleWebGatewayNodeValue
+  ): AppleWebGatewayNodeResponse {
+    return {
+      id: node.id,
+      name: node.name,
+      countryCode: node.countryCode,
+      protocol: node.protocol,
+      status: node.status,
+      latencyMs: node.latencyMs ?? null,
+      lastCheckedAt: node.lastCheckedAt ?? null,
+      failureReason: node.failureReason ?? null
+    };
+  }
+
+  private buildAppleWebGatewayCountrySummary(
+    nodes: AppleWebGatewayNodeResponse[]
+  ): AppleWebGatewayCountrySummary[] {
+    const summary = new Map<string, AppleWebGatewayCountrySummary>();
+    for (const node of nodes) {
+      const item =
+        summary.get(node.countryCode) ??
+        ({
+          countryCode: node.countryCode,
+          total: 0,
+          available: 0,
+          unavailable: 0,
+          unknown: 0
+        } satisfies AppleWebGatewayCountrySummary);
+      item.total += 1;
+      item[node.status] += 1;
+      summary.set(node.countryCode, item);
+    }
+
+    return Array.from(summary.values()).sort((left, right) =>
+      left.countryCode.localeCompare(right.countryCode)
+    );
+  }
+
+  private toAppleWebGatewaySubscriptionAuditValue(
+    value: AppleWebGatewaySubscriptionValue,
+    updatedAt: Date | null
+  ) {
+    return {
+      configured: Boolean(value.subscriptionUrlEncrypted),
+      subscriptionHost: value.subscriptionHost ?? null,
+      subscriptionUrlMasked: value.subscriptionUrlMasked ?? null,
+      lastSyncedAt: value.lastSyncedAt ?? null,
+      nodeCount: value.nodeCount ?? 0,
+      countryCodes: this.normalizeStringArray(value.countryCodes),
+      updatedAt: updatedAt?.toISOString() ?? value.updatedAt ?? null
+    };
+  }
+
+  private async fetchAppleWebGatewaySubscription(subscriptionUrl: string) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), APPLE_WEB_GATEWAY_SYNC_TIMEOUT_MS);
+    try {
+      const response = await fetch(subscriptionUrl, {
+        signal: controller.signal,
+        headers: {
+          'user-agent': 'AppleBusinessGatewaySync/1.0'
+        }
+      });
+      if (!response.ok) {
+        throw new BadRequestException(
+          `Apple web gateway subscription returned HTTP ${response.status}`
+        );
+      }
+      const text = await response.text();
+      if (!text.trim()) {
+        throw new BadRequestException('Apple web gateway subscription is empty');
+      }
+      return text;
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      const message =
+        error instanceof Error && error.name === 'AbortError'
+          ? 'Apple web gateway subscription sync timed out'
+          : 'Apple web gateway subscription sync failed';
+      throw new BadRequestException(message);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private parseAppleWebGatewaySubscription(content: string): ParsedAppleWebGatewayNode[] {
+    const candidates = new Map<string, ParsedAppleWebGatewayNode>();
+    const variants = [content, this.tryDecodeSubscriptionBase64(content)].filter(
+      (item): item is string => Boolean(item)
+    );
+
+    for (const variant of variants) {
+      for (const uri of this.extractAppleWebGatewayUris(variant)) {
+        const node = this.parseAppleWebGatewayUri(uri);
+        if (node) candidates.set(node.id, node);
+      }
+      for (const node of this.extractClashAppleWebGatewayNodes(variant)) {
+        candidates.set(node.id, node);
+      }
+    }
+
+    const nodes = Array.from(candidates.values()).sort((left, right) =>
+      `${left.countryCode}:${left.name}`.localeCompare(`${right.countryCode}:${right.name}`)
+    );
+    if (!nodes.length) {
+      throw new BadRequestException('No supported Apple web gateway nodes were found');
+    }
+    return nodes;
+  }
+
+  private extractAppleWebGatewayUris(content: string) {
+    const supportedSchemes = '(?:vmess|vless|trojan|ss|ssr|hysteria2|hy2)';
+    const uris = new Set<string>();
+    for (const line of content.split(/\r?\n/)) {
+      const matches = line.match(new RegExp(`${supportedSchemes}:\\/\\/[^\\s"']+`, 'gi')) ?? [];
+      for (const match of matches) {
+        uris.add(match.replace(/[),\]}]+$/g, '').trim());
+      }
+    }
+    return Array.from(uris);
+  }
+
+  private parseAppleWebGatewayUri(raw: string): ParsedAppleWebGatewayNode | null {
+    const schemeMatch = raw.match(/^([a-zA-Z0-9+.-]+):\/\//);
+    if (!schemeMatch) return null;
+    const protocol = this.normalizeAppleWebGatewayProtocol(schemeMatch[1]);
+    const parsed =
+      protocol === 'vmess' ? this.parseVmessGatewayUri(raw) : this.parseUrlStyleGatewayUri(raw);
+
+    const displayName = this.sanitizeGatewayNodeName(
+      parsed.name ?? parsed.server ?? `${protocol.toUpperCase()} 节点`
+    );
+    const countryCode = this.inferAppleWebGatewayCountryCode(displayName, parsed.server);
+    const sourceHash = this.hashText(raw);
+
+    return {
+      id: `awg_${sourceHash.slice(0, 16)}`,
+      name: displayName,
+      countryCode,
+      protocol,
+      raw,
+      sourceHash
+    };
+  }
+
+  private parseVmessGatewayUri(raw: string) {
+    const encoded = raw.replace(/^vmess:\/\//i, '');
+    const decoded = this.decodeBase64Loose(encoded);
+    const data = decoded ? this.safeJsonParse(decoded) : null;
+    return {
+      name:
+        this.getNullableString(data?.ps) ??
+        this.getNullableString(data?.name) ??
+        this.getNullableString(data?.remarks),
+      server: this.getNullableString(data?.add) ?? this.getNullableString(data?.server)
+    };
+  }
+
+  private parseUrlStyleGatewayUri(raw: string) {
+    try {
+      const url = new URL(raw);
+      const name = url.hash ? decodeURIComponent(url.hash.slice(1).replace(/\+/g, ' ')) : null;
+      return {
+        name: this.getNullableString(name),
+        server: this.getNullableString(url.hostname)
+      };
+    } catch {
+      const nameMatch = raw.match(/#(.+)$/);
+      return {
+        name: nameMatch ? this.getNullableString(decodeURIComponent(nameMatch[1])) : null,
+        server: null
+      };
+    }
+  }
+
+  private extractClashAppleWebGatewayNodes(content: string): ParsedAppleWebGatewayNode[] {
+    const nodes: ParsedAppleWebGatewayNode[] = [];
+    const inlineMatches = content.matchAll(/-\s*\{([^}]+)\}/g);
+    for (const match of inlineMatches) {
+      const node = this.toParsedAppleWebGatewayNodeFromMap(
+        this.parseInlineGatewayNodeMap(match[1] ?? ''),
+        match[0]
+      );
+      if (node) nodes.push(node);
+    }
+
+    const blocks = this.parseBlockGatewayNodeMaps(content);
+    for (const block of blocks) {
+      const node = this.toParsedAppleWebGatewayNodeFromMap(block, JSON.stringify(block));
+      if (node) nodes.push(node);
+    }
+
+    return nodes;
+  }
+
+  private parseInlineGatewayNodeMap(value: string) {
+    return value.split(',').reduce<Record<string, string>>((result, item) => {
+      const [rawKey, ...rawValueParts] = item.split(':');
+      const key = rawKey?.trim();
+      const rawValue = rawValueParts.join(':').trim();
+      if (key && rawValue) result[key] = this.cleanGatewayNodeMapValue(rawValue);
+      return result;
+    }, {});
+  }
+
+  private parseBlockGatewayNodeMaps(content: string) {
+    const blocks: Record<string, string>[] = [];
+    let current: Record<string, string> | null = null;
+
+    for (const line of content.split(/\r?\n/)) {
+      const start = line.match(/^\s*-\s*name:\s*(.+)$/);
+      if (start) {
+        if (current) blocks.push(current);
+        current = { name: this.cleanGatewayNodeMapValue(start[1] ?? '') };
+        continue;
+      }
+
+      if (!current) continue;
+      const entry = line.match(/^\s+([a-zA-Z0-9_-]+):\s*(.+)$/);
+      if (entry) {
+        current[entry[1] ?? ''] = this.cleanGatewayNodeMapValue(entry[2] ?? '');
+      } else if (/^\s*-\s+/.test(line)) {
+        blocks.push(current);
+        current = null;
+      }
+    }
+
+    if (current) blocks.push(current);
+    return blocks;
+  }
+
+  private cleanGatewayNodeMapValue(value: string) {
+    return value.trim().replace(/^['"]|['"]$/g, '');
+  }
+
+  private toParsedAppleWebGatewayNodeFromMap(
+    data: Record<string, string>,
+    raw: string
+  ): ParsedAppleWebGatewayNode | null {
+    const protocol = this.normalizeAppleWebGatewayProtocol(data.type ?? data.protocol ?? '');
+    if (!protocol) return null;
+    const name = this.sanitizeGatewayNodeName(data.name ?? data.ps ?? data.remarks ?? '');
+    if (!name) return null;
+    const server = this.getNullableString(data.server) ?? this.getNullableString(data.add);
+    const countryCode = this.inferAppleWebGatewayCountryCode(name, server);
+    const sourceHash = this.hashText(raw);
+
+    return {
+      id: `awg_${sourceHash.slice(0, 16)}`,
+      name,
+      countryCode,
+      protocol,
+      raw,
+      sourceHash
+    };
+  }
+
+  private normalizeAppleWebGatewayProtocol(value: string | undefined) {
+    const normalized = (value ?? '').trim().toLowerCase();
+    if (normalized === 'hy2') return 'hysteria2';
+    if (
+      normalized === 'vmess' ||
+      normalized === 'vless' ||
+      normalized === 'trojan' ||
+      normalized === 'ss' ||
+      normalized === 'ssr' ||
+      normalized === 'hysteria2'
+    ) {
+      return normalized;
+    }
+    return '';
+  }
+
+  private inferAppleWebGatewayCountryCode(name: string, server?: string | null) {
+    const text = `${name} ${server ?? ''}`.toLowerCase();
+    const countries = [
+      {
+        code: 'HK',
+        keywords: ['香港', 'hong kong', 'hongkong'],
+        tokens: ['hk', 'hkg']
+      },
+      {
+        code: 'US',
+        keywords: [
+          '美国',
+          '美國',
+          'united states',
+          'america',
+          'los angeles',
+          'new york',
+          'dallas',
+          'chicago',
+          'san jose',
+          'seattle',
+          'ashburn',
+          'silicon valley',
+          '洛杉矶',
+          '洛杉磯',
+          '圣何塞'
+        ],
+        tokens: ['us', 'usa', 'la', 'ny']
+      },
+      {
+        code: 'MY',
+        keywords: ['马来西亚', '馬來西亞', '马来', '馬來', '大马', 'malaysia', 'kuala lumpur'],
+        tokens: ['my', 'mys']
+      },
+      { code: 'SG', keywords: ['新加坡', 'singapore'], tokens: ['sg', 'sin'] },
+      { code: 'JP', keywords: ['日本', 'japan', 'tokyo', 'osaka'], tokens: ['jp', 'jpn'] },
+      { code: 'KR', keywords: ['韩国', '韓國', 'korea', 'seoul'], tokens: ['kr', 'kor'] },
+      { code: 'TW', keywords: ['台湾', '台灣', 'taiwan', 'taipei'], tokens: ['tw', 'twn'] },
+      {
+        code: 'CN',
+        keywords: ['中国大陆', '中國大陸', '中国', '中國', 'china'],
+        tokens: ['cn', 'chn']
+      },
+      {
+        code: 'GB',
+        keywords: ['英国', '英國', 'united kingdom', 'london'],
+        tokens: ['uk', 'gb', 'gbr']
+      },
+      { code: 'CA', keywords: ['加拿大', 'canada', 'toronto', 'vancouver'], tokens: ['ca', 'can'] },
+      { code: 'AU', keywords: ['澳大利亚', '澳洲', 'australia', 'sydney'], tokens: ['au', 'aus'] },
+      { code: 'DE', keywords: ['德国', '德國', 'germany', 'frankfurt'], tokens: ['de', 'deu'] },
+      { code: 'FR', keywords: ['法国', '法國', 'france', 'paris'], tokens: ['fr', 'fra'] },
+      { code: 'NL', keywords: ['荷兰', '荷蘭', 'netherlands', 'amsterdam'], tokens: ['nl', 'nld'] },
+      { code: 'TH', keywords: ['泰国', '泰國', 'thailand', 'bangkok'], tokens: ['th', 'tha'] },
+      { code: 'VN', keywords: ['越南', 'vietnam'], tokens: ['vn', 'vnm'] },
+      {
+        code: 'ID',
+        keywords: ['印尼', '印度尼西亚', 'indonesia', 'jakarta'],
+        tokens: ['id', 'idn']
+      },
+      {
+        code: 'PH',
+        keywords: ['菲律宾', '菲律賓', 'philippines', 'manila'],
+        tokens: ['ph', 'phl']
+      },
+      { code: 'IN', keywords: ['印度', 'india', 'mumbai', 'delhi'], tokens: ['in', 'ind'] }
+    ];
+
+    for (const country of countries) {
+      if (country.keywords.some((keyword) => text.includes(keyword))) return country.code;
+      if (country.tokens.some((token) => this.hasGatewayCountryToken(text, token))) {
+        return country.code;
+      }
+    }
+
+    return 'UNKNOWN';
+  }
+
+  private hasGatewayCountryToken(text: string, token: string) {
+    return new RegExp(`(^|[\\s_\\-\\[\\]().|#/])${token}($|[\\s_\\-\\[\\]().|#/])`, 'i').test(text);
+  }
+
+  private sanitizeGatewayNodeName(value: string) {
+    return (value || '')
+      .split('')
+      .filter((char) => {
+        const code = char.charCodeAt(0);
+        return code >= 32 && code !== 127;
+      })
+      .join('')
+      .trim()
+      .slice(0, 120);
+  }
+
+  private tryDecodeSubscriptionBase64(content: string) {
+    const compact = content.trim().replace(/\s+/g, '');
+    if (compact.length < 12 || !/^[a-zA-Z0-9+/=_-]+$/.test(compact)) return null;
+    const decoded = this.decodeBase64Loose(compact);
+    if (!decoded) return null;
+    return decoded.includes('://') || decoded.includes('proxies:') ? decoded : null;
+  }
+
+  private decodeBase64Loose(value: string) {
+    try {
+      const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+      return Buffer.from(padded, 'base64').toString('utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  private safeJsonParse(value: string): Record<string, unknown> | null {
+    try {
+      const parsed = JSON.parse(value);
+      return this.toObject(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  private getAppleWebGatewayCountryCodes(nodes: AppleWebGatewayNodeValue[]) {
+    return Array.from(new Set(nodes.map((node) => node.countryCode).filter(Boolean))).sort();
+  }
+
+  private getUrlHost(value: string) {
+    return new URL(value).host;
+  }
+
+  private maskSecretUrl(value: string) {
+    const url = new URL(value);
+    if (url.username) url.username = '***';
+    if (url.password) url.password = '***';
+    for (const key of Array.from(url.searchParams.keys())) {
+      url.searchParams.set(key, '***');
+    }
+    return url.toString();
+  }
+
+  private hashText(value: string) {
+    return createHash('sha256').update(value).digest('hex');
   }
 
   private async getPlatformAuthorizationResponse(
@@ -2326,6 +3177,18 @@ export class OpsService {
     const numberValue = typeof value === 'bigint' ? Number(value) : Number(value ?? 0);
     if (!Number.isFinite(numberValue)) return 0;
     return Math.max(0, Math.trunc(numberValue));
+  }
+
+  private getCountNumberValue(value: unknown) {
+    const numberValue = Number(value ?? 0);
+    if (!Number.isFinite(numberValue)) return 0;
+    return Math.max(0, Math.trunc(numberValue));
+  }
+
+  private getNullableNumber(value: unknown) {
+    if (value === null || value === undefined || value === '') return null;
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : null;
   }
 
   private toNullableJson(value: unknown) {
