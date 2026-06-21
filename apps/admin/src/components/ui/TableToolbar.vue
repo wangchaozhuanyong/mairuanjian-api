@@ -160,11 +160,6 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <el-radio-group v-if="showDensity" v-model="densityModel" size="small" class="density-toggle">
-        <el-radio-button v-for="item in densityOptions" :key="item.value" :value="item.value">
-          {{ item.label }}
-        </el-radio-button>
-      </el-radio-group>
       <AppButton
         v-if="showSaveView"
         class="table-toolbar__op"
@@ -211,7 +206,6 @@
       <span v-if="hasColumnOptions"
         >显示列 {{ selectedColumnCount }}/{{ allColumnValues.length }}</span
       >
-      <span v-if="showDensity">密度 {{ activeDensityLabel }}</span>
       <span v-if="activeSavedViewLabel">视图 {{ activeSavedViewLabel }}</span>
     </div>
   </div>
@@ -241,7 +235,7 @@ interface FilterChip {
 }
 
 type SavedViewCommand = 'overwrite' | 'rename' | 'setDefault' | 'delete';
-type BuiltInChipKey = 'keyword' | 'status' | 'date' | 'density' | 'view';
+type BuiltInChipKey = 'keyword' | 'status' | 'date' | 'view';
 
 const props = withDefaults(
   defineProps<{
@@ -262,7 +256,6 @@ const props = withDefaults(
     showPrimary?: boolean;
     primaryLoading?: boolean;
     primaryDisabled?: boolean;
-    showDensity?: boolean;
     showFilterChips?: boolean;
     showToolbarMeta?: boolean;
   }>(),
@@ -283,7 +276,6 @@ const props = withDefaults(
     showPrimary: true,
     primaryLoading: false,
     primaryDisabled: false,
-    showDensity: false,
     showFilterChips: false,
     showToolbarMeta: false
   }
@@ -305,7 +297,6 @@ const emit = defineEmits<{
 
 const keywordModel = defineModel<string>('keyword', { default: '' });
 const statusModel = defineModel<string>('status', { default: '' });
-const densityModel = defineModel<string>('density', { default: 'default' });
 const dateShortcutModel = defineModel<string>('dateShortcut', { default: 'last_7_days' });
 const visibleColumnsModel = defineModel<string[]>('visibleColumns', { default: () => [] });
 const savedViewIdModel = defineModel<string>('savedViewId', { default: '' });
@@ -323,12 +314,6 @@ const dateOptions: SelectOption[] = [
 const removedViewIds = ref<string[]>([]);
 const viewOverrides = ref<Record<string, Partial<UserTableView>>>({});
 const managingView = ref(false);
-
-const densityOptions: SelectOption[] = [
-  { label: '紧凑', value: 'compact' },
-  { label: '标准', value: 'default' },
-  { label: '宽松', value: 'loose' }
-];
 
 const defaultStatusOptions: SelectOption[] = [
   { label: '已接入', value: 'ready' },
@@ -377,9 +362,6 @@ const selectedColumns = computed({
   }
 });
 const selectedColumnCount = computed(() => selectedColumns.value.length);
-const activeDensityLabel = computed(
-  () => densityOptions.find((option) => option.value === densityModel.value)?.label ?? '标准'
-);
 const activeSavedViewLabel = computed(
   () => savedViews.value.find((view) => view.id === savedViewIdModel.value)?.viewName
 );
@@ -400,7 +382,6 @@ const activeChips = computed(() => {
     (option) => option.value === statusModel.value
   )?.label;
   const dateLabel = dateOptions.find((option) => option.value === dateShortcutModel.value)?.label;
-  const densityLabel = densityOptions.find((option) => option.value === densityModel.value)?.label;
   const viewLabel = savedViews.value.find((view) => view.id === savedViewIdModel.value)?.viewName;
 
   if (keywordModel.value) chips.push({ key: 'keyword', label: '搜索', value: keywordModel.value });
@@ -408,8 +389,6 @@ const activeChips = computed(() => {
     chips.push({ key: 'status', label: '状态', value: statusLabel });
   if (props.showDateShortcut && dateLabel)
     chips.push({ key: 'date', label: '日期', value: dateLabel });
-  if (props.showDensity && densityModel.value !== 'default' && densityLabel)
-    chips.push({ key: 'density', label: '密度', value: densityLabel });
   if (viewLabel) chips.push({ key: 'view', label: '视图', value: viewLabel });
 
   return [...chips, ...extraFilterChips.value];
@@ -578,7 +557,6 @@ function removeChip(key: string) {
   if (key === 'keyword') keywordModel.value = '';
   if (key === 'status') statusModel.value = '';
   if (key === 'date') dateShortcutModel.value = 'last_7_days';
-  if (key === 'density') densityModel.value = 'default';
   if (key === 'view') savedViewIdModel.value = '';
   if (!isBuiltInChipKey(key)) emit('removeFilter', key);
   emit('search');
@@ -588,14 +566,13 @@ function clearFilters() {
   keywordModel.value = '';
   statusModel.value = '';
   dateShortcutModel.value = 'last_7_days';
-  densityModel.value = 'default';
   savedViewIdModel.value = '';
   emit('clearFilters');
   emit('search');
 }
 
 function isBuiltInChipKey(key: string): key is BuiltInChipKey {
-  return ['keyword', 'status', 'date', 'density', 'view'].includes(key);
+  return ['keyword', 'status', 'date', 'view'].includes(key);
 }
 
 function isSavedViewCommand(command: string): command is SavedViewCommand {

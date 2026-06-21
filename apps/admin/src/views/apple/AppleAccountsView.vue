@@ -36,7 +36,6 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:density="density"
         v-model:visible-columns="visibleColumns"
         v-model:saved-view-id="savedViewId"
         :column-options="accountColumnOptions"
@@ -46,7 +45,6 @@
         :selected-count="selectedAccounts.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
-        show-density
         show-filter-chips
         show-toolbar-meta
         primary-label="新增 Apple ID"
@@ -122,7 +120,7 @@
         v-loading="loading"
         class="desktop-data-table"
         :data="accounts"
-        :size="tableSize"
+        size="default"
         row-key="id"
         empty-text="暂无 Apple ID"
         @selection-change="handleSelectionChange"
@@ -1363,7 +1361,6 @@ import type {
   AppleBalanceTopup,
   DataDictionary,
   SourcePlatform,
-  TableDensity,
   UserTableView
 } from '@/types/system';
 import {
@@ -1446,7 +1443,6 @@ const topups = ref<AppleBalanceTopup[]>([]);
 const consumptions = ref<AppleBalanceConsumption[]>([]);
 const importResult = ref<AppleAccountImportResult | null>(null);
 const selectedAccounts = ref<AppleAccount[]>([]);
-const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
 const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
@@ -1582,9 +1578,6 @@ const secretReadyCount = computed(
         account.hasPhone ||
         account.hasRecoveryEmail
     ).length
-);
-const tableSize = computed(() =>
-  density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
@@ -1973,7 +1966,7 @@ async function saveTableView() {
       columns: visibleColumns.value.length
         ? visibleColumns.value
         : accountColumnOptions.map((column) => column.value),
-      density: density.value,
+      density: 'default',
       pageSize: query.pageSize,
       isDefault: savedViews.value.length === 0
     });
@@ -2005,7 +1998,6 @@ function applyView(view: UserTableView) {
   query.locked = typeof filters.locked === 'string' ? filters.locked : '';
   query.pageSize = view.pageSize;
   query.page = 1;
-  density.value = view.density;
   visibleColumns.value = view.columns.length
     ? view.columns.filter((column) =>
         accountColumnOptions.some((option) => option.value === column)
