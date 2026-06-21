@@ -287,7 +287,14 @@ function applyRuntimeResolvedTasks(summary, resolvedCodes) {
   };
 }
 
-function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrategy, manualGates) {
+function getFirstReleaseGateSummary(
+  phase16,
+  phase17,
+  productionEnv,
+  launchStrategy,
+  manualGates,
+  git
+) {
   const blockers = [];
   const blockerCodes = new Set();
   const telegramDeferred = canDeferTelegramGate(launchStrategy);
@@ -306,7 +313,7 @@ function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrat
   }
 
   if (
-    (productionEnv.status !== 'passed' || !checklistPassed(manualGates, 'prod_env')) &&
+    productionEnv.status !== 'passed' &&
     !blockerCodes.has('T1613') &&
     !blockerCodes.has('PROD_ENV')
   ) {
@@ -331,7 +338,7 @@ function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrat
     blockerCodes.add('T1612');
   }
 
-  if (!checklistPassed(manualGates, 'git_baseline')) {
+  if (git.remote === 'missing' || git.hasChanges) {
     blockers.push({
       code: 'GIT_BASELINE',
       title: '确认 Git 基线、提交和推送策略',
@@ -412,13 +419,13 @@ function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrateg
     console.log(
       '- Set FIRST_RELEASE_MODE in .env.production, fill the real production domain, run npm run prod:env:review && npm run prod:env:check, then record prod_env evidence.'
     );
-  } else if (openCodes.has('T1613') || !checklistPassed(manualGates, 'prod_env')) {
+  } else if (openCodes.has('T1613')) {
     console.log(
       '- Production env check passed; record prod_env evidence with npm run launch:checklist after confirming the reviewed values.'
     );
   }
 
-  if (!checklistPassed(manualGates, 'git_baseline')) {
+  if (manualGates.ok && !checklistPassed(manualGates, 'git_baseline')) {
     console.log(
       '- Confirm the Git baseline and record git_baseline evidence in the launch checklist.'
     );
@@ -460,6 +467,7 @@ async function main() {
   const productionEnv = getProductionEnvStatus();
   const launchStrategy = getLaunchStrategy();
   const manualGates = await getManualGateStatus();
+  const git = getGitStatus();
   const runtimeResolvedPhase16 = getRuntimeResolvedPhase16Codes(
     productionEnv,
     manualGates,
@@ -471,9 +479,9 @@ async function main() {
     phase17,
     productionEnv,
     launchStrategy,
-    manualGates
+    manualGates,
+    git
   );
-  const git = getGitStatus();
 
   console.log('Launch status');
   console.log('=============');

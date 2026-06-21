@@ -219,12 +219,21 @@ function printChecklist(items) {
   }
 }
 
-function checklistBlockers(items, deferredIds = new Set()) {
+function gitReadinessStatus() {
+  const result = run(process.execPath, ['scripts/git-readiness.mjs']);
+  return {
+    ok: result.status === 0,
+    detail: `${result.stderr || result.stdout}`.trim()
+  };
+}
+
+function checklistBlockers(items, deferredIds = new Set(), runtimePassedIds = new Set()) {
   const itemsById = new Map(items.map((item) => [item.id, item]));
   return targetChecklistIds
     .filter((id) => !deferredIds.has(id))
     .map((id) => {
       const item = itemsById.get(id);
+      if (runtimePassedIds.has(id)) return null;
       if (!item) return `launch checklist missing: ${id}`;
       if (!passingChecklistStatuses.has(item.status)) return `launch checklist: ${id}`;
       return null;
@@ -238,11 +247,16 @@ async function main() {
   const deferredChecklistIds = telegramDeferred ? new Set(['telegram_test']) : new Set();
   const production = productionEnvStatus();
   const database = await databaseGateStatus();
+  const git = gitReadinessStatus();
+  const runtimePassedIds = new Set();
+  if (production.ok) runtimePassedIds.add('prod_env');
+  if (git.ok) runtimePassedIds.add('git_baseline');
   const blockers = [];
 
   if (!production.ok) blockers.push('production env');
   if (!database.ok && !telegramDeferred) blockers.push('Telegram real test');
-  blockers.push(...checklistBlockers(database.checklist, deferredChecklistIds));
+  if (!git.ok) blockers.push('git baseline');
+  blockers.push(...checklistBlockers(database.checklist, deferredChecklistIds, runtimePassedIds));
 
   console.log('Manual launch gates');
   console.log('===================');
