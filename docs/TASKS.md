@@ -463,6 +463,7 @@
 
 - [x] T1641 修正 `npm run launch:status` 的发布模式来源和生产 env 下一步提示；当 `.env.production` 存在但缺少 `FIRST_RELEASE_MODE` 时明确提示字段缺失，并将下一步收敛为先跑 `prod:env:review/check`、记录 `prod_env` 证据，再进入最终 strict 验收
 - [x] T1642 修正 `npm run launch:status` 与 `release:blockers` 的手工门禁口径；生产 env 已校验并记录 `prod_env=passed` 后，不再重复提示 T1613 或 prod_env 证据记录
+- [x] T1643 调整半自动首发 Telegram 口径；`FIRST_RELEASE_MODE=semi_auto` 时保留通知中心 Bot Token / Chat ID 填写位置，`telegram_test` 可保持 pending 后补，但仍禁止伪造 `passed`
 
 ## Phase 17 - 平台接口与自动化增强
 

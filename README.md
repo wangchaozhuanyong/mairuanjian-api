@@ -249,11 +249,11 @@ npm run release:blockers
 
 `launch:gates` 是只读手工门禁核验命令，用来同时检查 `.env.production`、Telegram 真实测试状态和上线检查清单中的手工项；它不会发送 Telegram，也不会输出明文 token。预发布或生产等效验收需要失败即退出时运行 `npm run launch:gates:strict`。
 
-`launch:checklist` 用来记录上线检查清单手工项的状态和证据，例如 `npm run launch:checklist -- --id=prod_env --status=passed --evidence="npm run prod:env:check passed; APP_PUBLIC_URL=https://your-domain.com"`。该命令只允许更新 `telegram_test`、`prod_env`、`git_baseline` 三个手工门禁项，会拒绝把常见密钥或 Telegram Bot Token 写进证据，并写入审计日志。先加 `--dry-run` 可以只预览不写库；这三个首版 P0 门禁不能用 `waived` 豁免放行。写入 `passed` 前还会检查真实状态：`prod_env` 必须通过生产 env 校验，`telegram_test` 必须存在启用且测试成功的 Telegram 配置，`git_baseline` 必须已有提交且工作区干净。三个手工门禁都记录为 `passed` 后，再运行 `npm run release:ready` 和 `REQUIRE_PROD_ENV=1 REQUIRE_MANUAL_GATES=1 npm run acceptance:launch` 做最终 strict 验收。
+`launch:checklist` 用来记录上线检查清单手工项的状态和证据，例如 `npm run launch:checklist -- --id=prod_env --status=passed --evidence="npm run prod:env:check passed; APP_PUBLIC_URL=https://your-domain.com"`。该命令只允许更新 `telegram_test`、`prod_env`、`git_baseline` 三个手工项，会拒绝把常见密钥或 Telegram Bot Token 写进证据，并写入审计日志。先加 `--dry-run` 可以只预览不写库；`prod_env` 和 `git_baseline` 是首版 P0 门禁，不能用 `waived` 豁免放行。`FIRST_RELEASE_MODE=semi_auto` 时，`telegram_test` 可以保持 `pending` 后补，后台通知中心会保留 Bot Token / Chat ID 填写位置；后续写入 `passed` 前仍会检查真实状态，必须存在启用且测试成功的 Telegram 配置。`prod_env` 和 `git_baseline` 都记录为 `passed` 后，再运行 `npm run release:ready` 和 `REQUIRE_PROD_ENV=1 REQUIRE_MANUAL_GATES=1 npm run acceptance:launch` 做最终 strict 验收。
 
-`release:review` 是只读发布审查聚合命令，会集中输出 `launch:status`、`launch:gates`、上线检查清单手工项和 `git:readiness:verbose`。它不会写数据库、发送通知、提交或推送代码；如果手工门禁仍 blocked，就不能视为生产已就绪。
+`release:review` 是只读发布审查聚合命令，会集中输出 `launch:status`、`launch:gates`、上线检查清单手工项和 `git:readiness:verbose`。它不会写数据库、发送通知、提交或推送代码；如果 `prod_env`、`git_baseline` 等首发硬门禁仍 blocked，就不能视为生产已就绪。
 
-`release:ready` 是 strict 发布就绪门禁命令，也不会修改文件、数据库或 Git，但会在生产 env、Telegram、上线检查清单或 Git 安全检查未通过时返回失败退出码。正式上线前必须以它通过作为硬门禁之一。
+`release:ready` 是 strict 发布就绪门禁命令，也不会修改文件、数据库或 Git；`FIRST_RELEASE_MODE=semi_auto` 时允许 Telegram 后补，但仍会在生产 env、上线检查清单硬门禁或 Git 安全检查未通过时返回失败退出码。正式上线前必须以它通过作为硬门禁之一。
 
 `release:blockers` 是只读阻塞项行动清单命令，会按当前状态列出还差哪些门禁、负责人、处理动作、验证命令和证据记录命令。它不会替代 `release:ready`，只用于快速安排下一步。
 

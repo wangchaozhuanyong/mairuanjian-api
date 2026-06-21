@@ -48,6 +48,15 @@ function loadLocalEnv() {
   return env;
 }
 
+function getReleaseMode() {
+  const productionEnv = parseEnvFile('.env.production');
+  return (productionEnv.get('FIRST_RELEASE_MODE') || process.env.FIRST_RELEASE_MODE || '').trim();
+}
+
+function canDeferTelegramGate() {
+  return getReleaseMode() === 'semi_auto';
+}
+
 function run(command, args) {
   return spawnSync(command, args, {
     cwd: rootDir,
@@ -170,9 +179,16 @@ function printProduction(status) {
   console.log(status.detail);
 }
 
-function printTelegram(status) {
-  console.log(`Telegram real test: ${status.status}`);
-  console.log(status.detail);
+function printTelegram(status, deferred) {
+  if (deferred && status.status !== 'passed') {
+    console.log('Telegram real test: deferred');
+    console.log(
+      'Semi-auto release keeps Telegram Bot Token and Chat ID fields available in /system/notifications for later setup.'
+    );
+  } else {
+    console.log(`Telegram real test: ${status.status}`);
+    console.log(status.detail);
+  }
   if (!status.telegram) return;
 
   console.log(`Telegram configs: ${status.telegram.enabled}/${status.telegram.total} enabled`);
@@ -203,9 +219,10 @@ function printChecklist(items) {
   }
 }
 
-function checklistBlockers(items) {
+function checklistBlockers(items, deferredIds = new Set()) {
   const itemsById = new Map(items.map((item) => [item.id, item]));
   return targetChecklistIds
+    .filter((id) => !deferredIds.has(id))
     .map((id) => {
       const item = itemsById.get(id);
       if (!item) return `launch checklist missing: ${id}`;
@@ -217,20 +234,22 @@ function checklistBlockers(items) {
 
 async function main() {
   loadLocalEnv();
+  const telegramDeferred = canDeferTelegramGate();
+  const deferredChecklistIds = telegramDeferred ? new Set(['telegram_test']) : new Set();
   const production = productionEnvStatus();
   const database = await databaseGateStatus();
   const blockers = [];
 
   if (!production.ok) blockers.push('production env');
-  if (!database.ok) blockers.push('Telegram real test');
-  blockers.push(...checklistBlockers(database.checklist));
+  if (!database.ok && !telegramDeferred) blockers.push('Telegram real test');
+  blockers.push(...checklistBlockers(database.checklist, deferredChecklistIds));
 
   console.log('Manual launch gates');
   console.log('===================');
   console.log();
   printProduction(production);
   console.log();
-  printTelegram(database);
+  printTelegram(database, telegramDeferred);
   console.log();
   printChecklist(database.checklist);
   console.log();

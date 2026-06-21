@@ -253,14 +253,21 @@ function getLaunchStrategy() {
     detail:
       normalizedMode === 'full_auto'
         ? 'Full-auto mode makes Taobao/Xianyu real adapters and Apple ID real worker launch blockers.'
-        : 'Semi-auto mode allows Taobao/Xianyu real adapters and Apple ID real worker to ship after first internal launch.'
+        : 'Semi-auto mode allows Taobao/Xianyu real adapters, Apple ID real worker, and Telegram real test to ship after first internal launch.'
   };
 }
 
-function getRuntimeResolvedPhase16Codes(productionEnv, manualGates) {
+function canDeferTelegramGate(launchStrategy) {
+  return launchStrategy.mode === 'semi_auto';
+}
+
+function getRuntimeResolvedPhase16Codes(productionEnv, manualGates, launchStrategy) {
   const resolved = new Set();
 
-  if (manualGates.telegramPassed && checklistPassed(manualGates, 'telegram_test')) {
+  if (
+    canDeferTelegramGate(launchStrategy) ||
+    (manualGates.telegramPassed && checklistPassed(manualGates, 'telegram_test'))
+  ) {
     resolved.add('T1612');
   }
 
@@ -283,6 +290,7 @@ function applyRuntimeResolvedTasks(summary, resolvedCodes) {
 function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrategy, manualGates) {
   const blockers = [];
   const blockerCodes = new Set();
+  const telegramDeferred = canDeferTelegramGate(launchStrategy);
 
   for (const task of phase16.open) {
     blockers.push({ code: task.code, title: task.title, source: 'Phase 16' });
@@ -311,6 +319,7 @@ function getFirstReleaseGateSummary(phase16, phase17, productionEnv, launchStrat
   }
 
   if (
+    !telegramDeferred &&
     (!manualGates.telegramPassed || !checklistPassed(manualGates, 'telegram_test')) &&
     !blockerCodes.has('T1612')
   ) {
@@ -383,6 +392,13 @@ function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrateg
   const phase17OpenCodes = new Set(phase17.open.map((task) => task.code));
 
   if (
+    launchStrategy.mode === 'semi_auto' &&
+    (!manualGates.telegramPassed || !checklistPassed(manualGates, 'telegram_test'))
+  ) {
+    console.log(
+      '- Telegram is deferred for semi-auto release; keep the Bot Token and Chat ID fields empty for now, then fill them in /system/notifications after deployment.'
+    );
+  } else if (
     openCodes.has('T1612') ||
     !manualGates.telegramPassed ||
     !checklistPassed(manualGates, 'telegram_test')
@@ -444,7 +460,11 @@ async function main() {
   const productionEnv = getProductionEnvStatus();
   const launchStrategy = getLaunchStrategy();
   const manualGates = await getManualGateStatus();
-  const runtimeResolvedPhase16 = getRuntimeResolvedPhase16Codes(productionEnv, manualGates);
+  const runtimeResolvedPhase16 = getRuntimeResolvedPhase16Codes(
+    productionEnv,
+    manualGates,
+    launchStrategy
+  );
   const phase16 = applyRuntimeResolvedTasks(rawPhase16, runtimeResolvedPhase16);
   const firstReleaseGate = getFirstReleaseGateSummary(
     phase16,

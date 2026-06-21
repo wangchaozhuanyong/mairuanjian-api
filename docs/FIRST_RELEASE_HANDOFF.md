@@ -14,13 +14,13 @@ FIRST_RELEASE_MODE=semi_auto
 
 - Apple ID 代充和兑换码业务可以按半自动可运营方式先内部上线。
 - 淘宝/闲鱼真实开放平台 Adapter 和 Apple ID 真实自动化 Worker 属于上线后增强，除非改为 `FIRST_RELEASE_MODE=full_auto`。
-- 正式上线前仍必须完成真实 Telegram 测试、生产域名配置和 Git 基线确认。
+- 半自动首发允许 Telegram 后补；正式上线前仍必须完成生产域名配置和 Git 基线确认。
 
 ## 2. 不可跳过的上线前门禁
 
 | 门禁              | 当前状态 | 证明方式                                                                |
 | ----------------- | -------- | ----------------------------------------------------------------------- |
-| Telegram 真实测试 | pending  | `npm run launch:gates` 显示 Telegram passed                             |
+| Telegram 后补配置 | pending  | 后续在通知中心填写 Bot Token / Chat ID 并测试发送                       |
 | 生产域名配置      | pending  | `npm run prod:env:check` 通过                                           |
 | Git 基线确认      | pending  | `npm run git:readiness:verbose` 通过，并完成用户授权的首次提交/推送策略 |
 
@@ -28,7 +28,7 @@ FIRST_RELEASE_MODE=semi_auto
 
 - 不要把 Telegram Bot Token、生产密钥、数据库密码写入文档、聊天记录、Git commit message 或上线检查清单证据。
 - `npm run launch:checklist` 只用于记录已经真实完成的手工门禁，不用于绕过真实检查。
-- `npm run launch:gates:strict` 必须在预发布或生产等效环境通过后，才允许进入正式上线。
+- `npm run launch:gates:strict` 必须在预发布或生产等效环境通过后，才允许进入正式上线；`FIRST_RELEASE_MODE=semi_auto` 时 Telegram 可以保持 pending 后补。
 
 ## 3. 上线当天执行顺序
 
@@ -44,7 +44,7 @@ npm run release:review
 - Git remote 指向 `https://github.com/wangchaozhuanyong/mairuanjian-api.git`。
 - 候选文件不包含 `.env`、`.env.production`、备份、上传文件、构建产物或密钥。
 - 首次提交范围和建议提交信息已按 `docs/INITIAL_COMMIT_PLAN.md` 完成人工审查。
-- `release:review` 中的 Manual Gates 仍然 blocked 时，不能发布生产。
+- `release:review` 中的生产 env、Git 基线等硬门禁仍然 blocked 时，不能发布生产。
 - 用户明确确认是否允许首次 commit / push。
 
 完成后记录：
@@ -114,11 +114,11 @@ npm run launch:checklist -- \
 - `CORS_ORIGIN` 必须匹配正式后台访问域名。
 - 不允许出现 `localhost`、`127.0.0.1`、`example.com`、`replace_with`、`change_me`。
 
-### Step 3：配置 Telegram 并真实测试
+### Step 3：预留 Telegram，后续真实测试
 
 详细操作按 `docs/TELEGRAM_RELEASE_GATE.md` 执行。
 
-在后台通知中心完成：
+半自动首发可以先不填写 Telegram。后续需要启用 Telegram 通知时，在后台通知中心完成：
 
 - 新增或更新 Telegram 配置。
 - 填写真实 Bot Token 和 Chat ID。
@@ -147,7 +147,7 @@ npm run launch:checklist -- \
 
 ### Step 4：跑严格上线验收
 
-三个手工门禁都完成后运行：
+生产 env 和 Git 基线门禁完成后运行：
 
 ```bash
 npm run release:ready
@@ -195,7 +195,7 @@ npm run launch:gates
 - 后台登录正常。
 - 关键页面无 403/404 误拦截。
 - 维护模式状态符合预期。
-- Telegram 门禁仍为通过。
+- 如果后续启用 Telegram，确认 `telegram_test` 已真实通过；未启用时保持 pending，不伪造通过。
 
 ## 4. 回滚原则
 
@@ -217,4 +217,4 @@ npm run launch:gates
 - 平台授权状态页的真实重新授权流程。
 - 低/中级依赖风险评估和升级计划。
 
-这些属于上线后增强，不改变首版上线前必须完成的三个手工门禁。
+这些属于上线后增强，不改变首版上线前必须完成的生产 env 和 Git 基线门禁。

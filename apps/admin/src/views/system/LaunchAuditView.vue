@@ -318,7 +318,8 @@ const items = ref<LaunchChecklistItem[]>([]);
 const keyword = ref('');
 const statusFilter = ref('');
 const categoryFilter = ref('');
-const requiredManualGateIds = new Set(['telegram_test', 'prod_env', 'git_baseline']);
+const requiredManualGateIds = new Set(['prod_env', 'git_baseline']);
+const nonWaivableManualGateIds = new Set(['telegram_test', 'prod_env', 'git_baseline']);
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 
 const statusOptions: Array<{ label: string; value: LaunchChecklistStatus }> = [
@@ -357,7 +358,10 @@ const priorityGateItems = computed(() =>
   [...items.value]
     .filter(
       (item) =>
-        item.status === 'blocked' || item.priority === 'P0' || requiredManualGateIds.has(item.id)
+        item.status === 'blocked' ||
+        item.priority === 'P0' ||
+        requiredManualGateIds.has(item.id) ||
+        (item.id === 'telegram_test' && item.status !== 'passed')
     )
     .sort((left, right) => getLaunchItemRank(right) - getLaunchItemRank(left))
     .slice(0, 4)
@@ -461,7 +465,7 @@ async function saveChecklist() {
 
 function setStatus(item: LaunchChecklistItem, status: LaunchChecklistStatus) {
   if (status === 'waived' && !canWaive(item)) {
-    ElMessage.warning('首版 P0 手工门禁不能豁免');
+    ElMessage.warning('首版手工门禁不能豁免；Telegram 半自动首发可保持待处理');
     return;
   }
   item.status = status;
@@ -469,7 +473,7 @@ function setStatus(item: LaunchChecklistItem, status: LaunchChecklistStatus) {
 }
 
 function canWaive(item: LaunchChecklistItem) {
-  return !requiredManualGateIds.has(item.id);
+  return !nonWaivableManualGateIds.has(item.id);
 }
 
 function getStatusOptions(item: LaunchChecklistItem) {

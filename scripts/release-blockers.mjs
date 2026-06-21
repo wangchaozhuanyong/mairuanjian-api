@@ -46,6 +46,15 @@ function loadLocalEnv() {
   }
 }
 
+function getReleaseMode() {
+  const productionEnv = parseEnvFile('.env.production');
+  return (productionEnv.get('FIRST_RELEASE_MODE') || process.env.FIRST_RELEASE_MODE || '').trim();
+}
+
+function canDeferTelegramGate() {
+  return getReleaseMode() === 'semi_auto';
+}
+
 function run(command, args) {
   return spawnSync(command, args, {
     cwd: rootDir,
@@ -185,6 +194,7 @@ function printBlocker({ title, owner, status, action, verify, evidence }) {
 
 async function main() {
   loadLocalEnv();
+  const telegramDeferred = canDeferTelegramGate();
 
   const [database, productionEnv, git] = await Promise.all([
     databaseStatus(),
@@ -193,18 +203,33 @@ async function main() {
   ]);
 
   const blockers = [];
+  const deferredItems = [];
 
   if (!database.telegramOk || !checklistPassed(database, 'telegram_test')) {
-    blockers.push({
-      title: 'Telegram real test',
-      owner: '运营 / 管理员',
-      status: database.telegramSummary ?? 'unknown',
-      action:
-        'Configure a real Telegram Bot Token and Chat ID in /system/notifications, enable it, and send a real test message.',
-      verify: 'npm run launch:gates',
-      evidence:
-        'npm run launch:checklist -- --id=telegram_test --status=passed --evidence="Telegram test send passed in notification center; npm run launch:gates shows Telegram passed"'
-    });
+    if (telegramDeferred) {
+      deferredItems.push({
+        title: 'Telegram real test',
+        owner: '运营 / 管理员',
+        status:
+          'Deferred for semi-auto release. Bot Token and Chat ID can be filled later in /system/notifications.',
+        action:
+          'After deployment, configure a real Telegram Bot Token and Chat ID, enable it, and send a real test message.',
+        verify: 'npm run launch:gates',
+        evidence:
+          'npm run launch:checklist -- --id=telegram_test --status=passed --evidence="Telegram test send passed in notification center; npm run launch:gates shows Telegram passed"'
+      });
+    } else {
+      blockers.push({
+        title: 'Telegram real test',
+        owner: '运营 / 管理员',
+        status: database.telegramSummary ?? 'unknown',
+        action:
+          'Configure a real Telegram Bot Token and Chat ID in /system/notifications, enable it, and send a real test message.',
+        verify: 'npm run launch:gates',
+        evidence:
+          'npm run launch:checklist -- --id=telegram_test --status=passed --evidence="Telegram test send passed in notification center; npm run launch:gates shows Telegram passed"'
+      });
+    }
   }
 
   if (!productionEnv.ok || !checklistPassed(database, 'prod_env')) {
@@ -255,6 +280,14 @@ async function main() {
     console.log(
       'No blocker detected by this report. Run npm run release:ready as the final strict gate.'
     );
+  }
+
+  if (deferredItems.length) {
+    console.log();
+    console.log(`Deferred items: ${deferredItems.length}`);
+    for (const item of deferredItems) {
+      printBlocker(item);
+    }
   }
 
   if (!productionEnv.ok && productionEnv.details.length) {

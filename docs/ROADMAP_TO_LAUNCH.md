@@ -41,11 +41,12 @@
 当前 P0 剩余人工和生产环境门禁：
 
 - 确认是否创建首个 Git commit 并推送远程仓库
-- 配置真实 Telegram Bot Token / Chat ID，并完成真实测试发送
 - 使用 `npm run prod:env:init` 生成生产 `.env.production` 强随机密钥骨架，填入真实域名后运行 `npm run prod:env:check`
 - 每轮上线前使用 `npm run launch:status` 复核当前未完成项、生产环境变量状态和 Git 状态
 - 在预发布或生产等效环境再次执行 `npm run acceptance:launch`
 - 配置生产 HTTPS、域名、外部备份存储、远程日志采集和回滚方案
+
+Telegram Bot Token / Chat ID 填写位置已保留在通知中心；`FIRST_RELEASE_MODE=semi_auto` 时可以首发后补，再完成真实测试发送。
 
 可以后置到上线后增强，或在“必须全自动上线”策略下提前处理的能力：
 
@@ -67,7 +68,7 @@
 | 兑换码库存        | 导入、去重、库存、完整码查看已接真实接口                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 必须做防重复验收                                               |
 | 兑换码发货        | 半自动订单、锁码、发货内容、售后补发已接真实接口                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | 可支持第一版半自动上线                                         |
 | 淘宝/闲鱼自动发货 | Adapter、占位接口、失败转人工已完成                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 全自动上线前必须接真实开放平台                                 |
-| 通知中心          | 规则、模板、日志、Telegram 配置已完成                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 生产需配置真实 Telegram 并测试发送                             |
+| 通知中心          | 规则、模板、日志、Telegram 配置已完成                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 半自动首发可留空，后续在通知中心填写真实 Telegram 并测试发送   |
 | 安全中心          | 登录日志、会话、IP、MFA 设置和真实绑定、恢复码、敏感审批已完成                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 复杂设备指纹和地理位置识别可作为 P1                            |
 | 数据中心          | 任务记录和状态流转已完成，数据导入/导出已接真实 CSV 执行器、错误报告、下载有效期和下载审计；备份和恢复演练已接真实脚本执行入口                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 生产必须配置持久化备份目录并完成恢复演练                       |
 | 运维监控          | API、数据库、Redis、队列、错误日志、磁盘告警、Docker 日志轮转和数据库备份保留策略已完成第一版                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 平台和 Worker 状态随真实接入增强                               |
@@ -188,7 +189,7 @@ Apple ID 业务验收：
 - 确认 `.env.production` 不提交 Git
 - 批量导出、敏感查看、角色权限变更写日志
 - 登录失败和异常登录通知可触发
-- Telegram 真实测试发送通过
+- 如本轮启用 Telegram，则真实测试发送通过；半自动首发可后补
 - 数据库备份成功并记录文件位置
 - 恢复脚本在非生产环境演练通过
 - 运维监控能展示 API、数据库、Redis、队列和磁盘状态
@@ -287,7 +288,7 @@ Apple ID 业务验收：
 - [x] L0009 完成兑换码半自动发货全流程验收
 - [x] L0010 完成敏感字段权限和审计回归
 - [x] L0011 完成数据库备份和恢复演练
-- [ ] L0012 完成 Telegram 真实测试发送
+- [ ] L0012 后补 Telegram Bot Token / Chat ID 并完成真实测试发送
 - [ ] L0013 准备生产 `.env.production` 并确认无占位密钥；已提供 `npm run prod:env:init`，真实域名填写后再运行 `npm run prod:env:check`
 
 ### P1：建议上线前完成
@@ -342,15 +343,15 @@ npm run launch:gates
 npm run launch:checklist -- --list
 ```
 
-`npm run acceptance:launch` 是本地等效上线验收总入口，已串行包含 `npm run check`、生产 Compose 示例校验、业务闭环验收、安全验收、数据库备份、临时库恢复演练、手工门禁只读核验和 Git 提交前安全检查。本地验收会把缺少真实生产域名、Telegram 真实测试和上线检查清单手工项视为外部门禁提示；预发布或生产等效验收必须使用 `REQUIRE_PROD_ENV=1 npm run acceptance:launch` 强制校验生产环境变量和手工门禁。
+`npm run acceptance:launch` 是本地等效上线验收总入口，已串行包含 `npm run check`、生产 Compose 示例校验、业务闭环验收、安全验收、数据库备份、临时库恢复演练、手工门禁只读核验和 Git 提交前安全检查。本地验收会把缺少真实生产域名和上线检查清单手工项视为外部门禁提示；`FIRST_RELEASE_MODE=semi_auto` 时 Telegram 可后补。预发布或生产等效验收必须使用 `REQUIRE_PROD_ENV=1 npm run acceptance:launch` 强制校验生产环境变量和手工门禁。
 
 `npm run launch:status` 是上线前只读状态速览入口。它会按 `FIRST_RELEASE_MODE` 区分“首版阻塞项”和“上线后自动化路线图”：`semi_auto` 模式下，淘宝/闲鱼真实 Adapter 和 Apple ID 真实 Worker 不阻断首个内部可运营版本；`full_auto` 模式下，Phase 17 未完成项全部视为上线前阻塞项。
 
 上线策略不变时，先运行 `npm run prod:env:set-mode -- --dry-run --mode=semi_auto` 验证，再去掉 `--dry-run` 写入 `.env.production`。该脚本只更新 `FIRST_RELEASE_MODE`，不会打印或重置生产密钥。
 
-`npm run launch:gates` 是上线前手工门禁只读核验入口，会同时检查 `.env.production`、Telegram 配置是否有真实成功测试记录，以及上线检查清单中的 `telegram_test`、`prod_env`、`git_baseline` 状态。该命令不会发送 Telegram，不会写数据库，不会输出明文 token；预发布或生产等效环境可使用 `npm run launch:gates:strict` 让未通过项返回失败退出码，也可以设置 `REQUIRE_MANUAL_GATES=1 npm run acceptance:launch`。
+`npm run launch:gates` 是上线前手工门禁只读核验入口，会同时检查 `.env.production` 和上线检查清单中的 `prod_env`、`git_baseline` 状态；`FIRST_RELEASE_MODE=semi_auto` 时 Telegram 显示为 deferred，可后补。该命令不会发送 Telegram，不会写数据库，不会输出明文 token；预发布或生产等效环境可使用 `npm run launch:gates:strict` 让未通过项返回失败退出码，也可以设置 `REQUIRE_MANUAL_GATES=1 npm run acceptance:launch`。
 
-`npm run launch:checklist` 是上线检查清单手工证据记录入口，只允许更新 `telegram_test`、`prod_env`、`git_baseline` 三个手工门禁项。真实 Telegram 测试、真实生产域名校验或 Git 基线确认完成后，用该命令写入状态和证据；它会拒绝常见密钥格式出现在证据文本里，并写入审计日志。写入 `passed` 前还会检查真实状态，三个手工门禁全部 `passed` 后再运行 `npm run release:ready` 和 `REQUIRE_PROD_ENV=1 REQUIRE_MANUAL_GATES=1 npm run acceptance:launch`。示例：`npm run launch:checklist -- --id=git_baseline --status=passed --evidence="initial commit pushed to origin/main; working tree clean"`。
+`npm run launch:checklist` 是上线检查清单手工证据记录入口，只允许更新 `telegram_test`、`prod_env`、`git_baseline` 三个手工项。真实 Telegram 测试、真实生产域名校验或 Git 基线确认完成后，用该命令写入状态和证据；它会拒绝常见密钥格式出现在证据文本里，并写入审计日志。`telegram_test` 在半自动首发下可以保持 pending，后续填入并测试成功后再记录 `passed`；写入 `passed` 前仍会检查真实状态。生产 env 和 Git 基线门禁通过后再运行 `npm run release:ready` 和 `REQUIRE_PROD_ENV=1 REQUIRE_MANUAL_GATES=1 npm run acceptance:launch`。示例：`npm run launch:checklist -- --id=git_baseline --status=passed --evidence="initial commit pushed to origin/main; working tree clean"`。
 
 拿到真实生产域名后，先运行 `npm run prod:env:set-domain -- --dry-run --app-url=https://your-domain.com` 验证，再去掉 `--dry-run` 更新 `.env.production`。该脚本只改 `APP_PUBLIC_URL` 和 `CORS_ORIGIN`，不会打印或重置生产密钥。
 
@@ -375,9 +376,8 @@ BASE_URL=https://example.com npm run prod:smoke
 从当前状态继续开发，建议严格按下面顺序：
 
 1. 先确认是否允许创建首个 Git commit 并推送到远程仓库。
-2. 配置真实 Telegram，并完成真实测试发送。
-3. 准备生产 `.env.production`，运行 `npm run prod:env:check`。
-4. 决定第一版是否允许半自动上线。
-5. 如果允许半自动上线，进入预发布部署和验收。
-6. 如果必须全自动上线，先暂停上线准备，优先接淘宝、闲鱼和 Apple ID Worker。
-7. 预发布环境完整演练通过后，再进入正式上线。
+2. 准备生产 `.env.production`，运行 `npm run prod:env:check`。
+3. 决定第一版是否允许半自动上线。
+4. 如果允许半自动上线，进入预发布部署和验收；Telegram 留在通知中心后补。
+5. 如果必须全自动上线，先暂停上线准备，优先接淘宝、闲鱼、Apple ID Worker 和 Telegram 真实测试。
+6. 预发布环境完整演练通过后，再进入正式上线。

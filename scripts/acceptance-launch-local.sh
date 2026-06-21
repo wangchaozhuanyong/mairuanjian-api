@@ -84,7 +84,7 @@ Local launch acceptance passed.
 
 External/manual gates still required before production:
 - Confirm initial Git commit and push.
-- Configure real Telegram Bot Token and Chat ID, then send a real test message.
+- In semi_auto mode, Telegram can stay empty for first deployment; fill Bot Token and Chat ID later in /system/notifications, then send a real test message.
 - Fill .env.production with real domain and production secrets, then run REQUIRE_PROD_ENV=1 npm run acceptance:launch.
 
 Production env gate status: ${PROD_ENV_GATE}.

@@ -112,12 +112,12 @@ const defaultChecklistItems = [
   {
     id: 'telegram_test',
     category: '通知',
-    title: 'Telegram 真实测试发送通过',
-    priority: 'P0',
+    title: 'Telegram Bot Token / Chat ID 后补填写',
+    priority: 'P1',
     status: 'pending',
     owner: '运营',
     evidence: '',
-    remark: '生产 Bot Token 加密保存后执行测试发送'
+    remark: '半自动首发可先留空；后续在通知中心填写真实 Bot Token 和 Chat ID 后执行测试发送'
   },
   {
     id: 'prod_env',
@@ -241,7 +241,8 @@ Allowed statuses:
   ${Array.from(allowedStatuses).join(', ')}
 
 Note:
-  telegram_test, prod_env, and git_baseline are first-release P0 gates and cannot be waived.
+  prod_env and git_baseline are first-release P0 gates and cannot be waived.
+  telegram_test can stay pending for FIRST_RELEASE_MODE=semi_auto, but it cannot be waived or marked passed before a real successful Telegram test.
 `);
 }
 

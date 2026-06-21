@@ -44,7 +44,7 @@ docs/FIRST_RELEASE_HANDOFF.md
 - `scripts/verify-postgres-restore.sh`：PostgreSQL 备份恢复演练，恢复到临时库并自动清理
 - `scripts/acceptance-launch-local.sh`：本地等效上线验收总入口，串行执行质量、业务、安全、备份、恢复演练和 Git 提交前安全检查
 - `scripts/launch-status.mjs`：上线状态速览，只读检查 Phase 16/17/18 未完成项、生产环境变量状态和 Git 状态
-- `scripts/manual-gates-status.mjs`：上线手工门禁核验，检查生产 env、Telegram 真实测试和上线检查清单
+- `scripts/manual-gates-status.mjs`：上线手工门禁核验，检查生产 env、上线检查清单；`FIRST_RELEASE_MODE=semi_auto` 时 Telegram 真实测试可后补
 - `scripts/record-launch-checklist.mjs`：记录上线检查清单手工项证据，拒绝将常见密钥写入证据
 - `scripts/release-review.mjs`：只读发布审查聚合，普通模式集中输出上线状态、手工门禁、清单项和 Git 候选文件摘要；strict 模式作为 `npm run release:ready` 发布就绪硬门禁
 - `scripts/release-blockers.mjs`：只读输出当前上线阻塞项、处理动作、验证命令和证据记录命令

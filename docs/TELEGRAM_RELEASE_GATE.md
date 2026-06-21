@@ -1,6 +1,6 @@
 # Telegram 上线门禁操作手册
 
-本文档用于完成首版上线前的 `telegram_test` 门禁。它只说明本系统内的配置、测试、验收和排错流程，不保存任何真实 Bot Token 或 Chat ID。
+本文档用于后补完成 `telegram_test`。半自动首发允许先把 Telegram 留空上线，后台通知中心会保留 Bot Token 和 Chat ID 的填写位置；后续你填入真实配置后，再按本文档做测试、验收和排错。本文档不保存任何真实 Bot Token 或 Chat ID。
 
 ## 1. 门禁目标
 
@@ -146,4 +146,4 @@ npm run release:review
 
 ## 10. 与首版上线的关系
 
-当前首版策略是 `FIRST_RELEASE_MODE=semi_auto`，但 Telegram 真实测试仍是上线前 P0 门禁。即使淘宝/闲鱼真实 Adapter 和 Apple ID 自动化 Worker 可以后置，`telegram_test` 也不能后置。
+当前首版策略是 `FIRST_RELEASE_MODE=semi_auto`，Telegram 真实测试可以后置。正式启用 Telegram 通知前，不能直接改数据库伪造 `last_test_status`，也不能在未实际收到 Telegram 消息时标记 `telegram_test=passed`。

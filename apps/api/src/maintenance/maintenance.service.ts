@@ -261,12 +261,12 @@ const DEFAULT_LAUNCH_CHECKLIST_ITEMS = [
   {
     id: 'telegram_test',
     category: '通知',
-    title: 'Telegram 真实测试发送通过',
-    priority: 'P0',
+    title: 'Telegram Bot Token / Chat ID 后补填写',
+    priority: 'P1',
     status: 'pending',
     owner: '运营',
     evidence: '',
-    remark: '生产 Bot Token 加密保存后执行测试发送'
+    remark: '半自动首发可先留空；后续在通知中心填写真实 Bot Token 和 Chat ID 后执行测试发送'
   },
   {
     id: 'prod_env',
