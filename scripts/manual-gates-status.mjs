@@ -10,6 +10,11 @@ process.chdir(rootDir);
 const strict = process.argv.includes('--strict') || process.env.MANUAL_GATES_STRICT === '1';
 const targetChecklistIds = ['telegram_test', 'prod_env', 'git_baseline'];
 const passingChecklistStatuses = new Set(['passed']);
+const checklistTitles = {
+  telegram_test: 'Telegram Bot Token / Chat ID 后补填写',
+  prod_env: '生产 .env.production 无占位密钥',
+  git_baseline: '确认 Git 基线、提交和推送策略'
+};
 
 function readText(path) {
   return readFileSync(path, 'utf8');
@@ -105,6 +110,24 @@ function tail(value) {
   return normalized.length <= 4 ? normalized : normalized.slice(-4);
 }
 
+function formatUnavailableDetail(error) {
+  const message = error instanceof Error ? error.message : String(error || 'Database check failed');
+  const databaseHost = message.match(/Can't reach database server at `([^`]+)`/);
+
+  if (databaseHost) {
+    return `Database unavailable at ${databaseHost[1]}; runtime checks were used where possible.`;
+  }
+
+  const firstLine = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  return firstLine
+    ? `Database unavailable: ${firstLine}`
+    : 'Database unavailable; runtime checks were used where possible.';
+}
+
 async function databaseGateStatus() {
   const PrismaClient = await loadPrismaClient();
   if (PrismaClient.error) {
@@ -113,7 +136,8 @@ async function databaseGateStatus() {
       status: 'unknown',
       detail: PrismaClient.error,
       telegram: null,
-      checklist: []
+      checklist: [],
+      sourceAvailable: false
     };
   }
 
@@ -159,15 +183,17 @@ async function databaseGateStatus() {
           telegramConfigs.find((config) => config.lastTestError)?.lastTestError ??
           null
       },
-      checklist
+      checklist,
+      sourceAvailable: true
     };
   } catch (error) {
     return {
       ok: false,
       status: 'unknown',
-      detail: error instanceof Error ? error.message : 'Database gate check failed',
+      detail: formatUnavailableDetail(error),
       telegram: null,
-      checklist: []
+      checklist: [],
+      sourceAvailable: false
     };
   } finally {
     await prisma.$disconnect();
@@ -189,7 +215,12 @@ function printTelegram(status, deferred) {
     console.log(`Telegram real test: ${status.status}`);
     console.log(status.detail);
   }
-  if (!status.telegram) return;
+  if (!status.telegram) {
+    if (status.sourceAvailable === false) {
+      console.log(`Telegram configs: not checked (${status.detail})`);
+    }
+    return;
+  }
 
   console.log(`Telegram configs: ${status.telegram.enabled}/${status.telegram.total} enabled`);
   if (status.telegram.successful) {
@@ -202,14 +233,51 @@ function printTelegram(status, deferred) {
   }
 }
 
-function printChecklist(items) {
+function printChecklist(items, options = {}) {
+  const deferredIds = options.deferredIds ?? new Set();
+  const runtimePassedIds = options.runtimePassedIds ?? new Set();
+  const runtimeFailedIds = options.runtimeFailedIds ?? new Set();
+  const databaseAvailable = options.databaseAvailable ?? true;
+
   console.log('Launch checklist manual items:');
   const itemsById = new Map(items.map((item) => [item.id, item]));
 
   for (const id of targetChecklistIds) {
     const item = itemsById.get(id);
+    const title = item?.title ?? checklistTitles[id] ?? id;
+
+    if (runtimeFailedIds.has(id)) {
+      console.log(`  - ${id}: runtime-failed | ${title}`);
+      if (item?.status) {
+        console.log(`    stored checklist status: ${item.status}`);
+      }
+      continue;
+    }
+
+    if (deferredIds.has(id) && item?.status !== 'passed') {
+      console.log(`  - ${id}: deferred | ${checklistTitles[id] ?? title}`);
+      if (item?.status && item.status !== 'pending') {
+        console.log(`    stored checklist status: ${item.status}`);
+      }
+      continue;
+    }
+
+    if (runtimePassedIds.has(id) && (!item || !passingChecklistStatuses.has(item.status))) {
+      console.log(`  - ${id}: runtime-passed | ${title}`);
+      if (item?.status) {
+        console.log(`    stored checklist status: ${item.status}`);
+      }
+      continue;
+    }
+
     if (!item) {
-      console.log(`  - ${id}: missing | required first-release manual gate`);
+      console.log(
+        `  - ${id}: ${databaseAvailable ? 'missing' : 'not-checked'} | ${
+          databaseAvailable
+            ? 'required first-release manual gate'
+            : 'checklist database unavailable'
+        }`
+      );
       continue;
     }
     console.log(`  - ${item.id}: ${item.status} | ${item.title}`);
@@ -221,9 +289,14 @@ function printChecklist(items) {
 
 function gitReadinessStatus() {
   const result = run(process.execPath, ['scripts/git-readiness.mjs']);
+  const status = run('git', ['status', '--short', '--untracked-files=all']);
+  const hasChanges = Boolean(status.stdout.trim());
+
   return {
-    ok: result.status === 0,
-    detail: `${result.stderr || result.stdout}`.trim()
+    ok: result.status === 0 && status.status === 0 && !hasChanges,
+    detail: hasChanges
+      ? 'Working tree has uncommitted or untracked files.'
+      : `${result.stderr || result.stdout}`.trim()
   };
 }
 
@@ -251,6 +324,9 @@ async function main() {
   const runtimePassedIds = new Set();
   if (production.ok) runtimePassedIds.add('prod_env');
   if (git.ok) runtimePassedIds.add('git_baseline');
+  const runtimeFailedIds = new Set();
+  if (!production.ok) runtimeFailedIds.add('prod_env');
+  if (!git.ok) runtimeFailedIds.add('git_baseline');
   const blockers = [];
 
   if (!production.ok) blockers.push('production env');
@@ -265,7 +341,12 @@ async function main() {
   console.log();
   printTelegram(database, telegramDeferred);
   console.log();
-  printChecklist(database.checklist);
+  printChecklist(database.checklist, {
+    deferredIds: deferredChecklistIds,
+    runtimePassedIds,
+    runtimeFailedIds,
+    databaseAvailable: database.sourceAvailable !== false
+  });
   console.log();
 
   if (blockers.length) {

@@ -47,7 +47,7 @@ const checks = [
   {
     title: 'Manual Checklist Items',
     command: process.execPath,
-    args: ['scripts/record-launch-checklist.mjs', '--list'],
+    args: ['scripts/record-launch-checklist.mjs', '--list', '--effective', '--allow-unavailable'],
     required: false
   },
   {

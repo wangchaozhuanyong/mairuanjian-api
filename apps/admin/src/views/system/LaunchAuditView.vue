@@ -19,9 +19,8 @@
         <div class="launch-audit-score__big">{{ auditScore }}</div>
         <p>
           已通过 {{ passedCount }} 项，阻塞 {{ blockedCount }} 项，待处理 {{ openCount }} 项，
-          证据缺口
-          {{ evidenceMissingCount }}
-          项。上线前必须逐项确认生产配置、真实测试、备份恢复、敏感字段和手工门禁。
+          Telegram 后补 {{ deferredCount }} 项，证据缺口 {{ evidenceMissingCount }}
+          项。上线前必须逐项确认生产配置、备份恢复、敏感字段和手工门禁。
         </p>
         <div class="launch-audit-meters">
           <div v-for="meter in auditMeters" :key="meter.label" class="launch-audit-meter">
@@ -45,15 +44,15 @@
             type="button"
             @click="focusItem(item)"
           >
-            <span class="launch-check-item__icon" :class="`is-${getStatusTone(item.status)}`">
-              {{ getStatusMark(item.status) }}
+            <span class="launch-check-item__icon" :class="`is-${getEffectiveStatusTone(item)}`">
+              {{ getEffectiveStatusMark(item) }}
             </span>
             <span class="launch-check-item__main">
               <strong>{{ item.title }}</strong>
               <em>{{ item.category }} · {{ item.owner || '未分配负责人' }}</em>
             </span>
-            <StatusChip :tone="getStatusTone(item.status)">
-              {{ getStatusLabel(item.status) }}
+            <StatusChip :tone="getEffectiveStatusTone(item)">
+              {{ getEffectiveStatusLabel(item) }}
             </StatusChip>
           </button>
 
@@ -226,8 +225,8 @@
             </StatusChip>
           </div>
           <div class="mobile-record-card__chips">
-            <StatusChip :tone="getStatusTone(item.status)" dot>
-              {{ getStatusLabel(item.status) }}
+            <StatusChip :tone="getEffectiveStatusTone(item)" dot>
+              {{ getEffectiveStatusLabel(item) }}
             </StatusChip>
           </div>
           <div class="mobile-record-card__meta">
@@ -319,6 +318,7 @@ const keyword = ref('');
 const statusFilter = ref('');
 const categoryFilter = ref('');
 const requiredManualGateIds = new Set(['prod_env', 'git_baseline']);
+const deferredManualGateIds = new Set(['telegram_test']);
 const nonWaivableManualGateIds = new Set(['telegram_test', 'prod_env', 'git_baseline']);
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 
@@ -332,10 +332,17 @@ const statusOptions: Array<{ label: string; value: LaunchChecklistStatus }> = [
 
 const categories = computed(() => [...new Set(items.value.map((item) => item.category))]);
 const passedCount = computed(() => items.value.filter((item) => item.status === 'passed').length);
-const blockedCount = computed(() => items.value.filter((item) => item.status === 'blocked').length);
-const openCount = computed(
-  () => items.value.filter((item) => ['pending', 'in_progress'].includes(item.status)).length
+const blockedCount = computed(
+  () =>
+    items.value.filter((item) => item.status === 'blocked' && !isDeferredManualGate(item)).length
 );
+const openCount = computed(
+  () =>
+    items.value.filter(
+      (item) => ['pending', 'in_progress'].includes(item.status) && !isDeferredManualGate(item)
+    ).length
+);
+const deferredCount = computed(() => items.value.filter(isDeferredManualGate).length);
 const manualGateOpenCount = computed(
   () =>
     items.value.filter((item) => requiredManualGateIds.has(item.id) && item.status !== 'passed')
@@ -358,10 +365,8 @@ const priorityGateItems = computed(() =>
   [...items.value]
     .filter(
       (item) =>
-        item.status === 'blocked' ||
-        item.priority === 'P0' ||
-        requiredManualGateIds.has(item.id) ||
-        (item.id === 'telegram_test' && item.status !== 'passed')
+        !isDeferredManualGate(item) &&
+        (item.status === 'blocked' || item.priority === 'P0' || requiredManualGateIds.has(item.id))
     )
     .sort((left, right) => getLaunchItemRank(right) - getLaunchItemRank(left))
     .slice(0, 4)
@@ -383,9 +388,11 @@ const categoryProgress = computed(() =>
   categories.value.map((category) => {
     const categoryItems = items.value.filter((item) => item.category === category);
     const passed = categoryItems.filter((item) => item.status === 'passed').length;
-    const blocked = categoryItems.filter((item) => item.status === 'blocked').length;
-    const open = categoryItems.filter((item) =>
-      ['pending', 'in_progress'].includes(item.status)
+    const blocked = categoryItems.filter(
+      (item) => item.status === 'blocked' && !isDeferredManualGate(item)
+    ).length;
+    const open = categoryItems.filter(
+      (item) => ['pending', 'in_progress'].includes(item.status) && !isDeferredManualGate(item)
     ).length;
     const tone: ChipTone = blocked > 0 ? 'red' : open > 0 ? 'orange' : 'green';
 
@@ -476,6 +483,10 @@ function canWaive(item: LaunchChecklistItem) {
   return !nonWaivableManualGateIds.has(item.id);
 }
 
+function isDeferredManualGate(item: LaunchChecklistItem) {
+  return deferredManualGateIds.has(item.id) && item.status !== 'passed';
+}
+
 function getStatusOptions(item: LaunchChecklistItem) {
   return canWaive(item)
     ? statusOptions
@@ -522,6 +533,21 @@ function getStatusMark(status: LaunchChecklistStatus) {
   if (status === 'blocked') return '!';
   if (status === 'waived') return '-';
   return '!';
+}
+
+function getEffectiveStatusLabel(item: LaunchChecklistItem) {
+  if (isDeferredManualGate(item)) return '后补';
+  return getStatusLabel(item.status);
+}
+
+function getEffectiveStatusTone(item: LaunchChecklistItem) {
+  if (isDeferredManualGate(item)) return 'blue';
+  return getStatusTone(item.status);
+}
+
+function getEffectiveStatusMark(item: LaunchChecklistItem) {
+  if (isDeferredManualGate(item)) return '-';
+  return getStatusMark(item.status);
 }
 
 function getLaunchItemRank(item: LaunchChecklistItem) {

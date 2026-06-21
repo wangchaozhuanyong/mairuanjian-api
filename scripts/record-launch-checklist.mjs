@@ -185,7 +185,9 @@ function parseArgs(argv) {
     status: '',
     evidence: '',
     remark: '',
-    by: ''
+    by: '',
+    allowUnavailable: false,
+    effective: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -196,6 +198,14 @@ function parseArgs(argv) {
     }
     if (arg === '--list') {
       args.list = true;
+      continue;
+    }
+    if (arg === '--allow-unavailable') {
+      args.allowUnavailable = true;
+      continue;
+    }
+    if (arg === '--effective') {
+      args.effective = true;
       continue;
     }
     if (arg === '--help' || arg === '-h') {
@@ -231,6 +241,8 @@ function parseArgs(argv) {
 function printUsage() {
   console.log(`Usage:
   npm run launch:checklist -- --list
+  npm run launch:checklist -- --list --allow-unavailable
+  npm run launch:checklist -- --list --effective --allow-unavailable
   npm run launch:checklist -- --id=git_baseline --status=passed --evidence="npm run git:readiness passed; user approved initial commit plan"
   npm run launch:checklist -- --id=prod_env --status=passed --evidence="npm run prod:env:check passed; APP_PUBLIC_URL=https://your-domain.com" --dry-run
 
@@ -271,6 +283,29 @@ function run(command, args) {
 
 function firstLines(value, count = 4) {
   return value.trim().split(/\r?\n/).filter(Boolean).slice(0, count).join('; ');
+}
+
+function formatUnavailableDetail(error) {
+  const message = error instanceof Error ? error.message : String(error || 'Database unavailable');
+  const databaseHost = message.match(/Can't reach database server at `([^`]+)`/);
+
+  if (databaseHost) {
+    return `Database unavailable at ${databaseHost[1]}; real checklist rows were not read.`;
+  }
+
+  const firstLine = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  return firstLine
+    ? `Database unavailable: ${firstLine}`
+    : 'Database unavailable; real checklist rows were not read.';
+}
+
+function getReleaseMode() {
+  const productionEnv = parseEnvFile('.env.production');
+  return (productionEnv.get('FIRST_RELEASE_MODE') || process.env.FIRST_RELEASE_MODE || '').trim();
 }
 
 function validateArgs(args) {
@@ -399,26 +434,63 @@ function printItems(items) {
   }
 }
 
+function printEffectiveItems(items) {
+  const telegramDeferred = getReleaseMode() === 'semi_auto';
+
+  for (const item of items.filter((entry) => manualGateIds.has(entry.id))) {
+    if (item.id === 'telegram_test' && telegramDeferred && item.status !== 'passed') {
+      console.log(`${item.id}: deferred | Telegram Bot Token / Chat ID 后补填写`);
+      console.log(`  stored checklist status: ${item.status}`);
+      console.log(
+        '  effective remark: 半自动首发可先留空；后续在 /system/notifications 填写真实 Bot Token 和 Chat ID 后再测试发送。'
+      );
+      continue;
+    }
+
+    console.log(`${item.id}: ${item.status} | ${item.title}`);
+    if (item.evidence) console.log(`  evidence: ${item.evidence}`);
+    if (item.remark) console.log(`  remark: ${item.remark}`);
+  }
+}
+
+function printUnavailableList(reason) {
+  console.log('Manual checklist items: unavailable');
+  console.log(reason);
+  console.log('Default manual gate template:');
+  printItems(defaultChecklistItems);
+}
+
 async function main() {
   loadLocalEnv();
   const args = parseArgs(process.argv.slice(2));
   validateArgs(args);
 
   if (!process.env.DATABASE_URL) {
+    if (args.list && args.allowUnavailable) {
+      printUnavailableList(
+        'DATABASE_URL is missing in this shell; release review can continue with runtime checks.'
+      );
+      return;
+    }
     throw new Error('DATABASE_URL is missing. Run npm run setup:env or configure .env first.');
   }
 
-  const PrismaClient = await loadPrismaClient();
-  const prisma = new PrismaClient();
+  let prisma;
 
   try {
+    const PrismaClient = await loadPrismaClient();
+    prisma = new PrismaClient();
     const existing = await prisma.systemParameter.findUnique({
       where: { key: checklistKey }
     });
     const items = normalizeItems(existing?.value).map(toStoredItem);
 
     if (args.list) {
-      printItems(items);
+      if (args.effective) {
+        printEffectiveItems(items);
+      } else {
+        printItems(items);
+      }
       return;
     }
 
@@ -474,8 +546,14 @@ async function main() {
     });
 
     console.log('Launch checklist evidence recorded.');
+  } catch (error) {
+    if (args.list && args.allowUnavailable) {
+      printUnavailableList(formatUnavailableDetail(error));
+      return;
+    }
+    throw error;
   } finally {
-    await prisma.$disconnect();
+    await prisma?.$disconnect();
   }
 }
 

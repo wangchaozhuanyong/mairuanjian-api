@@ -166,6 +166,25 @@ function normalizeChecklistItems(value) {
   return Array.isArray(items) ? items : [];
 }
 
+function formatUnavailableDetail(error) {
+  const message =
+    error instanceof Error ? error.message : String(error || 'Manual gate check failed');
+  const databaseHost = message.match(/Can't reach database server at `([^`]+)`/);
+
+  if (databaseHost) {
+    return `database unavailable at ${databaseHost[1]}; runtime checks were used where possible`;
+  }
+
+  const firstLine = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  return firstLine
+    ? `database unavailable: ${firstLine}`
+    : 'database unavailable; runtime checks were used where possible';
+}
+
 async function getManualGateStatus() {
   const PrismaClient = await loadPrismaClient();
   if (PrismaClient.error) {
@@ -173,7 +192,8 @@ async function getManualGateStatus() {
       ok: false,
       telegramPassed: false,
       checklist: new Map(),
-      detail: PrismaClient.error
+      detail: formatUnavailableDetail(PrismaClient.error),
+      sourceAvailable: false
     };
   }
 
@@ -208,14 +228,16 @@ async function getManualGateStatus() {
       checklist,
       detail: successfulTelegram
         ? `Telegram passed via ${successfulTelegram.notificationName}.`
-        : 'No enabled Telegram config has a successful real test.'
+        : 'No enabled Telegram config has a successful real test.',
+      sourceAvailable: true
     };
   } catch (error) {
     return {
       ok: false,
       telegramPassed: false,
       checklist: new Map(),
-      detail: error instanceof Error ? error.message : 'Manual gate check failed'
+      detail: formatUnavailableDetail(error),
+      sourceAvailable: false
     };
   } finally {
     await prisma.$disconnect();
@@ -429,6 +451,10 @@ function printRecommendedNextStep(phase16, phase17, productionEnv, launchStrateg
     console.log(
       '- Confirm the Git baseline and record git_baseline evidence in the launch checklist.'
     );
+  } else if (!manualGates.ok) {
+    console.log(
+      '- Manual checklist database was not reachable from this shell; release status used runtime production-env and Git checks instead.'
+    );
   }
 
   if (launchStrategy.mode === 'full_auto' && phase17OpenCodes.size > 0) {
@@ -499,7 +525,9 @@ async function main() {
   console.log(`Production env: ${productionEnv.status}`);
   console.log(productionEnv.detail);
   console.log(
-    `Manual gates source: ${manualGates.ok ? 'database' : `unavailable (${manualGates.detail})`}`
+    `Manual gates source: ${
+      manualGates.ok ? 'database' : `unavailable; runtime fallback active (${manualGates.detail})`
+    }`
   );
   console.log();
   printFirstReleaseGate(firstReleaseGate);
