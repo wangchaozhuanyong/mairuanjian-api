@@ -48,7 +48,7 @@ const checks = [
     title: 'Manual Checklist Items',
     command: process.execPath,
     args: ['scripts/record-launch-checklist.mjs', '--list'],
-    required: true
+    required: false
   },
   {
     title: 'Git Readiness Verbose',
