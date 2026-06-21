@@ -231,7 +231,14 @@
       width="min(680px, calc(100vw - 24px))"
     >
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
-        <el-form-item label="已发货订单" prop="orderId">
+        <el-form-item prop="orderId">
+          <template #label>
+            <FieldHelpLabel
+              label="已发货订单"
+              purpose="选择需要售后处理的原订单，补发会关联到这笔订单。"
+              example="客户说某单兑换失败，就选择对应的平台订单号。"
+            />
+          </template>
           <el-select
             v-model="createForm.orderId"
             class="full-input"
@@ -247,7 +254,14 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="原兑换码">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="原兑换码"
+              purpose="选择客户反馈有问题的原码，方便追踪是哪张码需要售后。"
+              example="客户发来尾号 1234，就选择尾号 1234 的原兑换码。"
+            />
+          </template>
           <el-select v-model="createForm.originalCodeId" class="full-input" clearable>
             <el-option
               v-for="code in selectedOrder?.deliveredCodes ?? []"
@@ -257,7 +271,14 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="售后原因" prop="reason">
+        <el-form-item prop="reason">
+          <template #label>
+            <FieldHelpLabel
+              label="售后原因"
+              purpose="说明为什么创建售后单，后续补发、退款和利润损耗会参考它。"
+              example="可以写客户反馈兑换失败、码已被使用、发错面值。"
+            />
+          </template>
           <el-input
             v-model.trim="createForm.reason"
             type="textarea"
@@ -285,18 +306,41 @@
         </div>
       </div>
       <el-form ref="reissueFormRef" :model="reissueForm" label-position="top">
-        <el-form-item label="售后单">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="售后单"
+              purpose="当前准备补发的售后记录，用来确认没有选错订单。"
+              example="补发前核对平台订单号和客户反馈是否一致。"
+            />
+          </template>
           <el-input :model-value="selectedAfterSale?.order.externalOrderNo ?? '-'" disabled />
         </el-form-item>
-        <el-form-item label="发货方式">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="发货方式"
+              purpose="记录本次补发实际通过什么方式发给客户。"
+              example="人工复制给客户选手工发货；平台电子凭证接口发出选电子凭证。"
+            />
+          </template>
           <el-select v-model="reissueForm.deliveryMethod" class="full-input">
-            <el-option label="手工发货" value="manual" />
-            <el-option label="电子凭证" value="eticket" />
-            <el-option label="虚拟无需物流" value="dummy_send" />
-            <el-option label="消息卡片" value="message_card" />
+            <el-option
+              v-for="method in deliveryMethodOptions"
+              :key="method.value"
+              :label="method.label"
+              :value="method.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="发货内容快照">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="发货内容快照"
+              purpose="保存本次补发实际发送给客户的内容，方便售后回查。"
+              example="留空时系统会生成包含新兑换码的补发内容；手动发过就粘贴实际内容。"
+            />
+          </template>
           <el-input
             v-model="reissueForm.deliveryContent"
             type="textarea"
@@ -304,7 +348,14 @@
             placeholder="留空时系统会生成包含新兑换码的补发内容"
           />
         </el-form-item>
-        <el-form-item v-if="generatedContent" label="本次补发内容">
+        <el-form-item v-if="generatedContent">
+          <template #label>
+            <FieldHelpLabel
+              label="本次补发内容"
+              purpose="系统本次生成的补发内容，确认后会记录到补发日志里。"
+              example="复制给客户前先核对新码面值、数量和订单号。"
+            />
+          </template>
           <el-input v-model="generatedContent" type="textarea" :rows="7" readonly />
         </el-form-item>
       </el-form>
@@ -358,24 +409,28 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { codeAfterSalesApi, codeOrdersApi, userTableViewsApi } from '@/api/system';
-import type { CodeAfterSaleQuery } from '@/api/system';
+import { codeAfterSalesApi, codeOrdersApi, dataCenterApi, userTableViewsApi } from '@/api/system';
+import type { CodeAfterSaleQuery, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { CODE_DELIVERY_METHOD_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodeAfterSale,
   CodeDeliveryLog,
   CodePlatformOrder,
+  DataDictionary,
   PageResult,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { buildCodeDeliveryMethodOptions } from '@/utils/codeDeliveryMethods';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'code_after_sales';
@@ -403,6 +458,7 @@ const reissueDialogVisible = ref(false);
 const detailVisible = ref(false);
 const afterSales = ref<CodeAfterSale[]>([]);
 const deliveredOrders = ref<CodePlatformOrder[]>([]);
+const deliveryMethodDictionaries = ref<DataDictionary[]>([]);
 const selectedAfterSales = ref<CodeAfterSale[]>([]);
 const selectedOrder = ref<CodePlatformOrder | null>(null);
 const selectedAfterSale = ref<CodeAfterSale | null>(null);
@@ -415,6 +471,7 @@ const generatedContent = ref('');
 const total = ref(0);
 const createFormRef = ref<FormInstance>();
 const activeAfterSalesQueryKey = ref('');
+const activeDeliveryMethodsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -449,6 +506,13 @@ const completedCount = computed(
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
+const deliveryMethodOptions = computed(() =>
+  buildCodeDeliveryMethodOptions(deliveryMethodDictionaries.value)
+);
+
+function getDefaultDeliveryMethod() {
+  return deliveryMethodOptions.value[0]?.value ?? 'manual';
+}
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
@@ -540,6 +604,52 @@ async function loadDeliveredOrders() {
   deliveredOrders.value = data.items;
 }
 
+function buildDeliveryMethodParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 20,
+    group: CODE_DELIVERY_METHOD_DICTIONARY_GROUP,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+function applyDeliveryMethodResult(data: PageResult<DataDictionary>) {
+  deliveryMethodDictionaries.value = data.items;
+}
+
+async function loadDeliveryMethods(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildDeliveryMethodParams();
+  const key = createSmartQueryKey('code-after-sale-delivery-methods', params);
+  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
+
+  activeDeliveryMethodsQueryKey.value = key;
+
+  if (cached) {
+    applyDeliveryMethodResult(cached);
+  }
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => dataCenterApi.listDictionaries(params),
+      force: options.force ?? true
+    });
+
+    if (activeDeliveryMethodsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyDeliveryMethodResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载发货方式失败');
+    }
+  }
+}
+
 async function handleSearch() {
   query.page = 1;
   await loadAfterSales();
@@ -560,7 +670,7 @@ function handleSelectionChange(rows: CodeAfterSale[]) {
 
 async function reloadAll() {
   try {
-    await Promise.all([loadDeliveredOrders(), loadAfterSales()]);
+    await Promise.all([loadDeliveredOrders(), loadDeliveryMethods(), loadAfterSales()]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '刷新售后补发失败');
   }
@@ -735,7 +845,7 @@ function openDetail(afterSale: CodeAfterSale) {
 function openReissue(afterSale: CodeAfterSale) {
   selectedAfterSale.value = afterSale;
   generatedContent.value = '';
-  reissueForm.deliveryMethod = 'manual';
+  reissueForm.deliveryMethod = getDefaultDeliveryMethod();
   reissueForm.deliveryContent = '';
   reissueDialogVisible.value = true;
 }
@@ -784,8 +894,11 @@ async function completeAfterSale(afterSale: CodeAfterSale) {
 
 async function initializePage() {
   try {
-    await loadDeliveredOrders();
-    await loadTableViews(true);
+    await Promise.all([
+      loadDeliveredOrders(),
+      loadDeliveryMethods({ force: false }),
+      loadTableViews(true)
+    ]);
     await loadAfterSales({ force: false });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载售后补发失败');
@@ -794,12 +907,12 @@ async function initializePage() {
 
 onMounted(initializePage);
 
-const stopRealtimeRefresh = onRealtimeQueryInvalidated(['code-after-sales'], () => {
-  void loadAfterSales({
-    background: afterSales.value.length > 0,
-    force: true
-  });
-});
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['code-after-sales', 'data-dictionaries'],
+  () => {
+    void reloadAll();
+  }
+);
 
 onBeforeUnmount(stopRealtimeRefresh);
 </script>

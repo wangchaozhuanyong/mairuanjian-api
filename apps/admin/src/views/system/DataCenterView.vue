@@ -122,7 +122,9 @@
                 :data="overview?.recentImportJobs ?? []"
                 row-key="id"
               >
-                <el-table-column label="模块" width="120" prop="module" />
+                <el-table-column label="模块" width="140">
+                  <template #default="{ row }">{{ getImportModuleLabel(row.module) }}</template>
+                </el-table-column>
                 <el-table-column label="状态" width="110">
                   <template #default="{ row }"><JobStatusTag :status="row.status" /></template>
                 </el-table-column>
@@ -143,7 +145,7 @@
                 >
                   <div class="mobile-record-card__head">
                     <div class="mobile-record-card__title">
-                      <strong>{{ row.module }}</strong>
+                      <strong>{{ getImportModuleLabel(row.module) }}</strong>
                       <span>{{ row.filePath || row.remark || '暂无文件信息' }}</span>
                     </div>
                     <JobStatusTag :status="row.status" />
@@ -180,7 +182,9 @@
                 :data="overview?.recentExportJobs ?? []"
                 row-key="id"
               >
-                <el-table-column label="模块" width="120" prop="module" />
+                <el-table-column label="模块" width="140">
+                  <template #default="{ row }">{{ getExportModuleLabel(row.module) }}</template>
+                </el-table-column>
                 <el-table-column label="状态" width="110">
                   <template #default="{ row }"><JobStatusTag :status="row.status" /></template>
                 </el-table-column>
@@ -199,7 +203,7 @@
                 >
                   <div class="mobile-record-card__head">
                     <div class="mobile-record-card__title">
-                      <strong>{{ row.module }}</strong>
+                      <strong>{{ getExportModuleLabel(row.module) }}</strong>
                       <span>{{ row.filePath || row.fields.join(', ') || '暂无字段信息' }}</span>
                     </div>
                     <JobStatusTag :status="row.status" />
@@ -708,7 +712,7 @@
             <article v-for="row in imports" :key="row.id" class="mobile-record-card">
               <div class="mobile-record-card__head">
                 <div class="mobile-record-card__title">
-                  <strong>{{ row.module }}</strong>
+                  <strong>{{ getImportModuleLabel(row.module) }}</strong>
                   <span>{{ row.filePath || row.remark || '暂无文件信息' }}</span>
                 </div>
                 <JobStatusTag :status="row.status" />
@@ -925,7 +929,7 @@
             <article v-for="row in exports" :key="row.id" class="mobile-record-card">
               <div class="mobile-record-card__head">
                 <div class="mobile-record-card__title">
-                  <strong>{{ row.module }}</strong>
+                  <strong>{{ getExportModuleLabel(row.module) }}</strong>
                   <span>{{ row.filePath || row.fields.join(', ') || '暂无字段信息' }}</span>
                 </div>
                 <JobStatusTag :status="row.status" />
@@ -1854,14 +1858,31 @@
       width="min(520px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
-        <el-form-item label="备份类型" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="备份类型"
+              purpose="选择要备份的数据范围，用于后续恢复或审计留档。"
+              example="日常数据选数据库；上传文件选文件；系统配置选配置。"
+            />
+          </template>
           <el-select v-model="backupForm.jobType">
-            <el-option label="数据库" value="database" />
-            <el-option label="文件" value="files" />
-            <el-option label="配置" value="config" />
+            <el-option
+              v-for="option in backupTypeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="说明这次备份的原因或范围，方便以后找到正确备份。"
+              example="可以写上线前备份、月度备份、修复前备份。"
+            />
+          </template>
           <el-input v-model="backupForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -1877,13 +1898,34 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="110px">
-        <el-form-item label="备份任务 ID"
-          ><el-input v-model="restoreForm.backupJobId"
-        /></el-form-item>
-        <el-form-item label="恢复范围" required
-          ><el-input v-model="restoreForm.restoreScope"
-        /></el-form-item>
-        <el-form-item label="审批说明">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备份任务 ID"
+              purpose="指定要从哪一次备份恢复。"
+              example="从备份任务列表复制对应的任务 ID。"
+            />
+          </template>
+          <el-input v-model="restoreForm.backupJobId" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="恢复范围"
+              purpose="说明这次要恢复哪些数据，避免误恢复整个系统。"
+              example="可以写仅恢复 customers，或恢复 2026-06-21 前的配置。"
+            />
+          </template>
+          <el-input v-model="restoreForm.restoreScope" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="审批说明"
+              purpose="记录恢复任务为什么被允许执行，方便上线和审计追踪。"
+              example="可以写客户误删数据，已由负责人确认恢复。"
+            />
+          </template>
           <el-input v-model="restoreForm.approvalNote" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -1899,7 +1941,14 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
-        <el-form-item label="模块" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模块"
+              purpose="选择这次导入要写入哪个业务模块。"
+              example="导入客户选客户模块，导入兑换码库存选兑换码模块。"
+            />
+          </template>
           <el-select v-model="importForm.module" filterable>
             <el-option
               v-for="option in importModuleOptions"
@@ -1909,10 +1958,26 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="文件名"><el-input v-model="importForm.filePath" /></el-form-item>
-        <el-form-item label="备注"
-          ><el-input v-model="importForm.remark" type="textarea" :rows="3"
-        /></el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="文件名"
+              purpose="记录导入文件名或文件路径，方便追踪导入来源。"
+              example="可以填 customers-20260621.xlsx 或上传后的文件路径。"
+            />
+          </template>
+          <el-input v-model="importForm.filePath" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录导入原因、数据来源或注意事项。"
+              example="可以写客户资料整理导入、供应商库存导入。"
+            />
+          </template>
+          <el-input v-model="importForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <AppButton @click="importDialogVisible = false">取消</AppButton>
@@ -1926,7 +1991,14 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="110px">
-        <el-form-item label="模块" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模块"
+              purpose="选择这次要导出的业务模块。"
+              example="导出客户资料选客户模块，导出订单选对应订单模块。"
+            />
+          </template>
           <el-select v-model="exportForm.module" filterable>
             <el-option
               v-for="option in exportModuleOptions"
@@ -1936,12 +2008,26 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="字段列表">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="字段列表"
+              purpose="指定导出哪些字段，留空时按系统默认字段导出。"
+              example="用英文逗号分隔，例如 name,phone,status。"
+            />
+          </template>
           <el-input v-model="exportForm.fieldsText" placeholder="用英文逗号分隔" />
         </el-form-item>
-        <el-form-item label="包含敏感字段"
-          ><el-switch v-model="exportForm.containsSensitive"
-        /></el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="包含敏感字段"
+              purpose="控制导出结果是否包含手机号、完整码等敏感字段。"
+              example="普通报表不要打开；确需完整资料时先确认权限和审批原因。"
+            />
+          </template>
+          <el-switch v-model="exportForm.containsSensitive" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <AppButton @click="exportDialogVisible = false">取消</AppButton>
@@ -1955,8 +2041,24 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
-        <el-form-item label="模块" required><el-input v-model="cleanupForm.module" /></el-form-item>
-        <el-form-item label="审批说明">
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模块"
+              purpose="选择要执行数据清理的模块，避免误清其他业务数据。"
+              example="只清导入失败任务就填 data_import，不要写整个系统。"
+            />
+          </template>
+          <el-input v-model="cleanupForm.module" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="审批说明"
+              purpose="说明为什么允许清理数据，便于追责和复盘。"
+              example="可以写测试数据清理，已确认不含生产客户数据。"
+            />
+          </template>
           <el-input v-model="cleanupForm.approvalNote" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -1972,16 +2074,44 @@
       width="min(600px, calc(100vw - 24px))"
     >
       <el-form label-width="120px">
-        <el-form-item label="模块" required
-          ><el-input v-model="duplicateForm.module"
-        /></el-form-item>
-        <el-form-item label="主对象 ID"
-          ><el-input v-model="duplicateForm.primaryObjectId"
-        /></el-form-item>
-        <el-form-item label="重复对象 ID">
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模块"
+              purpose="选择要合并重复数据的模块。"
+              example="合并重复客户就填 customers，合并重复平台就填 source_platforms。"
+            />
+          </template>
+          <el-input v-model="duplicateForm.module" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="主对象 ID"
+              purpose="保留下来的主记录 ID，合并后其他重复记录会归到它下面。"
+              example="选择资料最完整、历史订单最多的客户作为主对象。"
+            />
+          </template>
+          <el-input v-model="duplicateForm.primaryObjectId" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="重复对象 ID"
+              purpose="需要被合并掉的重复记录 ID 列表。"
+              example="多个 ID 用英文逗号分隔，例如 id1,id2,id3。"
+            />
+          </template>
           <el-input v-model="duplicateForm.duplicateObjectIdsText" placeholder="用英文逗号分隔" />
         </el-form-item>
-        <el-form-item label="审批说明">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="审批说明"
+              purpose="说明为什么要合并这些重复记录。"
+              example="可以写同一客户重复创建，已核对手机号和订单归属。"
+            />
+          </template>
           <el-input v-model="duplicateForm.approvalNote" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -1997,26 +2127,77 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
-        <el-form-item label="分组" required
-          ><el-input v-model="dictionaryForm.group" :disabled="Boolean(editingDictionary)"
-        /></el-form-item>
-        <el-form-item label="编码" required
-          ><el-input v-model="dictionaryForm.code" :disabled="Boolean(editingDictionary)"
-        /></el-form-item>
-        <el-form-item label="名称" required
-          ><el-input v-model="dictionaryForm.label"
-        /></el-form-item>
-        <el-form-item label="值"><el-input v-model="dictionaryForm.value" /></el-form-item>
-        <el-form-item label="排序"
-          ><el-input-number v-model="dictionaryForm.sortOrder" :min="0"
-        /></el-form-item>
-        <el-form-item label="状态">
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="分组"
+              purpose="数据字典所属分组，用来区分客户标签、地区、发货方式等不同选项。"
+              example="客户标签可用 customer_tags，Apple 地区可用 apple_regions。"
+            />
+          </template>
+          <el-input v-model="dictionaryForm.group" :disabled="Boolean(editingDictionary)" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="编码"
+              purpose="系统识别这个字典项的稳定代码，创建后通常不修改。"
+              example="手工发货可用 manual，美区可用 US。"
+            />
+          </template>
+          <el-input v-model="dictionaryForm.code" :disabled="Boolean(editingDictionary)" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="名称"
+              purpose="员工在页面上看到的选项名称。"
+              example="可以填手工发货、美区、老客户。"
+            />
+          </template>
+          <el-input v-model="dictionaryForm.label" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="值"
+              purpose="字典项额外保存的值，业务需要时才填写。"
+              example="地区字典可把币种或区号放到值里；普通标签可留空。"
+            />
+          </template>
+          <el-input v-model="dictionaryForm.value" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="排序"
+              purpose="控制选项显示顺序，数字越小越靠前。"
+              example="常用选项填 1，不常用选项填 100。"
+            />
+          </template>
+          <el-input-number v-model="dictionaryForm.sortOrder" :min="0" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="状态"
+              purpose="控制这个字典项是否还能被选择。"
+              example="正在用选启用；废弃选项选停用。"
+            />
+          </template>
           <el-select v-model="dictionaryForm.status">
             <el-option label="启用" value="active" />
             <el-option label="停用" value="disabled" />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录这个字典项的使用说明。"
+              example="可以写只用于新客户、只用于某个平台。"
+            />
+          </template>
           <el-input v-model="dictionaryForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -2032,14 +2213,44 @@
       width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
-        <el-form-item label="Key" required
-          ><el-input v-model="parameterForm.key" :disabled="Boolean(editingParameter)"
-        /></el-form-item>
-        <el-form-item label="分组"><el-input v-model="parameterForm.group" /></el-form-item>
-        <el-form-item label="值 JSON" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="Key"
+              purpose="系统参数的唯一键名，业务代码会按这个 Key 读取配置。"
+              example="可以填 apple.low_balance_threshold，创建后不要随意改。"
+            />
+          </template>
+          <el-input v-model="parameterForm.key" :disabled="Boolean(editingParameter)" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="分组"
+              purpose="把系统参数按用途分组，方便列表筛选。"
+              example="可以填 apple、code、security、ops。"
+            />
+          </template>
+          <el-input v-model="parameterForm.group" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="值 JSON"
+              purpose="系统参数的实际配置值，必须是合法 JSON。"
+              example='简单文本也要写成 JSON，例如 "enabled"；对象可写 {"days":7}。'
+            />
+          </template>
           <el-input v-model="parameterForm.valueText" type="textarea" :rows="6" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="说明这个系统参数的用途和修改注意事项。"
+              example="可以写影响余额提醒阈值，修改后需刷新页面。"
+            />
+          </template>
           <el-input v-model="parameterForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -2069,12 +2280,18 @@ import type {
 import AppButton from '@/components/ui/AppButton.vue';
 import AppState from '@/components/ui/AppState.vue';
 import JobStatusTag from '@/components/ui/DataJobStatusTag.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import {
+  DATA_BACKUP_TYPE_DICTIONARY_GROUP,
+  DATA_EXPORT_MODULE_DICTIONARY_GROUP,
+  DATA_IMPORT_MODULE_DICTIONARY_GROUP
+} from '@/config/quickSettings';
 import type {
   BackupJob,
   BackupJobType,
@@ -2094,12 +2311,24 @@ import type {
   UserTableView
 } from '@/types/system';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import {
+  buildDataBackupTypeOptions,
+  buildDataExportModuleOptions,
+  buildDataImportModuleOptions,
+  getDataBackupTypeLabel,
+  getDataExportModuleLabel,
+  getDataImportModuleLabel,
+  isDataBackupType
+} from '@/utils/systemQuickOptions';
 
 type LoadOptions = { background?: boolean; force?: boolean };
 
 const route = useRoute();
 const activeTab = ref(getInitialTab());
 const overview = ref<DataCenterOverview | null>(null);
+const backupTypeDictionaries = ref<DataDictionary[]>([]);
+const importModuleDictionaries = ref<DataDictionary[]>([]);
+const exportModuleDictionaries = ref<DataDictionary[]>([]);
 const saving = ref(false);
 const backupTableKey = 'data_backup_jobs';
 const restoreTableKey = 'data_restore_jobs';
@@ -2125,11 +2354,7 @@ const dictionaryStatusOptions = [
   { label: '启用', value: 'active' },
   { label: '停用', value: 'disabled' }
 ];
-const backupTypeOptions = [
-  { label: '数据库', value: 'database' },
-  { label: '文件', value: 'files' },
-  { label: '配置', value: 'config' }
-];
+const backupTypeOptions = computed(() => buildDataBackupTypeOptions(backupTypeDictionaries.value));
 const sensitiveOptions = [
   { label: '包含敏感字段', value: 'true' },
   { label: '不含敏感字段', value: 'false' }
@@ -2159,10 +2384,9 @@ const importColumnOptions = [
   { label: '错误报告', value: 'errorReport' },
   { label: '创建时间', value: 'createdAt' }
 ];
-const importModuleOptions = [
-  { label: '客户', value: 'customers' },
-  { label: '来源平台', value: 'source_platforms' }
-];
+const importModuleOptions = computed(() =>
+  buildDataImportModuleOptions(importModuleDictionaries.value)
+);
 const exportColumnOptions = [
   { label: '模块', value: 'module', required: true },
   { label: '状态', value: 'status' },
@@ -2171,14 +2395,9 @@ const exportColumnOptions = [
   { label: '下载过期', value: 'downloadExpiresAt' },
   { label: '创建时间', value: 'createdAt' }
 ];
-const exportModuleOptions = [
-  { label: '客户', value: 'customers' },
-  { label: '来源平台', value: 'source_platforms' },
-  { label: 'Apple ID 账号概览', value: 'apple_accounts' },
-  { label: 'Apple ID 订单', value: 'apple_orders' },
-  { label: '兑换码库存概览', value: 'redeem_codes' },
-  { label: '兑换码订单', value: 'code_orders' }
-];
+const exportModuleOptions = computed(() =>
+  buildDataExportModuleOptions(exportModuleDictionaries.value)
+);
 const recycleColumnOptions = [
   { label: '对象', value: 'objectLabel', required: true },
   { label: '模块', value: 'module' },
@@ -2536,6 +2755,10 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
     'data-parameters'
   ],
   ({ scopes }) => {
+    if (scopes.includes('data-dictionaries')) {
+      void loadDataCenterOptions({ background: true, force: true });
+    }
+
     if (scopes.includes('data-overview')) {
       void loadOverview({
         background: Boolean(overview.value),
@@ -2584,6 +2807,7 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 onBeforeUnmount(stopRealtimeRefresh);
 
 async function refreshCurrentTab(options: LoadOptions = {}) {
+  await loadDataCenterOptions(options);
   await loadOverview(options);
   if (activeTab.value === 'backups') await loadBackupsWithViews(options);
   if (activeTab.value === 'restores') await loadRestoresWithViews(options);
@@ -2594,6 +2818,33 @@ async function refreshCurrentTab(options: LoadOptions = {}) {
   if (activeTab.value === 'duplicates') await loadDuplicateJobsWithViews(options);
   if (activeTab.value === 'dictionaries') await loadDictionariesWithViews(options);
   if (activeTab.value === 'parameters') await loadParametersWithViews(options);
+}
+
+function buildDataCenterOptionParams(group: string): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 50,
+    group,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadDataCenterOptions(options: LoadOptions = {}) {
+  try {
+    const [backupTypes, importModules, exportModules] = await Promise.all([
+      dataCenterApi.listDictionaries(buildDataCenterOptionParams(DATA_BACKUP_TYPE_DICTIONARY_GROUP)),
+      dataCenterApi.listDictionaries(buildDataCenterOptionParams(DATA_IMPORT_MODULE_DICTIONARY_GROUP)),
+      dataCenterApi.listDictionaries(buildDataCenterOptionParams(DATA_EXPORT_MODULE_DICTIONARY_GROUP))
+    ]);
+    backupTypeDictionaries.value = backupTypes.items;
+    importModuleDictionaries.value = importModules.items;
+    exportModuleDictionaries.value = exportModules.items;
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载数据中心选项失败');
+    }
+  }
 }
 
 async function loadOverview(options: LoadOptions = {}) {
@@ -3901,7 +4152,7 @@ async function loadParameters(options: LoadOptions = {}) {
 }
 
 function openBackupDialog() {
-  Object.assign(backupForm, { jobType: 'database', remark: '' });
+  Object.assign(backupForm, { jobType: getDefaultBackupType(), remark: '' });
   backupDialogVisible.value = true;
 }
 
@@ -3940,7 +4191,7 @@ async function createRestore() {
 }
 
 function openImportDialog() {
-  Object.assign(importForm, { module: 'customers', filePath: '', remark: '' });
+  Object.assign(importForm, { module: getDefaultImportModule(), filePath: '', remark: '' });
   importDialogVisible.value = true;
 }
 
@@ -3962,7 +4213,11 @@ async function createImport() {
 }
 
 function openExportDialog() {
-  Object.assign(exportForm, { module: 'customers', fieldsText: '', containsSensitive: false });
+  Object.assign(exportForm, {
+    module: getDefaultExportModule(),
+    fieldsText: '',
+    containsSensitive: false
+  });
   exportDialogVisible.value = true;
 }
 
@@ -4276,7 +4531,30 @@ function getInitialTab() {
 }
 
 function getBackupTypeLabel(type: string) {
-  return { database: '数据库', files: '文件', config: '配置' }[type] ?? type;
+  if (!isDataBackupType(type)) {
+    return type;
+  }
+  return getDataBackupTypeLabel(type, backupTypeDictionaries.value);
+}
+
+function getImportModuleLabel(module: string) {
+  return getDataImportModuleLabel(module, importModuleDictionaries.value);
+}
+
+function getExportModuleLabel(module: string) {
+  return getDataExportModuleLabel(module, exportModuleDictionaries.value);
+}
+
+function getDefaultBackupType() {
+  return backupTypeOptions.value[0]?.value ?? 'database';
+}
+
+function getDefaultImportModule() {
+  return importModuleOptions.value[0]?.value ?? 'customers';
+}
+
+function getDefaultExportModule() {
+  return exportModuleOptions.value[0]?.value ?? 'customers';
 }
 
 function formatDate(value?: string | null) {
@@ -4351,7 +4629,7 @@ function isDataJobStatus(value: unknown): value is DataJobStatus {
 }
 
 function isBackupJobType(value: unknown): value is BackupJobType {
-  return value === 'database' || value === 'files' || value === 'config';
+  return typeof value === 'string' && isDataBackupType(value);
 }
 
 function isDictionaryStatus(value: unknown): value is DataDictionaryStatus {

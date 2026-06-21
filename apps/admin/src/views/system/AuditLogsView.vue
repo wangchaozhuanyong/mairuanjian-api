@@ -814,7 +814,7 @@
             :saved-views="automationSavedViews"
             :show-date-shortcut="false"
             :show-primary="false"
-            placeholder="搜索任务消息、错误码、队列 ID"
+            placeholder="搜索任务消息、任务类型"
             @search="handleAutomationSearch"
             @refresh="() => loadAutomationLogs()"
             @clear-filters="clearAutomationFilters"
@@ -834,7 +834,7 @@
             <template #empty>
               <div class="apple-core-empty-state">
                 <strong>暂无自动化任务日志</strong>
-                <span>调整任务消息、级别或队列 ID 后重新查询。</span>
+                <span>调整任务消息、级别或任务类型后重新查询。</span>
                 <div class="apple-core-empty-state__actions">
                   <AppButton variant="soft" @click="clearAutomationFilters">清空筛选</AppButton>
                 </div>
@@ -850,16 +850,16 @@
               <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </el-table-column>
             <el-table-column
-              v-if="isAutomationColumnVisible('taskId')"
+              v-if="isAutomationColumnVisible('task')"
               label="任务"
-              prop="taskId"
+              prop="message"
               min-width="220"
               sortable="custom"
               show-overflow-tooltip
             >
-              <template #default="{ row }"
-                >{{ row.task?.taskType ?? '-' }} / {{ row.taskId }}</template
-              >
+              <template #default="{ row }">
+                {{ getAutomationTaskTypeLabel(row.task?.taskType) }}
+              </template>
             </el-table-column>
             <el-table-column
               v-if="isAutomationColumnVisible('level')"
@@ -878,22 +878,6 @@
               <template #default="{ row }">{{ row.task?.status ?? '-' }}</template>
             </el-table-column>
             <el-table-column
-              v-if="isAutomationColumnVisible('queueJobId')"
-              label="队列 ID"
-              min-width="160"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">{{ row.task?.queueJobId ?? '-' }}</template>
-            </el-table-column>
-            <el-table-column
-              v-if="isAutomationColumnVisible('errorCode')"
-              label="错误码"
-              min-width="150"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">{{ row.task?.errorCode ?? '-' }}</template>
-            </el-table-column>
-            <el-table-column
               v-if="isAutomationColumnVisible('message')"
               label="消息"
               min-width="320"
@@ -910,7 +894,7 @@
             <article v-for="log in automationLogs" :key="log.id" class="mobile-record-card">
               <div class="mobile-record-card__head">
                 <div class="mobile-record-card__title">
-                  <strong>{{ log.task?.taskType ?? '自动化任务' }}</strong>
+                  <strong>{{ getAutomationTaskTypeLabel(log.task?.taskType) }}</strong>
                   <span>{{ formatDate(log.createdAt) }}</span>
                 </div>
                 <StatusChip :tone="getAutomationTone(log.level)" dot>
@@ -923,12 +907,8 @@
                   <strong>{{ log.task?.status ?? '-' }}</strong>
                 </div>
                 <div>
-                  <span>队列 ID</span>
-                  <strong>{{ log.task?.queueJobId ?? '-' }}</strong>
-                </div>
-                <div>
-                  <span>错误码</span>
-                  <strong>{{ log.task?.errorCode ?? '-' }}</strong>
+                  <span>人工验证</span>
+                  <strong>{{ log.task?.manualRequired ? '需要' : '无需' }}</strong>
                 </div>
               </div>
               <div class="mobile-record-card__meta">
@@ -1249,11 +1229,9 @@ const automationLevelOptions = [
 ];
 const automationColumnOptions = [
   { label: '时间', value: 'createdAt', required: true },
-  { label: '任务', value: 'taskId' },
+  { label: '任务', value: 'task' },
   { label: '级别', value: 'level' },
   { label: '状态', value: 'status' },
-  { label: '队列 ID', value: 'queueJobId' },
-  { label: '错误码', value: 'errorCode' },
   { label: '消息', value: 'message' }
 ];
 const platformTableKey = 'audit_platform_interface_logs';
@@ -2621,12 +2599,18 @@ function applyAutomationView(view: UserTableView) {
   automationQuery.pageSize = view.pageSize;
   automationDensity.value = 'default';
   automationVisibleColumns.value = view.columns.length
-    ? view.columns.filter((column) =>
-        automationColumnOptions.some((option) => option.value === column)
-      )
+    ? normalizeAutomationColumns(view.columns)
     : automationColumnOptions.map((column) => column.value);
   automationSortConfig.value = parseAutomationSortConfig(view.sortConfig);
   automationSavedViewId.value = view.id;
+}
+
+function normalizeAutomationColumns(columns: string[]) {
+  const normalized = columns
+    .map((column) => (column === 'taskId' ? 'task' : column))
+    .filter((column) => automationColumnOptions.some((option) => option.value === column));
+
+  return Array.from(new Set(normalized));
 }
 
 function parseAutomationSortConfig(value: Record<string, unknown>): {
@@ -2866,6 +2850,20 @@ function getAutomationTone(level: AutomationTaskLog['level']) {
   if (level === 'warning') return 'orange';
   if (level === 'error') return 'red';
   return 'neutral';
+}
+
+function getAutomationTaskTypeLabel(value?: string | null) {
+  return (
+    {
+      check_status: '检测状态',
+      check_balance: '查询余额',
+      topup: '自动充值',
+      cancel_subscription: '取消订阅',
+      change_phone: '修改手机号',
+      change_security: '修改密保',
+      check_renewal: '检查续费'
+    }[value ?? ''] ?? '自动化任务'
+  );
 }
 
 function isAutomationLogLevel(value: unknown): value is AutomationTaskLog['level'] {

@@ -74,7 +74,7 @@
 
       <div v-if="!platforms.length && !loading" class="apple-core-empty-state">
         <strong>暂无启用的{{ platformTitle }}来源平台</strong>
-        <span>请先到来源平台设置添加并启用店铺/账号，再同步平台订单。</span>
+        <span>请先到快捷设置添加并启用店铺/账号，再同步平台订单。</span>
       </div>
       <el-table
         v-else

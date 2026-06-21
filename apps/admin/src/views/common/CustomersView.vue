@@ -296,10 +296,24 @@
             <p>请填写明确业务原因，避免无授权查看客户敏感联系方式。</p>
           </div>
         </div>
-        <el-form-item label="客户">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="客户"
+              purpose="当前准备查看完整手机号的客户，用来确认没有点错。"
+              example="查看前核对客户名称、微信或来源平台。"
+            />
+          </template>
           <el-input :model-value="selectedCustomer?.name ?? '-'" disabled />
         </el-form-item>
-        <el-form-item label="查看原因" prop="reason">
+        <el-form-item prop="reason">
+          <template #label>
+            <FieldHelpLabel
+              label="查看原因"
+              purpose="说明为什么要查看完整手机号，系统会写入敏感访问日志。"
+              example="可以填售后联系、订单核对、客户回访。"
+            />
+          </template>
           <el-input
             v-model.trim="phoneForm.reason"
             type="textarea"
@@ -307,7 +321,14 @@
             placeholder="例如 售后联系 / 订单核对 / 客户回访"
           />
         </el-form-item>
-        <el-form-item v-if="phoneForm.phone" label="完整手机号">
+        <el-form-item v-if="phoneForm.phone">
+          <template #label>
+            <FieldHelpLabel
+              label="完整手机号"
+              purpose="展示客户完整手机号，仅供本次必要业务处理使用。"
+              example="联系或核对完成后，不要把完整手机号写进普通备注。"
+            />
+          </template>
           <el-input v-model="phoneForm.phone" readonly />
         </el-form-item>
       </el-form>
@@ -326,10 +347,11 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { customersApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
-import type { CustomerQuery, SourcePlatformQuery } from '@/api/system';
+import { customersApi, dataCenterApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
+import type { CustomerQuery, DataDictionaryQuery, SourcePlatformQuery } from '@/api/system';
 import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -337,11 +359,13 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { buildQuickSettingCode, CUSTOMER_TAG_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type {
   Customer,
+  DataDictionary,
   PageResult,
   SourcePlatform,
   TableDensity,
@@ -384,6 +408,7 @@ const formRef = ref<InstanceType<typeof CustomerProfileForm>>();
 const phoneFormRef = ref<FormInstance>();
 const customers = ref<Customer[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
+const customerTagDictionaries = ref<DataDictionary[]>([]);
 const selectedCustomers = ref<Customer[]>([]);
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
@@ -395,6 +420,7 @@ const authStore = useAuthStore();
 const router = useRouter();
 const activeCustomersQueryKey = ref('');
 const activeSourcePlatformsQueryKey = ref('');
+const activeCustomerTagsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -420,7 +446,12 @@ const phoneRules: FormRules<typeof phoneForm> = {
 };
 
 const tagOptions = computed(() => [
-  ...new Set(customers.value.flatMap((customer) => customer.tags))
+  ...new Set([
+    ...customerTagDictionaries.value
+      .filter((tag) => tag.status === 'active')
+      .map((tag) => tag.label),
+    ...customers.value.flatMap((customer) => customer.tags)
+  ])
 ]);
 
 const canRevealPhone = computed(
@@ -467,8 +498,23 @@ function buildSourcePlatformParams(): SourcePlatformQuery {
   };
 }
 
+function buildCustomerTagParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 200,
+    group: CUSTOMER_TAG_DICTIONARY_GROUP,
+    status: 'active',
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
 function applySourcePlatformResult(data: PageResult<SourcePlatform>) {
   sourcePlatforms.value = data.items;
+}
+
+function applyCustomerTagResult(data: PageResult<DataDictionary>) {
+  customerTagDictionaries.value = data.items;
 }
 
 async function loadSourcePlatforms(options: { background?: boolean; force?: boolean } = {}) {
@@ -499,6 +545,38 @@ async function loadSourcePlatforms(options: { background?: boolean; force?: bool
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载来源平台失败');
+    }
+  }
+}
+
+async function loadCustomerTags(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildCustomerTagParams();
+  const key = createSmartQueryKey('customer-tags', params);
+  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
+
+  activeCustomerTagsQueryKey.value = key;
+
+  if (cached) {
+    applyCustomerTagResult(cached);
+  }
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => dataCenterApi.listDictionaries(params),
+      force: options.force ?? true
+    });
+
+    if (activeCustomerTagsQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyCustomerTagResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载客户标签失败');
     }
   }
 }
@@ -577,7 +655,11 @@ function handleSelectionChange(rows: Customer[]) {
 }
 
 async function loadData(options: { background?: boolean; force?: boolean } = {}) {
-  await Promise.all([loadSourcePlatforms(options), loadCustomers(options)]);
+  await Promise.all([
+    loadSourcePlatforms(options),
+    loadCustomerTags(options),
+    loadCustomers(options)
+  ]);
 }
 
 function clearFilters() {
@@ -752,6 +834,7 @@ async function saveCustomer() {
   saving.value = true;
   try {
     const payload = buildCustomerProfilePayload(form);
+    await ensureCustomerTagsRegistered(payload.tags ?? []);
 
     if (editingCustomer.value) {
       await customersApi.update(editingCustomer.value.id, payload);
@@ -761,12 +844,37 @@ async function saveCustomer() {
 
     ElMessage.success('客户已保存');
     dialogVisible.value = false;
-    await loadCustomers({ force: true });
+    await Promise.all([loadCustomerTags({ force: true }), loadCustomers({ force: true })]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存客户失败');
   } finally {
     saving.value = false;
   }
+}
+
+async function ensureCustomerTagsRegistered(tags: string[]) {
+  const existingLabels = new Set(customerTagDictionaries.value.map((tag) => tag.label.trim()));
+  const missingTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].filter(
+    (tag) => !existingLabels.has(tag)
+  );
+
+  if (!missingTags.length) {
+    return;
+  }
+
+  await Promise.all(
+    missingTags.map((tag) =>
+      dataCenterApi.createDictionary({
+        group: CUSTOMER_TAG_DICTIONARY_GROUP,
+        code: buildQuickSettingCode(tag, 'tag'),
+        label: tag,
+        value: tag,
+        sortOrder: customerTagDictionaries.value.length + 1,
+        status: 'active',
+        remark: '从新增客户标签自动保存'
+      })
+    )
+  );
 }
 
 async function revealPhone() {
@@ -791,9 +899,12 @@ async function revealPhone() {
 
 async function initializePage() {
   try {
-    await loadSourcePlatforms({ force: false });
-    await loadTableViews(true);
-    await loadCustomers({ force: false });
+    await Promise.all([
+      loadSourcePlatforms({ force: false }),
+      loadCustomerTags({ force: false }),
+      loadTableViews(true),
+      loadCustomers({ force: false })
+    ]);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载客户失败');
   }
@@ -810,12 +921,18 @@ usePageRefresh(
   { label: '客户列表' }
 );
 
-const stopRealtimeRefresh = onRealtimeQueryInvalidated(['customers', 'source-platforms'], () => {
-  void loadData({
-    background: customers.value.length > 0 || sourcePlatforms.value.length > 0,
-    force: true
-  });
-});
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['customers', 'source-platforms', 'data-dictionaries'],
+  () => {
+    void loadData({
+      background:
+        customers.value.length > 0 ||
+        sourcePlatforms.value.length > 0 ||
+        customerTagDictionaries.value.length > 0,
+      force: true
+    });
+  }
+);
 
 onBeforeUnmount(stopRealtimeRefresh);
 </script>

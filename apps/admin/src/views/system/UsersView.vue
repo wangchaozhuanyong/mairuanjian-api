@@ -208,31 +208,77 @@
       width="min(520px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item v-if="!editingUser" label="账号" prop="username">
+        <el-form-item v-if="!editingUser" prop="username">
+          <template #label>
+            <FieldHelpLabel
+              label="账号"
+              purpose="员工登录后台使用的用户名，创建后用于登录和审计日志归属。"
+              example="可以填 zhangsan、kefu01；不要填手机号密码混合内容。"
+            />
+          </template>
           <el-input v-model.trim="form.username" />
         </el-form-item>
-        <el-form-item
-          :label="editingUser ? '新密码' : '密码'"
-          :prop="editingUser ? undefined : 'password'"
-        >
+        <el-form-item :prop="editingUser ? undefined : 'password'">
+          <template #label>
+            <FieldHelpLabel
+              :label="editingUser ? '新密码' : '密码'"
+              purpose="员工登录后台的密码，编辑用户时留空表示不重置密码。"
+              example="新增用户必须填强密码；只改角色或状态时新密码留空。"
+            />
+          </template>
           <el-input v-model="form.password" type="password" show-password />
         </el-form-item>
-        <el-form-item label="姓名" prop="displayName">
+        <el-form-item prop="displayName">
+          <template #label>
+            <FieldHelpLabel
+              label="姓名"
+              purpose="后台显示的员工名称，列表、操作日志和通知里会显示。"
+              example="可以填真实姓名、客服小张、运营 01。"
+            />
+          </template>
           <el-input v-model.trim="form.displayName" />
         </el-form-item>
-        <el-form-item label="手机号">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="手机号"
+              purpose="员工联系方式，便于安全通知或内部联络。"
+              example="可以填完整手机号；不需要记录可留空。"
+            />
+          </template>
           <el-input v-model.trim="form.phone" />
         </el-form-item>
-        <el-form-item label="邮箱">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="邮箱"
+              purpose="员工邮箱，后续可用于通知、找回或外部系统关联。"
+              example="可以填 name@example.com；没有邮箱可留空。"
+            />
+          </template>
           <el-input v-model.trim="form.email" />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="状态"
+              purpose="控制员工账号是否可以登录后台。"
+              example="在职员工选启用；离职、冻结或暂停权限选停用。"
+            />
+          </template>
           <el-radio-group v-model="form.status">
             <el-radio-button value="active">启用</el-radio-button>
             <el-radio-button value="disabled">停用</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="角色">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="角色"
+              purpose="给员工分配权限集合，决定他能看哪些页面和执行哪些操作。"
+              example="客服选客服角色；管理员或财务按实际岗位分配，不要随便给最高权限。"
+            />
+          </template>
           <el-select v-model="form.roleIds" multiple clearable class="full-input">
             <el-option v-for="role in roles" :key="role.id" :label="role.name" :value="role.id" />
           </el-select>
@@ -253,6 +299,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { rolesApi, userTableViewsApi, usersApi } from '@/api/system';
 import type { UserQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';

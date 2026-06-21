@@ -426,22 +426,64 @@
             <div class="settings-panel">
               <h3>密码策略</h3>
               <el-form label-width="120px">
-                <el-form-item label="最小长度">
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="最小长度"
+                      purpose="限制员工密码至少要有多少位，降低弱密码风险。"
+                      example="建议至少 8 或 12 位，太短容易被猜。"
+                    />
+                  </template>
                   <el-input-number v-model="passwordPolicy.minLength" :min="6" :max="64" />
                 </el-form-item>
-                <el-form-item label="大写字母"
-                  ><el-switch v-model="passwordPolicy.requireUppercase"
-                /></el-form-item>
-                <el-form-item label="小写字母"
-                  ><el-switch v-model="passwordPolicy.requireLowercase"
-                /></el-form-item>
-                <el-form-item label="数字"
-                  ><el-switch v-model="passwordPolicy.requireNumber"
-                /></el-form-item>
-                <el-form-item label="符号"
-                  ><el-switch v-model="passwordPolicy.requireSymbol"
-                /></el-form-item>
-                <el-form-item label="失败次数">
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="大写字母"
+                      purpose="要求密码必须包含至少一个大写英文字母。"
+                      example="密码里包含 A、B、C 这类大写字母即可满足。"
+                    />
+                  </template>
+                  <el-switch v-model="passwordPolicy.requireUppercase" />
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="小写字母"
+                      purpose="要求密码必须包含至少一个小写英文字母。"
+                      example="密码里包含 a、b、c 这类小写字母即可满足。"
+                    />
+                  </template>
+                  <el-switch v-model="passwordPolicy.requireLowercase" />
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="数字"
+                      purpose="要求密码必须包含至少一个数字。"
+                      example="密码里包含 0-9 任意数字即可满足。"
+                    />
+                  </template>
+                  <el-switch v-model="passwordPolicy.requireNumber" />
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="符号"
+                      purpose="要求密码必须包含特殊符号，提高破解难度。"
+                      example="密码里包含 !、@、#、_ 等符号即可满足。"
+                    />
+                  </template>
+                  <el-switch v-model="passwordPolicy.requireSymbol" />
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="失败次数"
+                      purpose="连续登录失败达到这个次数后，系统会按安全策略处理。"
+                      example="填 5 表示连续失败 5 次后触发限制或异常提醒。"
+                    />
+                  </template>
                   <el-input-number v-model="passwordPolicy.maxFailedAttempts" :min="1" :max="20" />
                 </el-form-item>
                 <AppButton variant="primary" @click="savePasswordPolicy">保存密码策略</AppButton>
@@ -450,13 +492,34 @@
             <div class="settings-panel">
               <h3>MFA 设置</h3>
               <el-form label-width="120px">
-                <el-form-item label="启用 MFA"
-                  ><el-switch v-model="mfaSettings.enabled"
-                /></el-form-item>
-                <el-form-item label="管理员强制">
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="启用 MFA"
+                      purpose="开启后台多因素验证，员工登录时需要额外验证码。"
+                      example="正式上线后建议开启，降低账号被盗风险。"
+                    />
+                  </template>
+                  <el-switch v-model="mfaSettings.enabled" />
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="管理员强制"
+                      purpose="要求管理员角色必须绑定 MFA 才能安全使用后台。"
+                      example="管理员、财务等高权限账号建议强制开启。"
+                    />
+                  </template>
                   <el-switch v-model="mfaSettings.requiredForAdmins" />
                 </el-form-item>
-                <el-form-item label="签发方">
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="签发方"
+                      purpose="显示在验证器 App 里的系统名称，帮助员工识别验证码来源。"
+                      example="可以填 Apple Business Admin 或公司后台名称。"
+                    />
+                  </template>
                   <el-input v-model="mfaSettings.issuer" />
                 </el-form-item>
                 <AppButton variant="primary" @click="saveMfaSettings">保存 MFA 设置</AppButton>
@@ -476,10 +539,24 @@
                 </div>
 
                 <el-form label-width="120px">
-                  <el-form-item v-if="mfaSetup" label="密钥">
+                  <el-form-item v-if="mfaSetup">
+                    <template #label>
+                      <FieldHelpLabel
+                        label="密钥"
+                        purpose="绑定 MFA 时使用的密钥，需要录入验证器 App。"
+                        example="只在绑定时使用，不要发到公开聊天或备注里。"
+                      />
+                    </template>
                     <el-input :model-value="mfaSetup.secret" readonly />
                   </el-form-item>
-                  <el-form-item v-if="mfaSetup" label="绑定 URI">
+                  <el-form-item v-if="mfaSetup">
+                    <template #label>
+                      <FieldHelpLabel
+                        label="绑定 URI"
+                        purpose="验证器 App 可识别的绑定地址，用于生成动态验证码。"
+                        example="可以复制到支持 otpauth 的工具或生成二维码。"
+                      />
+                    </template>
                     <el-input
                       :model-value="mfaSetup.otpauthUrl"
                       type="textarea"
@@ -487,14 +564,28 @@
                       readonly
                     />
                   </el-form-item>
-                  <el-form-item label="验证码">
+                  <el-form-item>
+                    <template #label>
+                      <FieldHelpLabel
+                        label="验证码"
+                        purpose="输入验证器 App 当前生成的动态验证码，或使用恢复码。"
+                        example="通常是 6 位数字；恢复码只在无法使用验证器时使用。"
+                      />
+                    </template>
                     <el-input
                       v-model.trim="mfaVerifyCode"
                       autocomplete="one-time-code"
                       placeholder="动态验证码或恢复码"
                     />
                   </el-form-item>
-                  <el-form-item v-if="myMfaStatus?.enabled" label="停用原因">
+                  <el-form-item v-if="myMfaStatus?.enabled">
+                    <template #label>
+                      <FieldHelpLabel
+                        label="停用原因"
+                        purpose="停用自己 MFA 时记录原因，方便安全审计。"
+                        example="可以写更换手机、重新绑定验证器、临时故障排查。"
+                      />
+                    </template>
                     <el-input v-model.trim="mfaDisableReason" placeholder="可选" />
                   </el-form-item>
                   <div class="mfa-actions">
@@ -1062,18 +1153,53 @@
       width="min(520px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
-        <el-form-item label="IP/CIDR" required><el-input v-model="ipForm.ipOrCidr" /></el-form-item>
-        <el-form-item label="范围">
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="IP/CIDR"
+              purpose="允许访问的单个 IP 或网段，用于后台、API 或自动化白名单。"
+              example="单个 IP 填 1.2.3.4，网段填 1.2.3.0/24。"
+            />
+          </template>
+          <el-input v-model="ipForm.ipOrCidr" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="范围"
+              purpose="选择这条 IP 白名单规则作用在哪类入口。"
+              example="后台登录选后台；接口调用选 API；自动化 Worker 选自动化。"
+            />
+          </template>
           <el-select v-model="ipForm.scope">
-            <el-option label="后台" value="admin" />
-            <el-option label="API" value="api" />
-            <el-option label="自动化" value="automation" />
+            <el-option
+              v-for="option in ipScopeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="启用"><el-switch v-model="ipForm.enabled" /></el-form-item>
-        <el-form-item label="备注"
-          ><el-input v-model="ipForm.remark" type="textarea" :rows="3"
-        /></el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="启用"
+              purpose="控制这条 IP 白名单是否生效。"
+              example="确认 IP 正确后开启；临时规则不用时关闭。"
+            />
+          </template>
+          <el-switch v-model="ipForm.enabled" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录这条 IP 规则属于谁或什么环境。"
+              example="可以写办公室固定 IP、家里网络、服务器出口 IP。"
+            />
+          </template>
+          <el-input v-model="ipForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <AppButton @click="ipDialogVisible = false">取消</AppButton>
@@ -1087,17 +1213,54 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="110px">
-        <el-form-item label="模块" required
-          ><el-input v-model="approvalForm.module"
-        /></el-form-item>
-        <el-form-item label="字段" required
-          ><el-input v-model="approvalForm.fieldName"
-        /></el-form-item>
-        <el-form-item label="对象类型" required
-          ><el-input v-model="approvalForm.objectType"
-        /></el-form-item>
-        <el-form-item label="对象 ID"><el-input v-model="approvalForm.objectId" /></el-form-item>
-        <el-form-item label="原因" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模块"
+              purpose="申请查看敏感字段所属的业务模块。"
+              example="Apple ID 资料填 apple，客户资料填 customer，兑换码填 code。"
+            />
+          </template>
+          <el-input v-model="approvalForm.module" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="字段"
+              purpose="申请查看的具体敏感字段名称。"
+              example="可以填 password、phone、securityInfo、fullCode。"
+            />
+          </template>
+          <el-input v-model="approvalForm.fieldName" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="对象类型"
+              purpose="敏感字段所属记录的类型。"
+              example="Apple ID 账号填 apple_account，客户填 customer。"
+            />
+          </template>
+          <el-input v-model="approvalForm.objectType" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="对象 ID"
+              purpose="具体要查看哪一条记录，可留空表示通用申请。"
+              example="要查看某个 Apple ID 密码，就填该账号记录 ID。"
+            />
+          </template>
+          <el-input v-model="approvalForm.objectId" />
+        </el-form-item>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="原因"
+              purpose="说明为什么需要查看敏感字段，审批人会根据它判断是否允许。"
+              example="可以写售后登录核对、客户资料变更、安全验证。"
+            />
+          </template>
           <el-input v-model="approvalForm.reason" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -1115,15 +1278,17 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { securityApi, userTableViewsApi } from '@/api/system';
+import { dataCenterApi, securityApi, userTableViewsApi } from '@/api/system';
 import type {
   ActiveSessionQuery,
+  DataDictionaryQuery,
   IpWhitelistQuery,
   LoginLogQuery,
   SensitiveAccessApprovalQuery,
   SensitiveAccessLogQuery
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -1132,6 +1297,7 @@ import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   ActiveSession,
+  DataDictionary,
   IpWhitelist,
   IpWhitelistScope,
   LoginLog,
@@ -1148,11 +1314,18 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { SECURITY_IP_SCOPE_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import {
+  buildSecurityIpScopeOptions,
+  getSecurityIpScopeLabel,
+  isSecurityIpScope
+} from '@/utils/systemQuickOptions';
 
 const route = useRoute();
 const activeTab = ref(getInitialTab());
 const overview = ref<SecurityOverview | null>(null);
+const ipScopeDictionaries = ref<DataDictionary[]>([]);
 const loginTableKey = 'security_login_logs';
 const sessionTableKey = 'security_active_sessions';
 const ipTableKey = 'security_ip_whitelists';
@@ -1181,11 +1354,7 @@ const approvalStatusOptions = [
   { label: '已拒绝', value: 'rejected' },
   { label: '已过期', value: 'expired' }
 ];
-const ipScopeOptions = [
-  { label: '后台', value: 'admin' },
-  { label: 'API', value: 'api' },
-  { label: '自动化', value: 'automation' }
-];
+const ipScopeOptions = computed(() => buildSecurityIpScopeOptions(ipScopeDictionaries.value));
 const loginColumnOptions = [
   { label: '账号', value: 'username', required: true },
   { label: '用户', value: 'user' },
@@ -1368,7 +1537,7 @@ const loginFilterChips = computed(() => {
 });
 const ipFilterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
-  const scopeLabel = ipScopeOptions.find((option) => option.value === ipQuery.scope)?.label;
+  const scopeLabel = ipScopeOptions.value.find((option) => option.value === ipQuery.scope)?.label;
   if (scopeLabel) chips.push({ key: 'scope', label: '范围', value: scopeLabel });
   return chips;
 });
@@ -1469,9 +1638,17 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
     'security-settings',
     'security-ip-whitelists',
     'security-approvals',
-    'security-access-logs'
+    'security-access-logs',
+    'data-dictionaries'
   ],
   ({ scopes }) => {
+    if (scopes.includes('data-dictionaries')) {
+      void loadSecurityOptions({
+        background: true,
+        force: true
+      });
+    }
+
     if (scopes.includes('security-overview')) {
       void loadOverview({
         background: Boolean(overview.value),
@@ -1525,6 +1702,29 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 
 onBeforeUnmount(stopRealtimeRefresh);
 
+function buildSecurityOptionParams(group: string): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 50,
+    group,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadSecurityOptions(options: { background?: boolean; force?: boolean } = {}) {
+  try {
+    const data = await dataCenterApi.listDictionaries(
+      buildSecurityOptionParams(SECURITY_IP_SCOPE_DICTIONARY_GROUP)
+    );
+    ipScopeDictionaries.value = data.items;
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载安全选项失败');
+    }
+  }
+}
+
 async function loadOverview(options: { background?: boolean; force?: boolean } = {}) {
   const key = createSmartQueryKey('security-overview');
   const cached = getSmartQueryData<SecurityOverview>(key);
@@ -1557,6 +1757,7 @@ async function loadOverview(options: { background?: boolean; force?: boolean } =
 }
 
 async function refreshCurrentTab(options: { background?: boolean; force?: boolean } = {}) {
+  await loadSecurityOptions(options);
   await loadOverview(options);
   if (activeTab.value === 'loginLogs') await loadLoginLogsWithViews(options);
   if (activeTab.value === 'sessions') await loadSessionsWithViews(options);
@@ -2541,7 +2742,7 @@ function openIpDialog(row?: IpWhitelist) {
   editingIp.value = row ?? null;
   Object.assign(ipForm, {
     ipOrCidr: row?.ipOrCidr ?? '',
-    scope: row?.scope ?? 'admin',
+    scope: row?.scope ?? ipScopeOptions.value[0]?.value ?? 'admin',
     enabled: row?.enabled ?? true,
     remark: row?.remark ?? ''
   });
@@ -2646,7 +2847,7 @@ function getLoginStatusTone(status: string) {
 }
 
 function getIpScopeLabel(scope: string) {
-  return { admin: '后台', api: 'API', automation: '自动化' }[scope] ?? scope;
+  return getSecurityIpScopeLabel(scope, ipScopeDictionaries.value);
 }
 
 function getTableSize(density: TableDensity) {
@@ -2685,7 +2886,7 @@ function isLoginStatus(value: unknown): value is LoginLogStatus {
 }
 
 function isIpScope(value: unknown): value is IpWhitelistScope {
-  return value === 'admin' || value === 'api' || value === 'automation';
+  return typeof value === 'string' && isSecurityIpScope(value);
 }
 
 function isApprovalStatus(value: unknown): value is SensitiveAccessApprovalStatus {

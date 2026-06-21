@@ -43,14 +43,22 @@
         @batch-action="handleBatchAction"
       >
         <template #filters>
-          <el-input
-            v-model.trim="query.businessModule"
+          <el-select
+            v-model="query.businessModule"
             class="table-toolbar__select"
             placeholder="业务模块"
             clearable
-            @keyup.enter="handleSearch"
+            filterable
+            @change="handleSearch"
             @clear="handleSearch"
-          />
+          >
+            <el-option
+              v-for="option in attachmentBusinessModuleOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
           <el-input
             v-model.trim="query.objectType"
             class="table-toolbar__select"
@@ -59,14 +67,22 @@
             @keyup.enter="handleSearch"
             @clear="handleSearch"
           />
-          <el-input
-            v-model.trim="query.purpose"
+          <el-select
+            v-model="query.purpose"
             class="table-toolbar__select"
             placeholder="用途"
             clearable
-            @keyup.enter="handleSearch"
+            filterable
+            @change="handleSearch"
             @clear="handleSearch"
-          />
+          >
+            <el-option
+              v-for="option in attachmentPurposeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
         </template>
       </TableToolbar>
 
@@ -130,7 +146,7 @@
           min-width="130"
           sortable="custom"
         >
-          <template #default="{ row }">{{ row.purpose ?? '-' }}</template>
+          <template #default="{ row }">{{ formatAttachmentPurpose(row.purpose) }}</template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('createdBy')" label="上传人" min-width="140">
           <template #default="{ row }">{{
@@ -172,7 +188,7 @@
             </div>
             <div>
               <span>用途</span>
-              <strong>{{ attachment.purpose ?? '-' }}</strong>
+              <strong>{{ formatAttachmentPurpose(attachment.purpose) }}</strong>
             </div>
             <div>
               <span>上传人</span>
@@ -227,31 +243,93 @@
       width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-position="top">
-        <el-form-item label="文件" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="文件"
+              purpose="选择要上传的附件，后续可关联到订单、任务、凭证或系统记录。"
+              example="可以上传聊天截图、付款截图、自动化截图、导入文件。"
+            />
+          </template>
           <input ref="fileInputRef" type="file" @change="selectUploadFile" />
           <div class="upload-file-name">{{ selectedFile?.name ?? '未选择文件' }}</div>
         </el-form-item>
         <div class="form-grid">
-          <el-form-item label="业务模块">
-            <el-input
-              v-model.trim="uploadForm.businessModule"
-              placeholder="apple / code / system"
-            />
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="业务模块"
+                purpose="说明附件属于哪个业务区，方便后续筛选和权限管理。"
+                example="Apple ID 相关选 Apple ID，兑换码相关选兑换码，系统凭证选系统配置。"
+              />
+            </template>
+            <el-select
+              v-model="uploadForm.businessModule"
+              class="full-input"
+              clearable
+              filterable
+              placeholder="请选择业务模块"
+            >
+              <el-option
+                v-for="option in attachmentBusinessModuleOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
           </el-form-item>
-          <el-form-item label="对象类型">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="对象类型"
+                purpose="说明附件关联的是哪类记录。"
+                example="续费任务填 renewal_task，订单填 order，自动化任务填 automation_task。"
+              />
+            </template>
             <el-input v-model.trim="uploadForm.objectType" placeholder="renewal_task / order" />
           </el-form-item>
         </div>
-        <el-form-item label="对象 ID">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="对象 ID"
+              purpose="填写要关联的具体记录 ID，便于从业务记录回查附件。"
+              example="如果是某个续费任务的截图，就填该任务 UUID；普通资料可留空。"
+            />
+          </template>
           <el-input v-model.trim="uploadForm.objectId" placeholder="关联记录 UUID，可留空" />
         </el-form-item>
-        <el-form-item label="用途">
-          <el-input
-            v-model.trim="uploadForm.purpose"
-            placeholder="evidence / screenshot / import"
-          />
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="用途"
+              purpose="说明附件用途，方便列表筛选和后续审计。"
+              example="付款证明选凭证，页面截图选截图，导入表格选导入文件。"
+            />
+          </template>
+          <el-select
+            v-model="uploadForm.purpose"
+            class="full-input"
+            clearable
+            filterable
+            placeholder="请选择用途"
+          >
+            <el-option
+              v-for="option in attachmentPurposeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录附件的补充说明。"
+              example="可以写来自哪位客户、对应哪次处理、是否需要复核。"
+            />
+          </template>
           <el-input v-model="uploadForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -267,17 +345,34 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import type { Ref } from 'vue';
-import { attachmentsApi, userTableViewsApi } from '@/api/system';
-import type { AttachmentQuery } from '@/api/system';
+import { attachmentsApi, dataCenterApi, userTableViewsApi } from '@/api/system';
+import type { AttachmentQuery, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import {
+  ATTACHMENT_BUSINESS_MODULE_DICTIONARY_GROUP,
+  ATTACHMENT_PURPOSE_DICTIONARY_GROUP
+} from '@/config/quickSettings';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
-import type { Attachment, PageResult, TableDensity, UserTableView } from '@/types/system';
+import type {
+  Attachment,
+  DataDictionary,
+  PageResult,
+  TableDensity,
+  UserTableView
+} from '@/types/system';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import {
+  buildAttachmentBusinessModuleOptions,
+  buildAttachmentPurposeOptions,
+  getAttachmentBusinessModuleLabel,
+  getAttachmentPurposeLabel
+} from '@/utils/systemQuickOptions';
 
 type LoadOptions = { background?: boolean; force?: boolean };
 
@@ -307,6 +402,8 @@ const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const total = ref(0);
 const activeAttachmentsQueryKey = ref('');
+const attachmentBusinessModuleDictionaries = ref<DataDictionary[]>([]);
+const attachmentPurposeDictionaries = ref<DataDictionary[]>([]);
 
 const query = reactive({
   page: 1,
@@ -325,6 +422,13 @@ const uploadForm = reactive({
   purpose: '',
   remark: ''
 });
+
+const attachmentBusinessModuleOptions = computed(() =>
+  buildAttachmentBusinessModuleOptions(attachmentBusinessModuleDictionaries.value)
+);
+const attachmentPurposeOptions = computed(() =>
+  buildAttachmentPurposeOptions(attachmentPurposeDictionaries.value)
+);
 
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
@@ -351,13 +455,17 @@ const currentPageSize = computed(() =>
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
   if (query.businessModule) {
-    chips.push({ key: 'businessModule', label: '业务模块', value: query.businessModule });
+    chips.push({
+      key: 'businessModule',
+      label: '业务模块',
+      value: formatAttachmentBusinessModule(query.businessModule)
+    });
   }
   if (query.objectType) {
     chips.push({ key: 'objectType', label: '对象类型', value: query.objectType });
   }
   if (query.purpose) {
-    chips.push({ key: 'purpose', label: '用途', value: query.purpose });
+    chips.push({ key: 'purpose', label: '用途', value: formatAttachmentPurpose(query.purpose) });
   }
   return chips;
 });
@@ -384,7 +492,7 @@ function formatSize(value: string) {
 }
 
 function formatAssociation(attachment: Attachment) {
-  const moduleName = attachment.businessModule ?? '-';
+  const moduleName = formatAttachmentBusinessModule(attachment.businessModule);
   const objectType = attachment.objectType ?? '-';
 
   if (!attachment.objectId) {
@@ -394,15 +502,29 @@ function formatAssociation(attachment: Attachment) {
   return `${moduleName} / ${objectType} / ${attachment.objectId.slice(0, 8)}`;
 }
 
+function formatAttachmentBusinessModule(value?: string | null) {
+  return value ? getAttachmentBusinessModuleLabel(value, attachmentBusinessModuleDictionaries.value) : '-';
+}
+
+function formatAttachmentPurpose(value?: string | null) {
+  return value ? getAttachmentPurposeLabel(value, attachmentPurposeDictionaries.value) : '-';
+}
+
 function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-const stopRealtimeRefresh = onRealtimeQueryInvalidated(['attachments'], () => {
-  void loadAttachments({
-    background: attachments.value.length > 0,
-    force: true
-  });
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(['attachments', 'data-dictionaries'], ({ scopes }) => {
+  if (scopes.includes('data-dictionaries')) {
+    void loadAttachmentOptions({ background: true, force: true });
+  }
+
+  if (scopes.includes('attachments')) {
+    void loadAttachments({
+      background: attachments.value.length > 0,
+      force: true
+    });
+  }
 });
 
 onBeforeUnmount(stopRealtimeRefresh);
@@ -489,6 +611,33 @@ async function loadAttachments(options: LoadOptions = {}) {
     errorMessage: '加载附件失败',
     options
   });
+}
+
+function buildAttachmentOptionParams(group: string): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 50,
+    group,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadAttachmentOptions(options: LoadOptions = {}) {
+  try {
+    const [businessModules, purposes] = await Promise.all([
+      dataCenterApi.listDictionaries(
+        buildAttachmentOptionParams(ATTACHMENT_BUSINESS_MODULE_DICTIONARY_GROUP)
+      ),
+      dataCenterApi.listDictionaries(buildAttachmentOptionParams(ATTACHMENT_PURPOSE_DICTIONARY_GROUP))
+    ]);
+    attachmentBusinessModuleDictionaries.value = businessModules.items;
+    attachmentPurposeDictionaries.value = purposes.items;
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载附件选项失败');
+    }
+  }
 }
 
 async function handleSearch() {
@@ -719,6 +868,7 @@ async function downloadAttachment(attachment: Attachment) {
 
 async function initializePage() {
   await loadTableViews(true);
+  await loadAttachmentOptions({ force: false });
   await loadAttachments({ force: false });
 }
 

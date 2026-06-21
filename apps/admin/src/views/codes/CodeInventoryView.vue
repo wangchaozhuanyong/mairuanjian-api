@@ -284,7 +284,14 @@
     >
       <el-form ref="importFormRef" :model="importForm" :rules="importRules" label-position="top">
         <div class="form-grid">
-          <el-form-item label="兑换码业务" prop="serviceId">
+          <el-form-item prop="serviceId">
+            <template #label>
+              <FieldHelpLabel
+                label="兑换码业务"
+                purpose="告诉系统这一批码属于哪种业务和面值，后续订单会按它匹配库存。"
+                example="导入 20 USD 礼品卡，就选择对应的 20 USD 兑换码业务。"
+              />
+            </template>
             <el-select v-model="importForm.serviceId" class="full-input" filterable>
               <el-option
                 v-for="service in services"
@@ -294,15 +301,36 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="批次号">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="批次号"
+                purpose="给这一批导入的兑换码做批次标记，方便以后追踪来源和成本。"
+                example="可以填 20260621-US20；不填系统会自动生成。"
+              />
+            </template>
             <el-input v-model.trim="importForm.batchNo" placeholder="留空自动生成" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="默认成本">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="默认成本"
+                purpose="这一批每张码的采购成本，用来计算兑换码订单利润。"
+                example="这批每张买入 16 元就填 16；留空会用业务设置里的默认成本。"
+              />
+            </template>
             <el-input v-model.trim="importForm.defaultCost" placeholder="留空使用业务默认成本" />
           </el-form-item>
-          <el-form-item label="统一有效期">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="统一有效期"
+                purpose="这一批兑换码共同的过期时间，临期和过期管理会用到。"
+                example="供应商说明 2026-12-31 过期就选择这个时间；没有有效期可留空。"
+              />
+            </template>
             <el-date-picker
               v-model="importForm.expireAt"
               class="full-input"
@@ -312,7 +340,14 @@
             />
           </el-form-item>
         </div>
-        <el-form-item label="兑换码内容" prop="codesText">
+        <el-form-item prop="codesText">
+          <template #label>
+            <FieldHelpLabel
+              label="兑换码内容"
+              purpose="粘贴要入库的完整兑换码，系统会加密保存，列表默认只显示尾号。"
+              example="一行放一个完整兑换码；不要把多个码写在同一行。"
+            />
+          </template>
           <el-input
             v-model="importForm.codesText"
             type="textarea"
@@ -320,7 +355,14 @@
             placeholder="一行一个兑换码。完整内容会加密保存，列表只显示后 4 位。"
           />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录这一批码的来源、采购说明或人工注意事项。"
+              example="可以写供应商、采购单号、付款批次或特殊售后说明。"
+            />
+          </template>
           <el-input v-model="importForm.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
@@ -421,10 +463,24 @@
         :rules="revealRules"
         label-position="top"
       >
-        <el-form-item label="库存记录">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="库存记录"
+              purpose="当前准备查看完整内容的兑换码库存记录，用于确认没有点错。"
+              example="查看前核对业务、面值和尾号是否就是客户需要核对的那张码。"
+            />
+          </template>
           <el-input :model-value="revealRecordLabel" disabled />
         </el-form-item>
-        <el-form-item label="查看原因" prop="reason">
+        <el-form-item prop="reason">
+          <template #label>
+            <FieldHelpLabel
+              label="查看原因"
+              purpose="说明为什么要查看完整兑换码，系统会写入敏感查看审计日志。"
+              example="可以填售后核对、人工发货给客户、客户反馈无法兑换。"
+            />
+          </template>
           <el-input
             v-model.trim="revealForm.reason"
             type="textarea"
@@ -432,7 +488,14 @@
             placeholder="例如：售后核对、人工发货给客户"
           />
         </el-form-item>
-        <el-form-item v-if="revealForm.code" label="完整兑换码">
+        <el-form-item v-if="revealForm.code">
+          <template #label>
+            <FieldHelpLabel
+              label="完整兑换码"
+              purpose="展示解密后的完整兑换码，只在有权限并填写原因后显示。"
+              example="复制给客户前先核对订单和发货记录，避免发错码。"
+            />
+          </template>
           <el-input v-model="revealForm.code" type="textarea" :rows="3" readonly />
         </el-form-item>
       </el-form>
@@ -451,6 +514,7 @@ import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from
 import { redeemCodesApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';

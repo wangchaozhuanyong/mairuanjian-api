@@ -243,40 +243,99 @@
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="form-grid">
-          <el-form-item label="业务名称" prop="name">
+          <el-form-item prop="name">
+            <template #label>
+              <FieldHelpLabel
+                label="业务名称"
+                purpose="兑换码业务的名称，库存、订单匹配、发货和报表都会显示它。"
+                example="可以填 ChatGPT 20 USD 兑换码、Apple Gift Card 100 HKD。"
+              />
+            </template>
             <el-input v-model.trim="form.name" />
           </el-form-item>
-          <el-form-item label="面值" prop="faceValue">
+          <el-form-item prop="faceValue">
+            <template #label>
+              <FieldHelpLabel
+                label="面值"
+                purpose="这类兑换码本身的金额或规格，系统按它匹配订单和库存。"
+                example="20 USD 礼品卡填 20 USD；100 港币卡填 100 HKD。"
+              />
+            </template>
             <el-input v-model.trim="form.faceValue" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="默认成本">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="默认成本"
+                purpose="批量导入兑换码时默认使用的采购成本，用于计算订单利润。"
+                example="每张码买入价 16 元就填 16；单批成本不同可在导入时改。"
+              />
+            </template>
             <el-input v-model.trim="form.defaultCost" />
           </el-form-item>
-          <el-form-item label="默认售价">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="默认售价"
+                purpose="这类兑换码默认卖给客户多少钱，手工订单可用它做参考。"
+                example="平时卖 20 元就填 20；平台活动价可在订单里按实际实付填写。"
+              />
+            </template>
             <el-input v-model.trim="form.defaultPrice" />
           </el-form-item>
-          <el-form-item label="发货方式">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="发货方式"
+                purpose="决定订单匹配到兑换码后，系统是自动发货、半自动确认还是完全手工处理。"
+                example="平台接口稳定可选自动；需要人工复制内容选半自动；特殊商品选手工。"
+              />
+            </template>
             <el-select v-model="form.deliveryMode" class="full-input">
-              <el-option label="自动" value="auto" />
-              <el-option label="半自动" value="semi_auto" />
-              <el-option label="手工" value="manual" />
+              <el-option
+                v-for="mode in deliveryModeOptions"
+                :key="mode.value"
+                :label="mode.label"
+                :value="mode.value"
+              />
             </el-select>
           </el-form-item>
         </div>
-        <el-form-item label="匹配和发货规则">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="匹配和发货规则"
+              purpose="控制订单匹配库存时是否必须同面值，以及能不能多张码组合发货。"
+              example="20 USD 订单只发 20 USD 卡就勾精确匹配；允许两张 10 USD 组合就勾允许组合发货。"
+            />
+          </template>
           <el-checkbox v-model="form.exactFaceValueOnly">只允许精确面值匹配</el-checkbox>
           <el-checkbox v-model="form.allowCombination">允许组合发货</el-checkbox>
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="状态"
+              purpose="控制这个兑换码业务是否能继续接单和匹配库存。"
+              example="正常卖选启用；暂时缺货选暂停；以后不卖了选停用。"
+            />
+          </template>
           <el-radio-group v-model="form.status">
             <el-radio-button value="enabled">启用</el-radio-button>
             <el-radio-button value="paused">暂停</el-radio-button>
             <el-radio-button value="disabled">停用</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="写给员工看的兑换码业务补充说明，不参与自动匹配。"
+              example="可以写进货来源、发货注意事项、售后处理规则。"
+            />
+          </template>
           <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -405,7 +464,14 @@
     >
       <el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top">
         <div class="form-grid">
-          <el-form-item label="来源平台" prop="platformId">
+          <el-form-item prop="platformId">
+            <template #label>
+              <FieldHelpLabel
+                label="来源平台"
+                purpose="这条映射属于哪个平台，用来把平台订单识别成兑换码业务。"
+                example="淘宝商品选淘宝，闲鱼商品选闲鱼。"
+              />
+            </template>
             <el-select v-model="mappingForm.platformId" class="full-input" filterable>
               <el-option
                 v-for="platform in sourcePlatforms"
@@ -415,30 +481,79 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="店铺/账号">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="店铺/账号"
+                purpose="记录平台店铺、账号或渠道名称，多个店铺时用来区分。"
+                example="可以填淘宝主店、闲鱼 1 号、企业店。"
+              />
+            </template>
             <el-input v-model.trim="mappingForm.shopId" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="平台商品 ID" prop="platformItemId">
+          <el-form-item prop="platformItemId">
+            <template #label>
+              <FieldHelpLabel
+                label="平台商品 ID"
+                purpose="平台商品的唯一编号，系统用它识别订单应该匹配哪个兑换码业务。"
+                example="从淘宝/闲鱼订单或商品后台复制 itemId。"
+              />
+            </template>
             <el-input v-model.trim="mappingForm.platformItemId" />
           </el-form-item>
-          <el-form-item label="平台 SKU ID">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="平台 SKU ID"
+                purpose="同一个平台商品下不同规格的编号，用来区分不同面值或数量。"
+                example="只有一个规格可留空；多个规格就填对应 SKU ID。"
+              />
+            </template>
             <el-input v-model.trim="mappingForm.platformSkuId" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="SKU 关键词">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="SKU 关键词"
+                purpose="当 SKU ID 不稳定或为空时，用规格文字辅助匹配订单。"
+                example="可以填 20USD、100HKD、月卡、季卡等订单里会出现的词。"
+              />
+            </template>
             <el-input v-model.trim="mappingForm.skuKeyword" />
           </el-form-item>
-          <el-form-item label="发货数量">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="发货数量"
+                purpose="这个平台规格下单一次需要发几张兑换码。"
+                example="买 1 张码填 1；一个套餐要发 2 张码就填 2。"
+              />
+            </template>
             <el-input-number v-model="mappingForm.quantity" :min="1" class="full-input" />
           </el-form-item>
-          <el-form-item label="面值">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="面值"
+                purpose="平台规格对应的兑换码面值，用来进一步确认匹配结果。"
+                example="商品规格写 20 USD 就填 20 USD，避免错发别的面值。"
+              />
+            </template>
             <el-input v-model.trim="mappingForm.faceValue" />
           </el-form-item>
         </div>
-        <el-form-item label="发货模板">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="发货模板"
+              purpose="生成发货内容时使用的消息模板，决定发给买家的文字格式。"
+              example="自动发货选含兑换码变量的模板；手工发货也可以选常用回复模板。"
+            />
+          </template>
           <el-select v-model="mappingForm.deliveryTemplateId" class="full-input" clearable>
             <el-option
               v-for="template in deliveryTemplates"
@@ -448,7 +563,14 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="启用状态">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="启用状态"
+              purpose="控制这条平台商品映射是否生效。"
+              example="商品还在卖就启用；映射未确认或商品下架就停用。"
+            />
+          </template>
           <el-switch v-model="mappingForm.enabled" active-text="启用" inactive-text="停用" />
         </el-form-item>
       </el-form>
@@ -464,25 +586,32 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { codeServicesApi, userTableViewsApi } from '@/api/system';
-import type { CodePlatformMappingQuery, CodeServiceQuery } from '@/api/system';
+import { codeServicesApi, dataCenterApi, userTableViewsApi } from '@/api/system';
+import type { CodePlatformMappingQuery, CodeServiceQuery, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { CODE_SERVICE_DELIVERY_MODE_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodePlatformMapping,
   CodeService,
+  DataDictionary,
   MessageTemplate,
   PageResult,
   SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import {
+  buildCodeServiceDeliveryModeOptions,
+  getCodeServiceDeliveryModeLabel as getConfiguredCodeServiceDeliveryModeLabel
+} from '@/utils/codeServiceDeliveryModes';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartMessageTemplates, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
@@ -491,11 +620,6 @@ const statusOptions = [
   { label: '启用', value: 'enabled' },
   { label: '暂停', value: 'paused' },
   { label: '停用', value: 'disabled' }
-];
-const deliveryModeOptions: Array<{ label: string; value: CodeService['deliveryMode'] }> = [
-  { label: '自动', value: 'auto' },
-  { label: '半自动', value: 'semi_auto' },
-  { label: '手工', value: 'manual' }
 ];
 const serviceColumnOptions = [
   { label: '业务', value: 'name', required: true },
@@ -522,6 +646,7 @@ const selectedServices = ref<CodeService[]>([]);
 const mappings = ref<CodePlatformMapping[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
 const deliveryTemplates = ref<MessageTemplate[]>([]);
+const deliveryModeDictionaries = ref<DataDictionary[]>([]);
 const total = ref(0);
 const formRef = ref<FormInstance>();
 const mappingFormRef = ref<FormInstance>();
@@ -534,6 +659,7 @@ const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const activeServicesQueryKey = ref('');
 const activeMappingsQueryKey = ref('');
+const activeDeliveryModesQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -589,9 +715,12 @@ const combinationCount = computed(
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
+const deliveryModeOptions = computed(() =>
+  buildCodeServiceDeliveryModeOptions(deliveryModeDictionaries.value)
+);
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
-  const deliveryModeLabel = deliveryModeOptions.find(
+  const deliveryModeLabel = deliveryModeOptions.value.find(
     (mode) => mode.value === query.deliveryMode
   )?.label;
   if (query.deliveryMode && deliveryModeLabel) {
@@ -605,12 +734,11 @@ function formatDate(value?: string | null) {
 }
 
 function getDeliveryModeLabel(mode: CodeService['deliveryMode']) {
-  const labels: Record<CodeService['deliveryMode'], string> = {
-    auto: '自动',
-    semi_auto: '半自动',
-    manual: '手工'
-  };
-  return labels[mode];
+  return getConfiguredCodeServiceDeliveryModeLabel(mode, deliveryModeDictionaries.value);
+}
+
+function getDefaultDeliveryMode(): CodeService['deliveryMode'] {
+  return deliveryModeOptions.value[0]?.value ?? 'semi_auto';
 }
 
 function getStatusLabel(status: CodeService['status']) {
@@ -687,6 +815,52 @@ async function loadServices(options: { background?: boolean; force?: boolean } =
   } finally {
     if (activeServicesQueryKey.value === key) {
       loading.value = false;
+    }
+  }
+}
+
+function buildDeliveryModeParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 20,
+    group: CODE_SERVICE_DELIVERY_MODE_DICTIONARY_GROUP,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+function applyDeliveryModeResult(data: PageResult<DataDictionary>) {
+  deliveryModeDictionaries.value = data.items;
+}
+
+async function loadDeliveryModes(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildDeliveryModeParams();
+  const key = createSmartQueryKey('code-service-delivery-modes', params);
+  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
+
+  activeDeliveryModesQueryKey.value = key;
+
+  if (cached) {
+    applyDeliveryModeResult(cached);
+  }
+
+  try {
+    const result = await refreshSmartQuery({
+      key,
+      fetcher: () => dataCenterApi.listDictionaries(params),
+      force: options.force ?? true
+    });
+
+    if (activeDeliveryModesQueryKey.value !== key) {
+      return;
+    }
+
+    if (result.changed || !cached) {
+      applyDeliveryModeResult(result.data);
+    }
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载兑换码业务发货模式失败');
     }
   }
 }
@@ -838,8 +1012,11 @@ function isDeliveryMode(value: unknown): value is CodeService['deliveryMode'] | 
 }
 
 async function initializePage() {
-  await loadTableViews(true);
-  await loadServices({ force: false });
+  await Promise.all([
+    loadTableViews(true),
+    loadDeliveryModes({ force: false }),
+    loadServices({ force: false })
+  ]);
 }
 
 async function loadMappingDependencies() {
@@ -925,7 +1102,7 @@ function resetForm() {
   form.faceValue = '';
   form.defaultPrice = '0';
   form.defaultCost = '0';
-  form.deliveryMode = 'semi_auto';
+  form.deliveryMode = getDefaultDeliveryMode();
   form.exactFaceValueOnly = true;
   form.allowCombination = false;
   form.status = 'enabled';
@@ -1103,8 +1280,13 @@ async function deleteMapping(mapping: CodePlatformMapping) {
 onMounted(initializePage);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
-  ['code-services', 'code-service-mappings'],
+  ['code-services', 'code-service-mappings', 'data-dictionaries'],
   () => {
+    void loadDeliveryModes({
+      background: deliveryModeDictionaries.value.length > 0,
+      force: true
+    });
+
     void loadServices({
       background: services.value.length > 0,
       force: true

@@ -179,13 +179,34 @@
       width="min(700px, calc(100vw - 24px))"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="模板名称" prop="name">
+        <el-form-item prop="name">
+          <template #label>
+            <FieldHelpLabel
+              label="模板名称"
+              purpose="发货模板的内部名称，员工选择模板时会看到它。"
+              example="可以填兑换码自动发货模板、售后补发模板、手工说明模板。"
+            />
+          </template>
           <el-input v-model.trim="form.name" />
         </el-form-item>
-        <el-form-item label="模板内容" prop="content">
+        <el-form-item prop="content">
+          <template #label>
+            <FieldHelpLabel
+              label="模板内容"
+              purpose="实际生成给客户看的发货文字，可以放变量让系统替换。"
+              example="例如：您的兑换码是 {{code}}，请尽快兑换。"
+            />
+          </template>
           <el-input v-model="form.content" type="textarea" :rows="6" />
         </el-form-item>
-        <el-form-item label="变量">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="变量"
+              purpose="列出模板里会用到的占位符，系统生成内容时会替换成真实值。"
+              example="常见变量有 code、faceValue、orderNo；没有变量可留空。"
+            />
+          </template>
           <el-select
             v-model="form.variables"
             class="full-input"
@@ -202,13 +223,27 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="状态"
+              purpose="控制这个模板是否能在发货或售后流程中选择。"
+              example="正在使用选启用；旧模板或未确认模板选停用。"
+            />
+          </template>
           <el-radio-group v-model="form.status">
             <el-radio-button value="active">启用</el-radio-button>
             <el-radio-button value="disabled">停用</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录模板的使用场景或注意事项。"
+              example="可以写只用于淘宝、只用于补发、含售后提示。"
+            />
+          </template>
           <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
@@ -227,6 +262,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { messageTemplatesApi, userTableViewsApi } from '@/api/system';
 import type { MessageTemplateQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';

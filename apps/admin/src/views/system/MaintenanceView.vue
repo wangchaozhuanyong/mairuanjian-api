@@ -182,9 +182,12 @@
                 clearable
                 @change="handleAnnouncementSearch"
               >
-                <el-option label="信息" value="info" />
-                <el-option label="警告" value="warning" />
-                <el-option label="错误" value="error" />
+                <el-option
+                  v-for="option in announcementLevelOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
               </el-select>
             </template>
           </TableToolbar>
@@ -341,14 +344,28 @@
         <el-tab-pane label="维护模式" name="mode">
           <div class="settings-layout">
             <el-form label-width="110px" class="settings-form">
-              <el-form-item label="是否启用">
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="是否启用"
+                    purpose="开启后后台进入维护状态，只允许指定角色或 IP 访问。"
+                    example="上线升级或紧急修复时开启，完成后及时关闭。"
+                  />
+                </template>
                 <el-switch
                   v-model="modeForm.enabled"
                   active-text="开启维护"
                   inactive-text="正常运行"
                 />
               </el-form-item>
-              <el-form-item label="维护原因">
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="维护原因"
+                    purpose="告诉后台用户为什么正在维护，减少误会和重复询问。"
+                    example="可以写系统升级中，预计 30 分钟后恢复。"
+                  />
+                </template>
                 <el-input
                   v-model="modeForm.reason"
                   type="textarea"
@@ -356,16 +373,37 @@
                   placeholder="输入维护原因，会显示给后台用户"
                 />
               </el-form-item>
-              <el-form-item label="允许角色">
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="允许角色"
+                    purpose="维护期间仍可访问后台的角色编码。"
+                    example="多个角色用英文逗号分隔，如 admin,technician。"
+                  />
+                </template>
                 <el-input v-model="modeForm.allowedRolesText" placeholder="例如 admin,technician" />
               </el-form-item>
-              <el-form-item label="允许 IP">
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="允许 IP"
+                    purpose="维护期间仍可访问后台的 IP 或网段。"
+                    example="多个 IP 或 CIDR 用逗号分隔，如 1.2.3.4,1.2.3.0/24。"
+                  />
+                </template>
                 <el-input
                   v-model="modeForm.allowedIpsText"
                   placeholder="多个 IP 或 CIDR 用逗号分隔"
                 />
               </el-form-item>
-              <el-form-item label="开始时间">
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="开始时间"
+                    purpose="计划维护开始时间，用于记录和展示维护窗口。"
+                    example="马上维护可留空或填当前时间；预约维护填计划时间。"
+                  />
+                </template>
                 <el-date-picker
                   v-model="modeForm.startAt"
                   type="datetime"
@@ -373,7 +411,14 @@
                   placeholder="可选"
                 />
               </el-form-item>
-              <el-form-item label="结束时间">
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="结束时间"
+                    purpose="计划维护结束时间，提醒员工预计恢复时间。"
+                    example="预计 2 小时后恢复，就选择对应结束时间。"
+                  />
+                </template>
                 <el-date-picker
                   v-model="modeForm.endAt"
                   type="datetime"
@@ -1024,23 +1069,61 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="90px">
-        <el-form-item label="标题" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="标题"
+              purpose="公告标题，用户或员工第一眼看到的内容。"
+              example="可以写系统维护通知、版本升级公告。"
+            />
+          </template>
           <el-input v-model="announcementForm.title" placeholder="公告标题" />
         </el-form-item>
-        <el-form-item label="内容" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="内容"
+              purpose="公告正文，说明具体影响、时间和处理建议。"
+              example="可以写今晚 23:00-24:00 升级，期间可能无法登录。"
+            />
+          </template>
           <el-input v-model="announcementForm.content" type="textarea" :rows="4" />
         </el-form-item>
-        <el-form-item label="级别">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="级别"
+              purpose="公告重要程度，影响页面展示颜色和员工关注度。"
+              example="普通说明选信息；有影响但可接受选警告；严重异常选错误。"
+            />
+          </template>
           <el-select v-model="announcementForm.level">
-            <el-option label="信息" value="info" />
-            <el-option label="警告" value="warning" />
-            <el-option label="错误" value="error" />
+            <el-option
+              v-for="option in announcementLevelOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="启用"
+              purpose="控制这条公告是否对用户或员工展示。"
+              example="确认文案无误后启用；草稿或过期公告关闭。"
+            />
+          </template>
           <el-switch v-model="announcementForm.enabled" />
         </el-form-item>
-        <el-form-item label="开始">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="开始"
+              purpose="公告开始展示的时间。"
+              example="立即展示可留空或填当前时间；预约公告填未来时间。"
+            />
+          </template>
           <el-date-picker
             v-model="announcementForm.startAt"
             type="datetime"
@@ -1048,7 +1131,14 @@
             placeholder="可选"
           />
         </el-form-item>
-        <el-form-item label="结束">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="结束"
+              purpose="公告自动停止展示的时间。"
+              example="维护完成后不需要继续显示，就设置结束时间。"
+            />
+          </template>
           <el-date-picker
             v-model="announcementForm.endAt"
             type="datetime"
@@ -1071,19 +1161,54 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-width="90px">
-        <el-form-item label="编码" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="编码"
+              purpose="功能开关的唯一代码，前端或后端按它判断功能是否开启。"
+              example="可以填 code.auto_delivery、apple.automation。"
+            />
+          </template>
           <el-input v-model="flagForm.key" :disabled="Boolean(flagForm.id)" />
         </el-form-item>
-        <el-form-item label="名称" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="名称"
+              purpose="功能开关的显示名称，方便员工理解控制的是哪个功能。"
+              example="可以填兑换码自动发货、Apple ID 自动化任务。"
+            />
+          </template>
           <el-input v-model="flagForm.name" />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="启用"
+              purpose="控制这个功能开关是否生效。"
+              example="新功能测试通过后开启；有故障时可临时关闭。"
+            />
+          </template>
           <el-switch v-model="flagForm.enabled" />
         </el-form-item>
-        <el-form-item label="配置 JSON">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="配置 JSON"
+              purpose="给功能开关附加更细的配置，必须是合法 JSON。"
+              example='可以填 {"rollout":50}，没有额外配置可填 {}。'
+            />
+          </template>
           <el-input v-model="flagForm.configText" type="textarea" :rows="5" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录功能开关的用途和修改注意事项。"
+              example="可以写只给管理员使用，或灰度期间不要关闭。"
+            />
+          </template>
           <el-input v-model="flagForm.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
@@ -1099,23 +1224,61 @@
       width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-width="100px">
-        <el-form-item label="版本号" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="版本号"
+              purpose="登记本次发布或变更的版本编号。"
+              example="可以填 0.1.1、2026.06.21。"
+            />
+          </template>
           <el-input v-model="versionForm.version" placeholder="例如 0.1.1" />
         </el-form-item>
-        <el-form-item label="标题" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="标题"
+              purpose="版本更新标题，用来概括这次发布内容。"
+              example="可以写订单录入体验优化、兑换码发货增强。"
+            />
+          </template>
           <el-input v-model="versionForm.title" />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="状态"
+              purpose="标记这个版本当前处于草稿、已发布还是废弃。"
+              example="还没上线选草稿；已经上线选已发布；回滚废弃选已废弃。"
+            />
+          </template>
           <el-select v-model="versionForm.status">
-            <el-option label="草稿" value="draft" />
-            <el-option label="已发布" value="released" />
-            <el-option label="已废弃" value="deprecated" />
+            <el-option
+              v-for="option in versionStatusOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="影响模块">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="影响模块"
+              purpose="记录本次版本影响哪些业务模块，便于排查问题。"
+              example="多个模块用逗号分隔，如 apple,code,system。"
+            />
+          </template>
           <el-input v-model="versionForm.impactModulesText" placeholder="多个模块用逗号分隔" />
         </el-form-item>
-        <el-form-item label="发布时间">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="发布时间"
+              purpose="记录版本正式发布时间。"
+              example="正式上线时选择实际发布时间；草稿可以留空。"
+            />
+          </template>
           <el-date-picker
             v-model="versionForm.releasedAt"
             type="datetime"
@@ -1123,7 +1286,14 @@
             placeholder="可选"
           />
         </el-form-item>
-        <el-form-item label="更新内容" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="更新内容"
+              purpose="详细记录这次版本改了什么，方便员工和后续维护查看。"
+              example="可以分行写新增字段说明、修复订单问题、优化移动端。"
+            />
+          </template>
           <el-input v-model="versionForm.releaseNotes" type="textarea" :rows="5" />
         </el-form-item>
       </el-form>
@@ -1141,13 +1311,34 @@
       width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-width="90px">
-        <el-form-item label="参数 key" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="参数 key"
+              purpose="系统参数唯一键名，代码会按它读取配置。"
+              example="可以填 maintenance.banner 或 code.low_stock_threshold。"
+            />
+          </template>
           <el-input v-model="parameterForm.key" :disabled="Boolean(parameterForm.id)" />
         </el-form-item>
-        <el-form-item label="值 JSON">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="值 JSON"
+              purpose="系统参数的配置值，必须是合法 JSON。"
+              example='简单开关可填 true，对象可填 {"days":7}。'
+            />
+          </template>
           <el-input v-model="parameterForm.valueText" type="textarea" :rows="6" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="说明这个参数的用途和修改注意事项。"
+              example="可以写影响维护公告展示，修改后需刷新页面。"
+            />
+          </template>
           <el-input v-model="parameterForm.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
@@ -1176,14 +1367,16 @@ import {
 import type { Ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
-import { maintenanceApi, userTableViewsApi } from '@/api/system';
+import { dataCenterApi, maintenanceApi, userTableViewsApi } from '@/api/system';
 import type {
+  DataDictionaryQuery,
   MaintenanceAnnouncementQuery,
   MaintenanceFeatureFlagQuery,
   MaintenanceParameterQuery,
   MaintenanceVersionQuery
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -1195,6 +1388,7 @@ import type {
   AppAnnouncementLevel,
   AppVersion,
   AppVersionStatus,
+  DataDictionary,
   FeatureFlag,
   MaintenanceOverview,
   MaintenanceWindow,
@@ -1203,13 +1397,27 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import {
+  MAINTENANCE_ANNOUNCEMENT_LEVEL_DICTIONARY_GROUP,
+  MAINTENANCE_VERSION_STATUS_DICTIONARY_GROUP
+} from '@/config/quickSettings';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import {
+  buildMaintenanceAnnouncementLevelOptions,
+  buildMaintenanceVersionStatusOptions,
+  getMaintenanceAnnouncementLevelLabel,
+  getMaintenanceVersionStatusLabel,
+  isMaintenanceAnnouncementLevel,
+  isMaintenanceVersionStatus
+} from '@/utils/systemQuickOptions';
 
 type LoadOptions = { background?: boolean; force?: boolean };
 
 const route = useRoute();
 const activeTab = ref('overview');
 const overview = ref<MaintenanceOverview | null>(null);
+const announcementLevelDictionaries = ref<DataDictionary[]>([]);
+const versionStatusDictionaries = ref<DataDictionary[]>([]);
 const overviewLoading = ref(false);
 const announcementTableKey = 'maintenance_announcements';
 const flagTableKey = 'maintenance_feature_flags';
@@ -1220,11 +1428,12 @@ const enabledStatusOptions = [
   { label: '启用', value: 'true' },
   { label: '停用', value: 'false' }
 ];
-const versionStatusOptions = [
-  { label: '草稿', value: 'draft' },
-  { label: '已发布', value: 'released' },
-  { label: '已废弃', value: 'deprecated' }
-];
+const announcementLevelOptions = computed(() =>
+  buildMaintenanceAnnouncementLevelOptions(announcementLevelDictionaries.value)
+);
+const versionStatusOptions = computed(() =>
+  buildMaintenanceVersionStatusOptions(versionStatusDictionaries.value)
+);
 const announcementColumnOptions = [
   { label: '公告', value: 'announcement', required: true },
   { label: '级别', value: 'level' },
@@ -1596,9 +1805,14 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
     'maintenance-changelogs',
     'maintenance-menu-config',
     'maintenance-theme-config',
-    'maintenance-parameters'
+    'maintenance-parameters',
+    'data-dictionaries'
   ],
   ({ scopes }) => {
+    if (scopes.includes('data-dictionaries')) {
+      void loadMaintenanceOptions({ background: true, force: true });
+    }
+
     if (scopes.includes('maintenance-overview')) {
       void loadOverview({ background: Boolean(overview.value), force: true });
     }
@@ -1655,6 +1869,7 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 onBeforeUnmount(stopRealtimeRefresh);
 
 async function refreshCurrentTab(options: LoadOptions = {}) {
+  await loadMaintenanceOptions(options);
   await loadOverview(options);
   if (activeTab.value === 'overview') return;
   if (activeTab.value === 'announcements') await loadAnnouncementsWithViews(options);
@@ -1665,6 +1880,35 @@ async function refreshCurrentTab(options: LoadOptions = {}) {
   if (activeTab.value === 'menu') await loadMenuConfig(options);
   if (activeTab.value === 'theme') await loadThemeConfig(options);
   if (activeTab.value === 'parameters') await loadSystemParametersWithViews(options);
+}
+
+function buildMaintenanceOptionParams(group: string): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 50,
+    group,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadMaintenanceOptions(options: LoadOptions = {}) {
+  try {
+    const [announcementLevels, versionStatuses] = await Promise.all([
+      dataCenterApi.listDictionaries(
+        buildMaintenanceOptionParams(MAINTENANCE_ANNOUNCEMENT_LEVEL_DICTIONARY_GROUP)
+      ),
+      dataCenterApi.listDictionaries(
+        buildMaintenanceOptionParams(MAINTENANCE_VERSION_STATUS_DICTIONARY_GROUP)
+      )
+    ]);
+    announcementLevelDictionaries.value = announcementLevels.items;
+    versionStatusDictionaries.value = versionStatuses.items;
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载系统维护选项失败');
+    }
+  }
 }
 
 async function loadCachedData<TData>(config: {
@@ -2479,6 +2723,18 @@ function applyParameterView(view: UserTableView) {
   parameterSavedViewId.value = view.id;
 }
 
+function getDefaultAnnouncementLevel() {
+  return announcementLevelOptions.value[0]?.value ?? 'info';
+}
+
+function getDefaultVersionStatus() {
+  return (
+    versionStatusOptions.value.find((option) => option.value === 'draft')?.value ??
+    versionStatusOptions.value[0]?.value ??
+    'draft'
+  );
+}
+
 function isAnnouncementColumnVisible(column: string) {
   return announcementVisibleColumns.value.length
     ? announcementVisibleColumns.value.includes(column)
@@ -2530,7 +2786,7 @@ function openAnnouncementDialog() {
     id: '',
     title: '',
     content: '',
-    level: 'info',
+    level: getDefaultAnnouncementLevel(),
     enabled: true,
     startAt: '',
     endAt: ''
@@ -2670,7 +2926,7 @@ function openVersionDialog() {
   Object.assign(versionForm, {
     version: '',
     title: '',
-    status: 'draft',
+    status: getDefaultVersionStatus(),
     releaseNotes: '',
     impactModulesText: '',
     releasedAt: ''
@@ -2857,11 +3113,11 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 }
 
 function isAnnouncementLevel(value: unknown): value is AppAnnouncementLevel {
-  return value === 'info' || value === 'warning' || value === 'error';
+  return typeof value === 'string' && isMaintenanceAnnouncementLevel(value);
 }
 
 function isAppVersionStatus(value: unknown): value is AppVersionStatus {
-  return value === 'draft' || value === 'released' || value === 'deprecated';
+  return typeof value === 'string' && isMaintenanceVersionStatus(value);
 }
 
 function showExportMessage() {
@@ -2878,12 +3134,7 @@ function formatDate(value?: string | null) {
 }
 
 function getLevelLabel(level: AppAnnouncementLevel) {
-  const labels: Record<AppAnnouncementLevel, string> = {
-    info: '信息',
-    warning: '警告',
-    error: '错误'
-  };
-  return labels[level] ?? level;
+  return getMaintenanceAnnouncementLevelLabel(level, announcementLevelDictionaries.value);
 }
 
 function getLevelTone(level: AppAnnouncementLevel) {
@@ -2893,12 +3144,7 @@ function getLevelTone(level: AppAnnouncementLevel) {
 }
 
 function getVersionStatusLabel(status: AppVersionStatus) {
-  const labels: Record<AppVersionStatus, string> = {
-    draft: '草稿',
-    released: '已发布',
-    deprecated: '已废弃'
-  };
-  return labels[status] ?? status;
+  return getMaintenanceVersionStatusLabel(status, versionStatusDictionaries.value);
 }
 
 function getVersionStatusTone(status: AppVersionStatus) {

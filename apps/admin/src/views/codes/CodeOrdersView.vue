@@ -293,7 +293,14 @@
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="form-grid">
-          <el-form-item label="平台" prop="platformId">
+          <el-form-item prop="platformId">
+            <template #label>
+              <FieldHelpLabel
+                label="平台"
+                purpose="这笔兑换码订单来自哪个销售平台，系统会按平台和商品信息匹配业务。"
+                example="淘宝订单选淘宝，闲鱼订单选闲鱼。"
+              />
+            </template>
             <el-select v-model="form.platformId" class="full-input" filterable>
               <el-option
                 v-for="platform in platforms"
@@ -303,28 +310,70 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="平台订单号" prop="externalOrderNo">
+          <el-form-item prop="externalOrderNo">
+            <template #label>
+              <FieldHelpLabel
+                label="平台订单号"
+                purpose="外部平台的订单编号，用来对账、售后和防止重复导入。"
+                example="复制淘宝或闲鱼订单详情里的订单号。"
+              />
+            </template>
             <el-input v-model.trim="form.externalOrderNo" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="商品 ID" prop="itemId">
+          <el-form-item prop="itemId">
+            <template #label>
+              <FieldHelpLabel
+                label="商品 ID"
+                purpose="平台商品的编号，系统用它匹配兑换码业务和 SKU 映射。"
+                example="从平台订单或商品后台复制 itemId。"
+              />
+            </template>
             <el-input v-model.trim="form.itemId" />
           </el-form-item>
-          <el-form-item label="SKU ID">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="SKU ID"
+                purpose="商品规格编号，用来区分同一商品下不同面值或套餐。"
+                example="只有一个规格可留空；多规格商品就填平台 SKU ID。"
+              />
+            </template>
             <el-input v-model.trim="form.skuId" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="商品标题">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="商品标题"
+                purpose="买家拍下的商品名称，方便人工核对订单和映射是否正确。"
+                example="可以填平台订单里显示的完整商品标题。"
+              />
+            </template>
             <el-input v-model.trim="form.itemTitle" />
           </el-form-item>
-          <el-form-item label="SKU 名称">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="SKU 名称"
+                purpose="买家选择的规格文字，系统可用它辅助判断应该发哪种兑换码。"
+                example="例如 20 USD、100 港币、月卡、季卡。"
+              />
+            </template>
             <el-input v-model.trim="form.skuName" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="兑换码业务">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="兑换码业务"
+                purpose="手工指定这单应该消耗哪类兑换码库存。"
+                example="如果自动映射不确定，就手动选择 20 USD 兑换码业务。"
+              />
+            </template>
             <el-select v-model="form.serviceId" class="full-input" clearable filterable>
               <el-option
                 v-for="service in services"
@@ -334,21 +383,56 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="面值">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="面值"
+                purpose="订单需要发的兑换码面值，留空时系统会优先使用映射或业务面值。"
+                example="客户买 20 USD 就填 20 USD；映射已准确时可以留空。"
+              />
+            </template>
             <el-input v-model.trim="form.faceValue" placeholder="留空使用映射或业务面值" />
           </el-form-item>
-          <el-form-item label="数量">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="数量"
+                purpose="这单需要发几张兑换码，系统会按数量锁定库存。"
+                example="买 1 张码填 1；买 3 张同面值码填 3。"
+              />
+            </template>
             <el-input-number v-model="form.quantity" :min="1" class="full-input" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="实付金额">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="实付金额"
+                purpose="买家这单实际付款金额，是计算兑换码订单利润的收入部分。"
+                example="买家实付 20 元就填 20，不要填兑换码面值。"
+              />
+            </template>
             <el-input v-model.trim="form.paidAmount" />
           </el-form-item>
-          <el-form-item label="平台手续费">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="平台手续费"
+                purpose="平台从这单扣掉的手续费，会从利润里扣除。"
+                example="平台扣 0.2 元就填 0.2；没有手续费填 0。"
+              />
+            </template>
             <el-input v-model.trim="form.platformFee" />
           </el-form-item>
-          <el-form-item label="买家脱敏">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="买家脱敏"
+                purpose="记录买家的脱敏名称，方便售后定位但不暴露完整隐私。"
+                example="可以填张***、微信尾号 1234、闲鱼昵称前后缀。"
+              />
+            </template>
             <el-input v-model.trim="form.buyerNameMasked" />
           </el-form-item>
         </div>
@@ -462,10 +546,24 @@
         :rules="generateRules"
         label-position="top"
       >
-        <el-form-item label="订单">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="订单"
+              purpose="当前准备生成发货内容的订单，用来确认没有选错订单。"
+              example="生成前核对平台订单号和买家商品信息。"
+            />
+          </template>
           <el-input :model-value="selectedOrder?.externalOrderNo ?? '-'" disabled />
         </el-form-item>
-        <el-form-item label="生成原因" prop="reason">
+        <el-form-item prop="reason">
+          <template #label>
+            <FieldHelpLabel
+              label="生成原因"
+              purpose="说明为什么要生成或查看发货内容，便于审计和售后追踪。"
+              example="可以填手工复制发货给客户、客户要求重发、售后核对。"
+            />
+          </template>
           <el-input
             v-model.trim="generateForm.reason"
             type="textarea"
@@ -473,7 +571,14 @@
             placeholder="例如：手工复制发货给客户"
           />
         </el-form-item>
-        <el-form-item v-if="generateForm.content" label="发货内容">
+        <el-form-item v-if="generateForm.content">
+          <template #label>
+            <FieldHelpLabel
+              label="发货内容"
+              purpose="系统根据锁定兑换码和模板生成的客户可见内容。"
+              example="复制给客户前先确认订单号、码数量和面值都正确。"
+            />
+          </template>
           <el-input v-model="generateForm.content" type="textarea" :rows="7" readonly />
         </el-form-item>
       </el-form>
@@ -506,18 +611,41 @@
         </div>
       </div>
       <el-form ref="deliverFormRef" :model="deliverForm" :rules="deliverRules" label-position="top">
-        <el-form-item label="订单">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="订单"
+              purpose="当前准备确认发货的订单，确认后会写入发货日志并防重复发货。"
+              example="提交前核对是不是客户刚才要发的那一单。"
+            />
+          </template>
           <el-input :model-value="selectedOrder?.externalOrderNo ?? '-'" disabled />
         </el-form-item>
-        <el-form-item label="发货方式">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="发货方式"
+              purpose="记录这次实际通过什么方式发给客户，便于后续售后追踪。"
+              example="人工复制给客户选手工发货；平台电子凭证接口发出选电子凭证。"
+            />
+          </template>
           <el-select v-model="deliverForm.deliveryMethod" class="full-input">
-            <el-option label="手工发货" value="manual" />
-            <el-option label="电子凭证" value="eticket" />
-            <el-option label="虚拟无需物流" value="dummy_send" />
-            <el-option label="消息卡片" value="message_card" />
+            <el-option
+              v-for="method in deliveryMethodOptions"
+              :key="method.value"
+              :label="method.label"
+              :value="method.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="发货内容快照" prop="deliveryContent">
+        <el-form-item prop="deliveryContent">
+          <template #label>
+            <FieldHelpLabel
+              label="发货内容快照"
+              purpose="保存这次实际发给客户的内容，后续售后和审计会查看它。"
+              example="可以先生成内容再确认，也可以粘贴你实际发给客户的消息。"
+            />
+          </template>
           <el-input
             v-model="deliverForm.deliveryContent"
             type="textarea"
@@ -540,27 +668,34 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { codeOrdersApi, userTableViewsApi } from '@/api/system';
-import type { CodeOrderQuery } from '@/api/system';
+import { codeOrdersApi, dataCenterApi, userTableViewsApi } from '@/api/system';
+import type { CodeOrderQuery, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { CODE_DELIVERY_METHOD_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodeDeliveryLog,
   CodePlatformOrder,
   CodeService,
+  DataDictionary,
   PageResult,
   SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import {
+  buildCodeDeliveryMethodOptions,
+  getCodeDeliveryMethodLabel as getConfiguredCodeDeliveryMethodLabel
+} from '@/utils/codeDeliveryMethods';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 import { loadSmartCodeServices, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
@@ -594,6 +729,7 @@ const orders = ref<CodePlatformOrder[]>([]);
 const deliveryLogs = ref<CodeDeliveryLog[]>([]);
 const platforms = ref<SourcePlatform[]>([]);
 const services = ref<CodeService[]>([]);
+const deliveryMethodDictionaries = ref<DataDictionary[]>([]);
 const selectedOrder = ref<CodePlatformOrder | null>(null);
 const selectedOrders = ref<CodePlatformOrder[]>([]);
 const density = ref<TableDensity>('default');
@@ -608,6 +744,7 @@ const generateFormRef = ref<FormInstance>();
 const deliverFormRef = ref<FormInstance>();
 const activeOrdersQueryKey = ref('');
 const activeDependenciesQueryKey = ref('');
+const activeDeliveryMethodsQueryKey = ref('');
 
 const query = reactive({
   page: 1,
@@ -672,6 +809,9 @@ const deliveredCount = computed(
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
+const deliveryMethodOptions = computed(() =>
+  buildCodeDeliveryMethodOptions(deliveryMethodDictionaries.value)
+);
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
   const platformLabel = platforms.value.find((platform) => platform.id === query.platformId)?.name;
@@ -709,13 +849,11 @@ function getDeliveryStatusTone(status: CodePlatformOrder['deliveryStatus']) {
 }
 
 function getDeliveryMethodLabel(method: CodeDeliveryLog['deliveryMethod']) {
-  const labels: Record<CodeDeliveryLog['deliveryMethod'], string> = {
-    eticket: '电子凭证',
-    dummy_send: '无需物流',
-    message_card: '消息卡片',
-    manual: '手工'
-  };
-  return labels[method];
+  return getConfiguredCodeDeliveryMethodLabel(method, deliveryMethodDictionaries.value);
+}
+
+function getDefaultDeliveryMethod() {
+  return deliveryMethodOptions.value[0]?.value ?? 'manual';
 }
 
 function isColumnVisible(column: string) {
@@ -770,6 +908,41 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单依赖失败');
+    }
+  }
+}
+
+function buildDeliveryMethodParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 20,
+    group: CODE_DELIVERY_METHOD_DICTIONARY_GROUP,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+function applyDeliveryMethodResult(data: PageResult<DataDictionary>) {
+  deliveryMethodDictionaries.value = data.items;
+}
+
+async function loadDeliveryMethods(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildDeliveryMethodParams();
+  const key = createSmartQueryKey('code-order-delivery-methods', params);
+  activeDeliveryMethodsQueryKey.value = key;
+
+  try {
+    await refreshSmartQueryResource({
+      key,
+      fetcher: () => dataCenterApi.listDictionaries(params),
+      apply: applyDeliveryMethodResult,
+      background: options.background,
+      isCurrent: () => activeDeliveryMethodsQueryKey.value === key,
+      force: options.force ?? true
+    });
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载发货方式失败');
     }
   }
 }
@@ -838,6 +1011,7 @@ async function reloadAll(options: { background?: boolean; force?: boolean } = {}
   try {
     await Promise.all([
       loadDependencies(options),
+      loadDeliveryMethods(options),
       loadOrders(options),
       selectedOrder.value && detailVisible.value
         ? loadDeliveryLogs(selectedOrder.value.id)
@@ -1061,7 +1235,7 @@ function openGenerate(order: CodePlatformOrder) {
 
 function openDeliver(order: CodePlatformOrder) {
   selectedOrder.value = order;
-  deliverForm.deliveryMethod = 'manual';
+  deliverForm.deliveryMethod = getDefaultDeliveryMethod();
   deliverForm.deliveryContent =
     generatedOrderId.value === order.id && generateForm.content ? generateForm.content : '';
   deliverDialogVisible.value = true;
@@ -1094,7 +1268,7 @@ async function confirmDeliveryFromGenerated() {
     return;
   }
 
-  deliverForm.deliveryMethod = 'manual';
+  deliverForm.deliveryMethod = getDefaultDeliveryMethod();
   deliverForm.deliveryContent = generateForm.content;
   await confirmDelivery();
 }
@@ -1142,7 +1316,11 @@ async function confirmDelivery() {
 
 async function initializePage() {
   try {
-    await Promise.all([loadDependencies({ force: false }), loadTableViews(true)]);
+    await Promise.all([
+      loadDependencies({ force: false }),
+      loadDeliveryMethods({ force: false }),
+      loadTableViews(true)
+    ]);
     await loadOrders({ force: false });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单失败');
@@ -1161,11 +1339,14 @@ usePageRefresh(
 );
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
-  ['code-orders', 'code-services', 'code-order-dependencies'],
+  ['code-orders', 'code-services', 'code-order-dependencies', 'data-dictionaries'],
   () => {
     void reloadAll({
       background:
-        orders.value.length > 0 || platforms.value.length > 0 || services.value.length > 0,
+        orders.value.length > 0 ||
+        platforms.value.length > 0 ||
+        services.value.length > 0 ||
+        deliveryMethodDictionaries.value.length > 0,
       force: true
     });
   }

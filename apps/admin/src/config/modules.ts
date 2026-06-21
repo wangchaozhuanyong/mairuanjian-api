@@ -463,16 +463,16 @@ const systemModules: AppModuleItem[] = [
   },
   {
     key: 'source-platforms',
-    title: '来源平台设置',
+    title: '快捷设置',
     route: '/system/source-platforms',
-    mark: 'SP',
+    mark: 'QS',
     group: '客户与来源',
     phase: 'Phase 2',
     status: 'ready',
-    description: '这里设置客户和订单是从哪个平台来的，也记录平台收多少手续费。',
-    features: ['平台名称', '手续费规则', '启用状态', '备注'],
-    primaryAction: '新增来源平台',
-    tableColumns: ['平台名称', '手续费率', '固定手续费', '状态', '备注']
+    description: '这里统一设置网站常用下拉选项，集中管理来源平台、客户标签、业务选项、通知选项、附件选项和系统固定选项。',
+    features: ['来源平台', '客户标签', '业务选项', '通知选项', '附件选项'],
+    primaryAction: '新增快捷选项',
+    tableColumns: ['名称', '分组', '状态', '排序', '备注']
   },
   {
     key: 'attachments',
@@ -912,9 +912,6 @@ export const menuSections: MenuSection[] = [
       [
         'dashboard',
         'renewal',
-        'renewal-cancel',
-        'renewal-topup',
-        'renewal-waiting-auto',
         'action-plans',
         'work-orders',
         'launch-audit'

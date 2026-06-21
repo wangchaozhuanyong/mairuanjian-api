@@ -852,22 +852,51 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form label-position="top">
-        <el-form-item label="规则名称" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="规则名称"
+              purpose="通知规则的内部名称，列表里用它区分不同提醒。"
+              example="可以填 Apple ID 余额不足提醒、兑换码低库存提醒。"
+            />
+          </template>
           <el-input v-model="ruleForm.name" />
         </el-form-item>
-        <el-form-item label="事件编码" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="事件编码"
+              purpose="系统触发通知时使用的事件标识，必须和后端事件保持一致。"
+              example="Apple ID 余额低可以填 apple.balance.low。"
+            />
+          </template>
           <el-input v-model="ruleForm.eventCode" placeholder="apple.balance.low" />
         </el-form-item>
-        <el-form-item label="模块" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模块"
+              purpose="说明这条通知属于哪个业务模块，方便筛选和分级管理。"
+              example="Apple ID 相关选 Apple ID，兑换码库存相关选兑换码。"
+            />
+          </template>
           <el-select v-model="ruleForm.module" class="full-width">
-            <el-option label="Apple ID" value="apple" />
-            <el-option label="兑换码" value="code" />
-            <el-option label="平台接口" value="platform" />
-            <el-option label="系统安全" value="security" />
-            <el-option label="运维" value="ops" />
+            <el-option
+              v-for="item in moduleOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="级别">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="级别"
+              purpose="通知严重程度，影响员工优先级和 Telegram 配置过滤。"
+              example="普通提醒选信息；可能影响订单选警告；需要立刻处理选严重。"
+            />
+          </template>
           <el-select v-model="ruleForm.level" class="full-width">
             <el-option
               v-for="item in levelOptions"
@@ -877,13 +906,32 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="渠道">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="渠道"
+              purpose="选择这条规则触发后通过哪些地方提醒员工。"
+              example="后台必看选站内通知；需要外部提醒再勾 Telegram。"
+            />
+          </template>
           <el-checkbox-group v-model="ruleForm.channels">
-            <el-checkbox value="system">站内通知</el-checkbox>
-            <el-checkbox value="telegram">Telegram</el-checkbox>
+            <el-checkbox
+              v-for="item in channelOptions"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ item.label }}
+            </el-checkbox>
           </el-checkbox-group>
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="启用"
+              purpose="控制这条通知规则是否生效。"
+              example="确认事件和模板都配置好后打开；测试或废弃规则关闭。"
+            />
+          </template>
           <el-switch v-model="ruleForm.enabled" />
         </el-form-item>
       </el-form>
@@ -899,25 +947,71 @@
       width="min(620px, calc(100vw - 24px))"
     >
       <el-form label-position="top">
-        <el-form-item label="模板名称" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="模板名称"
+              purpose="通知模板的内部名称，便于区分不同事件和渠道模板。"
+              example="可以填余额不足 Telegram 模板、低库存站内模板。"
+            />
+          </template>
           <el-input v-model="templateForm.name" />
         </el-form-item>
-        <el-form-item label="事件编码" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="事件编码"
+              purpose="模板对应的触发事件，需和通知规则事件编码一致。"
+              example="规则是 apple.balance.low，这里也填 apple.balance.low。"
+            />
+          </template>
           <el-input v-model="templateForm.eventCode" placeholder="apple.balance.low" />
         </el-form-item>
-        <el-form-item label="渠道">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="渠道"
+              purpose="这个模板用于哪个通知渠道，不同渠道可以使用不同文字。"
+              example="站内通知可以短一点，Telegram 可以带更完整处理建议。"
+            />
+          </template>
           <el-select v-model="templateForm.channel" class="full-width">
-            <el-option label="站内通知" value="system" />
-            <el-option label="Telegram" value="telegram" />
+            <el-option
+              v-for="item in channelOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="标题" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="标题"
+              purpose="通知显示的标题，员工第一眼会看到它。"
+              example="可以写 Apple ID 余额不足、兑换码库存告警。"
+            />
+          </template>
           <el-input v-model="templateForm.title" />
         </el-form-item>
-        <el-form-item label="内容" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="内容"
+              purpose="通知正文，告诉员工发生了什么、该怎么处理。"
+              example="可以写账号 {{appleId}} 余额低于 {{threshold}}，请及时充值。"
+            />
+          </template>
           <el-input v-model="templateForm.content" type="textarea" :rows="5" />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="启用"
+              purpose="控制这个模板是否可用于发送通知。"
+              example="模板确认无误后启用；草稿或旧模板关闭。"
+            />
+          </template>
           <el-switch v-model="templateForm.enabled" />
         </el-form-item>
       </el-form>
@@ -940,16 +1034,44 @@
         </div>
       </div>
       <el-form label-position="top">
-        <el-form-item label="通知名称" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="通知名称"
+              purpose="Telegram 配置的内部名称，便于区分不同群或机器人。"
+              example="可以填老板群、客服值班群、运维告警群。"
+            />
+          </template>
           <el-input v-model="telegramForm.notificationName" />
         </el-form-item>
-        <el-form-item label="Bot Token">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="Bot Token"
+              purpose="Telegram 机器人 Token，属于敏感信息，会加密保存且列表只显示尾号。"
+              example="从 BotFather 复制完整 Token；编辑时不更新 Token 可留空。"
+            />
+          </template>
           <el-input v-model="telegramForm.botToken" type="password" show-password />
         </el-form-item>
-        <el-form-item label="Chat ID / 群组 ID" required>
+        <el-form-item required>
+          <template #label>
+            <FieldHelpLabel
+              label="Chat ID / 群组 ID"
+              purpose="机器人要把消息发到哪个聊天或群组。"
+              example="群组一般是负数 ID，个人聊天可能是数字 ID。"
+            />
+          </template>
           <el-input v-model="telegramForm.chatId" />
         </el-form-item>
-        <el-form-item label="通知级别">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="通知级别"
+              purpose="限制哪些级别的通知会发到这个 Telegram 配置。"
+              example="老板群只收严重告警，客服群可以收警告和严重。"
+            />
+          </template>
           <el-select v-model="telegramForm.notificationLevel" class="full-width">
             <el-option
               v-for="item in levelOptions"
@@ -959,13 +1081,27 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="静默时间">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="静默时间"
+              purpose="设置不想被 Telegram 打扰的时间段。"
+              example="晚上不发可填开始 23:00、结束 08:00。"
+            />
+          </template>
           <div class="inline-fields">
             <el-input v-model="telegramForm.silentStartTime" placeholder="开始 HH:mm" />
             <el-input v-model="telegramForm.silentEndTime" placeholder="结束 HH:mm" />
           </div>
         </el-form-item>
-        <el-form-item label="失败重试次数">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="失败重试次数"
+              purpose="Telegram 发送失败后系统最多重试几次。"
+              example="网络偶发不稳定可以填 3；不想重试填 0。"
+            />
+          </template>
           <el-input-number
             v-model="telegramForm.retryCount"
             :min="0"
@@ -973,7 +1109,14 @@
             class="full-width"
           />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="启用"
+              purpose="控制这组 Telegram 通知配置是否生效。"
+              example="Token 和 Chat ID 测试通过后打开；临时停用通知就关闭。"
+            />
+          </template>
           <el-switch v-model="telegramForm.enabled" />
         </el-form-item>
       </el-form>
@@ -989,13 +1132,16 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
+  dataCenterApi,
   notificationsApi,
   userTableViewsApi,
+  type DataDictionaryQuery,
   type NotificationLogQuery,
   type NotificationRuleQuery,
   type NotificationTemplateQuery
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -1003,6 +1149,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import type {
+  DataDictionary,
   NotificationLevel,
   NotificationLog,
   NotificationOverview,
@@ -1019,6 +1166,21 @@ import {
   refreshSmartQuery
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import {
+  buildNotificationChannelOptions,
+  buildNotificationLevelOptions,
+  buildNotificationModuleOptions,
+  getNotificationChannelLabel,
+  getNotificationLevelLabel,
+  getNotificationModuleLabel,
+  isNotificationChannel as isQuickNotificationChannel,
+  isNotificationLevel as isQuickNotificationLevel
+} from '@/utils/notificationOptions';
+import {
+  NOTIFICATION_CHANNEL_DICTIONARY_GROUP,
+  NOTIFICATION_LEVEL_DICTIONARY_GROUP,
+  NOTIFICATION_MODULE_DICTIONARY_GROUP
+} from '@/config/quickSettings';
 
 const activeTab = ref('overview');
 const overview = ref<NotificationOverview | null>(null);
@@ -1026,6 +1188,9 @@ const rules = ref<NotificationRule[]>([]);
 const templates = ref<NotificationTemplate[]>([]);
 const logs = ref<NotificationLog[]>([]);
 const telegramConfigs = ref<TelegramConfig[]>([]);
+const notificationModuleDictionaries = ref<DataDictionary[]>([]);
+const notificationLevelDictionaries = ref<DataDictionary[]>([]);
+const notificationChannelDictionaries = ref<DataDictionary[]>([]);
 const ruleTotal = ref(0);
 const templateTotal = ref(0);
 const logTotal = ref(0);
@@ -1070,24 +1235,15 @@ type NotificationTemplatePage = Awaited<ReturnType<typeof notificationsApi.listT
 type NotificationLogPage = Awaited<ReturnType<typeof notificationsApi.listLogs>>;
 type TelegramConfigPage = Awaited<ReturnType<typeof notificationsApi.listTelegramConfigs>>;
 
-const levelOptions: Array<{ label: string; value: NotificationLevel }> = [
-  { label: '普通', value: 'info' },
-  { label: '警告', value: 'warning' },
-  { label: '错误', value: 'error' },
-  { label: '严重', value: 'critical' }
-];
-const moduleOptions = [
-  { label: 'Apple ID', value: 'apple' },
-  { label: '兑换码', value: 'code' },
-  { label: '平台接口', value: 'platform' },
-  { label: '系统安全', value: 'security' },
-  { label: '运维', value: 'ops' },
-  { label: '通知设置', value: 'notification' }
-];
-const channelOptions = [
-  { label: '站内通知', value: 'system' },
-  { label: 'Telegram', value: 'telegram' }
-];
+const levelOptions = computed(() =>
+  buildNotificationLevelOptions(notificationLevelDictionaries.value)
+);
+const moduleOptions = computed(() =>
+  buildNotificationModuleOptions(notificationModuleDictionaries.value)
+);
+const channelOptions = computed(() =>
+  buildNotificationChannelOptions(notificationChannelDictionaries.value)
+);
 const enabledStatusOptions = [
   { label: '启用', value: 'true' },
   { label: '停用', value: 'false' }
@@ -1246,22 +1402,26 @@ const templateTableSize = computed(() => getTableSize(templateDensity.value));
 const logTableSize = computed(() => getTableSize(logDensity.value));
 const ruleFilterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
-  const moduleLabel = moduleOptions.find((item) => item.value === ruleQuery.module)?.label;
-  const levelLabel = levelOptions.find((item) => item.value === ruleQuery.level)?.label;
+  const moduleLabel = moduleOptions.value.find((item) => item.value === ruleQuery.module)?.label;
+  const levelLabel = levelOptions.value.find((item) => item.value === ruleQuery.level)?.label;
   if (moduleLabel) chips.push({ key: 'module', label: '模块', value: moduleLabel });
   if (levelLabel) chips.push({ key: 'level', label: '级别', value: levelLabel });
   return chips;
 });
 const templateFilterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
-  const channelLabel = channelOptions.find((item) => item.value === templateQuery.channel)?.label;
+  const channelLabel = channelOptions.value.find(
+    (item) => item.value === templateQuery.channel
+  )?.label;
   if (channelLabel) chips.push({ key: 'channel', label: '渠道', value: channelLabel });
   return chips;
 });
 const logFilterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
-  const channelLabel = channelOptions.find((item) => item.value === logQuery.channel)?.label;
-  const moduleLabel = moduleOptions.find((item) => item.value === logQuery.module)?.label;
+  const channelLabel = channelOptions.value.find(
+    (item) => item.value === logQuery.channel
+  )?.label;
+  const moduleLabel = moduleOptions.value.find((item) => item.value === logQuery.module)?.label;
   if (channelLabel) chips.push({ key: 'channel', label: '渠道', value: channelLabel });
   if (moduleLabel) chips.push({ key: 'module', label: '模块', value: moduleLabel });
   return chips;
@@ -1269,6 +1429,7 @@ const logFilterChips = computed(() => {
 
 onMounted(async () => {
   await Promise.all([
+    loadNotificationOptions({ force: false }),
     loadOverview({ force: false }),
     loadRulesWithViews({ force: false }),
     loadTemplatesWithViews({ force: false }),
@@ -1303,11 +1464,16 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
     'notification-rules',
     'notification-templates',
     'notification-telegram',
-    'notification-logs'
+    'notification-logs',
+    'data-dictionaries'
   ],
   ({ scopes }) => {
     const scopeSet = new Set(scopes);
     const requests: Array<Promise<void>> = [];
+
+    if (scopeSet.has('data-dictionaries')) {
+      requests.push(loadNotificationOptions({ background: true, force: true }));
+    }
 
     if (scopeSet.has('notification-overview')) {
       requests.push(loadOverview({ background: Boolean(overview.value), force: true }));
@@ -1338,11 +1504,18 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 onBeforeUnmount(stopRealtimeRefresh);
 
 usePageRefresh(
-  (options) =>
-    refreshActiveNotificationData({
-      background: options.background,
-      force: options.force ?? true
-    }),
+  async (options) => {
+    await Promise.all([
+      loadNotificationOptions({
+        background: options.background,
+        force: options.force ?? true
+      }),
+      refreshActiveNotificationData({
+        background: options.background,
+        force: options.force ?? true
+      })
+    ]);
+  },
   { label: '通知设置当前标签' }
 );
 
@@ -1380,6 +1553,39 @@ function openPrimaryDialog() {
     return;
   }
   openRuleDialog();
+}
+
+function buildNotificationOptionParams(group: string): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 50,
+    group,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadNotificationOptions(options: { background?: boolean; force?: boolean } = {}) {
+  try {
+    const [modules, levels, channels] = await Promise.all([
+      dataCenterApi.listDictionaries(
+        buildNotificationOptionParams(NOTIFICATION_MODULE_DICTIONARY_GROUP)
+      ),
+      dataCenterApi.listDictionaries(
+        buildNotificationOptionParams(NOTIFICATION_LEVEL_DICTIONARY_GROUP)
+      ),
+      dataCenterApi.listDictionaries(
+        buildNotificationOptionParams(NOTIFICATION_CHANNEL_DICTIONARY_GROUP)
+      )
+    ]);
+    notificationModuleDictionaries.value = modules.items;
+    notificationLevelDictionaries.value = levels.items;
+    notificationChannelDictionaries.value = channels.items;
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载通知选项失败');
+    }
+  }
 }
 
 async function loadOverview(options: { background?: boolean; force?: boolean } = {}) {
@@ -1964,15 +2170,31 @@ function applyLogView(view: UserTableView) {
   logSavedViewId.value = view.id;
 }
 
+function getDefaultRuleModule() {
+  return moduleOptions.value[0]?.value ?? 'apple';
+}
+
+function getDefaultNotificationLevel() {
+  return (
+    levelOptions.value.find((option) => option.value === 'warning')?.value ??
+    levelOptions.value[0]?.value ??
+    'warning'
+  );
+}
+
+function getDefaultNotificationChannel() {
+  return channelOptions.value[0]?.value ?? 'system';
+}
+
 function openRuleDialog() {
   editingRuleId.value = '';
   Object.assign(ruleForm, {
     name: '',
     eventCode: '',
-    module: 'apple',
-    level: 'warning',
+    module: getDefaultRuleModule(),
+    level: getDefaultNotificationLevel(),
     enabled: true,
-    channels: ['system']
+    channels: [getDefaultNotificationChannel()]
   });
   ruleDialogVisible.value = true;
 }
@@ -2059,7 +2281,7 @@ function openTemplateDialog() {
   Object.assign(templateForm, {
     name: '',
     eventCode: '',
-    channel: 'system',
+    channel: getDefaultNotificationChannel(),
     title: '',
     content: '',
     enabled: true
@@ -2125,7 +2347,7 @@ function openTelegramDialog() {
     enabled: false,
     botToken: '',
     chatId: '',
-    notificationLevel: 'warning',
+    notificationLevel: getDefaultNotificationLevel(),
     silentStartTime: '',
     silentEndTime: '',
     retryCount: 3
@@ -2289,11 +2511,11 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 }
 
 function isNotificationLevel(value: unknown): value is NotificationLevel {
-  return value === 'info' || value === 'warning' || value === 'error' || value === 'critical';
+  return typeof value === 'string' && isQuickNotificationLevel(value);
 }
 
 function isNotificationChannel(value: unknown): value is 'telegram' | 'system' {
-  return value === 'telegram' || value === 'system';
+  return typeof value === 'string' && isQuickNotificationChannel(value);
 }
 
 function isNotificationLogStatus(value: unknown): value is NotificationLog['status'] {
@@ -2310,25 +2532,15 @@ function formatDate(value?: string | null) {
 }
 
 function getChannelLabel(value: string) {
-  if (value === 'telegram') return 'Telegram';
-  if (value === 'system') return '站内通知';
-  return value;
+  return getNotificationChannelLabel(value, notificationChannelDictionaries.value);
 }
 
 function getModuleLabel(value: string) {
-  const labels: Record<string, string> = {
-    apple: 'Apple ID',
-    code: '兑换码',
-    platform: '平台接口',
-    security: '系统安全',
-    ops: '运维',
-    notification: '通知设置'
-  };
-  return labels[value] ?? value;
+  return getNotificationModuleLabel(value, notificationModuleDictionaries.value);
 }
 
 function getLevelLabel(value: NotificationLevel) {
-  return levelOptions.find((item) => item.value === value)?.label ?? value;
+  return getNotificationLevelLabel(value, notificationLevelDictionaries.value);
 }
 
 function getLevelTone(value: NotificationLevel) {

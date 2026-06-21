@@ -364,7 +364,14 @@
           <span>Access Token 尾号：{{ authorizationConfig.accessTokenTail || '-' }}</span>
           <span>Refresh Token 尾号：{{ authorizationConfig.refreshTokenTail || '-' }}</span>
         </div>
-        <el-form-item label="授权方式">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="授权方式"
+              purpose="说明这个平台接口使用哪种授权模式，后续真实对接会按它处理 Token。"
+              example="开放平台 OAuth 选 OAuth；手工托管 Token 选手工 Token。"
+            />
+          </template>
           <el-select v-model="authorizationForm.authMode" class="full-width">
             <el-option
               v-for="option in authorizationModeOptions"
@@ -374,68 +381,145 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="店铺/账号名称">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="店铺/账号名称"
+              purpose="记录这组平台授权属于哪个店铺或账号，避免多个店铺混用。"
+              example="可以填淘宝主店、闲鱼 1 号、企业店。"
+            />
+          </template>
           <el-input v-model.trim="authorizationForm.shopName" placeholder="例如：淘宝主店" />
         </el-form-item>
-        <el-form-item label="App Key">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="App Key"
+              purpose="平台开放应用的公开标识，会加密托管，编辑时不填表示保留原配置。"
+              example="从淘宝或闲鱼开放平台应用后台复制 App Key。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.appKey"
             placeholder="不填写则保留原配置"
             show-password
           />
         </el-form-item>
-        <el-form-item label="App Secret">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="App Secret"
+              purpose="平台开放应用的密钥，属于敏感信息，会加密保存且不会回显明文。"
+              example="从开放平台复制完整 Secret；只改其他字段时这里留空。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.appSecret"
             placeholder="不填写则保留原配置"
             show-password
           />
         </el-form-item>
-        <el-form-item label="Access Token">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="Access Token"
+              purpose="平台接口调用凭证，系统会用它同步订单或发货，会加密保存。"
+              example="手工托管时粘贴当前有效 Token；不更新 Token 就留空。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.accessToken"
             placeholder="不填写则保留原配置"
             show-password
           />
         </el-form-item>
-        <el-form-item label="Refresh Token">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="Refresh Token"
+              purpose="用于刷新 Access Token 的长期凭证，属于敏感信息，会加密保存。"
+              example="平台提供 refresh token 时填写；不提供可留空。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.refreshToken"
             placeholder="不填写则保留原配置"
             show-password
           />
         </el-form-item>
-        <el-form-item label="Token 有效期">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="Token 有效期"
+              purpose="记录 Access Token 到什么时候失效，系统可据此提醒授权过期。"
+              example="按 ISO 时间填写，如 2026-07-01T00:00:00.000Z。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.tokenExpiresAt"
             placeholder="例如：2026-07-01T00:00:00.000Z"
           />
         </el-form-item>
-        <el-form-item label="授权范围">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="授权范围"
+              purpose="记录平台允许这组凭证访问哪些接口能力。"
+              example="多个范围用英文逗号分隔，如 order.read,delivery.write。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.scopesText"
             placeholder="多个范围用英文逗号分隔，例如 order.read,delivery.write"
           />
         </el-form-item>
-        <el-form-item label="授权地址">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="授权地址"
+              purpose="OAuth 授权跳转地址，用于发起平台授权。"
+              example="填写平台文档里的 authorize URL，如 https://open.example.com/oauth/authorize。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.authorizationUrl"
             placeholder="例如：https://open.example.com/oauth/authorize"
           />
         </el-form-item>
-        <el-form-item label="Token 地址">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="Token 地址"
+              purpose="OAuth 换取或刷新 Token 的接口地址。"
+              example="填写平台文档里的 token URL，真实平台接入时会使用。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.tokenUrl"
             placeholder="真实平台接入 token 交换时使用"
           />
         </el-form-item>
-        <el-form-item label="回调地址">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="回调地址"
+              purpose="平台授权完成后跳回系统的地址。"
+              example="不确定就留空使用后端默认回调；自定义域名上线后再填写正式回调。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.redirectUri"
             placeholder="不填写则使用后端默认回调地址"
           />
         </el-form-item>
-        <el-form-item label="Client ID 参数名">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="Client ID 参数名"
+              purpose="平台授权 URL 中客户端标识参数的名字。"
+              example="多数平台是 client_id，部分平台可能叫 app_key。"
+            />
+          </template>
           <el-input
             v-model.trim="authorizationForm.clientIdParam"
             placeholder="默认 client_id，部分平台可能是 app_key"
@@ -466,8 +550,10 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { opsApi, userTableViewsApi } from '@/api/system';
+import { dataCenterApi, opsApi, userTableViewsApi } from '@/api/system';
+import type { DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
@@ -475,15 +561,19 @@ import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
+  DataDictionary,
   OpsHealthStatus,
-  PlatformAuthMode,
   PlatformAuthorizationConfig,
   PlatformAuthorizationStatus,
   PlatformInterfaceStatus,
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { PLATFORM_AUTH_MODE_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import {
+  buildPlatformAuthModeOptions
+} from '@/utils/systemQuickOptions';
 
 const tableKey = 'ops_platform_interface_status';
 const healthStatusOptions = [
@@ -501,11 +591,13 @@ const authorizationStatusOptions = [
   { label: '无需授权', value: 'not_required' },
   { label: '未知', value: 'unknown' }
 ];
-const authorizationModeOptions: Array<{ label: string; value: PlatformAuthMode }> = [
-  { label: 'OAuth', value: 'oauth' },
-  { label: '手工 Token', value: 'manual_token' },
-  { label: '应用凭据', value: 'app_credentials' }
-];
+const authorizationModeDictionaries = ref<DataDictionary[]>([]);
+const authorizationModeOptions = computed(() =>
+  buildPlatformAuthModeOptions(authorizationModeDictionaries.value)
+);
+function getDefaultPlatformAuthMode() {
+  return authorizationModeOptions.value[0]?.value ?? 'oauth';
+}
 const columnOptions = [
   { label: '平台', value: 'platform', required: true },
   { label: '状态', value: 'status' },
@@ -535,7 +627,7 @@ const oauthStarting = ref(false);
 const authorizationPlatform = ref<PlatformInterfaceStatus | null>(null);
 const authorizationConfig = ref<PlatformAuthorizationConfig | null>(null);
 const authorizationForm = reactive({
-  authMode: 'oauth' as PlatformAuthMode,
+  authMode: getDefaultPlatformAuthMode(),
   shopName: '',
   appKey: '',
   appSecret: '',
@@ -622,27 +714,72 @@ const platformRows = computed(() => {
 });
 
 onMounted(() => {
-  void loadTableViews();
-  void loadPlatforms({ force: false });
+  void Promise.all([
+    loadTableViews(),
+    loadPlatformOptions({ force: false }),
+    loadPlatforms({ force: false })
+  ]);
 });
 
 usePageRefresh(
-  (options) =>
-    loadPlatforms({
-      background: options.background,
-      force: options.force ?? true
-    }),
+  async (options) => {
+    await Promise.all([
+      loadPlatformOptions({
+        background: options.background,
+        force: options.force ?? true
+      }),
+      loadPlatforms({
+        background: options.background,
+        force: options.force ?? true
+      })
+    ]);
+  },
   { label: '平台接口状态' }
 );
 
-const stopRealtimeRefresh = onRealtimeQueryInvalidated(['ops-platform-status'], () => {
-  void loadPlatforms({
-    background: platforms.value.length > 0,
-    force: true
-  });
-});
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['ops-platform-status', 'data-dictionaries'],
+  ({ scopes }) => {
+    if (scopes.includes('data-dictionaries')) {
+      void loadPlatformOptions({
+        background: authorizationModeDictionaries.value.length > 0,
+        force: true
+      });
+    }
+
+    if (scopes.includes('ops-platform-status')) {
+      void loadPlatforms({
+        background: platforms.value.length > 0,
+        force: true
+      });
+    }
+  }
+);
 
 onBeforeUnmount(stopRealtimeRefresh);
+
+function buildPlatformOptionParams(group: string): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 50,
+    group,
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadPlatformOptions(options: { background?: boolean; force?: boolean } = {}) {
+  try {
+    const data = await dataCenterApi.listDictionaries(
+      buildPlatformOptionParams(PLATFORM_AUTH_MODE_DICTIONARY_GROUP)
+    );
+    authorizationModeDictionaries.value = data.items;
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载平台接口选项失败');
+    }
+  }
+}
 
 async function loadPlatforms(options: { background?: boolean; force?: boolean } = {}) {
   const key = createSmartQueryKey('ops-platform-status');

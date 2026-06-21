@@ -5,61 +5,35 @@
     phase="Phase 5"
     :description="pageCopy.description"
   >
-    <div class="renewal-kanban" aria-label="续费任务看板">
-      <section v-for="lane in renewalLanes" :key="lane.key" class="renewal-lane">
-        <header class="renewal-lane__head">
-          <div>
-            <strong>{{ lane.title }}</strong>
-            <p>{{ lane.description }}</p>
-          </div>
-          <StatusChip :tone="lane.tone">{{ lane.tasks.length }}</StatusChip>
-        </header>
-
-        <div class="renewal-lane__body">
-          <button
-            v-for="task in lane.tasks"
-            :key="task.id"
-            class="renewal-task-card"
-            type="button"
-            @click="openDetail(task)"
-          >
-            <span class="renewal-task-card__head">
-              <strong>{{ task.customer.name }} · {{ task.service.name }}</strong>
-              <StatusChip :tone="getPriorityTone(task.priority)">
-                {{ getPriorityLabel(task.priority) }}
-              </StatusChip>
-            </span>
-            <p>{{ task.requiredAction || getTaskTypeLabel(task.taskType) }}</p>
-            <span class="renewal-task-card__meta">
-              <StatusChip :tone="getStatusTone(task.status)" dot>
-                {{ getStatusLabel(task.status) }}
-              </StatusChip>
-              <em>{{ task.dueAt ? getDueText(task.dueAt) : '未设置截止' }}</em>
-            </span>
-          </button>
-
-          <div v-if="lane.tasks.length === 0" class="renewal-lane-empty">
-            <strong>暂无任务</strong>
-            <span>当前筛选条件下没有匹配项。</span>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <section class="content-panel apple-compact-list-panel">
-      <div class="panel-title-row">
+    <section class="content-panel apple-compact-list-panel renewal-workspace-panel">
+      <div class="renewal-workspace-head">
         <PanelTitleHelp :title="pageCopy.panelTitle" :help="pageCopy.panelDescription" />
-        <div class="inline-actions">
-          <StatusChip :tone="pageCopy.tone" dot>{{ pageCopy.badge }}</StatusChip>
-          <StatusChip tone="blue">待办 {{ pendingCount }}</StatusChip>
-          <StatusChip :tone="urgentCount > 0 ? 'red' : 'green'">
-            {{ urgentCount > 0 ? `紧急 ${urgentCount}` : '暂无紧急' }}
-          </StatusChip>
-          <StatusChip tone="orange">高优先级 {{ highPriorityCount }}</StatusChip>
-          <StatusChip tone="red">取消 {{ cancelTaskCount }}</StatusChip>
-          <StatusChip tone="orange">充值 {{ topupTaskCount }}</StatusChip>
-          <StatusChip tone="green">自动续费 {{ autoRenewTaskCount }}</StatusChip>
+        <div class="renewal-summary-strip" aria-label="续费任务摘要">
+          <div
+            v-for="item in renewalSummaryItems"
+            :key="item.label"
+            class="renewal-summary-item"
+            :class="`renewal-summary-item--${item.tone}`"
+          >
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </div>
         </div>
+      </div>
+
+      <div class="renewal-view-switch" role="tablist" aria-label="续费任务视图">
+        <button
+          v-for="view in renewalTaskViews"
+          :key="view.key"
+          type="button"
+          role="tab"
+          :aria-selected="activeViewKey === view.key"
+          :class="{ 'is-active': activeViewKey === view.key }"
+          @click="selectRenewalView(view.key)"
+        >
+          <span>{{ view.label }}</span>
+          <small>{{ view.switchHint }}</small>
+        </button>
       </div>
 
       <TableToolbar
@@ -440,7 +414,14 @@
         <div class="drawer-section__title">处理信息</div>
         <el-form label-position="top">
           <div class="form-grid">
-            <el-form-item label="状态">
+            <el-form-item>
+              <template #label>
+                <FieldHelpLabel
+                  label="状态"
+                  purpose="更新续费任务当前处理阶段，方便看还有哪些待办。"
+                  example="已联系客户但等回复选等待客户；已经处理完选完成。"
+                />
+              </template>
               <el-select v-model="form.status" class="full-width">
                 <el-option
                   v-for="item in statusOptions"
@@ -450,7 +431,14 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="优先级">
+            <el-form-item>
+              <template #label>
+                <FieldHelpLabel
+                  label="优先级"
+                  purpose="标记任务紧急程度，续费工作台会用它辅助排序和提醒。"
+                  example="今天到期或高价值客户选高；普通跟进选中或低。"
+                />
+              </template>
               <el-select v-model="form.priority" class="full-width">
                 <el-option
                   v-for="item in priorityOptions"
@@ -460,7 +448,14 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="客户决定">
+            <el-form-item>
+              <template #label>
+                <FieldHelpLabel
+                  label="客户决定"
+                  purpose="记录客户是否续费、取消或还没回复，后续任务会按它流转。"
+                  example="客户确认续费选续费；明确不续选取消；没回复选待确认。"
+                />
+              </template>
               <el-select v-model="form.customerDecision" class="full-width">
                 <el-option
                   v-for="item in customerDecisionOptions"
@@ -471,7 +466,14 @@
               </el-select>
             </el-form-item>
           </div>
-          <el-form-item label="任务备注">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="任务备注"
+                purpose="记录联系过程、客户反馈和风险说明，方便同事接手。"
+                example="可以写已微信提醒、客户说今晚付款、需要人工确认 Apple ID。"
+              />
+            </template>
             <el-input
               v-model="form.note"
               type="textarea"
@@ -479,7 +481,14 @@
               placeholder="记录联系过程、客户反馈、风险说明"
             />
           </el-form-item>
-          <el-form-item label="处理结果">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="处理结果"
+                purpose="任务完成、取消或延期时记录最终处理结果。"
+                example="可以写客户已续费、已取消订阅、延期到下周一再跟进。"
+              />
+            </template>
             <el-input
               v-model="form.resultNote"
               type="textarea"
@@ -487,7 +496,14 @@
               placeholder="完成、取消或延期时记录处理结果"
             />
           </el-form-item>
-          <el-form-item label="处理凭证">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="处理凭证"
+                purpose="上传或查看处理证明，方便后续审核任务是否真的完成。"
+                example="可以上传聊天截图、付款截图、取消订阅截图。"
+              />
+            </template>
             <div class="evidence-box">
               <div v-if="selectedTask?.evidenceAttachment" class="evidence-current">
                 <div>
@@ -552,7 +568,7 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import {
   appleRenewalTasksApi,
   attachmentsApi,
@@ -562,6 +578,7 @@ import {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -572,6 +589,7 @@ import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const route = useRoute();
+const router = useRouter();
 const tasks = ref<RenewalTask[]>([]);
 const total = ref(0);
 const loading = ref(false);
@@ -591,15 +609,67 @@ const evidenceFileInputRef = ref<HTMLInputElement>();
 const activatedOnce = ref(false);
 const activeTasksQueryKey = ref('');
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+type RenewalTaskViewKey = 'all' | 'cancel' | 'topup' | 'auto';
 type RenewalTaskPage = Awaited<ReturnType<typeof appleRenewalTasksApi.list>>;
 
-interface RenewalLane {
-  key: string;
-  title: string;
+interface RenewalTaskViewOption {
+  key: RenewalTaskViewKey;
+  label: string;
+  switchHint: string;
+  taskType: RenewalTask['taskType'] | '';
+  panelTitle: string;
+  panelDescription: string;
   description: string;
+  badge: string;
   tone: ChipTone;
-  tasks: RenewalTask[];
 }
+
+const renewalTaskViews: RenewalTaskViewOption[] = [
+  {
+    key: 'all',
+    label: '全部',
+    switchHint: '完整队列',
+    taskType: '',
+    panelTitle: '续费任务队列',
+    panelDescription: '把客户确认、收款、取消订阅、充值和自动续费任务集中在一个队列里处理。',
+    description: '集中处理到期联系、客户确认、收款、取消订阅、充值续费和自动续费任务。',
+    badge: '全部',
+    tone: 'blue'
+  },
+  {
+    key: 'cancel',
+    label: '待取消订阅',
+    switchHint: '防止误扣费',
+    taskType: 'cancel_subscription',
+    panelTitle: '待取消订阅任务',
+    panelDescription: '优先处理客户确认不续费但订阅仍未关闭的任务，降低误扣费风险。',
+    description: '集中处理客户确认不续费、需要取消自动订阅的 Apple ID 任务。',
+    badge: '取消订阅',
+    tone: 'red'
+  },
+  {
+    key: 'topup',
+    label: '待充值续费',
+    switchHint: '余额不足',
+    taskType: 'topup_apple_balance',
+    panelTitle: '待充值续费任务',
+    panelDescription: '按截止时间、建议充值和优先级处理余额不足的续费任务。',
+    description: '集中处理余额不足、需要先充值才能续费的 Apple ID 任务。',
+    badge: '充值续费',
+    tone: 'orange'
+  },
+  {
+    key: 'auto',
+    label: '等待自动续费',
+    switchHint: '等待扣费',
+    taskType: 'wait_auto_renewal',
+    panelTitle: '等待自动续费任务',
+    panelDescription: '跟踪余额已满足扣费条件的业务，自动续费后再回填结果。',
+    description: '集中跟踪余额已足够、等待 Apple 自动扣费并检查结果的任务。',
+    badge: '自动续费',
+    tone: 'green'
+  }
+];
 
 const renewalColumnOptions = [
   { label: '任务', value: 'task', required: true },
@@ -634,13 +704,11 @@ const form = reactive({
   evidenceAttachmentId: ''
 });
 
-const fixedTaskType = computed<RenewalTask['taskType'] | ''>(() => {
-  const moduleKey = String(route.meta.moduleKey ?? '');
-  if (moduleKey === 'renewal-cancel') return 'cancel_subscription';
-  if (moduleKey === 'renewal-topup') return 'topup_apple_balance';
-  if (moduleKey === 'renewal-waiting-auto') return 'wait_auto_renewal';
-  return '';
-});
+const activeViewKey = computed<RenewalTaskViewKey>(() => getRenewalViewKey(route.query.view));
+const activeView = computed(
+  () => renewalTaskViews.find((view) => view.key === activeViewKey.value) ?? renewalTaskViews[0]
+);
+const fixedTaskType = computed<RenewalTask['taskType'] | ''>(() => activeView.value.taskType);
 const tableKey = computed(() =>
   fixedTaskType.value ? `apple_renewal_tasks_${fixedTaskType.value}` : 'apple_renewal_tasks'
 );
@@ -653,46 +721,13 @@ const pageCopy = computed<{
   badge: string;
   tone: ChipTone;
 }>(() => {
-  if (fixedTaskType.value === 'cancel_subscription') {
-    return {
-      title: '待取消订阅',
-      description: '集中处理客户确认不续费、需要取消自动订阅的 Apple ID 任务。',
-      panelTitle: '待取消订阅任务',
-      panelDescription: '优先处理客户确认不续费但订阅仍未关闭的任务，降低误扣费风险。',
-      badge: '取消订阅',
-      tone: 'red'
-    };
-  }
-
-  if (fixedTaskType.value === 'topup_apple_balance') {
-    return {
-      title: '待充值续费',
-      description: '集中处理余额不足、需要先充值才能续费的 Apple ID 任务。',
-      panelTitle: '待充值续费任务',
-      panelDescription: '按截止时间、建议充值和优先级处理余额不足的续费任务。',
-      badge: '充值续费',
-      tone: 'orange'
-    };
-  }
-
-  if (fixedTaskType.value === 'wait_auto_renewal') {
-    return {
-      title: '等待自动续费',
-      description: '集中跟踪余额已足够、等待 Apple 自动扣费并检查结果的任务。',
-      panelTitle: '等待自动续费任务',
-      panelDescription: '跟踪余额已满足扣费条件的业务，自动续费后再回填结果。',
-      badge: '自动续费',
-      tone: 'green'
-    };
-  }
-
   return {
     title: '续费工作台',
-    description: '集中处理到期联系、客户确认、收款、取消订阅、充值续费和自动续费任务。',
-    panelTitle: '续费任务队列',
-    panelDescription: '把客户确认、收款、取消订阅、充值和自动续费任务集中在一个队列里处理。',
-    badge: '工作台',
-    tone: 'blue'
+    description: activeView.value.description,
+    panelTitle: activeView.value.panelTitle,
+    panelDescription: activeView.value.panelDescription,
+    badge: activeView.value.badge,
+    tone: activeView.value.tone
   };
 });
 
@@ -758,35 +793,18 @@ const urgentCount = computed(() => tasks.value.filter((task) => task.priority ==
 const highPriorityCount = computed(
   () => tasks.value.filter((task) => task.priority === 'high').length
 );
-const cancelTaskCount = computed(
-  () =>
-    tasks.value.filter(
-      (task) =>
-        task.taskType === 'cancel_subscription' || task.customerDecision === 'confirmed_no_renewal'
-    ).length
+const renewalSummaryItems = computed<Array<{ label: string; value: string; tone: ChipTone }>>(
+  () => [
+    { label: '当前视图', value: pageCopy.value.badge, tone: pageCopy.value.tone },
+    { label: '待办', value: String(pendingCount.value), tone: 'blue' },
+    {
+      label: '紧急',
+      value: urgentCount.value > 0 ? String(urgentCount.value) : '0',
+      tone: urgentCount.value > 0 ? 'red' : 'green'
+    },
+    { label: '高优先级', value: String(highPriorityCount.value), tone: 'orange' }
+  ]
 );
-const topupTaskCount = computed(
-  () =>
-    tasks.value.filter(
-      (task) => task.taskType === 'topup_apple_balance' || Number(task.suggestedTopupAmount) > 0
-    ).length
-);
-const autoRenewTaskCount = computed(
-  () =>
-    tasks.value.filter(
-      (task) => task.taskType === 'wait_auto_renewal' || task.status === 'waiting_auto_renewal'
-    ).length
-);
-const renewalBoardTasks = computed(() =>
-  [...tasks.value]
-    .filter((task) => !isFinalStatus(task.status))
-    .sort((left, right) => {
-      const priorityDiff = getPriorityRank(right.priority) - getPriorityRank(left.priority);
-      if (priorityDiff !== 0) return priorityDiff;
-      return getTimeValue(left.dueAt) - getTimeValue(right.dueAt);
-    })
-);
-const renewalLanes = computed<RenewalLane[]>(() => getRenewalLanes());
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -816,15 +834,44 @@ const filterChips = computed(() => {
 });
 
 watch(
-  () => route.meta.moduleKey,
+  () => route.query.view,
   async () => {
     query.page = 1;
     query.taskType = '';
     quickDate.value = '';
     clearDueRange();
+    savedViewId.value = '';
+    selectedTasks.value = [];
     await loadPageData();
   }
 );
+
+function getRenewalViewKey(value: unknown): RenewalTaskViewKey {
+  const view = Array.isArray(value) ? value[0] : value;
+  if (view === 'cancel' || view === 'topup' || view === 'auto') {
+    return view;
+  }
+
+  return 'all';
+}
+
+async function selectRenewalView(key: RenewalTaskViewKey) {
+  if (key === activeViewKey.value) {
+    return;
+  }
+
+  const nextQuery = { ...route.query };
+  if (key === 'all') {
+    delete nextQuery.view;
+  } else {
+    nextQuery.view = key;
+  }
+
+  await router.replace({
+    path: route.path,
+    query: nextQuery
+  });
+}
 
 onMounted(initializePage);
 onActivated(() => {
@@ -1014,9 +1061,9 @@ async function saveTableView() {
   try {
     const { value } = await ElMessageBox.prompt(
       '请输入视图名称',
-      `保存${pageCopy.value.title}视图`,
+      `保存${pageCopy.value.panelTitle}视图`,
       {
-        inputValue: `${pageCopy.value.title}常用视图`,
+        inputValue: `${pageCopy.value.panelTitle}常用视图`,
         inputPattern: /^.{1,60}$/,
         inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
         confirmButtonText: '保存',
@@ -1388,172 +1435,6 @@ function addDaysIso(value: string, days: number) {
   return date.toISOString();
 }
 
-function getRenewalLanes(): RenewalLane[] {
-  if (fixedTaskType.value === 'cancel_subscription') {
-    return [
-      {
-        key: 'urgent-cancel',
-        title: '紧急取消',
-        description: '高优先级或紧急的不续费业务',
-        tone: 'red',
-        tasks: pickLaneTasks((task) => task.priority === 'urgent' || task.priority === 'high')
-      },
-      {
-        key: 'due-cancel',
-        title: '今日截止',
-        description: '今天或已逾期的取消订阅任务',
-        tone: 'orange',
-        tasks: pickLaneTasks((task) => isDueWithin(task, 0))
-      },
-      {
-        key: 'manual-cancel',
-        title: '人工验证',
-        description: '需要登录、截图或人工确认',
-        tone: 'purple',
-        tasks: pickLaneTasks(
-          (task) => task.status === 'waiting_manual_verify' || task.status === 'processing'
-        )
-      },
-      {
-        key: 'open-cancel',
-        title: '待完成',
-        description: '仍在队列中的取消动作',
-        tone: 'blue',
-        tasks: pickLaneTasks(() => true)
-      }
-    ];
-  }
-
-  if (fixedTaskType.value === 'topup_apple_balance') {
-    return [
-      {
-        key: 'urgent-topup',
-        title: '紧急充值',
-        description: '临近扣费且余额不足的任务',
-        tone: 'red',
-        tasks: pickLaneTasks((task) => task.priority === 'urgent' || isDueWithin(task, 0))
-      },
-      {
-        key: 'suggested-topup',
-        title: '建议充值',
-        description: '系统已计算建议充值金额',
-        tone: 'orange',
-        tasks: pickLaneTasks((task) => Number(task.suggestedTopupAmount || 0) > 0)
-      },
-      {
-        key: 'balance-check',
-        title: '核对余额',
-        description: '充值前后需要确认余额一致',
-        tone: 'purple',
-        tasks: pickLaneTasks(
-          (task) => task.taskType === 'check_balance' || task.status === 'waiting_manual_verify'
-        )
-      },
-      {
-        key: 'topup-open',
-        title: '待处理',
-        description: '仍未完成的充值续费任务',
-        tone: 'blue',
-        tasks: pickLaneTasks(() => true)
-      }
-    ];
-  }
-
-  if (fixedTaskType.value === 'wait_auto_renewal') {
-    return [
-      {
-        key: 'today-renewal',
-        title: '今日扣费',
-        description: '今天预计自动续费的业务',
-        tone: 'orange',
-        tasks: pickLaneTasks((task) => isDueWithin(task, 0))
-      },
-      {
-        key: 'waiting-renewal',
-        title: '等待扣费',
-        description: '余额充足，等待 Apple 自动扣费',
-        tone: 'green',
-        tasks: pickLaneTasks((task) => task.status === 'waiting_auto_renewal')
-      },
-      {
-        key: 'verify-renewal',
-        title: '人工验证',
-        description: '扣费失败或结果异常需要人工确认',
-        tone: 'purple',
-        tasks: pickLaneTasks(
-          (task) =>
-            task.status === 'waiting_manual_verify' ||
-            task.status === 'abnormal' ||
-            task.status === 'failed'
-        )
-      },
-      {
-        key: 'renewal-open',
-        title: '待回填',
-        description: '续费结果未最终回填的任务',
-        tone: 'blue',
-        tasks: pickLaneTasks(() => true)
-      }
-    ];
-  }
-
-  return [
-    {
-      key: 'contact',
-      title: '待联系',
-      description: '询问客户、催回复、确认是否续费',
-      tone: 'blue',
-      tasks: pickLaneTasks(
-        (task) =>
-          task.taskType === 'contact_customer' ||
-          task.taskType === 'remind_customer_reply' ||
-          task.customerDecision === 'not_contacted' ||
-          task.customerDecision === 'contacted_waiting_reply'
-      )
-    },
-    {
-      key: 'cancel',
-      title: '待取消',
-      description: '客户不续费，先取消订阅防误扣费',
-      tone: 'red',
-      tasks: pickLaneTasks(
-        (task) =>
-          task.taskType === 'cancel_subscription' ||
-          task.customerDecision === 'confirmed_no_renewal'
-      )
-    },
-    {
-      key: 'topup',
-      title: '待充值',
-      description: '余额不足，需要录入 Apple ID 充值',
-      tone: 'orange',
-      tasks: pickLaneTasks(
-        (task) =>
-          task.taskType === 'topup_apple_balance' ||
-          task.taskType === 'check_balance' ||
-          Number(task.suggestedTopupAmount || 0) > 0
-      )
-    },
-    {
-      key: 'auto-renewal',
-      title: '等待扣费',
-      description: '余额已满足，等待自动续费结果',
-      tone: 'green',
-      tasks: pickLaneTasks(
-        (task) => task.taskType === 'wait_auto_renewal' || task.status === 'waiting_auto_renewal'
-      )
-    }
-  ];
-}
-
-function pickLaneTasks(predicate: (task: RenewalTask) => boolean) {
-  return renewalBoardTasks.value.filter(predicate).slice(0, 3);
-}
-
-function isDueWithin(task: RenewalTask, maxDays: number) {
-  return Boolean(task.dueAt && getDueDiffDays(task.dueAt) <= maxDays);
-}
-
 function formatDate(value?: string | null) {
   if (!value) return '-';
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
@@ -1579,22 +1460,6 @@ function getPriorityLabel(value: RenewalTask['priority']) {
     urgent: '紧急'
   };
   return labels[value];
-}
-
-function getPriorityRank(value: RenewalTask['priority']) {
-  const ranks: Record<RenewalTask['priority'], number> = {
-    low: 1,
-    medium: 2,
-    high: 3,
-    urgent: 4
-  };
-  return ranks[value];
-}
-
-function getTimeValue(value?: string | null) {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
 }
 
 function getPriorityTone(value: RenewalTask['priority']) {

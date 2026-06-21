@@ -13,10 +13,24 @@
         label-position="top"
         @keyup.enter="submit"
       >
-        <el-form-item label="账号" prop="username">
+        <el-form-item prop="username">
+          <template #label>
+            <FieldHelpLabel
+              label="账号"
+              purpose="后台登录账号，由管理员在员工账号里创建。"
+              example="输入你的后台用户名，例如 kefu01 或 admin。"
+            />
+          </template>
           <el-input v-model.trim="form.username" autocomplete="username" />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <el-form-item prop="password">
+          <template #label>
+            <FieldHelpLabel
+              label="密码"
+              purpose="后台登录密码，用来验证账号身份。"
+              example="输入管理员分配或你自己设置的后台密码。"
+            />
+          </template>
           <el-input
             v-model="form.password"
             type="password"
@@ -24,7 +38,14 @@
             show-password
           />
         </el-form-item>
-        <el-form-item label="动态验证码 / 恢复码" prop="mfaCode">
+        <el-form-item prop="mfaCode">
+          <template #label>
+            <FieldHelpLabel
+              label="动态验证码 / 恢复码"
+              purpose="账号启用 MFA 后需要填写，用于第二步安全验证。"
+              example="输入验证器 App 的 6 位动态码；没绑定 MFA 可以留空。"
+            />
+          </template>
           <el-input
             v-model.trim="form.mfaCode"
             autocomplete="one-time-code"
@@ -49,6 +70,7 @@ import { ElMessage } from 'element-plus';
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppButton from '@/components/ui/AppButton.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import { getApiErrorMessage } from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
 

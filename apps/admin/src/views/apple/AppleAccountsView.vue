@@ -70,9 +70,9 @@
             @change="handleRegionFilterChange"
           >
             <el-option
-              v-for="item in appleAccountRegionOptions"
+              v-for="item in appleRegionOptions"
               :key="item.code"
-              :label="`${item.labelZh} ${item.labelEn}（${item.code}）`"
+              :label="formatAppleAccountRegionOptionLabel(item)"
               :value="item.code"
             />
           </el-select>
@@ -84,7 +84,7 @@
             @change="applyFilters"
           >
             <el-option
-              v-for="item in appleAccountCurrencyOptions"
+              v-for="item in appleCurrencyOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -172,7 +172,7 @@
             </span>
           </template>
           <template #default="{ row }">{{
-            formatRegionCurrency(row.region, row.currency)
+            formatAccountRegionCurrency(row.region, row.currency)
           }}</template>
         </el-table-column>
         <el-table-column
@@ -283,12 +283,23 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="96" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
-            <div class="account-operation-cell">
-              <AppButton size="small" variant="soft" @click="openAccountActions(row)">
-                操作
-              </AppButton>
+            <div class="account-row-actions">
+              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+              <el-dropdown trigger="click" @command="handleAccountMoreCommand($event, row)">
+                <AppButton size="small" variant="soft">更多</AppButton>
+                <template #dropdown>
+                  <el-dropdown-menu class="account-more-menu">
+                    <el-dropdown-item command="secret">敏感资料</el-dropdown-item>
+                    <el-dropdown-item command="status-check">检测</el-dropdown-item>
+                    <el-dropdown-item command="topup">充值</el-dropdown-item>
+                    <el-dropdown-item command="consumption">消费</el-dropdown-item>
+                    <el-dropdown-item command="records">流水</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -299,7 +310,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ account.appleIdMasked }}</strong>
-              <span>{{ formatRegionCurrency(account.region, account.currency) }}</span>
+              <span>{{ formatAccountRegionCurrency(account.region, account.currency) }}</span>
             </div>
             <StatusChip :tone="getStatusTone(account.status)" dot>
               {{ getStatusLabel(account.status) }}
@@ -354,9 +365,20 @@
           </div>
 
           <div class="mobile-record-card__actions">
-            <AppButton size="small" variant="soft" @click="openAccountActions(account)">
-              打开操作
-            </AppButton>
+            <AppButton size="small" variant="ghost" @click="openDetail(account)">详情</AppButton>
+            <AppButton size="small" variant="ghost" @click="openEdit(account)">编辑</AppButton>
+            <el-dropdown trigger="click" @command="handleAccountMoreCommand($event, account)">
+              <AppButton size="small" variant="soft">更多</AppButton>
+              <template #dropdown>
+                <el-dropdown-menu class="account-more-menu">
+                  <el-dropdown-item command="secret">敏感资料</el-dropdown-item>
+                  <el-dropdown-item command="status-check">检测</el-dropdown-item>
+                  <el-dropdown-item command="topup">充值</el-dropdown-item>
+                  <el-dropdown-item command="consumption">消费</el-dropdown-item>
+                  <el-dropdown-item command="records">流水</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </article>
       </div>
@@ -381,96 +403,6 @@
     </section>
 
     <AppDrawer
-      v-model="accountActionsDrawerVisible"
-      :title="`账号操作 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      description="把常用动作集中在这里，列表只负责看数据，具体处理都从右侧进入。"
-      eyebrow="Apple ID"
-      size="520px"
-      :show-confirm="false"
-    >
-      <div v-if="selectedAccount" class="account-action-panel">
-        <div class="account-action-summary">
-          <div class="account-action-summary__head">
-            <div>
-              <span>当前账号</span>
-              <strong>{{ selectedAccount.appleIdMasked }}</strong>
-              <p>{{ formatRegionCurrency(selectedAccount.region, selectedAccount.currency) }}</p>
-            </div>
-            <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
-              {{ getStatusLabel(selectedAccount.status) }}
-            </StatusChip>
-          </div>
-          <div class="account-action-summary__metrics">
-            <div>
-              <span>余额</span>
-              <strong>{{ selectedAccount.currentBalance }}</strong>
-            </div>
-            <div>
-              <span>均价</span>
-              <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <div class="account-action-section">
-          <span class="account-action-section__title">查看与维护</span>
-          <div class="account-action-grid">
-            <button type="button" class="account-action-card" @click="openDetail(selectedAccount)">
-              <strong>详情</strong>
-              <span>先在右侧看账号概况，需要更多内容再打开详情页。</span>
-            </button>
-            <button type="button" class="account-action-card" @click="openEdit(selectedAccount)">
-              <strong>编辑</strong>
-              <span>修改地区、余额、锁定状态、备注和需要更新的敏感资料。</span>
-            </button>
-            <button
-              type="button"
-              class="account-action-card account-action-card--orange"
-              @click="openAccountSecret(selectedAccount)"
-            >
-              <strong>敏感资料</strong>
-              <span>查看完整 Apple ID、密码、密保、手机号等，查看会记录审计。</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="account-action-section">
-          <span class="account-action-section__title">处理与流水</span>
-          <div class="account-action-grid">
-            <button
-              type="button"
-              class="account-action-card"
-              @click="openStatusCheck(selectedAccount)"
-            >
-              <strong>检测</strong>
-              <span>记录一次人工检测结果，比如正常、需要验证或密码错误。</span>
-            </button>
-            <button
-              type="button"
-              class="account-action-card account-action-card--green"
-              @click="openTopup(selectedAccount)"
-            >
-              <strong>充值</strong>
-              <span>录入充值面值和本次平均成本，系统会自动换算总成本并更新均价。</span>
-            </button>
-            <button
-              type="button"
-              class="account-action-card account-action-card--blue"
-              @click="openConsumption(selectedAccount)"
-            >
-              <strong>消费</strong>
-              <span>记录手工扣减余额，方便后面核算这次消耗的成本。</span>
-            </button>
-            <button type="button" class="account-action-card" @click="openRecords(selectedAccount)">
-              <strong>流水</strong>
-              <span>查看充值记录、消费记录和完整礼品卡代码。</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </AppDrawer>
-
-    <AppDrawer
       v-model="detailDrawerVisible"
       :title="`ID 详情 · ${selectedAccount?.appleIdMasked ?? ''}`"
       description="这里先展示最常用的信息；需要完整详情时可以打开详情页继续看。"
@@ -480,16 +412,18 @@
       @confirm="openSelectedDetailPage"
     >
       <div v-if="selectedAccount" class="account-detail-drawer">
-        <div class="drawer-detail-grid">
-          <div>
-            <span>当前余额</span>
-            <strong>{{ selectedAccount.currentBalance }}</strong>
-          </div>
-          <div>
-            <span>平均成本</span>
-            <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
-          </div>
-        </div>
+        <AppleAccountDrawerSummary
+          :apple-id="selectedAccount.appleIdMasked"
+          :region-currency="
+            formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+          "
+          :balance="selectedAccount.currentBalance"
+          :average-cost="getAccountAverageCost(selectedAccount)"
+          :status-label="getStatusLabel(selectedAccount.status)"
+          :status-tone="getStatusTone(selectedAccount.status)"
+          :locked="selectedAccount.isManuallyLocked"
+          :source-platform="selectedAccount.sourcePlatform?.name"
+        />
 
         <div class="drawer-section">
           <div class="drawer-section__title">账号信息</div>
@@ -498,7 +432,7 @@
               {{ selectedAccount.appleIdMasked }}
             </el-descriptions-item>
             <el-descriptions-item label="地区/币种">
-              {{ formatRegionCurrency(selectedAccount.region, selectedAccount.currency) }}
+              {{ formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency) }}
             </el-descriptions-item>
             <el-descriptions-item label="渠道">
               {{ selectedAccount.sourcePlatform?.name ?? '-' }}
@@ -562,7 +496,27 @@
       :confirm-loading="saving"
       @confirm="saveAccount"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+      <AppleAccountDrawerSummary
+        v-if="editingAccount && selectedAccount"
+        label="正在编辑"
+        :apple-id="selectedAccount.appleIdMasked"
+        :region-currency="
+          formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+        "
+        :balance="selectedAccount.currentBalance"
+        :average-cost="getAccountAverageCost(selectedAccount)"
+        :status-label="getStatusLabel(selectedAccount.status)"
+        :status-tone="getStatusTone(selectedAccount.status)"
+        :locked="selectedAccount.isManuallyLocked"
+        :source-platform="selectedAccount.sourcePlatform?.name"
+      />
+      <el-form
+        ref="formRef"
+        class="account-drawer-form"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+      >
         <div class="apple-core-alert apple-core-alert--blue">
           <StatusChip tone="blue">加密</StatusChip>
           <div>
@@ -570,10 +524,24 @@
             <p>密码、密保、手机号、备用邮箱不会明文返回前端；编辑时留空表示不修改。</p>
           </div>
         </div>
-        <el-form-item v-if="!editingAccount" label="Apple ID" prop="appleId">
+        <el-form-item v-if="!editingAccount" prop="appleId">
+          <template #label>
+            <FieldHelpLabel
+              label="Apple ID"
+              purpose="账号邮箱，是这条 Apple ID 资料的唯一识别信息，列表默认会脱敏展示。"
+              example="填完整邮箱，例如 example@icloud.com。"
+            />
+          </template>
           <el-input v-model.trim="form.appleId" placeholder="example@icloud.com" />
         </el-form-item>
-        <el-form-item label="渠道">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="渠道"
+              purpose="记录这个 Apple ID 从哪个渠道获得，方便以后追踪采购来源和成本。"
+              example="可以选供应商、闲鱼、淘宝或内部自建的来源渠道。"
+            />
+          </template>
           <el-select
             v-model="form.sourcePlatformId"
             class="full-input"
@@ -590,25 +558,53 @@
           </el-select>
         </el-form-item>
         <div class="form-grid">
-          <el-form-item label="地区" prop="region">
+          <el-form-item prop="region">
+            <template #label>
+              <FieldHelpLabel
+                label="地区"
+                purpose="Apple ID 所属地区，会影响可接业务、默认币种和手机号提示。"
+                example="美区选 US，港区选 HK；不确定时先按账号实际 App Store 地区填写。"
+              />
+            </template>
             <el-select v-model="form.region" class="full-input" @change="handleFormRegionChange">
               <el-option
-                v-for="item in appleAccountRegionOptions"
+                v-for="item in appleRegionOptions"
                 :key="item.code"
-                :label="`${item.labelZh} ${item.labelEn}（${item.code}）`"
+                :label="formatAppleAccountRegionOptionLabel(item)"
                 :value="item.code"
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="币种" prop="currency">
+          <el-form-item prop="currency">
+            <template #label>
+              <FieldHelpLabel
+                label="币种"
+                purpose="这个 Apple ID 余额使用的外币币种，系统会按地区自动带出。"
+                example="US 通常是 USD，HK 通常是 HKD；这里禁用是为了避免地区和币种不一致。"
+              />
+            </template>
             <el-input :model-value="selectedCurrencyLabel" disabled />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="当前余额" prop="currentBalance">
+          <el-form-item prop="currentBalance">
+            <template #label>
+              <FieldHelpLabel
+                label="当前余额"
+                purpose="账号当前还剩多少外币余额，用于自动匹配订单和余额对账。"
+                example="账号还剩 122 USD 就填 122；不要填人民币成本。"
+              />
+            </template>
             <el-input v-model.trim="form.currentBalance" />
           </el-form-item>
-          <el-form-item label="平均成本" prop="balanceCostAmount">
+          <el-form-item prop="balanceCostAmount">
+            <template #label>
+              <FieldHelpLabel
+                label="平均成本"
+                purpose="当前余额对应的人民币总成本，系统会用它计算移动加权平均成本。"
+                example="余额 100 USD，每 1 USD 成本 5.90 元，这里填总成本 590。"
+              />
+            </template>
             <el-input
               v-model.trim="form.balanceCostAmount"
               placeholder="例如 5.90，表示每 1 美元余额成本 5.90 元人民币"
@@ -616,7 +612,14 @@
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item label="状态">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="状态"
+                purpose="标记账号当前是否可用，自动匹配会避开异常或风险账号。"
+                example="正常可接单选正常；需要短信验证选需验证；密码错误就选密码错误。"
+              />
+            </template>
             <el-select v-model="form.status" class="full-input">
               <el-option
                 v-for="item in statusOptions"
@@ -626,46 +629,111 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="手动锁定">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="手动锁定"
+                purpose="人工临时禁止这个 Apple ID 被订单自动匹配，避免处理中账号被再次使用。"
+                example="账号在排查、客户投诉或准备专用时打开锁定。"
+              />
+            </template>
             <el-switch v-model="form.isManuallyLocked" active-text="锁定" inactive-text="正常" />
           </el-form-item>
         </div>
-        <el-form-item v-if="form.isManuallyLocked" label="锁定原因">
+        <el-form-item v-if="form.isManuallyLocked">
+          <template #label>
+            <FieldHelpLabel
+              label="锁定原因"
+              purpose="说明为什么人工锁定，方便其他员工知道不能用这个账号。"
+              example="可以写余额异常待核对、客户售后中、账号需要短信验证。"
+            />
+          </template>
           <el-input v-model="form.manualLockReason" type="textarea" :rows="2" />
         </el-form-item>
         <div class="form-grid">
-          <el-form-item :label="editingAccount ? '密码（留空不修改）' : '密码'">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                :label="editingAccount ? '密码（留空不修改）' : '密码'"
+                purpose="Apple ID 登录密码，会加密保存；编辑时留空表示不修改原密码。"
+                example="新增账号填当前密码；只是改余额或状态时密码留空。"
+              />
+            </template>
             <el-input v-model="form.password" type="password" show-password />
           </el-form-item>
-          <el-form-item
-            :label="editingAccount ? '绑定手机号（留空不修改）' : '绑定手机号'"
-            prop="phone"
-          >
+          <el-form-item prop="phone">
+            <template #label>
+              <FieldHelpLabel
+                :label="editingAccount ? '绑定手机号（留空不修改）' : '绑定手机号'"
+                purpose="Apple ID 绑定的手机号，会加密保存并默认脱敏展示。"
+                example="选择区号后填手机号；编辑账号时不想改手机号就留空。"
+              />
+            </template>
             <el-input
               v-model.trim="form.phone"
               class="apple-phone-input"
-              :placeholder="selectedRegionOption?.phoneExample ?? '请输入手机号'"
+              :placeholder="selectedRegionOption?.phoneExample || '默认 +86，可自由填写手机号'"
             >
-              <template #prepend>{{ selectedRegionOption?.dialCode ?? '+86' }}</template>
+              <template #prepend>
+                <el-select
+                  v-model="form.phoneDialCode"
+                  class="apple-phone-dial-select"
+                  filterable
+                  allow-create
+                >
+                  <el-option
+                    v-for="item in appleRegionOptions"
+                    :key="`${item.code}-${item.dialCode}`"
+                    :label="item.dialCode"
+                    :value="item.dialCode"
+                  />
+                </el-select>
+              </template>
             </el-input>
           </el-form-item>
         </div>
-        <el-form-item :label="editingAccount ? '备用邮箱（留空不修改）' : '备用邮箱'">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              :label="editingAccount ? '备用邮箱（留空不修改）' : '备用邮箱'"
+              purpose="Apple ID 的备用邮箱或恢复邮箱，会加密保存，用于安全验证和找回。"
+              example="有恢复邮箱就填完整邮箱；编辑时不修改就留空。"
+            />
+          </template>
           <el-input v-model.trim="form.recoveryEmail" />
         </el-form-item>
-        <el-form-item :label="editingAccount ? '密保信息（留空不修改）' : '密保信息'">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              :label="editingAccount ? '密保信息（留空不修改）' : '密保信息'"
+              purpose="记录密保问题、答案或安全验证备注，会加密保存。"
+              example="可以按一行一个问题答案填写；编辑时不修改就留空。"
+            />
+          </template>
           <el-input v-model="form.securityInfo" type="textarea" :rows="3" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="记录账号补充信息，不参与余额成本计算。"
+              example="可以写供应商、购买时间、账号特殊限制或人工注意事项。"
+            />
+          </template>
           <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
     </AppDrawer>
 
-    <el-dialog
+    <AppDrawer
       v-model="importDialogVisible"
       title="批量导入 Apple ID"
-      width="min(820px, calc(100vw - 24px))"
+      description="批量粘贴账号资料，系统会逐行校验并加密保存敏感字段。"
+      eyebrow="批量导入"
+      size="820px"
+      confirm-text="开始导入"
+      :confirm-loading="importing"
+      @confirm="submitImport"
     >
       <el-form ref="importFormRef" :model="importForm" :rules="importRules" label-position="top">
         <div class="apple-core-alert apple-core-alert--blue">
@@ -675,7 +743,14 @@
             <p>密码、手机号、备用邮箱会加密保存；导入结果会逐行返回成功和失败原因。</p>
           </div>
         </div>
-        <el-form-item label="默认导入渠道">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="默认导入渠道"
+              purpose="批量导入时给没有单独写渠道的账号统一设置来源渠道。"
+              example="这一批都来自同一个供应商就选该供应商；每行已写 sourcePlatform 可留空。"
+            />
+          </template>
           <el-select
             v-model="importForm.sourcePlatformId"
             class="full-input"
@@ -691,7 +766,14 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="导入内容" prop="accountsText">
+        <el-form-item prop="accountsText">
+          <template #label>
+            <FieldHelpLabel
+              label="导入内容"
+              purpose="批量粘贴 Apple ID 资料，系统会逐行校验并加密保存敏感字段。"
+              example="可带表头，字段顺序按占位提示填写；一行一个 Apple ID。"
+            />
+          </template>
           <el-input
             v-model="importForm.accountsText"
             type="textarea"
@@ -754,14 +836,7 @@
           </div>
         </article>
       </div>
-
-      <template #footer>
-        <AppButton @click="importDialogVisible = false">关闭</AppButton>
-        <AppButton variant="primary" :loading="importing" @click="submitImport">
-          开始导入
-        </AppButton>
-      </template>
-    </el-dialog>
+    </AppDrawer>
 
     <AppDrawer
       v-model="topupDialogVisible"
@@ -773,33 +848,84 @@
       :confirm-loading="savingBalanceRecord"
       @confirm="saveTopup"
     >
-      <el-form ref="topupFormRef" :model="topupForm" :rules="topupRules" label-position="top">
-        <div class="form-grid">
-          <el-form-item label="充值面值" prop="faceValue">
-            <el-input v-model.trim="topupForm.faceValue" />
-          </el-form-item>
-          <el-form-item label="本次平均成本" prop="costAmount">
-            <el-input
-              v-model.trim="topupForm.costAmount"
-              placeholder="例如 5.90，表示这次每 1 美元成本 5.90 元人民币"
-            />
-          </el-form-item>
-        </div>
-        <el-form-item label="礼品卡代码 / 充值代码">
-          <div class="gift-code-input-row">
-            <el-input
-              v-model.trim="topupForm.giftCardCode"
-              type="password"
-              show-password
-              placeholder="完整代码加密保存，列表只显示后4位"
-            />
-            <AppButton variant="soft" @click="pasteGiftCardCode">一键粘贴</AppButton>
+      <AppleAccountDrawerSummary
+        v-if="selectedAccount"
+        label="充值账号"
+        :apple-id="selectedAccount.appleIdMasked"
+        :region-currency="
+          formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+        "
+        :balance="selectedAccount.currentBalance"
+        :average-cost="getAccountAverageCost(selectedAccount)"
+        :status-label="getStatusLabel(selectedAccount.status)"
+        :status-tone="getStatusTone(selectedAccount.status)"
+        :locked="selectedAccount.isManuallyLocked"
+        :source-platform="selectedAccount.sourcePlatform?.name"
+      />
+      <div class="drawer-section drawer-section--flush">
+        <div class="drawer-section__title">充值信息</div>
+        <el-form
+          ref="topupFormRef"
+          class="account-drawer-form"
+          :model="topupForm"
+          :rules="topupRules"
+          label-position="top"
+        >
+          <div class="form-grid">
+            <el-form-item prop="faceValue">
+              <template #label>
+                <FieldHelpLabel
+                  label="充值面值"
+                  purpose="这次给 Apple ID 充值了多少外币余额。"
+                  example="充值 100 USD 就填 100；不要填人民币成本。"
+                />
+              </template>
+              <el-input v-model.trim="topupForm.faceValue" />
+            </el-form-item>
+            <el-form-item prop="costAmount">
+              <template #label>
+                <FieldHelpLabel
+                  label="本次平均成本"
+                  purpose="这次充值每 1 外币对应多少人民币成本，用来更新移动加权平均成本。"
+                  example="每 1 USD 成本 5.90 元就填 5.90。"
+                />
+              </template>
+              <el-input
+                v-model.trim="topupForm.costAmount"
+                placeholder="例如 5.90，表示这次每 1 美元成本 5.90 元人民币"
+              />
+            </el-form-item>
           </div>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="topupForm.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="礼品卡代码 / 充值代码"
+                purpose="记录本次充值使用的完整代码，会加密保存并默认只显示尾号。"
+                example="从剪贴板粘贴完整礼品卡代码；没有代码或不需要记录可留空。"
+              />
+            </template>
+            <div class="gift-code-input-row">
+              <el-input
+                v-model.trim="topupForm.giftCardCode"
+                type="password"
+                show-password
+                placeholder="完整代码加密保存，列表只显示后4位"
+              />
+              <AppButton variant="soft" @click="pasteGiftCardCode">一键粘贴</AppButton>
+            </div>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="备注"
+                purpose="记录这次充值的来源、付款或人工说明。"
+                example="可以写供应商、采购单号、付款批次或异常情况。"
+              />
+            </template>
+            <el-input v-model="topupForm.remark" type="textarea" :rows="3" />
+          </el-form-item>
+        </el-form>
+      </div>
     </AppDrawer>
 
     <AppDrawer
@@ -812,25 +938,64 @@
       :confirm-loading="savingBalanceRecord"
       @confirm="saveConsumption"
     >
-      <el-form
-        ref="consumptionFormRef"
-        :model="consumptionForm"
-        :rules="consumptionRules"
-        label-position="top"
-      >
-        <el-form-item label="消费金额" prop="amount">
-          <el-input v-model.trim="consumptionForm.amount" />
-        </el-form-item>
-        <el-form-item label="消费原因">
-          <el-input
-            v-model.trim="consumptionForm.reason"
-            placeholder="例如 手工开通 / 测试扣费 / 余额修正"
-          />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="consumptionForm.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
+      <AppleAccountDrawerSummary
+        v-if="selectedAccount"
+        label="消费账号"
+        :apple-id="selectedAccount.appleIdMasked"
+        :region-currency="
+          formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+        "
+        :balance="selectedAccount.currentBalance"
+        :average-cost="getAccountAverageCost(selectedAccount)"
+        :status-label="getStatusLabel(selectedAccount.status)"
+        :status-tone="getStatusTone(selectedAccount.status)"
+        :locked="selectedAccount.isManuallyLocked"
+        :source-platform="selectedAccount.sourcePlatform?.name"
+      />
+      <div class="drawer-section drawer-section--flush">
+        <div class="drawer-section__title">消费信息</div>
+        <el-form
+          ref="consumptionFormRef"
+          class="account-drawer-form"
+          :model="consumptionForm"
+          :rules="consumptionRules"
+          label-position="top"
+        >
+          <el-form-item prop="amount">
+            <template #label>
+              <FieldHelpLabel
+                label="消费金额"
+                purpose="这次手工记录扣掉了多少 Apple ID 外币余额。"
+                example="开通业务扣了 20 USD 就填 20。"
+              />
+            </template>
+            <el-input v-model.trim="consumptionForm.amount" />
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="消费原因"
+                purpose="说明这次余额为什么被扣，方便后续对账。"
+                example="可以填手工开通、测试扣费、余额修正。"
+              />
+            </template>
+            <el-input
+              v-model.trim="consumptionForm.reason"
+              placeholder="例如 手工开通 / 测试扣费 / 余额修正"
+            />
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="备注"
+                purpose="记录这次消费的补充说明，不参与金额公式。"
+                example="可以写对应客户、订单号或人工处理原因。"
+              />
+            </template>
+            <el-input v-model="consumptionForm.remark" type="textarea" :rows="3" />
+          </el-form-item>
+        </el-form>
+      </div>
     </AppDrawer>
 
     <AppDrawer
@@ -843,36 +1008,75 @@
       :confirm-loading="savingStatusCheck"
       @confirm="saveStatusCheck"
     >
-      <el-form
-        ref="statusCheckFormRef"
-        :model="statusCheckForm"
-        :rules="statusCheckRules"
-        label-position="top"
-      >
-        <div class="form-grid">
-          <el-form-item label="检测结果" prop="resultStatus">
-            <el-select v-model="statusCheckForm.resultStatus" class="full-input">
-              <el-option
-                v-for="item in statusOptions"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
+      <AppleAccountDrawerSummary
+        v-if="selectedAccount"
+        label="检测账号"
+        :apple-id="selectedAccount.appleIdMasked"
+        :region-currency="
+          formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+        "
+        :balance="selectedAccount.currentBalance"
+        :average-cost="getAccountAverageCost(selectedAccount)"
+        :status-label="getStatusLabel(selectedAccount.status)"
+        :status-tone="getStatusTone(selectedAccount.status)"
+        :locked="selectedAccount.isManuallyLocked"
+        :source-platform="selectedAccount.sourcePlatform?.name"
+      />
+      <div class="drawer-section drawer-section--flush">
+        <div class="drawer-section__title">检测结果</div>
+        <el-form
+          ref="statusCheckFormRef"
+          class="account-drawer-form"
+          :model="statusCheckForm"
+          :rules="statusCheckRules"
+          label-position="top"
+        >
+          <div class="form-grid">
+            <el-form-item prop="resultStatus">
+              <template #label>
+                <FieldHelpLabel
+                  label="检测结果"
+                  purpose="记录这次账号状态检查的结论，后续自动匹配会参考账号状态。"
+                  example="能正常登录选正常；需要短信选需验证；密码不对选密码错误。"
+                />
+              </template>
+              <el-select v-model="statusCheckForm.resultStatus" class="full-input">
+                <el-option
+                  v-for="item in statusOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <FieldHelpLabel
+                  label="余额快照"
+                  purpose="检测时看到的余额，用来和系统余额做人工核对。"
+                  example="登录看到 122 USD 就填 122；没查余额可留空。"
+                />
+              </template>
+              <el-input v-model.trim="statusCheckForm.balanceSnapshot" placeholder="可选" />
+            </el-form-item>
+          </div>
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="备注"
+                purpose="记录这次检测过程中的补充信息。"
+                example="可以写人工登录正常、需要短信验证、密码错误截图已上传。"
               />
-            </el-select>
+            </template>
+            <el-input
+              v-model="statusCheckForm.remark"
+              type="textarea"
+              :rows="3"
+              placeholder="例如 人工登录正常 / 需要短信验证 / 密码错误"
+            />
           </el-form-item>
-          <el-form-item label="余额快照">
-            <el-input v-model.trim="statusCheckForm.balanceSnapshot" placeholder="可选" />
-          </el-form-item>
-        </div>
-        <el-form-item label="备注">
-          <el-input
-            v-model="statusCheckForm.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="例如 人工登录正常 / 需要短信验证 / 密码错误"
-          />
-        </el-form-item>
-      </el-form>
+        </el-form>
+      </div>
     </AppDrawer>
 
     <AppDrawer
@@ -884,16 +1088,20 @@
       confirm-text="刷新流水"
       @confirm="loadBalanceRecords"
     >
-      <div class="drawer-detail-grid">
-        <div>
-          <span>当前余额</span>
-          <strong>{{ selectedAccount?.currentBalance ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>平均成本</span>
-          <strong>{{ selectedAccount ? getAccountAverageCost(selectedAccount) : '-' }}</strong>
-        </div>
-      </div>
+      <AppleAccountDrawerSummary
+        v-if="selectedAccount"
+        label="流水账号"
+        :apple-id="selectedAccount.appleIdMasked"
+        :region-currency="
+          formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+        "
+        :balance="selectedAccount.currentBalance"
+        :average-cost="getAccountAverageCost(selectedAccount)"
+        :status-label="getStatusLabel(selectedAccount.status)"
+        :status-tone="getStatusTone(selectedAccount.status)"
+        :locked="selectedAccount.isManuallyLocked"
+        :source-platform="selectedAccount.sourcePlatform?.name"
+      />
 
       <div class="drawer-section">
         <div class="drawer-section__title">余额流水</div>
@@ -1031,7 +1239,7 @@
 
     <AppDrawer
       v-model="accountSecretDialogVisible"
-      title="查看 Apple ID 敏感资料"
+      :title="`敏感资料 · ${selectedAccount?.appleIdMasked ?? ''}`"
       description="完整资料只在必要核对时查看，查看会写入审计日志。"
       eyebrow="敏感资料"
       size="560px"
@@ -1041,6 +1249,20 @@
       @closed="resetAccountSecretDialog"
       @confirm="revealAccountSecret"
     >
+      <AppleAccountDrawerSummary
+        v-if="selectedAccount"
+        label="查看账号"
+        :apple-id="selectedAccount.appleIdMasked"
+        :region-currency="
+          formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+        "
+        :balance="selectedAccount.currentBalance"
+        :average-cost="getAccountAverageCost(selectedAccount)"
+        :status-label="getStatusLabel(selectedAccount.status)"
+        :status-tone="getStatusTone(selectedAccount.status)"
+        :locked="selectedAccount.isManuallyLocked"
+        :source-platform="selectedAccount.sourcePlatform?.name"
+      />
       <div class="apple-core-alert apple-core-alert--orange">
         <StatusChip tone="orange">审计</StatusChip>
         <div>
@@ -1048,42 +1270,63 @@
           <p>完整资料只用于必要的业务核对，不会出现在列表、导出和操作日志明文中。</p>
         </div>
       </div>
-      <el-form
-        ref="accountSecretFormRef"
-        class="sensitive-form"
-        :model="accountSecretForm"
-        :rules="accountSecretRules"
-        label-position="top"
-      >
-        <el-form-item label="Apple ID">
-          <el-input :model-value="selectedAccount?.appleIdMasked ?? '-'" disabled />
-        </el-form-item>
-        <el-form-item label="字段" prop="field">
-          <el-select
-            v-model="accountSecretForm.field"
-            class="full-input"
-            @change="accountSecretForm.value = ''"
-          >
-            <el-option
-              v-for="item in accountSecretOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
+      <div class="drawer-section drawer-section--flush">
+        <div class="drawer-section__title">查看字段</div>
+        <el-form
+          ref="accountSecretFormRef"
+          class="account-drawer-form sensitive-form"
+          :model="accountSecretForm"
+          :rules="accountSecretRules"
+          label-position="top"
+        >
+          <el-form-item prop="field">
+            <template #label>
+              <FieldHelpLabel
+                label="字段"
+                purpose="选择要查看哪一项敏感资料，每次查看都会单独写审计日志。"
+                example="只需要登录就选密码；需要安全验证再选密保或手机号。"
+              />
+            </template>
+            <el-select
+              v-model="accountSecretForm.field"
+              class="full-input"
+              @change="accountSecretForm.value = ''"
+            >
+              <el-option
+                v-for="item in accountSecretOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item prop="reason">
+            <template #label>
+              <FieldHelpLabel
+                label="查看原因"
+                purpose="说明为什么要查看完整敏感资料，系统会写入审计日志。"
+                example="可以填售后登录核对、客户资料变更、安全验证。"
+              />
+            </template>
+            <el-input
+              v-model.trim="accountSecretForm.reason"
+              type="textarea"
+              :rows="3"
+              placeholder="例如 售后登录核对 / 客户资料变更 / 安全验证"
             />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="查看原因" prop="reason">
-          <el-input
-            v-model.trim="accountSecretForm.reason"
-            type="textarea"
-            :rows="3"
-            placeholder="例如 售后登录核对 / 客户资料变更 / 安全验证"
-          />
-        </el-form-item>
-        <el-form-item v-if="accountSecretForm.value" :label="accountSecretFieldLabel">
-          <el-input v-model="accountSecretForm.value" type="textarea" :rows="3" readonly />
-        </el-form-item>
-      </el-form>
+          </el-form-item>
+          <el-form-item v-if="accountSecretForm.value">
+            <template #label>
+              <FieldHelpLabel
+                :label="accountSecretFieldLabel"
+                purpose="展示解密后的敏感内容，仅供本次必要业务处理使用。"
+                example="复制或查看后按实际业务处理，不要粘贴到公开备注或日志里。"
+              />
+            </template>
+            <el-input v-model="accountSecretForm.value" type="textarea" :rows="3" readonly />
+          </el-form-item>
+        </el-form>
+      </div>
     </AppDrawer>
   </PageScaffold>
 </template>
@@ -1093,15 +1336,24 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { appleAccountsApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
+import {
+  appleAccountsApi,
+  dataCenterApi,
+  sourcePlatformsApi,
+  userTableViewsApi
+} from '@/api/system';
+import type { DataDictionaryQuery } from '@/api/system';
+import AppleAccountDrawerSummary from '@/components/business/AppleAccountDrawerSummary.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { APPLE_ACCOUNT_REGION_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { useAuthStore } from '@/stores/auth';
 import type {
   AppleAccount,
@@ -1109,18 +1361,19 @@ import type {
   AppleAccountSecretField,
   AppleBalanceConsumption,
   AppleBalanceTopup,
+  DataDictionary,
   SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
 import {
-  appleAccountCurrencyOptions,
-  appleAccountRegionOptions,
+  buildAppleAccountCurrencyOptions,
   formatCurrencyLabel,
+  formatAppleAccountRegionOptionLabel,
   formatRegionCurrency,
   getAppleAccountRegionOption,
   getCurrencyForRegion,
-  normalizePhoneForRegion
+  mergeAppleAccountRegionOptions
 } from '@/utils/appleAccountRegion';
 import {
   createSmartQueryKey,
@@ -1174,7 +1427,6 @@ const importDialogVisible = ref(false);
 const topupDialogVisible = ref(false);
 const consumptionDialogVisible = ref(false);
 const statusCheckDialogVisible = ref(false);
-const accountActionsDrawerVisible = ref(false);
 const detailDrawerVisible = ref(false);
 const recordsDrawerVisible = ref(false);
 const accountSecretDialogVisible = ref(false);
@@ -1189,6 +1441,7 @@ const statusCheckFormRef = ref<FormInstance>();
 const accountSecretFormRef = ref<FormInstance>();
 const accounts = ref<AppleAccount[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
+const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const topups = ref<AppleBalanceTopup[]>([]);
 const consumptions = ref<AppleBalanceConsumption[]>([]);
 const importResult = ref<AppleAccountImportResult | null>(null);
@@ -1205,6 +1458,7 @@ const router = useRouter();
 
 type AppleAccountPage = Awaited<ReturnType<typeof appleAccountsApi.list>>;
 type AppleAccountListParams = Parameters<typeof appleAccountsApi.list>[0];
+type AccountMoreCommand = 'secret' | 'status-check' | 'topup' | 'consumption' | 'records';
 
 const query = reactive({
   page: 1,
@@ -1221,8 +1475,8 @@ const query = reactive({
 
 const form = reactive({
   appleId: '',
-  region: 'CN',
-  currency: 'CNY',
+  region: 'US',
+  currency: 'USD',
   currentBalance: '0',
   balanceCostAmount: '0',
   sourcePlatformId: '',
@@ -1231,6 +1485,7 @@ const form = reactive({
   manualLockReason: '',
   password: '',
   securityInfo: '',
+  phoneDialCode: '+86',
   phone: '',
   recoveryEmail: '',
   remark: ''
@@ -1271,26 +1526,7 @@ const rules: FormRules<typeof form> = {
   region: [{ required: true, message: '请选择地区', trigger: 'change' }],
   currency: [{ required: true, message: '请选择币种', trigger: 'change' }],
   currentBalance: [{ required: true, message: '请输入余额', trigger: 'blur' }],
-  balanceCostAmount: [{ required: true, message: '请输入平均成本', trigger: 'blur' }],
-  phone: [
-    {
-      validator: (_rule, value: string, callback) => {
-        if (!value) {
-          callback();
-          return;
-        }
-
-        const normalized = normalizePhoneForRegion(value, form.region);
-        if (typeof normalized !== 'string' && !normalized.valid) {
-          callback(new Error(normalized.message));
-          return;
-        }
-
-        callback();
-      },
-      trigger: 'blur'
-    }
-  ]
+  balanceCostAmount: [{ required: true, message: '请输入平均成本', trigger: 'blur' }]
 };
 
 const importRules: FormRules<typeof importForm> = {
@@ -1384,8 +1620,18 @@ const accountSecretFieldLabel = computed(
     accountSecretOptions.value.find((item) => item.value === accountSecretForm.field)?.label ??
     '完整资料'
 );
-const selectedRegionOption = computed(() => getAppleAccountRegionOption(form.region));
-const selectedCurrencyLabel = computed(() => formatCurrencyLabel(form.currency));
+const appleRegionOptions = computed(() =>
+  mergeAppleAccountRegionOptions(appleRegionDictionaries.value)
+);
+const appleCurrencyOptions = computed(() =>
+  buildAppleAccountCurrencyOptions(appleRegionOptions.value)
+);
+const selectedRegionOption = computed(() =>
+  getAppleAccountRegionOption(form.region, appleRegionOptions.value)
+);
+const selectedCurrencyLabel = computed(() =>
+  formatCurrencyLabel(form.currency, appleRegionOptions.value)
+);
 
 const accountSortFieldMap: Record<string, string> = {
   appleId: 'appleId',
@@ -1448,6 +1694,10 @@ function isLikelyLegacyRateCost(account: AppleAccount) {
 
 function formatAverageCost(value: string | null | undefined) {
   return parseDecimalInput(value).toFixed(2);
+}
+
+function formatAccountRegionCurrency(region: string, currency: string) {
+  return formatRegionCurrency(region, currency, appleRegionOptions.value);
 }
 
 function getAccountAverageCost(account: AppleAccount) {
@@ -1583,13 +1833,33 @@ async function loadSourcePlatforms() {
   }
 }
 
+function buildAppleRegionParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 200,
+    group: APPLE_ACCOUNT_REGION_DICTIONARY_GROUP,
+    status: 'active',
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+async function loadAppleRegions() {
+  try {
+    const data = await dataCenterApi.listDictionaries(buildAppleRegionParams());
+    appleRegionDictionaries.value = data.items;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 地区失败');
+  }
+}
+
 function applyFilters() {
   query.page = 1;
   loadAccounts();
 }
 
 function handleRegionFilterChange() {
-  query.currency = query.region ? getCurrencyForRegion(query.region) : '';
+  query.currency = query.region ? getCurrencyForRegion(query.region, appleRegionOptions.value) : '';
   applyFilters();
 }
 
@@ -1755,7 +2025,7 @@ function applySortConfig(value: Record<string, unknown>) {
 
 function resetForm() {
   form.appleId = '';
-  form.region = 'CN';
+  form.region = 'US';
   syncFormCurrency();
   form.currentBalance = '0';
   form.balanceCostAmount = '0';
@@ -1765,19 +2035,49 @@ function resetForm() {
   form.manualLockReason = '';
   form.password = '';
   form.securityInfo = '';
+  form.phoneDialCode = '+86';
   form.phone = '';
   form.recoveryEmail = '';
   form.remark = '';
 }
 
 function syncFormCurrency() {
-  form.currency = getCurrencyForRegion(form.region);
+  form.currency = getCurrencyForRegion(form.region, appleRegionOptions.value);
 }
 
 function handleFormRegionChange() {
   syncFormCurrency();
-  if (form.phone) {
-    formRef.value?.validateField('phone').catch(() => undefined);
+}
+
+function handleAccountMoreCommand(command: unknown, account: AppleAccount) {
+  if (typeof command !== 'string') {
+    return;
+  }
+
+  const accountCommand = command as AccountMoreCommand;
+
+  if (accountCommand === 'secret') {
+    openAccountSecret(account);
+    return;
+  }
+
+  if (accountCommand === 'status-check') {
+    openStatusCheck(account);
+    return;
+  }
+
+  if (accountCommand === 'topup') {
+    openTopup(account);
+    return;
+  }
+
+  if (accountCommand === 'consumption') {
+    openConsumption(account);
+    return;
+  }
+
+  if (accountCommand === 'records') {
+    void openRecords(account);
   }
 }
 
@@ -1799,7 +2099,7 @@ function openEdit(account: AppleAccount) {
   selectedAccount.value = account;
   editingAccount.value = account;
   form.appleId = '';
-  form.region = getAppleAccountRegionOption(account.region)?.code ?? 'CN';
+  form.region = getAppleAccountRegionOption(account.region, appleRegionOptions.value)?.code ?? 'US';
   syncFormCurrency();
   form.currentBalance = account.currentBalance;
   form.balanceCostAmount = getAccountAverageCost(account);
@@ -1809,6 +2109,7 @@ function openEdit(account: AppleAccount) {
   form.manualLockReason = account.manualLockReason ?? '';
   form.password = '';
   form.securityInfo = '';
+  form.phoneDialCode = '+86';
   form.phone = '';
   form.recoveryEmail = '';
   form.remark = account.remark ?? '';
@@ -1889,15 +2190,14 @@ function getAccountSecretOptions(account: AppleAccount) {
   return options.filter((item) => item.hasValue && canRevealAccountSecret(item.permission));
 }
 
-function openAccountActions(account: AppleAccount) {
-  selectedAccount.value = account;
-  detailDrawerVisible.value = false;
-  accountActionsDrawerVisible.value = true;
-}
-
 function closeAccountActionSurfaces() {
-  accountActionsDrawerVisible.value = false;
   detailDrawerVisible.value = false;
+  dialogVisible.value = false;
+  topupDialogVisible.value = false;
+  consumptionDialogVisible.value = false;
+  statusCheckDialogVisible.value = false;
+  recordsDrawerVisible.value = false;
+  accountSecretDialogVisible.value = false;
 }
 
 function openTopup(account: AppleAccount) {
@@ -1945,7 +2245,7 @@ async function openRecords(account: AppleAccount) {
 
 function openDetail(account: AppleAccount) {
   selectedAccount.value = account;
-  accountActionsDrawerVisible.value = false;
+  closeAccountActionSurfaces();
   detailDrawerVisible.value = true;
 }
 
@@ -2010,16 +2310,7 @@ async function saveAccount() {
     return;
   }
 
-  const normalizedPhone = normalizePhoneForRegion(form.phone, form.region);
-  if (typeof normalizedPhone !== 'string' && !normalizedPhone.valid) {
-    ElMessage.error(normalizedPhone.message);
-    return;
-  }
-
-  const phoneToSave =
-    typeof normalizedPhone !== 'string' && normalizedPhone.valid
-      ? normalizedPhone.value
-      : form.phone || undefined;
+  const phoneToSave = buildPhoneToSave();
 
   saving.value = true;
   try {
@@ -2057,6 +2348,32 @@ async function saveAccount() {
   } finally {
     saving.value = false;
   }
+}
+
+function buildPhoneToSave() {
+  const rawPhone = form.phone.trim();
+  if (!rawPhone) {
+    return undefined;
+  }
+
+  const compactPhone = rawPhone.replace(/[()\s.-]/g, '');
+  if (compactPhone.startsWith('+')) {
+    return compactPhone;
+  }
+  if (compactPhone.startsWith('00')) {
+    return `+${compactPhone.slice(2)}`;
+  }
+
+  const dialCode = normalizeDialCode(form.phoneDialCode);
+  return `${dialCode}${compactPhone.replace(/^\+/, '')}`;
+}
+
+function normalizeDialCode(value: string) {
+  const normalized = value.trim();
+  if (!normalized) {
+    return '+86';
+  }
+  return normalized.startsWith('+') ? normalized : `+${normalized.replace(/^00/, '')}`;
 }
 
 async function submitImport() {
@@ -2229,11 +2546,13 @@ async function revealAccountSecret() {
 
 async function loadPageData() {
   const sourcePlatformsPromise = loadSourcePlatforms();
+  const appleRegionsPromise = loadAppleRegions();
   const tableViewsPromise = loadTableViews(true);
   const accountsPromise = loadAccounts({ force: false });
   const defaultViewApplied = await tableViewsPromise;
 
   await sourcePlatformsPromise;
+  await appleRegionsPromise;
   await accountsPromise;
 
   if (defaultViewApplied) {
@@ -2262,12 +2581,16 @@ onActivated(() => {
   });
 });
 
-const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-accounts'], () => {
-  void loadAccounts({
-    background: accounts.value.length > 0,
-    force: true
-  });
-});
+const stopRealtimeRefresh = onRealtimeQueryInvalidated(
+  ['apple-accounts', 'data-dictionaries'],
+  () => {
+    void loadAccounts({
+      background: accounts.value.length > 0,
+      force: true
+    });
+    void loadAppleRegions();
+  }
+);
 
 onBeforeUnmount(stopRealtimeRefresh);
 </script>

@@ -455,10 +455,24 @@
         label-position="top"
       >
         <div class="form-grid">
-          <el-form-item label="新余额" prop="newBalance">
+          <el-form-item prop="newBalance">
+            <template #label>
+              <FieldHelpLabel
+                label="新余额"
+                purpose="人工核对后确认的 Apple ID 实际余额，用来修正系统余额。"
+                example="登录看到余额 122 USD，就填 122。"
+              />
+            </template>
             <el-input v-model.trim="form.newBalance" placeholder="实际查询到的余额" />
           </el-form-item>
-          <el-form-item label="成本修正方式" prop="costAdjustMethod">
+          <el-form-item prop="costAdjustMethod">
+            <template #label>
+              <FieldHelpLabel
+                label="成本修正方式"
+                purpose="决定余额修正时是否同步修正人民币成本，影响后续利润计算。"
+                example="只是余额展示错了选按当前平均成本修正；成本也核过了选手动输入新成本。"
+              />
+            </template>
             <el-select v-model="form.costAdjustMethod" class="full-input">
               <el-option label="只修余额，不修正成本" value="none" />
               <el-option label="按当前平均成本修正" value="current_avg" />
@@ -466,14 +480,24 @@
             </el-select>
           </el-form-item>
         </div>
-        <el-form-item
-          v-if="form.costAdjustMethod === 'manual'"
-          label="新人民币总成本"
-          prop="newCostRmb"
-        >
+        <el-form-item v-if="form.costAdjustMethod === 'manual'" prop="newCostRmb">
+          <template #label>
+            <FieldHelpLabel
+              label="新人民币总成本"
+              purpose="手动确认后的余额人民币总成本，系统会据此重新计算平均成本。"
+              example="余额 100 USD，总成本 590 元就填 590。"
+            />
+          </template>
           <el-input v-model.trim="form.newCostRmb" placeholder="手动确认后的人民币总成本" />
         </el-form-item>
-        <el-form-item label="修正原因" prop="reason">
+        <el-form-item prop="reason">
+          <template #label>
+            <FieldHelpLabel
+              label="修正原因"
+              purpose="说明为什么要改余额或成本，系统会记录到对账日志。"
+              example="可以写自动查询余额与系统不一致、人工核对发现差异。"
+            />
+          </template>
           <el-input
             v-model.trim="form.reason"
             type="textarea"
@@ -605,6 +629,7 @@ import { useRouter } from 'vue-router';
 import { appleAccountsApi, userTableViewsApi, type AppleAccountQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';

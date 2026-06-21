@@ -137,6 +137,11 @@ const SYSTEM_CONFIG_MODULE_KEYS = new Set([
   'changelog',
   'system-parameters'
 ]);
+const LEGACY_RENEWAL_VIEW_BY_MODULE_KEY: Record<string, string> = {
+  'renewal-cancel': 'cancel',
+  'renewal-topup': 'topup',
+  'renewal-waiting-auto': 'auto'
+};
 
 for (const module of allModules) {
   const loader = readyPageComponents[module.key as keyof typeof readyPageComponents];
@@ -299,21 +304,37 @@ export function prefetchReadyRouteComponents(priorityRoutePaths: string[] = []) 
 
 const moduleRoutes = allModules.map((module) => {
   const displayModule = getCanonicalDisplayModule(module);
+  const legacyRenewalView = LEGACY_RENEWAL_VIEW_BY_MODULE_KEY[module.key];
+  const meta = {
+    title: getModuleDisplayTitle(displayModule),
+    group: getModuleDisplayGroup(displayModule),
+    phase: module.phase,
+    description: getModuleDisplayDescription(displayModule),
+    moduleKey: module.key,
+    permission: getModulePermission(module),
+    status: module.status
+  };
+
+  if (legacyRenewalView) {
+    return {
+      path: module.route.replace(/^\//, ''),
+      name: module.key,
+      redirect: {
+        path: '/workspace/renewal',
+        query: {
+          view: legacyRenewalView
+        }
+      },
+      meta
+    };
+  }
 
   return {
     path: module.route.replace(/^\//, ''),
     name: module.key,
     component:
       readyPageComponents[module.key as keyof typeof readyPageComponents] ?? ModulePlaceholderView,
-    meta: {
-      title: getModuleDisplayTitle(displayModule),
-      group: getModuleDisplayGroup(displayModule),
-      phase: module.phase,
-      description: getModuleDisplayDescription(displayModule),
-      moduleKey: module.key,
-      permission: getModulePermission(module),
-      status: module.status
-    }
+    meta
   };
 });
 

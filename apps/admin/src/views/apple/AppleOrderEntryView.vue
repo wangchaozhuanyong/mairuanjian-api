@@ -26,7 +26,14 @@
         label-position="top"
       >
         <div class="form-grid form-grid--three">
-          <el-form-item label="客户" prop="customerId" required>
+          <el-form-item prop="customerId" required>
+            <template #label>
+              <FieldHelpLabel
+                label="客户"
+                purpose="这笔订单属于哪个客户，后面查续费、利润、售后都会关联到他。"
+                example="老客户可以搜客户名、微信或手机号尾号；找不到就点手动输入。"
+              />
+            </template>
             <div class="order-entry-customer-picker">
               <el-select
                 v-model="form.customerId"
@@ -81,7 +88,14 @@
               </AppButton>
             </div>
           </el-form-item>
-          <el-form-item label="来源平台">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="来源平台"
+                purpose="记录订单从哪里来，并按平台设置自动计算手续费。"
+                example="闲鱼来的订单选闲鱼，淘宝来的订单选淘宝，私下收款可以留空或选对应自建平台。"
+              />
+            </template>
             <el-select
               v-model="form.sourcePlatformId"
               class="full-input"
@@ -98,10 +112,24 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item label="平台订单号">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="平台订单号"
+                purpose="保存外部平台的订单编号，方便以后对账、查售后和回看聊天记录。"
+                example="淘宝填淘宝订单号，闲鱼填闲鱼订单号；没有平台单号可以先留空。"
+              />
+            </template>
             <el-input v-model.trim="form.externalOrderNo" />
           </el-form-item>
-          <el-form-item label="开通业务" prop="serviceId">
+          <el-form-item prop="serviceId">
+            <template #label>
+              <FieldHelpLabel
+                label="开通业务"
+                purpose="选择客户这次要开的具体服务，系统会按业务配置带出售价、周期和 Apple 消耗金额。"
+                example="客户买 gpt pro 1 个月，就选对应的 gpt pro 月费业务。"
+              />
+            </template>
             <el-select
               v-model="form.serviceId"
               class="full-input"
@@ -143,14 +171,35 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item label="客户网站账号">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="客户网站账号"
+                purpose="记录客户在目标网站或 App 里的账号，方便开通、续费和售后定位。"
+                example="ChatGPT 业务可以填客户登录邮箱；如果业务不需要客户账号可留空。"
+              />
+            </template>
             <el-input v-model.trim="form.serviceAccount" />
           </el-form-item>
-          <el-form-item label="当前套餐">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="当前套餐"
+                purpose="记录客户开通前或当前正在用的套餐，方便判断是新开、续费还是升级。"
+                example="客户现在是 Free 就填 Free；已经是 Plus 月费就填 Plus 月费。"
+              />
+            </template>
             <el-input v-model.trim="form.currentPlan" />
           </el-form-item>
 
-          <el-form-item label="开通时间">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="开通时间"
+                purpose="记录服务从什么时候开始算，用来生成开通记录和续费提醒。"
+                example="现在马上开通就用默认当前时间；补录旧订单就改成实际开通时间。"
+              />
+            </template>
             <el-date-picker
               v-model="form.startTime"
               class="full-input"
@@ -158,7 +207,14 @@
               value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
             />
           </el-form-item>
-          <el-form-item label="到期时间">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="到期时间"
+                purpose="记录服务什么时候结束，后续续费任务和到期提醒会看这个时间。"
+                example="普通月费可留空让系统按业务周期计算；特殊天数订单就手动选择实际到期时间。"
+              />
+            </template>
             <el-date-picker
               v-model="form.expireTime"
               class="full-input"
@@ -168,29 +224,71 @@
             />
           </el-form-item>
 
-          <el-form-item label="客户实收" prop="paidAmount">
+          <el-form-item prop="paidAmount">
+            <template #label>
+              <FieldHelpLabel
+                label="客户实收"
+                purpose="客户这单实际付给你的金额，是计算订单利润的收入部分。"
+                example="客户转了 20 元就填 20，不要填 Apple 官方扣的美元金额。"
+              />
+            </template>
             <el-input v-model.trim="form.paidAmount" @change="syncDerivedOrderAmounts" />
           </el-form-item>
-          <el-form-item label="平台手续费">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="平台手续费"
+                purpose="平台从这单里扣掉的钱，系统按来源平台的费率和固定费用自动算。"
+                example="闲鱼设置了 1% 手续费，客户实收 20，系统会自动带出约 0.20。"
+              />
+            </template>
             <el-input v-model.trim="form.platformFee" disabled placeholder="按来源平台自动计算" />
           </el-form-item>
-          <el-form-item label="退款/补发损耗">
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="退款/补发损耗"
+                purpose="记录这单额外亏掉的钱，比如补发、退款差额或人工承担的损失。"
+                example="没有损耗填 0；给客户补了 3 元成本就填 3。"
+              />
+            </template>
             <el-input v-model.trim="form.refundLoss" />
           </el-form-item>
 
-          <el-form-item label="Apple 消耗金额" prop="appleCostValue">
+          <el-form-item prop="appleCostValue">
+            <template #label>
+              <FieldHelpLabel
+                label="Apple 消耗金额"
+                purpose="这单预计会扣多少 Apple ID 外币余额，后端会用它乘以当前平均成本算成本。"
+                example="业务官方消耗是 20 USD，这里自动带出 20。"
+              />
+            </template>
             <el-input
               v-model.trim="form.appleCostValue"
               disabled
               placeholder="按业务官方消耗自动带出"
             />
           </el-form-item>
-          <el-form-item label="已选 Apple ID" prop="appleAccountId">
+          <el-form-item prop="appleAccountId">
+            <template #label>
+              <FieldHelpLabel
+                label="已选 Apple ID"
+                purpose="这单最终使用哪个 Apple ID 扣余额和生成开通记录。"
+                example="自动匹配出可用账号后点选择，这里会显示已选账号和余额。"
+              />
+            </template>
             <el-input :model-value="selectedAccountLabel" disabled />
           </el-form-item>
         </div>
 
-        <el-form-item label="备注">
+        <el-form-item>
+          <template #label>
+            <FieldHelpLabel
+              label="备注"
+              purpose="写给自己或同事看的补充说明，不参与金额计算。"
+              example="可以写客户特殊要求、聊天重点、人工处理原因。"
+            />
+          </template>
           <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
 
@@ -431,16 +529,25 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { appleMatchingApi, appleOrdersApi, customersApi } from '@/api/system';
-import type { SaveCustomerPayload } from '@/api/system';
+import { appleMatchingApi, appleOrdersApi, customersApi, dataCenterApi } from '@/api/system';
+import type { DataDictionaryQuery, SaveCustomerPayload } from '@/api/system';
 import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
+import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { buildQuickSettingCode, CUSTOMER_TAG_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { CustomerProfileFormModel } from '@/types/customerProfileForm';
-import type { AppleService, AvailableAppleAccount, Customer, SourcePlatform } from '@/types/system';
+import type {
+  AppleService,
+  AvailableAppleAccount,
+  Customer,
+  DataDictionary,
+  PageResult,
+  SourcePlatform
+} from '@/types/system';
 import {
   assignCustomerProfileForm,
   buildCustomerProfilePayload,
@@ -458,6 +565,7 @@ const ORDER_ENTRY_BASE_SCOPE = 'order-entry-base';
 const ORDER_ENTRY_REALTIME_SCOPES = [
   'customers',
   'source-platforms',
+  'data-dictionaries',
   'apple-services',
   ORDER_ENTRY_BASE_SCOPE
 ];
@@ -469,6 +577,7 @@ const formRef = ref<FormInstance>();
 const newCustomerFormRef = ref<InstanceType<typeof CustomerProfileForm>>();
 const customers = ref<Customer[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
+const customerTagDictionaries = ref<DataDictionary[]>([]);
 const services = ref<AppleService[]>([]);
 const availableAccounts = ref<AvailableAppleAccount[]>([]);
 const selectedAccount = ref<AvailableAppleAccount | null>(null);
@@ -538,7 +647,12 @@ const selectedAccountLabel = computed(() =>
     : '未选择'
 );
 const customerTagOptions = computed(() => [
-  ...new Set(customers.value.flatMap((customer) => customer.tags))
+  ...new Set([
+    ...customerTagDictionaries.value
+      .filter((tag) => tag.status === 'active')
+      .map((tag) => tag.label),
+    ...customers.value.flatMap((customer) => customer.tags)
+  ])
 ]);
 const newCustomerDraftSummary = computed(() => {
   const customer = newCustomerDraft.value;
@@ -644,6 +758,21 @@ function formatAverageCost(value: string | number | null | undefined) {
   return readAmount(value).toFixed(2);
 }
 
+function buildCustomerTagParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 200,
+    group: CUSTOMER_TAG_DICTIONARY_GROUP,
+    status: 'active',
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
+function applyCustomerTagResult(data: PageResult<DataDictionary>) {
+  customerTagDictionaries.value = data.items;
+}
+
 function getServiceCategoryLabel(category?: string | null) {
   const normalized = category?.trim();
   if (!normalized || normalized === 'default') {
@@ -720,18 +849,20 @@ async function loadOrderEntryBaseData(options: { dedupeMs?: number; force?: bool
     loadSmartAppleServices(
       { page: 1, pageSize: 100, status: 'enabled' },
       { force: options.force ?? true, dedupeMs: options.dedupeMs }
-    )
+    ),
+    dataCenterApi.listDictionaries(buildCustomerTagParams())
   ]);
 }
 
 function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryBaseData>>) {
-  const [customerData, platformData, serviceData] = data;
+  const [customerData, platformData, serviceData, customerTagData] = data;
   customers.value = mergeCustomerItems(
     customerData.items,
     selectedCustomer.value ? [selectedCustomer.value] : []
   );
   sourcePlatforms.value = platformData.items;
   services.value = serviceData.items;
+  applyCustomerTagResult(customerTagData);
 }
 
 function mergeCustomerItems(items: Customer[], pinnedItems: Customer[] = []) {
@@ -978,12 +1109,41 @@ async function resolveOrderCustomerId() {
     throw new Error('请先选择客户或新增客户资料');
   }
 
-  const createdCustomer = await customersApi.create(newCustomerDraft.value);
+  const customerPayload = newCustomerDraft.value;
+  await ensureCustomerTagsRegistered(customerPayload.tags ?? []);
+  const createdCustomer = await customersApi.create(customerPayload);
   customers.value = mergeCustomerItems([createdCustomer], customers.value);
   form.customerId = createdCustomer.id;
   newCustomerDraft.value = null;
 
   return createdCustomer.id;
+}
+
+async function ensureCustomerTagsRegistered(tags: string[]) {
+  const existingLabels = new Set(customerTagDictionaries.value.map((tag) => tag.label.trim()));
+  const missingTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].filter(
+    (tag) => !existingLabels.has(tag)
+  );
+
+  if (!missingTags.length) {
+    return;
+  }
+
+  const createdTags = await Promise.all(
+    missingTags.map((tag, index) =>
+      dataCenterApi.createDictionary({
+        group: CUSTOMER_TAG_DICTIONARY_GROUP,
+        code: buildQuickSettingCode(tag, 'tag'),
+        label: tag,
+        value: tag,
+        sortOrder: customerTagDictionaries.value.length + index + 1,
+        status: 'active',
+        remark: '从订单录入新增客户时自动保存'
+      })
+    )
+  );
+
+  customerTagDictionaries.value = [...customerTagDictionaries.value, ...createdTags];
 }
 
 function resetOrderForm() {
