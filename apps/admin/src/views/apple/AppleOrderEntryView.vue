@@ -18,23 +18,6 @@
       :tag="selectedAccount ? '已选择 Apple ID' : '等待匹配'"
       :tag-tone="selectedAccount ? 'green' : 'orange'"
     >
-      <div class="order-entry-stepper" aria-label="订单录入步骤">
-        <template v-for="(step, index) in orderEntrySteps" :key="step.key">
-          <div class="order-entry-step" :class="`order-entry-step--${step.status}`">
-            <span class="order-entry-step__circle">{{ index + 1 }}</span>
-            <span class="order-entry-step__copy">
-              <strong>{{ step.label }}</strong>
-              <em>{{ step.description }}</em>
-            </span>
-          </div>
-          <span
-            v-if="index < orderEntrySteps.length - 1"
-            class="order-entry-step__divider"
-            aria-hidden="true"
-          />
-        </template>
-      </div>
-
       <el-form
         ref="formRef"
         class="v3-entry-form"
@@ -577,51 +560,6 @@ const availableMatchCount = computed(
 const unavailableMatchCount = computed(
   () => availableAccounts.value.filter((account) => account.availability !== 'available').length
 );
-const orderEntrySteps = computed(() => [
-  {
-    key: 'customer',
-    label: '客户',
-    description: form.customerId
-      ? '客户已选择'
-      : newCustomerDraft.value
-        ? '客户资料待随订单新增'
-        : '选择客户和来源平台',
-    status: hasOrderCustomer.value ? ('done' as const) : ('active' as const)
-  },
-  {
-    key: 'service',
-    label: '业务与 Apple ID',
-    description: selectedService.value
-      ? `${selectedService.value.name} · ${selectedService.value.currency}`
-      : '选择业务后自动匹配账号',
-    status:
-      form.serviceId && form.appleAccountId
-        ? ('done' as const)
-        : form.serviceId
-          ? ('active' as const)
-          : ('pending' as const)
-  },
-  {
-    key: 'amount',
-    label: '金额核对',
-    description:
-      form.paidAmount && form.appleCostValue ? '实收和消耗已填写' : '填写实收、手续费和 Apple 消耗',
-    status: form.paidAmount && form.appleCostValue ? ('done' as const) : ('pending' as const)
-  },
-  {
-    key: 'submit',
-    label: '确认提交',
-    description: form.appleAccountId ? '可提交生成订单闭环' : '等待选择可用 Apple ID',
-    status:
-      hasOrderCustomer.value &&
-      form.serviceId &&
-      form.appleAccountId &&
-      form.paidAmount &&
-      form.appleCostValue
-        ? ('active' as const)
-        : ('pending' as const)
-  }
-]);
 const estimatedAppleCostValue = computed(() => {
   if (!selectedAccount.value || !form.appleCostValue) {
     return null;
