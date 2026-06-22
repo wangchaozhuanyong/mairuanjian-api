@@ -919,6 +919,68 @@ model ApplePriceChangeReview {
   @@map("apple_price_change_reviews")
 }
 
+model AppleOfficialPriceCheckBatch {
+  id                  String               @id @default(uuid()) @db.Uuid
+  scopeKey            String               @map("scope_key") @db.VarChar(240)
+  provider            String               @db.VarChar(40)
+  trigger             String               @default("manual") @db.VarChar(40)
+  scanRemovedPlans    Boolean              @default(false) @map("scan_removed_plans")
+  status              AutomationTaskStatus @default(queued)
+  totalCount          Int                  @default(0) @map("total_count")
+  completedCount      Int                  @default(0) @map("completed_count")
+  successCount        Int                  @default(0) @map("success_count")
+  failedCount         Int                  @default(0) @map("failed_count")
+  manualRequiredCount Int                  @default(0) @map("manual_required_count")
+  snapshotCount       Int                  @default(0) @map("snapshot_count")
+  reviewCount         Int                  @default(0) @map("review_count")
+  pendingReviewCount  Int                  @default(0) @map("pending_review_count")
+  message             String?              @db.Text
+  errorMessage        String?              @map("error_message") @db.Text
+  createdByUserId     String?              @map("created_by_user_id") @db.Uuid
+  startedAt           DateTime?            @map("started_at") @db.Timestamptz(6)
+  finishedAt          DateTime?            @map("finished_at") @db.Timestamptz(6)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items AppleOfficialPriceCheckBatchItem[]
+
+  @@index([scopeKey, status])
+  @@index([provider])
+  @@index([status])
+  @@index([createdAt])
+  @@map("apple_official_price_check_batches")
+}
+
+model AppleOfficialPriceCheckBatchItem {
+  id            String               @id @default(uuid()) @db.Uuid
+  batchId       String               @map("batch_id") @db.Uuid
+  sourceId      String               @map("source_id") @db.Uuid
+  sourceName    String               @map("source_name") @db.VarChar(120)
+  provider      String               @db.VarChar(40)
+  region        String               @db.VarChar(20)
+  currency      String               @db.VarChar(10)
+  status        AutomationTaskStatus @default(queued)
+  taskId        String?              @map("task_id") @db.Uuid
+  snapshotCount Int                  @default(0) @map("snapshot_count")
+  reviewCount   Int                  @default(0) @map("review_count")
+  message       String?              @db.Text
+  errorMessage  String?              @map("error_message") @db.Text
+  startedAt     DateTime?            @map("started_at") @db.Timestamptz(6)
+  finishedAt    DateTime?            @map("finished_at") @db.Timestamptz(6)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  batch AppleOfficialPriceCheckBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, provider, region, currency])
+  @@index([batchId])
+  @@index([sourceId])
+  @@index([provider, region, currency])
+  @@index([status])
+  @@index([createdAt])
+  @@map("apple_official_price_check_batch_items")
+}
+
 model AppleServicePlatformMapping {
   id               String                      @id @default(uuid()) @db.Uuid
   serviceId        String                      @map("service_id") @db.Uuid

@@ -1135,6 +1135,50 @@ export interface ApplePriceChangeReview {
   updatedAt: string;
 }
 
+export interface AppleOfficialPriceCheckBatchItem {
+  id: string;
+  batchId: string;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  region: string;
+  currency: string;
+  status: AutomationTaskStatus;
+  taskId?: string | null;
+  snapshotCount: number;
+  reviewCount: number;
+  message?: string | null;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AppleOfficialPriceCheckBatch {
+  id: string;
+  provider: string;
+  trigger: string;
+  scanRemovedPlans: boolean;
+  status: AutomationTaskStatus;
+  totalCount: number;
+  completedCount: number;
+  successCount: number;
+  failedCount: number;
+  manualRequiredCount: number;
+  snapshotCount: number;
+  reviewCount: number;
+  pendingReviewCount: number;
+  message?: string | null;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: AppleOfficialPriceCheckBatchItem[];
+  reused?: boolean;
+}
+
 export interface AvailableAppleAccount {
   appleAccountId: string;
   accountMasked: string;

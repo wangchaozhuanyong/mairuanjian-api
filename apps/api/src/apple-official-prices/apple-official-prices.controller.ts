@@ -92,6 +92,33 @@ export class AppleOfficialPricesController {
     return this.officialPricesService.checkAllProviders(dto, operator);
   }
 
+  @Post('providers/:provider/check-batch')
+  startProviderCheckBatch(
+    @Param('provider') provider: string,
+    @Body() dto: CheckOfficialPriceProviderDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.startProviderCheckBatch(provider, dto, operator);
+  }
+
+  @Post('providers/check-all-batch')
+  startAllProvidersCheckBatch(
+    @Body() dto: CheckOfficialPriceProviderDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.startAllProvidersCheckBatch(dto, operator);
+  }
+
+  @Get('check-batches/latest')
+  getLatestCheckBatch() {
+    return this.officialPricesService.getLatestCheckBatch();
+  }
+
+  @Get('check-batches/:id')
+  getCheckBatch(@Param('id') id: string) {
+    return this.officialPricesService.getCheckBatch(id);
+  }
+
   @Get('snapshots')
   listSnapshots(
     @Query('page') page?: string,

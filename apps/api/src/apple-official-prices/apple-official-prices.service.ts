@@ -4,8 +4,11 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type {
   AppleOfficialPriceCollectMethod,
+  AppleOfficialPriceCheckBatch,
+  AppleOfficialPriceCheckBatchItem,
   AppleOfficialPriceSnapshot,
   AppleOfficialPriceSource,
   AppleOfficialPriceSourceStatus,
@@ -14,6 +17,7 @@ import type {
   ApplePriceChangeType,
   AppleService,
   AppleServicePeriodType,
+  AutomationTaskStatus,
   Prisma
 } from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
@@ -117,6 +121,10 @@ type PriceChangeReviewWithRelations = ApplePriceChangeReview & {
   reviewedBy?: UserSnapshot | null;
 };
 
+type OfficialPriceBatchWithItems = AppleOfficialPriceCheckBatch & {
+  items: AppleOfficialPriceCheckBatchItem[];
+};
+
 export interface UserSnapshot {
   id: string;
   username: string;
@@ -143,8 +151,24 @@ interface RunDueSourceCheckOptions {
   bootstrapProviders?: boolean;
 }
 
+interface OfficialPriceBatchPlanItem {
+  sourceId: string;
+  sourceName: string;
+  provider: OfficialPriceProviderKey;
+  region: string;
+  currency: string;
+}
+
 const AUTO_COLLECT_LIMIT = 200;
 const OFFICIAL_PRICE_FETCH_TIMEOUT_MS = 15_000;
+const ACTIVE_OFFICIAL_PRICE_BATCH_STATUSES: AutomationTaskStatus[] = ['queued', 'running'];
+const FINAL_OFFICIAL_PRICE_BATCH_ITEM_STATUSES: AutomationTaskStatus[] = [
+  'success',
+  'failed',
+  'waiting_manual_verify',
+  'skipped',
+  'cancelled'
+];
 
 const SOURCE_SORT_FIELDS: Record<
   string,
@@ -185,6 +209,8 @@ const REVIEW_SORT_FIELDS: Record<
 
 @Injectable()
 export class AppleOfficialPricesService {
+  private readonly runningOfficialPriceBatches = new Set<string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -851,6 +877,448 @@ export class AppleOfficialPricesService {
         failedCount > 0
           ? `全部官方价格自动采集完成，${failedCount} 个来源失败，${reviewCount} 条变化待确认`
           : `全部官方价格自动采集完成，${reviewCount} 条变化待确认`
+    };
+  }
+
+  async startProviderCheckBatch(
+    providerValue: string,
+    dto: CheckOfficialPriceProviderDto = {},
+    operator?: AuthenticatedUser
+  ) {
+    const provider = this.normalizeSupportedProvider(providerValue);
+    const regions = await this.resolveProviderRegions(provider, dto.regions);
+    const plan = await this.buildOfficialPriceBatchPlan([{ provider, regions }], operator);
+
+    return this.createOfficialPriceCheckBatch(provider, dto, plan, operator);
+  }
+
+  async startAllProvidersCheckBatch(
+    dto: CheckOfficialPriceProviderDto = {},
+    operator?: AuthenticatedUser
+  ) {
+    const providerPlans = [];
+
+    for (const provider of OFFICIAL_PRICE_PROVIDER_KEYS) {
+      providerPlans.push({
+        provider,
+        regions: await this.resolveProviderRegions(provider, dto.regions)
+      });
+    }
+
+    const plan = await this.buildOfficialPriceBatchPlan(providerPlans, operator);
+    return this.createOfficialPriceCheckBatch('all', dto, plan, operator);
+  }
+
+  async getLatestCheckBatch() {
+    const batch =
+      (await this.prisma.appleOfficialPriceCheckBatch.findFirst({
+        where: { status: { in: ACTIVE_OFFICIAL_PRICE_BATCH_STATUSES } },
+        include: { items: { orderBy: [{ createdAt: 'asc' }] } },
+        orderBy: { createdAt: 'desc' }
+      })) ??
+      (await this.prisma.appleOfficialPriceCheckBatch.findFirst({
+        include: { items: { orderBy: [{ createdAt: 'asc' }] } },
+        orderBy: { createdAt: 'desc' }
+      }));
+
+    if (!batch) return null;
+    this.scheduleOfficialPriceBatch(batch.id);
+    return this.toCheckBatchResponse(batch);
+  }
+
+  async getCheckBatch(id: string) {
+    const batch = await this.findCheckBatchOrThrow(id);
+    this.scheduleOfficialPriceBatch(batch.id);
+    return this.toCheckBatchResponse(batch);
+  }
+
+  private async buildOfficialPriceBatchPlan(
+    providerPlans: Array<{
+      provider: OfficialPriceProviderKey;
+      regions: OfficialPriceProviderRegion[];
+    }>,
+    operator?: AuthenticatedUser
+  ): Promise<OfficialPriceBatchPlanItem[]> {
+    const plan: OfficialPriceBatchPlanItem[] = [];
+    const seen = new Set<string>();
+
+    for (const item of providerPlans) {
+      for (const region of item.regions) {
+        const source = await this.ensureProviderSource(item.provider, region, operator, {
+          updateExisting: true
+        });
+        const key = `${item.provider}:${source.region}:${source.currency}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        plan.push({
+          sourceId: source.id,
+          sourceName: source.name,
+          provider: item.provider,
+          region: source.region,
+          currency: source.currency
+        });
+      }
+    }
+
+    if (!plan.length) {
+      throw new BadRequestException('没有可采集的官方价格来源');
+    }
+
+    return plan;
+  }
+
+  private async createOfficialPriceCheckBatch(
+    provider: OfficialPriceProviderKey | 'all',
+    dto: CheckOfficialPriceProviderDto,
+    plan: OfficialPriceBatchPlanItem[],
+    operator?: AuthenticatedUser
+  ) {
+    const trigger = this.normalizeTrigger(dto.trigger);
+    const scanRemovedPlans = Boolean(dto.scanRemovedPlans);
+    const existing = await this.findOverlappingActiveCheckBatch(plan);
+
+    if (existing) {
+      this.scheduleOfficialPriceBatch(existing.id);
+      return {
+        ...this.toCheckBatchResponse(existing),
+        reused: true,
+        message: existing.message || '已有相同供应商/地区的采集批次正在执行'
+      };
+    }
+
+    const batch = await this.prisma.appleOfficialPriceCheckBatch.create({
+      data: {
+        scopeKey: this.buildOfficialPriceBatchScopeKey(provider, trigger, scanRemovedPlans, plan),
+        provider,
+        trigger,
+        scanRemovedPlans,
+        status: 'queued',
+        totalCount: plan.length,
+        message: `已创建 ${plan.length} 个官方价格采集任务`,
+        createdByUserId: operator?.id,
+        items: {
+          create: plan.map((item) => ({
+            sourceId: item.sourceId,
+            sourceName: item.sourceName,
+            provider: item.provider,
+            region: item.region,
+            currency: item.currency,
+            status: 'queued'
+          }))
+        }
+      },
+      include: { items: { orderBy: [{ createdAt: 'asc' }] } }
+    });
+
+    this.auditLogsService
+      .create({
+        userId: operator?.id,
+        module: 'apple_official_price',
+        action: 'apple_official_price.batch.create',
+        objectType: 'apple_official_price_check_batch',
+        objectId: batch.id,
+        afterData: this.toJson(this.toCheckBatchResponse(batch)),
+        remark: `Created Apple official price check batch ${batch.id}`
+      })
+      .catch(() => undefined);
+
+    this.publishChanged(
+      'apple.official_price.batch_created',
+      'official_price_check_batch',
+      'created',
+      batch.id,
+      { totalCount: batch.totalCount }
+    );
+    this.scheduleOfficialPriceBatch(batch.id);
+
+    return { ...this.toCheckBatchResponse(batch), reused: false };
+  }
+
+  private async findOverlappingActiveCheckBatch(plan: OfficialPriceBatchPlanItem[]) {
+    const activeBatches = await this.prisma.appleOfficialPriceCheckBatch.findMany({
+      where: { status: { in: ACTIVE_OFFICIAL_PRICE_BATCH_STATUSES } },
+      include: { items: { orderBy: [{ createdAt: 'asc' }] } },
+      orderBy: { createdAt: 'desc' }
+    });
+    const planKeys = new Set(
+      plan.map((item) => `${item.provider}:${item.region}:${item.currency}`)
+    );
+
+    return (
+      activeBatches.find((batch) =>
+        batch.items.some(
+          (item) =>
+            ACTIVE_OFFICIAL_PRICE_BATCH_STATUSES.includes(item.status) &&
+            planKeys.has(`${item.provider}:${item.region}:${item.currency}`)
+        )
+      ) ?? null
+    );
+  }
+
+  private scheduleOfficialPriceBatch(batchId: string) {
+    if (this.runningOfficialPriceBatches.has(batchId)) return;
+    this.runningOfficialPriceBatches.add(batchId);
+
+    setTimeout(() => {
+      void this.runOfficialPriceBatch(batchId).finally(() => {
+        this.runningOfficialPriceBatches.delete(batchId);
+      });
+    }, 0);
+  }
+
+  private async runOfficialPriceBatch(batchId: string) {
+    const batch = await this.prisma.appleOfficialPriceCheckBatch.findUnique({
+      where: { id: batchId },
+      include: { items: { orderBy: [{ createdAt: 'asc' }] } }
+    });
+
+    if (!batch || !ACTIVE_OFFICIAL_PRICE_BATCH_STATUSES.includes(batch.status)) return;
+
+    await this.prisma.appleOfficialPriceCheckBatch.update({
+      where: { id: batch.id },
+      data: {
+        status: 'running',
+        startedAt: batch.startedAt ?? new Date(),
+        message: `官方价格采集中：${batch.completedCount}/${batch.totalCount}`
+      }
+    });
+
+    for (const item of batch.items) {
+      const current = await this.prisma.appleOfficialPriceCheckBatchItem.findUnique({
+        where: { id: item.id }
+      });
+      if (!current || !ACTIVE_OFFICIAL_PRICE_BATCH_STATUSES.includes(current.status)) continue;
+
+      await this.prisma.appleOfficialPriceCheckBatchItem.update({
+        where: { id: item.id },
+        data: {
+          status: 'running',
+          startedAt: new Date(),
+          message: '正在访问官方来源'
+        }
+      });
+      await this.refreshOfficialPriceBatchProgress(batch.id);
+
+      try {
+        const result = await this.checkSource(
+          item.sourceId,
+          {
+            trigger: this.normalizeTrigger(batch.trigger),
+            scanRemovedPlans: batch.scanRemovedPlans
+          },
+          this.getBatchOperator(batch)
+        );
+        const finishedAt = new Date();
+        const status: AutomationTaskStatus =
+          result.status === 'manual_required' ? 'waiting_manual_verify' : 'success';
+
+        await this.prisma.appleOfficialPriceCheckBatchItem.update({
+          where: { id: item.id },
+          data: {
+            status,
+            taskId: result.taskId || null,
+            snapshotCount: result.snapshotCount,
+            reviewCount: result.reviewCount,
+            message: result.message,
+            errorMessage: null,
+            finishedAt
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '官方价格采集失败';
+        await this.prisma.appleOfficialPriceCheckBatchItem.update({
+          where: { id: item.id },
+          data: {
+            status: 'failed',
+            message,
+            errorMessage: message,
+            finishedAt: new Date()
+          }
+        });
+      }
+
+      await this.refreshOfficialPriceBatchProgress(batch.id);
+    }
+
+    await this.refreshOfficialPriceBatchProgress(batch.id, true);
+  }
+
+  private async refreshOfficialPriceBatchProgress(batchId: string, finalize = false) {
+    const items = await this.prisma.appleOfficialPriceCheckBatchItem.findMany({
+      where: { batchId },
+      orderBy: [{ createdAt: 'asc' }]
+    });
+    const totalCount = items.length;
+    const completedCount = items.filter((item) =>
+      FINAL_OFFICIAL_PRICE_BATCH_ITEM_STATUSES.includes(item.status)
+    ).length;
+    const successCount = items.filter((item) => item.status === 'success').length;
+    const failedCount = items.filter((item) => item.status === 'failed').length;
+    const manualRequiredCount = items.filter(
+      (item) => item.status === 'waiting_manual_verify'
+    ).length;
+    const snapshotCount = items.reduce((sum, item) => sum + item.snapshotCount, 0);
+    const reviewCount = items.reduce((sum, item) => sum + item.reviewCount, 0);
+    const pendingReviewCount = await this.prisma.applePriceChangeReview.count({
+      where: { status: 'pending' }
+    });
+    const isFinished = totalCount > 0 && completedCount >= totalCount;
+    const status = this.getBatchStatus({
+      isFinished: finalize || isFinished,
+      failedCount,
+      manualRequiredCount
+    });
+    const message = this.buildBatchProgressMessage({
+      completedCount,
+      failedCount,
+      manualRequiredCount,
+      reviewCount,
+      status,
+      totalCount
+    });
+    const finishedAt = isFinished || finalize ? new Date() : null;
+
+    const batch = await this.prisma.appleOfficialPriceCheckBatch.update({
+      where: { id: batchId },
+      data: {
+        status,
+        totalCount,
+        completedCount,
+        successCount,
+        failedCount,
+        manualRequiredCount,
+        snapshotCount,
+        reviewCount,
+        pendingReviewCount,
+        message,
+        finishedAt: finishedAt ?? undefined
+      },
+      include: { items: { orderBy: [{ createdAt: 'asc' }] } }
+    });
+
+    this.publishChanged(
+      'apple.official_price.batch_progress',
+      'official_price_check_batch',
+      status,
+      batch.id,
+      {
+        completedCount,
+        failedCount,
+        manualRequiredCount,
+        totalCount
+      }
+    );
+
+    return batch;
+  }
+
+  private getBatchStatus(input: {
+    failedCount: number;
+    isFinished: boolean;
+    manualRequiredCount: number;
+  }): AutomationTaskStatus {
+    if (!input.isFinished) return 'running';
+    if (input.failedCount > 0) return 'failed';
+    if (input.manualRequiredCount > 0) return 'waiting_manual_verify';
+    return 'success';
+  }
+
+  private buildBatchProgressMessage(input: {
+    completedCount: number;
+    failedCount: number;
+    manualRequiredCount: number;
+    reviewCount: number;
+    status: AutomationTaskStatus;
+    totalCount: number;
+  }) {
+    if (input.status === 'running') {
+      return `官方价格采集中：${input.completedCount}/${input.totalCount}`;
+    }
+    return `官方价格采集完成：成功 ${input.completedCount - input.failedCount - input.manualRequiredCount}，失败 ${input.failedCount}，人工确认 ${input.manualRequiredCount}，新增待确认 ${input.reviewCount}`;
+  }
+
+  private async findCheckBatchOrThrow(id: string) {
+    const batchId = this.normalizeRequiredUuid(id, 'id');
+    const batch = await this.prisma.appleOfficialPriceCheckBatch.findUnique({
+      where: { id: batchId },
+      include: { items: { orderBy: [{ createdAt: 'asc' }] } }
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Apple official price check batch not found');
+    }
+
+    return batch;
+  }
+
+  private buildOfficialPriceBatchScopeKey(
+    provider: OfficialPriceProviderKey | 'all',
+    trigger: string,
+    scanRemovedPlans: boolean,
+    plan: OfficialPriceBatchPlanItem[]
+  ) {
+    const raw = JSON.stringify({
+      provider,
+      trigger,
+      scanRemovedPlans,
+      plan: plan
+        .map((item) => `${item.provider}:${item.region}:${item.currency}`)
+        .sort((left, right) => left.localeCompare(right))
+    });
+    return `${provider}:${createHash('sha1').update(raw).digest('hex')}`;
+  }
+
+  private getBatchOperator(batch: Pick<AppleOfficialPriceCheckBatch, 'createdByUserId'>) {
+    if (!batch.createdByUserId) return undefined;
+    return {
+      id: batch.createdByUserId,
+      username: 'batch-runner',
+      displayName: '批量采集',
+      roles: [],
+      permissions: []
+    } satisfies AuthenticatedUser;
+  }
+
+  private toCheckBatchResponse(batch: OfficialPriceBatchWithItems) {
+    return {
+      id: batch.id,
+      provider: batch.provider,
+      trigger: batch.trigger,
+      scanRemovedPlans: batch.scanRemovedPlans,
+      status: batch.status,
+      totalCount: batch.totalCount,
+      completedCount: batch.completedCount,
+      successCount: batch.successCount,
+      failedCount: batch.failedCount,
+      manualRequiredCount: batch.manualRequiredCount,
+      snapshotCount: batch.snapshotCount,
+      reviewCount: batch.reviewCount,
+      pendingReviewCount: batch.pendingReviewCount,
+      message: batch.message,
+      errorMessage: batch.errorMessage,
+      startedAt: batch.startedAt,
+      finishedAt: batch.finishedAt,
+      createdAt: batch.createdAt,
+      updatedAt: batch.updatedAt,
+      items: batch.items.map((item) => ({
+        id: item.id,
+        batchId: item.batchId,
+        sourceId: item.sourceId,
+        sourceName: item.sourceName,
+        provider: item.provider,
+        region: item.region,
+        currency: item.currency,
+        status: item.status,
+        taskId: item.taskId,
+        snapshotCount: item.snapshotCount,
+        reviewCount: item.reviewCount,
+        message: item.message,
+        errorMessage: item.errorMessage,
+        startedAt: item.startedAt,
+        finishedAt: item.finishedAt,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt
+      }))
     };
   }
 

@@ -26,6 +26,7 @@ import type {
   AppleWebGatewayStatus,
   AppleOfficialPriceSource,
   AppleOfficialPriceSnapshot,
+  AppleOfficialPriceCheckBatch,
   ApplePriceChangeReview,
   AppleOfficialPriceCollectMethod,
   AppleOfficialPriceSourceStatus,
@@ -1151,6 +1152,10 @@ export interface CheckOfficialPriceProviderResult {
   sourceCount: number;
 }
 
+export type StartOfficialPriceCheckBatchResult = AppleOfficialPriceCheckBatch & {
+  reused?: boolean;
+};
+
 export interface SaveCodeServicePayload {
   name: string;
   faceValue: string;
@@ -2223,6 +2228,26 @@ export const appleOfficialPricesApi = {
   checkAllProviders(payload: CheckOfficialPriceProviderPayload = {}) {
     return request<CheckOfficialPriceProviderResult>(
       http.post('/apple/official-prices/providers/check-all', payload)
+    );
+  },
+  startProviderCheckBatch(provider: string, payload: CheckOfficialPriceProviderPayload = {}) {
+    return request<StartOfficialPriceCheckBatchResult>(
+      http.post(`/apple/official-prices/providers/${provider}/check-batch`, payload)
+    );
+  },
+  startAllProvidersCheckBatch(payload: CheckOfficialPriceProviderPayload = {}) {
+    return request<StartOfficialPriceCheckBatchResult>(
+      http.post('/apple/official-prices/providers/check-all-batch', payload)
+    );
+  },
+  getLatestCheckBatch() {
+    return request<AppleOfficialPriceCheckBatch | null>(
+      http.get('/apple/official-prices/check-batches/latest')
+    );
+  },
+  getCheckBatch(id: string) {
+    return request<AppleOfficialPriceCheckBatch>(
+      http.get(`/apple/official-prices/check-batches/${id}`)
     );
   },
   listSnapshots(params: AppleOfficialPriceSnapshotQuery) {

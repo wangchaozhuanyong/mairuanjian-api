@@ -303,7 +303,7 @@
             待确认 {{ pendingOfficialReviews.length }}
           </StatusChip>
           <StatusChip tone="purple">快照 {{ officialPriceSnapshots.length }}</StatusChip>
-          <AppButton variant="soft" @click="loadOfficialPricePanel">刷新</AppButton>
+          <AppButton variant="soft" @click="() => loadOfficialPricePanel()">刷新</AppButton>
           <AppButton variant="primary" @click="openCreateOfficialSource">新增来源</AppButton>
         </div>
       </div>
@@ -350,20 +350,22 @@
         </div>
         <div class="apple-official-provider-runner__actions">
           <AppButton
-            variant="primary"
+            variant="danger"
+            :disabled="officialBatchIsActive"
             :loading="officialProviderCheckKey === 'all'"
             @click="handleOfficialProviderCheck('all')"
           >
-            采集全部
+            {{ officialBatchIsActive ? '采集中' : '开始采集' }}
           </AppButton>
           <AppButton
             v-for="provider in officialAutoProviderOptions"
             :key="provider.value"
             variant="soft"
+            :disabled="officialBatchIsActive"
             :loading="officialProviderCheckKey === provider.value"
             @click="handleOfficialProviderCheck(provider.value)"
           >
-            {{ provider.shortLabel }}
+            采集 {{ provider.shortLabel }}
           </AppButton>
         </div>
         <span class="apple-official-provider-runner__hint">
@@ -371,43 +373,92 @@
         </span>
       </div>
 
+      <div v-if="officialPriceBatch" class="apple-official-batch-panel">
+        <div class="apple-official-batch-panel__header">
+          <div>
+            <strong>{{ getOfficialBatchTitle(officialPriceBatch) }}</strong>
+            <span>{{ officialPriceBatch.message || '等待采集进度' }}</span>
+          </div>
+          <div class="inline-actions">
+            <StatusChip :tone="getOfficialBatchStatusTone(officialPriceBatch.status)" dot>
+              {{ getOfficialBatchStatusLabel(officialPriceBatch.status) }}
+            </StatusChip>
+            <AppButton size="small" variant="soft" @click="loadLatestOfficialPriceBatch">
+              刷新进度
+            </AppButton>
+          </div>
+        </div>
+        <el-progress
+          :percentage="officialBatchProgressPercent"
+          :status="officialBatchProgressStatus"
+          :stroke-width="10"
+        />
+        <div class="apple-official-batch-panel__stats">
+          <StatusChip tone="blue">总数 {{ officialPriceBatch.totalCount }}</StatusChip>
+          <StatusChip tone="blue">已完成 {{ officialPriceBatch.completedCount }}</StatusChip>
+          <StatusChip tone="green">成功 {{ officialPriceBatch.successCount }}</StatusChip>
+          <StatusChip tone="red">失败 {{ officialPriceBatch.failedCount }}</StatusChip>
+          <StatusChip tone="orange">
+            人工确认 {{ officialPriceBatch.manualRequiredCount }}
+          </StatusChip>
+          <StatusChip tone="purple">待确认变化 {{ officialPriceBatch.reviewCount }}</StatusChip>
+        </div>
+        <div v-if="officialBatchProblemItems.length" class="apple-official-batch-panel__problems">
+          <div
+            v-for="item in officialBatchProblemItems.slice(0, 5)"
+            :key="item.id"
+            class="apple-official-batch-problem"
+          >
+            <StatusChip
+              :tone="item.status === 'failed' ? 'red' : 'orange'"
+              class="apple-official-batch-problem__status"
+            >
+              {{ item.status === 'failed' ? '采集失败' : '人工确认' }}
+            </StatusChip>
+            <span>
+              {{ getProviderLabel(item.provider) }} · {{ getOfficialBatchItemRegionLabel(item) }} ·
+              {{ item.errorMessage || item.message || '暂无失败原因' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <el-tabs v-model="officialPriceTab" class="apple-official-price-tabs">
         <el-tab-pane label="待确认变化" name="reviews">
           <el-table
             v-loading="officialPriceLoading"
-            class="desktop-data-table"
+            class="desktop-data-table official-review-table"
             :data="officialPriceReviews"
             row-key="id"
             empty-text="暂无价格变化"
           >
-            <el-table-column label="变化" min-width="140">
+            <el-table-column label="变化" width="120">
               <template #default="{ row }">
                 <StatusChip :tone="getOfficialReviewTone(row.changeType)" dot>
                   {{ getOfficialReviewTypeLabel(row.changeType) }}
                 </StatusChip>
               </template>
             </el-table-column>
-            <el-table-column label="业务/套餐" min-width="220">
+            <el-table-column label="业务/套餐" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">
-                <strong>{{ row.appleService?.name || getReviewValue(row, 'serviceName') }}</strong>
-                <div class="muted-block">
-                  {{ getProviderLabel(row.source?.provider || getReviewValue(row, 'provider')) }} ·
-                  {{ row.source?.name || '-' }} · {{ getReviewValue(row, 'region') }}
-                </div>
+                <strong class="official-review-main">{{
+                  getOfficialReviewServiceName(row)
+                }}</strong>
               </template>
             </el-table-column>
-            <el-table-column label="系统当前" min-width="170">
+            <el-table-column label="国家/地区" width="170" show-overflow-tooltip>
               <template #default="{ row }">
-                {{ getReviewOldOfficialPrice(row) }}
-                <div class="muted-block">Apple余额价 {{ getReviewOldAppleBalancePrice(row) }}</div>
-                <div class="muted-block">{{ getReviewOldPeriod(row) }}</div>
+                <span class="official-review-country">{{ getOfficialReviewRegionLabel(row) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="官方最新" min-width="170">
+            <el-table-column label="系统当前" min-width="130" show-overflow-tooltip>
               <template #default="{ row }">
-                {{ getReviewNewOfficialPrice(row) }}
-                <div class="muted-block">Apple余额价 {{ getReviewNewAppleBalancePrice(row) }}</div>
-                <div class="muted-block">{{ getReviewNewPeriod(row) }}</div>
+                <span class="official-review-price">{{ getReviewOldOfficialPrice(row) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="官方最新" min-width="130" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="official-review-price">{{ getReviewNewOfficialPrice(row) }}</span>
               </template>
             </el-table-column>
             <el-table-column label="状态" width="100">
@@ -417,11 +468,47 @@
                 </StatusChip>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="170" fixed="right">
+            <el-table-column label="操作" width="220" fixed="right">
               <template #default="{ row }">
-                <div class="table-action-group table-action-group--wrap">
+                <div class="table-action-group official-review-actions">
+                  <el-popover
+                    placement="left"
+                    trigger="hover"
+                    :width="380"
+                    popper-class="official-review-detail-popover"
+                  >
+                    <template #reference>
+                      <AppButton size="small" variant="soft">详情</AppButton>
+                    </template>
+                    <div class="official-review-detail">
+                      <strong>{{ getOfficialReviewServiceName(row) }}</strong>
+                      <dl class="official-review-detail-list">
+                        <div>
+                          <dt>来源</dt>
+                          <dd>{{ getOfficialReviewSourceSummary(row) }}</dd>
+                        </div>
+                        <div>
+                          <dt>国家/地区</dt>
+                          <dd>{{ getOfficialReviewRegionLabel(row) }}</dd>
+                        </div>
+                        <div>
+                          <dt>系统当前</dt>
+                          <dd>{{ getOfficialReviewOldSummary(row) }}</dd>
+                        </div>
+                        <div>
+                          <dt>官方最新</dt>
+                          <dd>{{ getOfficialReviewNewSummary(row) }}</dd>
+                        </div>
+                        <div>
+                          <dt>采集时间</dt>
+                          <dd>{{ formatDate(row.snapshot?.collectedAt) }}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </el-popover>
                   <AppButton
                     v-if="row.status === 'pending'"
+                    size="small"
                     variant="primary"
                     :loading="officialReviewActionId === row.id"
                     @click="approveOfficialReview(row)"
@@ -430,6 +517,7 @@
                   </AppButton>
                   <AppButton
                     v-if="row.status === 'pending'"
+                    size="small"
                     variant="ghost"
                     :loading="officialReviewActionId === row.id"
                     @click="ignoreOfficialReview(row)"
@@ -941,7 +1029,7 @@
       <template #footer>
         <AppButton @click="officialCheckDialogVisible = false">取消</AppButton>
         <AppButton variant="primary" :loading="checkingOfficialPrice" @click="checkOfficialPrice">
-          生成对比
+          生成价格对比
         </AppButton>
       </template>
     </el-dialog>
@@ -981,6 +1069,7 @@ import {
 import type {
   AppleService,
   AppleBalancePriceRuleType,
+  AppleOfficialPriceCheckBatch,
   AppleOfficialPriceSource,
   AppleOfficialPriceSnapshot,
   ApplePriceChangeReview,
@@ -1000,6 +1089,7 @@ import {
   getAppleServiceLockRuleLabel as getConfiguredLockRuleLabel,
   getAppleServicePeriodTypeLabel
 } from '@/utils/appleServiceOptions';
+import { confirmAction } from '@/utils/confirmAction';
 import { createSmartQueryKey, invalidateSmartQueries, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'apple_services';
@@ -1056,6 +1146,7 @@ const fallbackOfficialAutoRegionOptions: AppleOfficialPriceProviderCatalogRegion
   { label: '巴西 BRL', value: 'BR:BRL', region: 'BR', currency: 'BRL' },
   { label: '墨西哥 MXN', value: 'MX:MXN', region: 'MX', currency: 'MXN' }
 ].map((region) => ({ ...region, sourceUrl: '' }));
+const defaultOfficialAutoRegions = new Set(['US', 'MY', 'SG', 'HK']);
 const balanceRuleOptions: Array<{ label: string; value: AppleBalancePriceRuleType }> = [
   { label: '继承全局规则', value: 'inherit' },
   { label: '按百分比', value: 'percent' },
@@ -1082,6 +1173,7 @@ const selectedServices = ref<AppleService[]>([]);
 const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
 const officialPriceReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
+const officialPriceBatch = ref<AppleOfficialPriceCheckBatch | null>(null);
 const officialProviderCatalogProviders = ref(fallbackOfficialAutoProviderOptions);
 const officialProviderCatalogRegions = ref(fallbackOfficialAutoRegionOptions);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
@@ -1100,8 +1192,11 @@ const serviceAdvancedPanels = ref<string[]>([]);
 const officialPriceTab = ref('reviews');
 const officialReviewActionId = ref('');
 const selectedOfficialAutoRegions = ref<string[]>(
-  fallbackOfficialAutoRegionOptions.map((region) => region.value)
+  fallbackOfficialAutoRegionOptions
+    .filter((region) => defaultOfficialAutoRegions.has(region.region))
+    .map((region) => region.value)
 );
+const officialBatchPollingTimer = ref<ReturnType<typeof setInterval> | null>(null);
 
 const globalBalanceRuleForm = reactive({
   ruleType: 'percent' as Extract<AppleBalancePriceRuleType, 'percent' | 'fixed_add'>,
@@ -1223,6 +1318,31 @@ const pendingOfficialReviews = computed(() =>
 );
 const officialAutoProviderOptions = computed(() => officialProviderCatalogProviders.value);
 const officialAutoRegionOptions = computed(() => officialProviderCatalogRegions.value);
+const officialBatchIsActive = computed(
+  () =>
+    officialPriceBatch.value?.status === 'queued' || officialPriceBatch.value?.status === 'running'
+);
+const officialBatchProgressPercent = computed(() => {
+  const batch = officialPriceBatch.value;
+  if (!batch?.totalCount) return 0;
+  return Math.min(100, Math.round((batch.completedCount / batch.totalCount) * 100));
+});
+const officialBatchProblemItems = computed(() =>
+  (officialPriceBatch.value?.items ?? []).filter(
+    (item) => item.status === 'failed' || item.status === 'waiting_manual_verify'
+  )
+);
+const officialBatchProgressStatus = computed(() => {
+  if (!officialPriceBatch.value) return undefined;
+  if (officialPriceBatch.value.status === 'failed') return 'exception';
+  if (
+    officialPriceBatch.value.status === 'success' ||
+    officialPriceBatch.value.status === 'waiting_manual_verify'
+  ) {
+    return 'success';
+  }
+  return undefined;
+});
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -1309,6 +1429,60 @@ function getBalanceRuleLabel(service: AppleService) {
     return `官网价 +${service.appleBalancePriceRuleValue || '0'}`;
   }
   return `官网价 x ${service.appleBalancePriceRuleValue || '1'}`;
+}
+
+function getGlobalBalanceRuleTypeLabel(ruleType: typeof globalBalanceRuleForm.ruleType) {
+  return balanceRuleOptions.find((option) => option.value === ruleType)?.label ?? ruleType;
+}
+
+function getOfficialSourceRegionSummary(source: AppleOfficialPriceSource) {
+  const option = officialAutoRegionOptions.value.find(
+    (item) => item.region === source.region && item.currency === source.currency
+  );
+  const fallback = fallbackOfficialAutoRegionOptions.find(
+    (item) => item.region === source.region && item.currency === source.currency
+  );
+  return `${option?.label || fallback?.label || source.region} / ${source.currency}`;
+}
+
+function getOfficialBatchTitle(batch: AppleOfficialPriceCheckBatch) {
+  return batch.provider === 'all'
+    ? '官方价格批量采集'
+    : `${getProviderLabel(batch.provider)} 官方价格采集`;
+}
+
+function getOfficialBatchStatusLabel(status: AppleOfficialPriceCheckBatch['status']) {
+  return (
+    {
+      queued: '排队中',
+      running: '采集中',
+      waiting_manual_verify: '待人工确认',
+      success: '已完成',
+      failed: '部分失败',
+      skipped: '已跳过',
+      cancelled: '已取消',
+      pending: '待开始',
+      need_review: '待复核'
+    }[status] ?? status
+  );
+}
+
+function getOfficialBatchStatusTone(status: AppleOfficialPriceCheckBatch['status']) {
+  if (status === 'success') return 'green';
+  if (status === 'failed') return 'red';
+  if (status === 'waiting_manual_verify') return 'orange';
+  if (status === 'running' || status === 'queued') return 'blue';
+  return 'neutral';
+}
+
+function getOfficialBatchItemRegionLabel(item: AppleOfficialPriceCheckBatch['items'][number]) {
+  const option = officialAutoRegionOptions.value.find(
+    (region) => region.region === item.region && region.currency === item.currency
+  );
+  const fallback = fallbackOfficialAutoRegionOptions.find(
+    (region) => region.region === item.region && region.currency === item.currency
+  );
+  return `${option?.label || fallback?.label || item.region} / ${item.currency}`;
 }
 
 function getStatusLabel(status: AppleService['status']) {
@@ -1569,6 +1743,7 @@ async function initializePage() {
     loadServices({ force: false }),
     loadOfficialPricePanel()
   ]);
+  await loadLatestOfficialPriceBatch();
 }
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
@@ -1696,7 +1871,7 @@ function getCollectMethodLabel(method: AppleOfficialPriceSource['collectMethod']
 
 function getOfficialSourceCheckLabel(source?: AppleOfficialPriceSource) {
   if (!source) return '录入本次价格';
-  return source.collectMethod === 'manual' ? '录入价格' : '立即采集';
+  return source.collectMethod === 'manual' ? '录入价格' : '采集该来源';
 }
 
 function getOfficialReviewTypeLabel(type: ApplePriceChangeReview['changeType']) {
@@ -1722,15 +1897,93 @@ function getOfficialReviewTone(type: ApplePriceChangeReview['changeType']) {
   return 'blue';
 }
 
+function getOfficialReviewServiceName(review: ApplePriceChangeReview) {
+  return (
+    review.appleService?.name ||
+    review.snapshot?.serviceName ||
+    getReviewRecordValue(review.newValue, 'serviceName') ||
+    '-'
+  );
+}
+
+function getOfficialReviewProviderValue(review: ApplePriceChangeReview) {
+  return (
+    review.source?.provider ||
+    review.snapshot?.provider ||
+    getReviewRecordValue(review.newValue, 'provider')
+  );
+}
+
+function getOfficialReviewSourceSummary(review: ApplePriceChangeReview) {
+  const provider = getProviderLabel(getOfficialReviewProviderValue(review));
+  const source = review.source?.name || '-';
+  return `${provider} · ${source}`;
+}
+
+function getOfficialReviewRegionCode(review: ApplePriceChangeReview) {
+  return normalizeOfficialReviewCode(
+    review.source?.region ||
+      review.snapshot?.region ||
+      getReviewRecordValue(review.newValue, 'region')
+  );
+}
+
+function getOfficialReviewCurrencyCode(review: ApplePriceChangeReview) {
+  return normalizeOfficialReviewCode(
+    review.source?.currency ||
+      review.snapshot?.currency ||
+      getReviewRecordValue(review.newValue, 'currency')
+  );
+}
+
+function getOfficialReviewRegionLabel(review: ApplePriceChangeReview) {
+  const region = getOfficialReviewRegionCode(review);
+  const currency = getOfficialReviewCurrencyCode(review);
+  if (!region && !currency) return '-';
+
+  const option = officialAutoRegionOptions.value.find(
+    (item) => item.region === region && item.currency === currency
+  );
+  const fallback = fallbackOfficialAutoRegionOptions.find(
+    (item) => item.region === region && item.currency === currency
+  );
+  const matchedLabel = option?.label || fallback?.label;
+  const countryName =
+    matchedLabel && currency && matchedLabel.endsWith(` ${currency}`)
+      ? matchedLabel.slice(0, -currency.length - 1)
+      : matchedLabel || region;
+
+  return currency ? `${countryName} · ${region}/${currency}` : countryName;
+}
+
+function getOfficialReviewOldSummary(review: ApplePriceChangeReview) {
+  return [
+    `官网价 ${getReviewOldOfficialPrice(review)}`,
+    `Apple余额价 ${getReviewOldAppleBalancePrice(review)}`,
+    `周期 ${getReviewOldPeriod(review)}`
+  ].join(' · ');
+}
+
+function getOfficialReviewNewSummary(review: ApplePriceChangeReview) {
+  return [
+    `官网价 ${getReviewNewOfficialPrice(review)}`,
+    `Apple余额价 ${getReviewNewAppleBalancePrice(review)}`,
+    `周期 ${getReviewNewPeriod(review)}`
+  ].join(' · ');
+}
+
+function normalizeOfficialReviewCode(value?: string | null) {
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase();
+  return normalized === '-' ? '' : normalized;
+}
+
 function getReviewRecordValue(record: unknown, key: string) {
   if (!record || typeof record !== 'object') return '';
   const value = (record as Record<string, unknown>)[key];
   if (value === null || value === undefined) return '';
   return String(value);
-}
-
-function getReviewValue(review: ApplePriceChangeReview, key: string) {
-  return getReviewRecordValue(review.newValue, key) || '-';
 }
 
 function getReviewOldOfficialPrice(review: ApplePriceChangeReview) {
@@ -1801,6 +2054,22 @@ async function saveGlobalBalanceRule() {
     return;
   }
 
+  const confirmed = await confirmAction({
+    title: '确认保存全局余额价规则？',
+    actionName: '保存 Apple 余额价全局规则',
+    description: '保存后会影响继承全局规则的 Apple ID 业务价格计算。',
+    impact: [
+      `规则类型：${getGlobalBalanceRuleTypeLabel(globalBalanceRuleForm.ruleType)}`,
+      `规则数值：${globalBalanceRuleForm.ruleValue}`,
+      '保存后会刷新 Apple ID 业务设置和下单依赖数据'
+    ],
+    riskNotes: '规则填写错误会影响后续报价和订单利润判断。',
+    risk: 'strong',
+    confirmButtonText: '确认保存规则',
+    cancelButtonText: '返回修改'
+  });
+  if (!confirmed) return;
+
   savingBalanceRule.value = true;
   try {
     const rule = await appleServicesApi.updateBalancePriceRule({
@@ -1846,7 +2115,10 @@ async function loadOfficialProviderCatalog() {
 function syncOfficialAutoRegionSelection(forceAll = false) {
   const availableValues = officialProviderCatalogRegions.value.map((region) => region.value);
   if (forceAll) {
-    selectedOfficialAutoRegions.value = availableValues;
+    const defaultValues = officialProviderCatalogRegions.value
+      .filter((region) => defaultOfficialAutoRegions.has(region.region))
+      .map((region) => region.value);
+    selectedOfficialAutoRegions.value = defaultValues.length ? defaultValues : availableValues;
     return;
   }
 
@@ -1857,8 +2129,10 @@ function syncOfficialAutoRegionSelection(forceAll = false) {
   selectedOfficialAutoRegions.value = currentSelected.length ? currentSelected : availableValues;
 }
 
-async function loadOfficialPricePanel() {
-  officialPriceLoading.value = true;
+async function loadOfficialPricePanel(options: { silent?: boolean } = {}) {
+  if (!options.silent) {
+    officialPriceLoading.value = true;
+  }
   try {
     const [sources, reviews, snapshots] = await Promise.all([
       appleOfficialPricesApi.listSources({
@@ -1889,8 +2163,75 @@ async function loadOfficialPricePanel() {
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载官方价格巡检失败');
   } finally {
-    officialPriceLoading.value = false;
+    if (!options.silent) {
+      officialPriceLoading.value = false;
+    }
   }
+}
+
+async function loadLatestOfficialPriceBatch() {
+  try {
+    const previousStatus = officialPriceBatch.value?.status;
+    const batch = await appleOfficialPricesApi.getLatestCheckBatch();
+    officialPriceBatch.value = batch;
+
+    if (batch && (batch.status === 'queued' || batch.status === 'running')) {
+      startOfficialBatchPolling();
+      return;
+    }
+
+    stopOfficialBatchPolling();
+    if (
+      batch &&
+      previousStatus &&
+      (previousStatus === 'queued' || previousStatus === 'running') &&
+      batch.status !== previousStatus
+    ) {
+      await loadOfficialPricePanel({ silent: true });
+    }
+  } catch (error) {
+    stopOfficialBatchPolling();
+    ElMessage.error(error instanceof Error ? error.message : '加载采集进度失败');
+  }
+}
+
+async function loadOfficialPriceBatch(batchId: string) {
+  try {
+    const previousStatus = officialPriceBatch.value?.status;
+    const batch = await appleOfficialPricesApi.getCheckBatch(batchId);
+    officialPriceBatch.value = batch;
+
+    if (batch.status === 'queued' || batch.status === 'running') {
+      startOfficialBatchPolling();
+      return;
+    }
+
+    stopOfficialBatchPolling();
+    if (previousStatus === 'queued' || previousStatus === 'running') {
+      await loadOfficialPricePanel({ silent: true });
+    }
+  } catch (error) {
+    stopOfficialBatchPolling();
+    ElMessage.error(error instanceof Error ? error.message : '刷新采集进度失败');
+  }
+}
+
+function startOfficialBatchPolling() {
+  if (officialBatchPollingTimer.value) return;
+  officialBatchPollingTimer.value = setInterval(() => {
+    const batchId = officialPriceBatch.value?.id;
+    if (batchId) {
+      void loadOfficialPriceBatch(batchId);
+    } else {
+      void loadLatestOfficialPriceBatch();
+    }
+  }, 2500);
+}
+
+function stopOfficialBatchPolling() {
+  if (!officialBatchPollingTimer.value) return;
+  clearInterval(officialBatchPollingTimer.value);
+  officialBatchPollingTimer.value = null;
 }
 
 function resetOfficialSourceForm() {
@@ -1970,18 +2311,27 @@ async function saveOfficialSource() {
 
 async function removeOfficialSource(source: AppleOfficialPriceSource) {
   try {
-    await ElMessageBox.confirm(`确认删除官方来源「${source.name}」？`, '删除官方来源', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
+    const confirmed = await confirmAction({
+      title: '确认删除官方来源？',
+      actionName: '删除官方来源',
+      description: `将删除官方来源「${source.name}」。`,
+      impact: [
+        `供应商：${getProviderLabel(source.provider)}`,
+        `地区/币种：${getOfficialSourceRegionSummary(source)}`,
+        '删除后该来源不再参与后续官方价格采集'
+      ],
+      riskNotes: '历史采集记录不会直接覆盖业务价格，但后续自动采集会少一个来源。',
+      irreversible: true,
+      risk: 'strong',
+      confirmButtonText: '确认删除来源'
     });
+    if (!confirmed) return;
+
     await appleOfficialPricesApi.removeSource(source.id);
     ElMessage.success('官方来源已删除');
     await loadOfficialPricePanel();
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error instanceof Error ? error.message : '删除官方来源失败');
-    }
+    ElMessage.error(error instanceof Error ? error.message : '删除官方来源失败');
   }
 }
 
@@ -2008,6 +2358,23 @@ async function handleOfficialSourceCheck(source?: AppleOfficialPriceSource) {
     return;
   }
 
+  const confirmed = await confirmAction({
+    title: '确认采集该官方来源？',
+    actionName: '采集官方价格来源',
+    description: '系统会访问该官方来源并生成待确认变化，不会直接覆盖业务价格。',
+    impact: [
+      `来源：${source.name}`,
+      `供应商：${getProviderLabel(source.provider)}`,
+      `地区/币种：${getOfficialSourceRegionSummary(source)}`
+    ],
+    expectedCount: '1 个官方来源',
+    riskNotes: '官网可能访问失败、返回空结果或转人工确认。',
+    risk: 'normal',
+    confirmButtonText: '确认采集该来源',
+    cancelButtonText: '取消采集'
+  });
+  if (!confirmed) return;
+
   officialSourceCheckId.value = source.id;
   try {
     const result = await appleOfficialPricesApi.checkSource(source.id, {
@@ -2030,42 +2397,100 @@ async function handleOfficialSourceCheck(source?: AppleOfficialPriceSource) {
 }
 
 async function handleOfficialProviderCheck(provider: string) {
-  officialProviderCheckKey.value = provider;
+  if (officialBatchIsActive.value) {
+    ElMessage.warning('已有官方价格采集批次正在执行，请先等待完成');
+    return;
+  }
+
   const regions = buildOfficialProviderRegionsPayload();
+  const confirmed = await confirmOfficialProviderCheck(provider);
+  if (!confirmed) return;
+
+  officialProviderCheckKey.value = provider;
   try {
-    const result =
+    const batch =
       provider === 'all'
-        ? await appleOfficialPricesApi.checkAllProviders({
+        ? await appleOfficialPricesApi.startAllProvidersCheckBatch({
             trigger: 'manual',
             scanRemovedPlans: false,
             regions
           })
-        : await appleOfficialPricesApi.checkProvider(provider, {
+        : await appleOfficialPricesApi.startProviderCheckBatch(provider, {
             trigger: 'manual',
             scanRemovedPlans: false,
             regions
           });
-    if (result.failedCount > 0) {
-      ElMessage.warning(result.message || '自动采集完成，部分来源失败');
+    officialPriceBatch.value = batch;
+    startOfficialBatchPolling();
+    if (batch.reused) {
+      ElMessage.warning(batch.message || '已有相同供应商/地区的采集批次正在执行');
     } else {
-      ElMessage.success(result.message || '自动采集完成');
+      ElMessage.success(batch.message || '官方价格采集批次已创建');
     }
-    officialPriceTab.value = result.reviewCount > 0 ? 'reviews' : 'snapshots';
-    await loadOfficialPricePanel();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '自动采集官方价格失败');
+    ElMessage.error(error instanceof Error ? error.message : '创建官方价格采集批次失败');
   } finally {
     officialProviderCheckKey.value = '';
   }
 }
 
 function buildOfficialProviderRegionsPayload() {
-  const selected = officialAutoRegionOptions.value.filter((region) =>
-    selectedOfficialAutoRegions.value.includes(region.value)
-  );
+  const selected = getSelectedOfficialAutoRegionOptions();
   return selected.length
     ? selected.map((region) => ({ region: region.region, currency: region.currency }))
     : undefined;
+}
+
+function getSelectedOfficialAutoRegionOptions() {
+  return officialAutoRegionOptions.value.filter((region) =>
+    selectedOfficialAutoRegions.value.includes(region.value)
+  );
+}
+
+function getOfficialProviderConfirmLabel(provider: string) {
+  if (provider === 'all') {
+    return officialAutoProviderOptions.value.map((item) => item.shortLabel).join('、');
+  }
+
+  const matched = officialAutoProviderOptions.value.find((item) => item.value === provider);
+  return matched?.shortLabel || matched?.label || provider;
+}
+
+function getOfficialProviderCount(provider: string) {
+  return provider === 'all' ? officialAutoProviderOptions.value.length : 1;
+}
+
+function getOfficialProviderRegionCount() {
+  const selected = getSelectedOfficialAutoRegionOptions();
+  return selected.length || officialAutoRegionOptions.value.length;
+}
+
+function getOfficialProviderTaskCount(provider: string) {
+  return getOfficialProviderCount(provider) * getOfficialProviderRegionCount();
+}
+
+function confirmOfficialProviderCheck(provider: string) {
+  const providerCount = getOfficialProviderCount(provider);
+  const regionCount = getOfficialProviderRegionCount();
+  const taskCount = getOfficialProviderTaskCount(provider);
+  const providerLabel = getOfficialProviderConfirmLabel(provider);
+  const isBatch = provider === 'all' || taskCount > 1;
+
+  return confirmAction({
+    title: isBatch ? '确认开始批量采集？' : '确认开始采集？',
+    actionName: isBatch ? '批量采集官方价格' : '采集官方价格',
+    description: '系统会创建或复用官方来源，采集结果只进入待确认，不会直接覆盖业务价格。',
+    impact: [
+      `供应商：${providerLabel}`,
+      `地区数量：${regionCount} 个`,
+      '结果进入待确认变化，需要再次确认后才会同步业务价格'
+    ],
+    expectedCount: `${providerCount} 个供应商 × ${regionCount} 个地区，共 ${taskCount} 个任务`,
+    riskNotes: '可能耗时较长，部分官网可能返回失败、403 或转人工确认。',
+    risk: isBatch ? 'strong' : 'normal',
+    confirmButtonText: isBatch ? '确认开始批量采集' : '确认开始采集',
+    cancelButtonText: '取消采集'
+  });
 }
 
 function syncOfficialCheckService() {
@@ -2092,6 +2517,29 @@ async function checkOfficialPrice() {
     ElMessage.warning('请填写官方价格');
     return;
   }
+
+  const selectedSource = officialPriceSources.value.find(
+    (source) => source.id === officialCheckForm.sourceId
+  );
+  const confirmed = await confirmAction({
+    title: '确认生成官方价格对比？',
+    actionName: '生成官方价格对比',
+    description: '系统会把本次录入价格生成待确认变化，不会直接覆盖业务价格。',
+    impact: [
+      `官方来源：${selectedSource?.name ?? '手动选择来源'}`,
+      `套餐：${officialCheckForm.serviceName}`,
+      `地区/币种：${officialCheckForm.region || '-'} / ${officialCheckForm.currency || '-'}`,
+      officialCheckForm.scanRemovedPlans
+        ? '会同时检查同币种业务里的疑似下架套餐'
+        : '不会检查疑似下架套餐'
+    ],
+    expectedCount: '1 条手工官方价格',
+    riskNotes: '录入错误会生成错误的待确认变化，仍需再次确认后才会同步业务价格。',
+    risk: officialCheckForm.scanRemovedPlans ? 'strong' : 'normal',
+    confirmButtonText: '确认生成价格对比',
+    cancelButtonText: '返回修改'
+  });
+  if (!confirmed) return;
 
   checkingOfficialPrice.value = true;
   try {
@@ -2125,24 +2573,32 @@ async function checkOfficialPrice() {
 
 async function approveOfficialReview(review: ApplePriceChangeReview) {
   try {
-    await ElMessageBox.confirm(
-      '确认后会同步 Apple ID 业务设置里的官网价、币种和周期，并按规则重算 Apple 余额价。新套餐会先创建为暂停状态。',
-      '确认官方价格变化',
-      {
-        type: 'warning',
-        confirmButtonText: '确认同步',
-        cancelButtonText: '返回'
-      }
-    );
+    const confirmed = await confirmAction({
+      title: '确认同步官方价格变化？',
+      actionName: '同步官方价格到业务设置',
+      description:
+        '确认后会同步 Apple ID 业务设置里的官网价、币种和周期，并按规则重算 Apple 余额价。',
+      impact: [
+        `业务/套餐：${getOfficialReviewServiceName(review)}`,
+        `国家/地区：${getOfficialReviewRegionLabel(review)}`,
+        `系统当前：${getOfficialReviewOldSummary(review)}`,
+        `官方最新：${getOfficialReviewNewSummary(review)}`,
+        '新套餐会先创建为暂停状态'
+      ],
+      riskNotes: '该操作会影响 Apple ID 业务价格和后续下单选择。',
+      risk: 'strong',
+      confirmButtonText: '确认同步价格',
+      cancelButtonText: '返回'
+    });
+    if (!confirmed) return;
+
     officialReviewActionId.value = review.id;
     await appleOfficialPricesApi.approveReview(review.id);
     ElMessage.success('已同步到 Apple ID 业务设置');
     invalidateAppleServiceConsumers();
     await Promise.all([loadOfficialPricePanel(), loadServices({ force: true, dedupeMs: 0 })]);
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error instanceof Error ? error.message : '确认官方价格变化失败');
-    }
+    ElMessage.error(error instanceof Error ? error.message : '确认官方价格变化失败');
   } finally {
     officialReviewActionId.value = '';
   }
@@ -2288,6 +2744,7 @@ onMounted(initializePage);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();
+  stopOfficialBatchPolling();
 });
 </script>
 
@@ -2389,6 +2846,58 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.apple-official-batch-panel {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 14px;
+  padding: 14px;
+  border: 1px solid #dbe7f5;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.apple-official-batch-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.apple-official-batch-panel__header strong,
+.apple-official-batch-panel__header span {
+  display: block;
+}
+
+.apple-official-batch-panel__header span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.apple-official-batch-panel__stats,
+.apple-official-batch-panel__problems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.apple-official-batch-problem {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  font-size: 13px;
+}
+
+.apple-official-batch-problem__status {
+  flex: 0 0 auto;
+}
+
 .apple-official-price-tabs {
   margin-top: 10px;
 }
@@ -2398,6 +2907,64 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.official-review-table :deep(.el-table__cell .cell) {
+  white-space: nowrap;
+}
+
+.official-review-main,
+.official-review-country,
+.official-review-price {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.official-review-country {
+  color: #334155;
+  font-weight: 700;
+}
+
+.official-review-actions {
+  flex-wrap: nowrap;
+}
+
+.official-review-detail {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.official-review-detail > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.official-review-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.official-review-detail-list div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.official-review-detail-list dt {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.official-review-detail-list dd {
+  margin: 0;
+  color: #1e293b;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
@@ -2422,6 +2989,10 @@ onBeforeUnmount(() => {
 
   .apple-official-provider-runner__actions {
     justify-content: flex-start;
+  }
+
+  .apple-official-batch-panel__header {
+    flex-direction: column;
   }
 
   .apple-balance-rule-bar__controls,
