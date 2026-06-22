@@ -36,9 +36,11 @@ export class AppleOfficialPricePollingWorker implements OnModuleInit, OnModuleDe
     if (this.running) return;
     this.running = true;
     try {
-      const result = await this.officialPricesService.runDueSourceChecks('worker');
+      const result = await this.officialPricesService.runDueSourceChecks('worker', {
+        bootstrapProviders: process.env.APPLE_OFFICIAL_PRICE_POLL_BOOTSTRAP_PROVIDERS === 'true'
+      });
       this.logger.log(
-        `Apple official price polling finished, scanned=${result.scannedCount}, due=${result.dueCount}`
+        `Apple official price polling finished, bootstrapped=${result.bootstrappedSourceCount}, scanned=${result.scannedCount}, due=${result.dueCount}`
       );
     } catch (error) {
       this.logger.error(

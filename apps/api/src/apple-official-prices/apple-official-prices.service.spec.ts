@@ -4,6 +4,10 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { AppleServicesService } from '../apple-services/apple-services.service';
 import { AppleOfficialPricesService } from './apple-official-prices.service';
+import {
+  OFFICIAL_PRICE_PROVIDER_KEYS,
+  OFFICIAL_PRICE_PROVIDER_PROFILES
+} from './official-price-provider-catalog';
 
 describe('AppleOfficialPricesService', () => {
   const now = new Date('2026-06-21T12:00:00.000Z');
@@ -244,6 +248,7 @@ describe('AppleOfficialPricesService', () => {
       }),
       appleOfficialPriceSource: {
         findFirst: jest.fn().mockResolvedValue(currentSource),
+        findMany: jest.fn().mockResolvedValue([currentSource]),
         create: jest.fn().mockResolvedValue(currentSource),
         update: jest.fn().mockResolvedValue({ ...currentSource, lastCheckedAt: now })
       },
@@ -303,6 +308,17 @@ describe('AppleOfficialPricesService', () => {
         get: jest.fn().mockReturnValue(contentType)
       },
       text: jest.fn().mockResolvedValue(body)
+    } as unknown as Response);
+  }
+
+  function mockFetchBlockedResponse(status = 403) {
+    return jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: false,
+      status,
+      headers: {
+        get: jest.fn().mockReturnValue('text/html')
+      },
+      text: jest.fn().mockResolvedValue('')
     } as unknown as Response);
   }
 
@@ -411,6 +427,259 @@ describe('AppleOfficialPricesService', () => {
         data: expect.objectContaining({
           serviceName: appleService.name,
           officialPrice: '22'
+        })
+      })
+    );
+  });
+
+  it('runs the built-in ChatGPT provider collector without manual price items', async () => {
+    const { service, tx } = createService({
+      source: {
+        name: 'ChatGPT 官方价格 US/USD',
+        provider: 'chatgpt',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://openai.com/chatgpt/pricing/'
+      },
+      appleService: {
+        name: 'ChatGPT Plus 1个月'
+      }
+    });
+    mockFetchResponse(
+      '<html><body>ChatGPT Go $8 / month ChatGPT Plus $22 / month ChatGPT Pro $200 / month</body></html>',
+      'text/html'
+    );
+
+    const result = await service.checkProvider('chatgpt', {}, operator);
+
+    expect(result.provider).toBe('chatgpt');
+    expect(result.snapshotCount).toBeGreaterThan(0);
+    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          planCode: 'chatgpt_plus_monthly',
+          serviceName: 'ChatGPT Plus 1个月',
+          officialPrice: '22'
+        })
+      })
+    );
+  });
+
+  it('falls back to the official provider catalog when the public page blocks server fetch', async () => {
+    const { service, tx } = createService({
+      source: {
+        name: 'ChatGPT 官方价格 US/USD',
+        provider: 'chatgpt',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://openai.com/chatgpt/pricing/'
+      },
+      appleService: {
+        name: 'ChatGPT Plus 1个月'
+      }
+    });
+    mockFetchBlockedResponse();
+
+    const result = await service.checkProvider('chatgpt', {}, operator);
+
+    expect(result.provider).toBe('chatgpt');
+    expect(result.failedCount).toBe(0);
+    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          planCode: 'chatgpt_plus_monthly',
+          serviceName: 'ChatGPT Plus 1个月',
+          officialPrice: '20',
+          rawPayload: expect.objectContaining({
+            parser: 'provider_catalog_fallback'
+          })
+        })
+      })
+    );
+  });
+
+  it('creates and checks explicit provider regions instead of only the default region', async () => {
+    const { service, prisma } = createService({
+      source: {
+        name: 'Gemini 官方价格 MY/MYR',
+        provider: 'gemini',
+        region: 'MY',
+        currency: 'MYR',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://one.google.com/intl/en_my/about/google-ai-plans/'
+      }
+    });
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('blocked'));
+
+    const result = await service.checkProvider(
+      'gemini',
+      {
+        regions: [
+          { region: 'MY', currency: 'MYR' },
+          { region: 'MY', currency: 'MYR' },
+          { region: 'SG', currency: 'SGD' }
+        ]
+      },
+      operator
+    );
+
+    expect(result.sourceCount).toBe(2);
+    expect(prisma.appleOfficialPriceSource.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          provider: 'gemini',
+          region: 'MY',
+          currency: 'MYR'
+        })
+      })
+    );
+    expect(prisma.appleOfficialPriceSource.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          provider: 'gemini',
+          region: 'SG',
+          currency: 'SGD'
+        })
+      })
+    );
+  });
+
+  it('bootstraps default provider sources for the background polling worker', async () => {
+    const { service, prisma } = createService();
+    const sourceModel = prisma.appleOfficialPriceSource as unknown as {
+      create: jest.Mock;
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+    };
+    sourceModel.findFirst.mockResolvedValue(null);
+    sourceModel.findMany.mockResolvedValue([]);
+
+    const result = await service.runDueSourceChecks('worker', { bootstrapProviders: true });
+    const expectedSourceCount = OFFICIAL_PRICE_PROVIDER_KEYS.reduce(
+      (sum, provider) => sum + OFFICIAL_PRICE_PROVIDER_PROFILES[provider].defaultRegions.length,
+      0
+    );
+
+    expect(result.bootstrappedSourceCount).toBe(expectedSourceCount);
+    expect(result.scannedCount).toBe(0);
+    expect(sourceModel.create).toHaveBeenCalledTimes(expectedSourceCount);
+    expect(sourceModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          provider: 'chatgpt',
+          priceSourceType: 'official_web',
+          region: 'US',
+          currency: 'USD',
+          collectMethod: 'webpage',
+          status: 'enabled'
+        })
+      })
+    );
+  });
+
+  it('returns the provider catalog used by the automated collection UI', () => {
+    const { service } = createService();
+
+    const catalog = service.listProviderCatalog();
+
+    expect(catalog.providers.map((provider) => provider.value)).toEqual([
+      'chatgpt',
+      'gemini',
+      'claude'
+    ]);
+    expect(catalog.regions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '美国 USD',
+          region: 'US',
+          currency: 'USD',
+          value: 'US:USD'
+        }),
+        expect.objectContaining({
+          label: '马来西亚 MYR',
+          region: 'MY',
+          currency: 'MYR',
+          value: 'MY:MYR'
+        })
+      ])
+    );
+  });
+
+  it('parses localized currency prices from provider pages', async () => {
+    const { service, tx } = createService({
+      source: {
+        name: 'Gemini 官方价格 MY/MYR',
+        provider: 'gemini',
+        region: 'MY',
+        currency: 'MYR',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://one.google.com/intl/en_my/about/google-ai-plans/'
+      },
+      appleService: {
+        name: 'Google AI Pro 1个月',
+        currency: 'MYR'
+      }
+    });
+    mockFetchResponse(
+      '<html><body>Google AI Pro RM 97.99 / month Google AI Ultra RM 1,299.99 / month</body></html>',
+      'text/html'
+    );
+
+    const result = await service.checkProvider(
+      'gemini',
+      { regions: [{ region: 'MY', currency: 'MYR' }] },
+      operator
+    );
+
+    expect(result.provider).toBe('gemini');
+    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          planCode: 'google_ai_pro_monthly',
+          region: 'MY',
+          currency: 'MYR',
+          officialPrice: '97.99'
+        })
+      })
+    );
+  });
+
+  it('parses Google AI Ultra tier prices when localized prices appear before tier text', async () => {
+    const { service, tx } = createService({
+      source: {
+        name: 'Gemini 官方价格 SG/SGD',
+        provider: 'gemini',
+        region: 'SG',
+        currency: 'SGD',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://gemini.google/subscriptions/'
+      },
+      appleService: {
+        name: 'Google AI Ultra 20x 1个月',
+        currency: 'SGD'
+      }
+    });
+    mockFetchResponse(
+      '<html><body>Google AI Ultra Starting at: SGD 139.99/ month SGD 139.99/ month: 5x higher usage limits vs. AI Pro SGD 289.98 / month: 20x higher usage limits vs. AI Pro</body></html>',
+      'text/html'
+    );
+
+    const result = await service.checkProvider(
+      'gemini',
+      {
+        regions: [
+          { region: 'SG', currency: 'SGD', sourceUrl: 'https://gemini.google/subscriptions/' }
+        ]
+      },
+      operator
+    );
+
+    expect(result.provider).toBe('gemini');
+    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          planCode: 'google_ai_ultra_20x_monthly',
+          region: 'SG',
+          currency: 'SGD',
+          officialPrice: '289.98'
         })
       })
     );

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { AppleOfficialPricesService } from './apple-official-prices.service';
+import type { CheckOfficialPriceProviderDto } from './dto/check-official-price-provider.dto';
 import type { CheckOfficialPriceSourceDto } from './dto/check-official-price-source.dto';
 import type { CreateOfficialPriceSourceDto } from './dto/create-official-price-source.dto';
 import type { UpdateOfficialPriceSourceDto } from './dto/update-official-price-source.dto';
@@ -67,6 +68,28 @@ export class AppleOfficialPricesController {
     @CurrentUser() operator?: AuthenticatedUser
   ) {
     return this.officialPricesService.checkSource(id, dto, operator);
+  }
+
+  @Get('providers')
+  listProviders() {
+    return this.officialPricesService.listProviderCatalog();
+  }
+
+  @Post('providers/:provider/check')
+  checkProvider(
+    @Param('provider') provider: string,
+    @Body() dto: CheckOfficialPriceProviderDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.checkProvider(provider, dto, operator);
+  }
+
+  @Post('providers/check-all')
+  checkAllProviders(
+    @Body() dto: CheckOfficialPriceProviderDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.checkAllProviders(dto, operator);
   }
 
   @Get('snapshots')

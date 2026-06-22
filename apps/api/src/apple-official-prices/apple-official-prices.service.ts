@@ -29,6 +29,16 @@ import type {
 } from './dto/check-official-price-source.dto';
 import type { CreateOfficialPriceSourceDto } from './dto/create-official-price-source.dto';
 import type { UpdateOfficialPriceSourceDto } from './dto/update-official-price-source.dto';
+import type { CheckOfficialPriceProviderDto } from './dto/check-official-price-provider.dto';
+import {
+  buildOfficialPriceProviderPreset,
+  OFFICIAL_PRICE_PROVIDER_KEYS,
+  OFFICIAL_PRICE_PROVIDER_PROFILES,
+  normalizeOfficialPriceProvider,
+  type OfficialPriceProviderKey,
+  type OfficialPriceProviderPlan,
+  type OfficialPriceProviderRegion
+} from './official-price-provider-catalog';
 
 interface ListSourcesQuery extends PaginationQuery {
   keyword?: string;
@@ -128,6 +138,10 @@ interface NormalizedCollectedItem {
 }
 
 type JsonRecord = Record<string, unknown>;
+
+interface RunDueSourceCheckOptions {
+  bootstrapProviders?: boolean;
+}
 
 const AUTO_COLLECT_LIMIT = 200;
 const OFFICIAL_PRICE_FETCH_TIMEOUT_MS = 15_000;
@@ -683,7 +697,13 @@ export class AppleOfficialPricesService {
     return this.toReviewResponse(updated);
   }
 
-  async runDueSourceChecks(trigger: 'worker' | 'system' = 'worker') {
+  async runDueSourceChecks(
+    trigger: 'worker' | 'system' = 'worker',
+    options: RunDueSourceCheckOptions = {}
+  ) {
+    const bootstrappedSourceCount = options.bootstrapProviders
+      ? await this.ensureDefaultProviderSources()
+      : 0;
     const now = new Date();
     const sources = await this.prisma.appleOfficialPriceSource.findMany({
       where: {
@@ -707,7 +727,130 @@ export class AppleOfficialPricesService {
     return {
       scannedCount: sources.length,
       dueCount: dueSources.length,
+      bootstrappedSourceCount,
       results
+    };
+  }
+
+  listProviderCatalog() {
+    const regionMap = new Map<
+      string,
+      { currency: string; label: string; region: string; sourceUrl: string; value: string }
+    >();
+
+    const providers = OFFICIAL_PRICE_PROVIDER_KEYS.map((provider) => {
+      const profile = OFFICIAL_PRICE_PROVIDER_PROFILES[provider];
+      const regions = profile.defaultRegions.map((region) => {
+        const preset = buildOfficialPriceProviderPreset(provider, region);
+        const item = {
+          currency: preset.currency,
+          label: this.getProviderRegionLabel(preset.region, preset.currency),
+          region: preset.region,
+          sourceUrl: preset.sourceUrl,
+          value: `${preset.region}:${preset.currency}`
+        };
+        regionMap.set(item.value, item);
+        return item;
+      });
+
+      return {
+        label: profile.label,
+        regions,
+        shortLabel: this.getProviderShortLabel(provider),
+        sourceUrl: profile.sourceUrl,
+        value: provider
+      };
+    });
+
+    return {
+      providers,
+      regions: [...regionMap.values()].sort((left, right) => left.value.localeCompare(right.value))
+    };
+  }
+
+  async checkProvider(
+    providerValue: string,
+    dto: CheckOfficialPriceProviderDto = {},
+    operator?: AuthenticatedUser
+  ) {
+    const provider = this.normalizeSupportedProvider(providerValue);
+    const regions = await this.resolveProviderRegions(provider, dto.regions);
+    const results = [];
+
+    for (const region of regions) {
+      const source = await this.ensureProviderSource(provider, region, operator, {
+        updateExisting: true
+      });
+      try {
+        results.push(
+          await this.checkSource(
+            source.id,
+            {
+              trigger: dto.trigger ?? 'manual',
+              scanRemovedPlans: Boolean(dto.scanRemovedPlans)
+            },
+            operator
+          )
+        );
+      } catch (error) {
+        results.push({
+          status: 'failed' as const,
+          taskId: '',
+          source,
+          snapshotCount: 0,
+          reviewCount: 0,
+          message: error instanceof Error ? error.message : '官方价格自动采集失败'
+        });
+      }
+    }
+
+    const snapshotCount = results.reduce((sum, item) => sum + item.snapshotCount, 0);
+    const reviewCount = results.reduce((sum, item) => sum + item.reviewCount, 0);
+    const pendingReviewCount = await this.prisma.applePriceChangeReview.count({
+      where: { status: 'pending' }
+    });
+    const failedCount = results.filter((item) => item.status === 'failed').length;
+
+    return {
+      provider,
+      sourceCount: results.length,
+      snapshotCount,
+      reviewCount,
+      pendingReviewCount,
+      failedCount,
+      results,
+      message:
+        failedCount > 0
+          ? `${this.getProviderLabel(provider)} 自动采集完成，${failedCount} 个来源失败，${reviewCount} 条变化待确认`
+          : `${this.getProviderLabel(provider)} 自动采集完成，${reviewCount} 条变化待确认`
+    };
+  }
+
+  async checkAllProviders(dto: CheckOfficialPriceProviderDto = {}, operator?: AuthenticatedUser) {
+    const results = [];
+    for (const provider of OFFICIAL_PRICE_PROVIDER_KEYS) {
+      results.push(await this.checkProvider(provider, dto, operator));
+    }
+
+    const snapshotCount = results.reduce((sum, item) => sum + item.snapshotCount, 0);
+    const reviewCount = results.reduce((sum, item) => sum + item.reviewCount, 0);
+    const failedCount = results.reduce((sum, item) => sum + item.failedCount, 0);
+    const pendingReviewCount = await this.prisma.applePriceChangeReview.count({
+      where: { status: 'pending' }
+    });
+
+    return {
+      provider: 'all',
+      sourceCount: results.reduce((sum, item) => sum + item.sourceCount, 0),
+      snapshotCount,
+      reviewCount,
+      pendingReviewCount,
+      failedCount,
+      results,
+      message:
+        failedCount > 0
+          ? `全部官方价格自动采集完成，${failedCount} 个来源失败，${reviewCount} 条变化待确认`
+          : `全部官方价格自动采集完成，${reviewCount} 条变化待确认`
     };
   }
 
@@ -716,18 +859,260 @@ export class AppleOfficialPricesService {
   ): Promise<NormalizedCollectedItem[]> {
     if (source.collectMethod === 'manual') return [];
 
-    const sourceUrl = this.normalizeNullableString(source.sourceUrl);
+    const sourceUrl =
+      this.normalizeNullableString(source.sourceUrl) ?? this.getDefaultProviderSourceUrl(source);
     if (!sourceUrl) return [];
 
-    const response = await this.fetchOfficialPriceSource(sourceUrl);
+    let response: Response;
+    try {
+      response = await this.fetchOfficialPriceSource(sourceUrl);
+    } catch (error) {
+      const fallbackItems = this.collectOfficialProviderItems('', source, sourceUrl);
+      if (fallbackItems?.length) {
+        return this.normalizeCollectedItems(fallbackItems.slice(0, AUTO_COLLECT_LIMIT), source);
+      }
+      throw error;
+    }
+
     const contentType = response.headers.get('content-type') ?? '';
     const body = await response.text();
     const collectedItems =
       source.collectMethod === 'api' || contentType.toLowerCase().includes('json')
         ? this.collectApiItems(body, source)
-        : this.collectWebpageItems(body, source);
+        : this.collectOfficialProviderItems(body, source, sourceUrl) ||
+          this.collectWebpageItems(body, source);
 
     return this.normalizeCollectedItems(collectedItems.slice(0, AUTO_COLLECT_LIMIT), source);
+  }
+
+  private async ensureProviderSource(
+    provider: OfficialPriceProviderKey,
+    region: OfficialPriceProviderRegion,
+    operator?: AuthenticatedUser,
+    options: { updateExisting?: boolean } = {}
+  ) {
+    const preset = buildOfficialPriceProviderPreset(provider, region);
+    const existing = await this.prisma.appleOfficialPriceSource.findFirst({
+      where: {
+        deletedAt: null,
+        provider,
+        region: preset.region,
+        currency: preset.currency
+      },
+      include: this.getSourceInclude()
+    });
+
+    if (existing) {
+      if (!options.updateExisting) {
+        return this.toSourceResponse(existing);
+      }
+
+      return this.updateSource(
+        existing.id,
+        {
+          provider,
+          region: preset.region,
+          currency: preset.currency,
+          sourceUrl: existing.sourceUrl || preset.sourceUrl,
+          collectMethod: 'webpage',
+          checkIntervalHours: existing.checkIntervalHours || preset.checkIntervalHours,
+          status: 'enabled',
+          remark: existing.remark || preset.remark
+        },
+        operator
+      );
+    }
+
+    return this.createSource(
+      {
+        name: preset.name,
+        provider,
+        priceSourceType: 'official_web',
+        region: preset.region,
+        currency: preset.currency,
+        sourceUrl: preset.sourceUrl,
+        collectMethod: 'webpage',
+        checkIntervalHours: preset.checkIntervalHours,
+        status: 'enabled',
+        remark: preset.remark
+      },
+      operator
+    );
+  }
+
+  private async ensureDefaultProviderSources() {
+    let createdCount = 0;
+
+    for (const provider of OFFICIAL_PRICE_PROVIDER_KEYS) {
+      const profile = OFFICIAL_PRICE_PROVIDER_PROFILES[provider];
+
+      for (const region of profile.defaultRegions) {
+        const preset = buildOfficialPriceProviderPreset(provider, region);
+        const existing = await this.prisma.appleOfficialPriceSource.findFirst({
+          where: {
+            deletedAt: null,
+            provider,
+            region: preset.region,
+            currency: preset.currency
+          }
+        });
+
+        if (existing) continue;
+
+        await this.ensureProviderSource(provider, region, undefined, { updateExisting: false });
+        createdCount += 1;
+      }
+    }
+
+    return createdCount;
+  }
+
+  private async resolveProviderRegions(
+    provider: OfficialPriceProviderKey,
+    regions?: CheckOfficialPriceProviderDto['regions']
+  ): Promise<OfficialPriceProviderRegion[]> {
+    const profile = OFFICIAL_PRICE_PROVIDER_PROFILES[provider];
+    if (!Array.isArray(regions) || regions.length === 0) {
+      const configuredSources = await this.prisma.appleOfficialPriceSource.findMany({
+        where: {
+          deletedAt: null,
+          provider,
+          status: 'enabled'
+        },
+        orderBy: [{ region: 'asc' }, { currency: 'asc' }]
+      });
+
+      if (configuredSources.length) {
+        return this.dedupeProviderRegions(
+          configuredSources.map((source) => ({
+            region: source.region,
+            currency: source.currency,
+            sourceUrl: source.sourceUrl
+          }))
+        );
+      }
+
+      return profile.defaultRegions;
+    }
+
+    return this.dedupeProviderRegions(
+      regions.map((item) => ({
+        region: this.normalizeCode(item.region, profile.defaultRegions[0]?.region ?? 'US'),
+        currency: this.normalizeCode(item.currency, profile.defaultRegions[0]?.currency ?? 'USD'),
+        sourceUrl:
+          item.sourceUrl === undefined ? null : (this.normalizeNullableUrl(item.sourceUrl) ?? null)
+      }))
+    );
+  }
+
+  private dedupeProviderRegions(regions: OfficialPriceProviderRegion[]) {
+    const seen = new Set<string>();
+    const deduped: OfficialPriceProviderRegion[] = [];
+    for (const region of regions) {
+      const normalizedRegion = region.region.trim().toUpperCase();
+      const normalizedCurrency = region.currency.trim().toUpperCase();
+      const key = `${normalizedRegion}:${normalizedCurrency}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push({
+        region: normalizedRegion,
+        currency: normalizedCurrency,
+        sourceUrl: region.sourceUrl
+      });
+    }
+    return deduped;
+  }
+
+  private collectOfficialProviderItems(
+    html: string,
+    source: AppleOfficialPriceSource,
+    sourceUrl: string
+  ): OfficialPriceCollectedItemDto[] | null {
+    const provider = normalizeOfficialPriceProvider(source.provider);
+    if (!provider || !this.isOfficialProviderUrl(provider, sourceUrl)) return null;
+
+    const profile = OFFICIAL_PRICE_PROVIDER_PROFILES[provider];
+    const plainText = this.normalizeWhitespace(this.stripHtml(html));
+    const items = profile.plans
+      .map((plan) => this.buildProviderPlanItem(plan, source, plainText, sourceUrl))
+      .filter((item): item is OfficialPriceCollectedItemDto => Boolean(item));
+
+    return items.length ? this.dedupeCollectedItems(items) : [];
+  }
+
+  private buildProviderPlanItem(
+    plan: OfficialPriceProviderPlan,
+    source: AppleOfficialPriceSource,
+    plainText: string,
+    sourceUrl: string
+  ): OfficialPriceCollectedItemDto | null {
+    const currency = source.currency.toUpperCase();
+    const parsedPrice = this.extractProviderPlanPrice(plainText, plan, currency);
+    const catalogPrice = plan.currencyPrices[currency];
+    const officialPrice = plan.preferCatalogPrice
+      ? (catalogPrice ?? parsedPrice)
+      : (parsedPrice ?? catalogPrice);
+    if (!officialPrice) return null;
+
+    return {
+      planCode: plan.planCode,
+      serviceName: plan.serviceName,
+      category: plan.category,
+      region: source.region,
+      currency,
+      officialPrice,
+      periodType: plan.periodType,
+      periodValue: plan.periodValue,
+      rawPayload: {
+        parser: parsedPrice ? 'provider_page_text' : 'provider_catalog_fallback',
+        provider: source.provider,
+        planCode: plan.planCode,
+        sourceUrl
+      }
+    };
+  }
+
+  private extractProviderPlanPrice(
+    plainText: string,
+    plan: OfficialPriceProviderPlan,
+    currency: string
+  ) {
+    const lowerText = plainText.toLowerCase();
+    const windows = [];
+
+    for (const alias of plan.aliases) {
+      const index = lowerText.indexOf(alias.toLowerCase());
+      if (index < 0) continue;
+      windows.push(plainText.slice(index, index + 700));
+      windows.push(plainText.slice(Math.max(index - 180, 0), index + alias.length));
+    }
+
+    for (let index = 0; index < windows.length; index += 1) {
+      const windowText = windows[index];
+      const price =
+        index % 2 === 0
+          ? this.extractCurrencyPrice(windowText, currency)
+          : this.extractLastCurrencyPrice(windowText, currency);
+      if (price) return price;
+    }
+
+    return null;
+  }
+
+  private isOfficialProviderUrl(provider: OfficialPriceProviderKey, sourceUrl: string) {
+    try {
+      const hostname = new URL(sourceUrl).hostname.replace(/^www\./, '').toLowerCase();
+      return OFFICIAL_PRICE_PROVIDER_PROFILES[provider].hosts.some(
+        (host) => hostname === host || hostname.endsWith(`.${host}`)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private getDefaultProviderSourceUrl(source: AppleOfficialPriceSource) {
+    const provider = normalizeOfficialPriceProvider(source.provider);
+    return provider ? OFFICIAL_PRICE_PROVIDER_PROFILES[provider].sourceUrl : null;
   }
 
   private async fetchOfficialPriceSource(sourceUrl: string) {
@@ -1115,12 +1500,47 @@ export class AppleOfficialPricesService {
     return this.extractDecimalString(match?.[1] ?? match?.[2]);
   }
 
+  private extractLastCurrencyPrice(text: string, currency: string): string | null {
+    const tokens = this.getCurrencyTokens(currency).map((token) => this.escapeRegExp(token));
+    if (!tokens.length) return this.extractDecimalString(text);
+
+    const amountPattern = '([0-9][0-9,]*(?:\\.\\d{1,8})?)';
+    const tokenPattern = tokens.join('|');
+    const pattern = new RegExp(
+      `(?:${tokenPattern})\\s*${amountPattern}|${amountPattern}\\s*(?:${tokenPattern})`,
+      'gi'
+    );
+    let lastMatch: RegExpExecArray | null = null;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text))) {
+      lastMatch = match;
+    }
+
+    return this.extractDecimalString(lastMatch?.[1] ?? lastMatch?.[2]);
+  }
+
   private getCurrencyTokens(currency: string) {
     const normalized = currency.toUpperCase();
     const tokens = [normalized];
     if (normalized === 'USD') tokens.push('US$', '$');
+    if (normalized === 'SGD') tokens.push('S$', 'SG$');
     if (normalized === 'HKD') tokens.push('HK$');
     if (normalized === 'MYR') tokens.push('RM');
+    if (normalized === 'TWD') tokens.push('NT$', 'NTD');
+    if (normalized === 'JPY') tokens.push('¥', '￥', 'JP¥');
+    if (normalized === 'KRW') tokens.push('₩', 'KR₩');
+    if (normalized === 'GBP') tokens.push('£');
+    if (normalized === 'EUR') tokens.push('€');
+    if (normalized === 'AUD') tokens.push('A$', 'AU$');
+    if (normalized === 'CAD') tokens.push('C$', 'CA$');
+    if (normalized === 'THB') tokens.push('฿');
+    if (normalized === 'PHP') tokens.push('₱');
+    if (normalized === 'IDR') tokens.push('Rp');
+    if (normalized === 'VND') tokens.push('₫');
+    if (normalized === 'INR') tokens.push('₹');
+    if (normalized === 'TRY') tokens.push('₺', 'TL');
+    if (normalized === 'BRL') tokens.push('R$');
+    if (normalized === 'MXN') tokens.push('MX$');
     if (normalized === 'CNY' || normalized === 'RMB') tokens.push('¥', '￥', 'RMB');
     return tokens;
   }
@@ -1847,6 +2267,49 @@ export class AppleOfficialPricesService {
     if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
     if (normalized.includes('claude') || normalized.includes('anthropic')) return 'claude';
     return 'custom';
+  }
+
+  private normalizeSupportedProvider(value: string) {
+    const provider = normalizeOfficialPriceProvider(value);
+    if (!provider) {
+      throw new BadRequestException('provider must be chatgpt, gemini, or claude');
+    }
+    return provider;
+  }
+
+  private getProviderLabel(provider: OfficialPriceProviderKey) {
+    return OFFICIAL_PRICE_PROVIDER_PROFILES[provider].label;
+  }
+
+  private getProviderShortLabel(provider: OfficialPriceProviderKey) {
+    if (provider === 'chatgpt') return 'ChatGPT';
+    if (provider === 'gemini') return 'Gemini';
+    return 'Claude';
+  }
+
+  private getProviderRegionLabel(region: string, currency: string) {
+    const labelByRegion: Record<string, string> = {
+      AU: '澳大利亚',
+      BR: '巴西',
+      CA: '加拿大',
+      EU: '欧元区',
+      GB: '英国',
+      HK: '中国香港',
+      ID: '印度尼西亚',
+      IN: '印度',
+      JP: '日本',
+      KR: '韩国',
+      MX: '墨西哥',
+      MY: '马来西亚',
+      PH: '菲律宾',
+      SG: '新加坡',
+      TH: '泰国',
+      TR: '土耳其',
+      TW: '中国台湾',
+      US: '美国',
+      VN: '越南'
+    };
+    return `${labelByRegion[region] ?? region} ${currency}`;
   }
 
   private normalizeDecimal(value: string | number | undefined, field: string, fallback: string) {

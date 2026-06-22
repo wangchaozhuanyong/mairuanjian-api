@@ -329,6 +329,48 @@
         </div>
       </div>
 
+      <div class="apple-official-provider-runner">
+        <div class="apple-official-provider-runner__label">
+          <strong>自动采集</strong>
+          <el-select
+            v-model="selectedOfficialAutoRegions"
+            class="apple-official-region-select"
+            collapse-tags
+            collapse-tags-tooltip
+            multiple
+            placeholder="采集地区"
+          >
+            <el-option
+              v-for="region in officialAutoRegionOptions"
+              :key="region.value"
+              :label="region.label"
+              :value="region.value"
+            />
+          </el-select>
+        </div>
+        <div class="apple-official-provider-runner__actions">
+          <AppButton
+            variant="primary"
+            :loading="officialProviderCheckKey === 'all'"
+            @click="handleOfficialProviderCheck('all')"
+          >
+            采集全部
+          </AppButton>
+          <AppButton
+            v-for="provider in officialAutoProviderOptions"
+            :key="provider.value"
+            variant="soft"
+            :loading="officialProviderCheckKey === provider.value"
+            @click="handleOfficialProviderCheck(provider.value)"
+          >
+            {{ provider.shortLabel }}
+          </AppButton>
+        </div>
+        <span class="apple-official-provider-runner__hint">
+          会按所选地区创建或复用官方来源，采集结果只进入待确认，不会直接覆盖业务价格。
+        </span>
+      </div>
+
       <el-tabs v-model="officialPriceTab" class="apple-official-price-tabs">
         <el-tab-pane label="待确认变化" name="reviews">
           <el-table
@@ -916,7 +958,7 @@ import {
   dataCenterApi,
   userTableViewsApi
 } from '@/api/system';
-import type { DataDictionaryQuery } from '@/api/system';
+import type { AppleOfficialPriceProviderCatalogRegion, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
@@ -988,6 +1030,32 @@ const officialProviderOptions = [
   { label: 'Claude / Anthropic', value: 'claude' },
   { label: '自定义', value: 'custom' }
 ];
+const fallbackOfficialAutoProviderOptions = [
+  { label: 'ChatGPT / OpenAI', shortLabel: 'ChatGPT', value: 'chatgpt' },
+  { label: 'Gemini / Google', shortLabel: 'Gemini', value: 'gemini' },
+  { label: 'Claude / Anthropic', shortLabel: 'Claude', value: 'claude' }
+];
+const fallbackOfficialAutoRegionOptions: AppleOfficialPriceProviderCatalogRegion[] = [
+  { label: '美国 USD', value: 'US:USD', region: 'US', currency: 'USD' },
+  { label: '马来西亚 MYR', value: 'MY:MYR', region: 'MY', currency: 'MYR' },
+  { label: '新加坡 SGD', value: 'SG:SGD', region: 'SG', currency: 'SGD' },
+  { label: '中国香港 HKD', value: 'HK:HKD', region: 'HK', currency: 'HKD' },
+  { label: '中国台湾 TWD', value: 'TW:TWD', region: 'TW', currency: 'TWD' },
+  { label: '日本 JPY', value: 'JP:JPY', region: 'JP', currency: 'JPY' },
+  { label: '韩国 KRW', value: 'KR:KRW', region: 'KR', currency: 'KRW' },
+  { label: '英国 GBP', value: 'GB:GBP', region: 'GB', currency: 'GBP' },
+  { label: '欧元区 EUR', value: 'EU:EUR', region: 'EU', currency: 'EUR' },
+  { label: '澳大利亚 AUD', value: 'AU:AUD', region: 'AU', currency: 'AUD' },
+  { label: '加拿大 CAD', value: 'CA:CAD', region: 'CA', currency: 'CAD' },
+  { label: '泰国 THB', value: 'TH:THB', region: 'TH', currency: 'THB' },
+  { label: '菲律宾 PHP', value: 'PH:PHP', region: 'PH', currency: 'PHP' },
+  { label: '印度尼西亚 IDR', value: 'ID:IDR', region: 'ID', currency: 'IDR' },
+  { label: '越南 VND', value: 'VN:VND', region: 'VN', currency: 'VND' },
+  { label: '印度 INR', value: 'IN:INR', region: 'IN', currency: 'INR' },
+  { label: '土耳其 TRY', value: 'TR:TRY', region: 'TR', currency: 'TRY' },
+  { label: '巴西 BRL', value: 'BR:BRL', region: 'BR', currency: 'BRL' },
+  { label: '墨西哥 MXN', value: 'MX:MXN', region: 'MX', currency: 'MXN' }
+].map((region) => ({ ...region, sourceUrl: '' }));
 const balanceRuleOptions: Array<{ label: string; value: AppleBalancePriceRuleType }> = [
   { label: '继承全局规则', value: 'inherit' },
   { label: '按百分比', value: 'percent' },
@@ -1002,6 +1070,7 @@ const savingOfficialSource = ref(false);
 const checkingOfficialPrice = ref(false);
 const savingBalanceRule = ref(false);
 const officialSourceCheckId = ref('');
+const officialProviderCheckKey = ref('');
 const dialogVisible = ref(false);
 const officialSourceDialogVisible = ref(false);
 const officialCheckDialogVisible = ref(false);
@@ -1013,6 +1082,8 @@ const selectedServices = ref<AppleService[]>([]);
 const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
 const officialPriceReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
+const officialProviderCatalogProviders = ref(fallbackOfficialAutoProviderOptions);
+const officialProviderCatalogRegions = ref(fallbackOfficialAutoRegionOptions);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const serviceCategoryDictionaries = ref<DataDictionary[]>([]);
 const periodTypeDictionaries = ref<DataDictionary[]>([]);
@@ -1028,6 +1099,9 @@ const total = ref(0);
 const serviceAdvancedPanels = ref<string[]>([]);
 const officialPriceTab = ref('reviews');
 const officialReviewActionId = ref('');
+const selectedOfficialAutoRegions = ref<string[]>(
+  fallbackOfficialAutoRegionOptions.map((region) => region.value)
+);
 
 const globalBalanceRuleForm = reactive({
   ruleType: 'percent' as Extract<AppleBalancePriceRuleType, 'percent' | 'fixed_add'>,
@@ -1147,6 +1221,8 @@ const lockRuleOptions = computed(() =>
 const pendingOfficialReviews = computed(() =>
   officialPriceReviews.value.filter((review) => review.status === 'pending')
 );
+const officialAutoProviderOptions = computed(() => officialProviderCatalogProviders.value);
+const officialAutoRegionOptions = computed(() => officialProviderCatalogRegions.value);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -1489,6 +1565,7 @@ async function initializePage() {
     loadAppleRegions(),
     loadAppleServiceQuickOptions(),
     loadGlobalBalanceRule(),
+    loadOfficialProviderCatalog(),
     loadServices({ force: false }),
     loadOfficialPricePanel()
   ]);
@@ -1742,6 +1819,44 @@ async function saveGlobalBalanceRule() {
   }
 }
 
+async function loadOfficialProviderCatalog() {
+  try {
+    const catalog = await appleOfficialPricesApi.listProviders();
+    officialProviderCatalogProviders.value = catalog.providers.length
+      ? catalog.providers.map((provider) => ({
+          label: provider.label,
+          shortLabel: provider.shortLabel,
+          value: provider.value
+        }))
+      : fallbackOfficialAutoProviderOptions;
+    officialProviderCatalogRegions.value = catalog.regions.length
+      ? catalog.regions
+      : fallbackOfficialAutoRegionOptions;
+  } catch (error) {
+    officialProviderCatalogProviders.value = fallbackOfficialAutoProviderOptions;
+    officialProviderCatalogRegions.value = fallbackOfficialAutoRegionOptions;
+    ElMessage.warning(
+      error instanceof Error ? error.message : '加载自动采集地区失败，已使用默认地区'
+    );
+  }
+
+  syncOfficialAutoRegionSelection(true);
+}
+
+function syncOfficialAutoRegionSelection(forceAll = false) {
+  const availableValues = officialProviderCatalogRegions.value.map((region) => region.value);
+  if (forceAll) {
+    selectedOfficialAutoRegions.value = availableValues;
+    return;
+  }
+
+  const availableSet = new Set(availableValues);
+  const currentSelected = selectedOfficialAutoRegions.value.filter((value) =>
+    availableSet.has(value)
+  );
+  selectedOfficialAutoRegions.value = currentSelected.length ? currentSelected : availableValues;
+}
+
 async function loadOfficialPricePanel() {
   officialPriceLoading.value = true;
   try {
@@ -1912,6 +2027,45 @@ async function handleOfficialSourceCheck(source?: AppleOfficialPriceSource) {
   } finally {
     officialSourceCheckId.value = '';
   }
+}
+
+async function handleOfficialProviderCheck(provider: string) {
+  officialProviderCheckKey.value = provider;
+  const regions = buildOfficialProviderRegionsPayload();
+  try {
+    const result =
+      provider === 'all'
+        ? await appleOfficialPricesApi.checkAllProviders({
+            trigger: 'manual',
+            scanRemovedPlans: false,
+            regions
+          })
+        : await appleOfficialPricesApi.checkProvider(provider, {
+            trigger: 'manual',
+            scanRemovedPlans: false,
+            regions
+          });
+    if (result.failedCount > 0) {
+      ElMessage.warning(result.message || '自动采集完成，部分来源失败');
+    } else {
+      ElMessage.success(result.message || '自动采集完成');
+    }
+    officialPriceTab.value = result.reviewCount > 0 ? 'reviews' : 'snapshots';
+    await loadOfficialPricePanel();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '自动采集官方价格失败');
+  } finally {
+    officialProviderCheckKey.value = '';
+  }
+}
+
+function buildOfficialProviderRegionsPayload() {
+  const selected = officialAutoRegionOptions.value.filter((region) =>
+    selectedOfficialAutoRegions.value.includes(region.value)
+  );
+  return selected.length
+    ? selected.map((region) => ({ region: region.region, currency: region.currency }))
+    : undefined;
 }
 
 function syncOfficialCheckService() {
@@ -2202,6 +2356,39 @@ onBeforeUnmount(() => {
   width: 140px;
 }
 
+.apple-official-provider-runner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  flex-wrap: wrap;
+}
+
+.apple-official-provider-runner__label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.apple-official-region-select {
+  width: min(420px, 58vw);
+}
+
+.apple-official-provider-runner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.apple-official-provider-runner__hint {
+  flex-basis: 100%;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .apple-official-price-tabs {
   margin-top: 10px;
 }
@@ -2223,8 +2410,23 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
+  .apple-official-provider-runner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .apple-official-provider-runner__label {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .apple-official-provider-runner__actions {
+    justify-content: flex-start;
+  }
+
   .apple-balance-rule-bar__controls,
   .apple-rule-select,
+  .apple-official-region-select,
   .apple-rule-input {
     width: 100%;
   }

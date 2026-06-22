@@ -1110,6 +1110,47 @@ export interface CheckOfficialPriceSourcePayload {
   remark?: string | null;
 }
 
+export interface CheckOfficialPriceProviderPayload {
+  regions?: Array<{
+    currency?: string;
+    region?: string;
+    sourceUrl?: string | null;
+  }>;
+  scanRemovedPlans?: boolean;
+  trigger?: 'manual' | 'worker' | 'system';
+}
+
+export interface AppleOfficialPriceProviderCatalogRegion {
+  currency: string;
+  label: string;
+  region: string;
+  sourceUrl: string;
+  value: string;
+}
+
+export interface AppleOfficialPriceProviderCatalogProvider {
+  label: string;
+  regions: AppleOfficialPriceProviderCatalogRegion[];
+  shortLabel: string;
+  sourceUrl: string;
+  value: string;
+}
+
+export interface AppleOfficialPriceProviderCatalog {
+  providers: AppleOfficialPriceProviderCatalogProvider[];
+  regions: AppleOfficialPriceProviderCatalogRegion[];
+}
+
+export interface CheckOfficialPriceProviderResult {
+  failedCount: number;
+  message: string;
+  pendingReviewCount: number;
+  provider: string;
+  reviewCount: number;
+  snapshotCount: number;
+  sourceCount: number;
+}
+
 export interface SaveCodeServicePayload {
   name: string;
   faceValue: string;
@@ -2144,6 +2185,9 @@ export const appleServicesApi = {
 };
 
 export const appleOfficialPricesApi = {
+  listProviders() {
+    return request<AppleOfficialPriceProviderCatalog>(http.get('/apple/official-prices/providers'));
+  },
   listSources(params: AppleOfficialPriceSourceQuery) {
     return request<PageResult<AppleOfficialPriceSource>>(
       http.get('/apple/official-prices/sources', { params })
@@ -2170,6 +2214,16 @@ export const appleOfficialPricesApi = {
       pendingReviewCount?: number;
       message: string;
     }>(http.post(`/apple/official-prices/sources/${id}/check`, payload));
+  },
+  checkProvider(provider: string, payload: CheckOfficialPriceProviderPayload = {}) {
+    return request<CheckOfficialPriceProviderResult>(
+      http.post(`/apple/official-prices/providers/${provider}/check`, payload)
+    );
+  },
+  checkAllProviders(payload: CheckOfficialPriceProviderPayload = {}) {
+    return request<CheckOfficialPriceProviderResult>(
+      http.post('/apple/official-prices/providers/check-all', payload)
+    );
   },
   listSnapshots(params: AppleOfficialPriceSnapshotQuery) {
     return request<PageResult<AppleOfficialPriceSnapshot>>(
