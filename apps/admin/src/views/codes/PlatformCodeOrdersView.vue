@@ -14,10 +14,7 @@
 
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
-        <PanelTitleHelp
-          :title="`${platformTitle}同步与发货队列`"
-          :help="`这里看 ${platformTitle} 订单同步、SKU 识别、兑换码锁定和发货状态。真实授权没接好时，订单会转人工处理。`"
-        />
+        <PanelTitleHelp :title="`${platformTitle}同步与发货队列`" :help="platformQueueHelp" />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>{{ platformTitle }} {{ total }} 单</StatusChip>
           <StatusChip tone="cyan">店铺 {{ platforms.length }}</StatusChip>
@@ -159,7 +156,13 @@
         >
           <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column width="230" fixed="right">
+          <template #header>
+            <span class="table-header-help">
+              操作
+              <FeatureHelp title="订单操作" :text="platformActionHelp" placement="left" />
+            </span>
+          </template>
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton
@@ -277,6 +280,7 @@ import {
   type PlatformSyncResult
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -296,12 +300,28 @@ import {
 } from '@/utils/smartQuery';
 import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { buildHelpText } from '@/utils/helpText';
 
 const props = defineProps<{
   platform: 'taobao' | 'xianyu';
   platformTitle: string;
   description: string;
 }>();
+
+const platformQueueHelp = computed(() =>
+  buildHelpText({
+    description: `这里看 ${props.platformTitle} 订单同步、SKU 识别、兑换码锁定和发货状态。`,
+    suggestion: '先处理失败和待发货订单；真实授权没接好时，先转人工兜底，不要重复点发货。',
+    example: `例如 ${props.platformTitle} 有订单发货失败，先核对店铺、SKU 和锁码，再选择平台发货或转人工。`
+  })
+);
+const platformActionHelp = computed(() =>
+  buildHelpText({
+    description: '平台发货会推进订单发货流程，转人工会把订单交给人工复制话术或复核。',
+    suggestion: '操作前先核对订单号、商品/SKU、面值和锁码状态，已发货订单不要重复处理。',
+    example: '例如接口失败但订单真实已付款，先转人工核对，再决定是否补发或重试。'
+  })
+);
 
 const loading = ref(false);
 const syncingOrders = ref(false);

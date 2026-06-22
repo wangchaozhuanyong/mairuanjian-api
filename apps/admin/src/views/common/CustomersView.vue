@@ -387,7 +387,7 @@ import {
   fillCustomerProfileForm,
   resetCustomerProfileForm
 } from '@/utils/customerProfileForm';
-import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const tableKey = 'customers';
 const customerStatusOptions = [
@@ -528,28 +528,19 @@ function applyCustomerTagResult(data: PageResult<DataDictionary>) {
 async function loadSourcePlatforms(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildSourcePlatformParams();
   const key = createSmartQueryKey('source-platforms', params);
-  const cached = getSmartQueryData<PageResult<SourcePlatform>>(key);
 
   activeSourcePlatformsQueryKey.value = key;
 
-  if (cached) {
-    applySourcePlatformResult(cached);
-  }
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
-      fetcher: () => sourcePlatformsApi.list(params),
+      fetcher: ({ signal }) => sourcePlatformsApi.list(params, { signal }),
+      apply: applySourcePlatformResult,
+      background: options.background,
+      cancelPreviousMatching: options.force ? 'source-platforms' : undefined,
+      isCurrent: () => activeSourcePlatformsQueryKey.value === key,
       force: options.force ?? true
     });
-
-    if (activeSourcePlatformsQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applySourcePlatformResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载来源平台失败');
@@ -560,28 +551,19 @@ async function loadSourcePlatforms(options: { background?: boolean; force?: bool
 async function loadCustomerTags(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildCustomerTagParams();
   const key = createSmartQueryKey('customer-tags', params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
 
   activeCustomerTagsQueryKey.value = key;
 
-  if (cached) {
-    applyCustomerTagResult(cached);
-  }
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
-      fetcher: () => dataCenterApi.listDictionaries(params),
+      fetcher: ({ signal }) => dataCenterApi.listDictionaries(params, { signal }),
+      apply: applyCustomerTagResult,
+      background: options.background,
+      cancelPreviousMatching: options.force ? 'customer-tags' : undefined,
+      isCurrent: () => activeCustomerTagsQueryKey.value === key,
       force: options.force ?? true
     });
-
-    if (activeCustomerTagsQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyCustomerTagResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载客户标签失败');
@@ -609,37 +591,25 @@ function applyCustomerResult(data: PageResult<Customer>) {
 async function loadCustomers(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildCustomerParams();
   const key = createSmartQueryKey('customers', params);
-  const cached = getSmartQueryData<PageResult<Customer>>(key);
 
   activeCustomersQueryKey.value = key;
 
-  if (cached) {
-    applyCustomerResult(cached);
-  }
-
-  loading.value = !cached && !options.background;
-
   try {
-    const result = await refreshSmartQuery({
+    await refreshSmartQueryResource({
       key,
-      fetcher: () => customersApi.list(params),
+      fetcher: ({ signal }) => customersApi.list(params, { signal }),
+      apply: applyCustomerResult,
+      background: options.background,
+      cancelPreviousMatching: options.force ? 'customers' : undefined,
+      isCurrent: () => activeCustomersQueryKey.value === key,
+      setLoading: (value) => {
+        loading.value = value;
+      },
       force: options.force ?? true
     });
-
-    if (activeCustomersQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyCustomerResult(result.data);
-    }
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '加载客户失败');
-    }
-  } finally {
-    if (activeCustomersQueryKey.value === key) {
-      loading.value = false;
     }
   }
 }

@@ -37,6 +37,7 @@ import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 export interface SmartSystemQueryOptions {
   force?: boolean;
   dedupeMs?: number;
+  signal?: AbortSignal;
   staleMs?: number;
 }
 
@@ -59,7 +60,7 @@ export function loadSmartSourcePlatforms(
   return loadSmartSystemQuery<PageResult<SourcePlatform>>(
     'source-platforms',
     params,
-    () => sourcePlatformsApi.list(params),
+    (signal) => sourcePlatformsApi.list(params, { signal }),
     options
   );
 }
@@ -71,7 +72,7 @@ export function loadSmartAppleAccountSourceChannels(
   return loadSmartSystemQuery<PageResult<AppleAccountSourceChannel>>(
     'apple-account-source-channels',
     params,
-    () => appleAccountSourceChannelsApi.list(params),
+    (signal) => appleAccountSourceChannelsApi.list(params, { signal }),
     options
   );
 }
@@ -80,7 +81,7 @@ export function loadSmartCustomers(params: CustomerQuery, options: SmartSystemQu
   return loadSmartSystemQuery<PageResult<Customer>>(
     'customers',
     params,
-    () => customersApi.list(params),
+    (signal) => customersApi.list(params, { signal }),
     options
   );
 }
@@ -92,7 +93,7 @@ export function loadSmartMessageTemplates(
   return loadSmartSystemQuery<PageResult<MessageTemplate>>(
     'message-templates',
     params,
-    () => messageTemplatesApi.list(params),
+    (signal) => messageTemplatesApi.list(params, { signal }),
     options
   );
 }
@@ -104,7 +105,7 @@ export function loadSmartAppleAccounts(
   return loadSmartSystemQuery<PageResult<AppleAccount>>(
     'apple-accounts',
     params,
-    () => appleAccountsApi.list(params),
+    (signal) => appleAccountsApi.list(params, { signal }),
     options
   );
 }
@@ -116,7 +117,7 @@ export function loadSmartAppleServices(
   return loadSmartSystemQuery<PageResult<AppleService>>(
     'apple-services',
     params,
-    () => appleServicesApi.list(params),
+    (signal) => appleServicesApi.list(params, { signal }),
     options
   );
 }
@@ -128,7 +129,7 @@ export function loadSmartCodeServices(
   return loadSmartSystemQuery<PageResult<CodeService>>(
     'code-services',
     params,
-    () => codeServicesApi.list(params),
+    (signal) => codeServicesApi.list(params, { signal }),
     options
   );
 }
@@ -159,12 +160,12 @@ export function loadSmartRolesAndPermissions(options: SmartSystemQueryOptions = 
 async function loadSmartSystemQuery<TData>(
   scope: string,
   params: unknown,
-  fetcher: () => Promise<TData>,
+  fetcher: (signal?: AbortSignal) => Promise<TData>,
   options: SmartSystemQueryOptions
 ) {
-  const result = await refreshSmartQuery({
+  const result = await refreshSmartQuery<TData>({
     key: createSmartQueryKey(scope, params),
-    fetcher,
+    fetcher: ({ signal }) => fetcher(options.signal ?? signal),
     force: options.force ?? false,
     dedupeMs: options.dedupeMs,
     staleMs: options.staleMs

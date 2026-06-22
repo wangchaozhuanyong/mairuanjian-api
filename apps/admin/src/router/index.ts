@@ -7,9 +7,11 @@ import {
   allModules,
   getModuleDisplayDescription,
   getModuleDisplayGroup,
+  getModuleDisplayHelp,
   getModulePermission,
   getModuleDisplayTitle
 } from '@/config/modules';
+import { buildHelpText } from '@/utils/helpText';
 
 const AdminLayout = () => import('@/layouts/AdminLayout.vue');
 const LoginView = () => import('@/views/auth/LoginView.vue');
@@ -362,6 +364,7 @@ const moduleRoutes = allModules.map((module) => {
     group: getModuleDisplayGroup(displayModule),
     phase: module.phase,
     description: getModuleDisplayDescription(displayModule),
+    help: getModuleDisplayHelp(displayModule),
     moduleKey: module.key,
     permission: getModulePermission(module),
     status: module.status
@@ -430,6 +433,11 @@ const sourceOptionsSectionRoutes = SOURCE_OPTIONS_SECTION_ROUTES.map((sectionRou
     group: '系统配置',
     phase: 'Phase 2',
     description: '维护选项设置里的单个配置板块。',
+    help: buildHelpText({
+      description: `${sectionRoute.title}：维护选项设置里的单个配置板块。`,
+      suggestion: '只维护当前板块需要的选项，不要把客户来源、ID 设置和兑换码发货选项混在一起。',
+      example: `例如进入${sectionRoute.title}时，只新增或停用这个板块真实会用到的下拉选项。`
+    }),
     moduleKey: 'source-platforms',
     permission: 'source_platform.view',
     status: 'ready',
@@ -587,6 +595,12 @@ export const router = createRouter({
             group: '客户与来源',
             phase: 'Phase 2',
             description: '聚合客户基础资料、来源平台、ID 订单、开通记录和续费任务。',
+            help: buildHelpText({
+              description: '客户详情：集中查看一个客户的资料、来源、订单和任务。',
+              suggestion: '先核对客户身份和来源平台，再处理订单、续费或售后动作。',
+              example:
+                '例如客户来问续费状态时，先在这里确认最近订单和开通记录，再去对应业务页处理。'
+            }),
             permission: 'customer.view',
             status: 'ready'
           }

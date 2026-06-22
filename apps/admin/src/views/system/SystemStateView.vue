@@ -14,6 +14,9 @@
     </template>
 
     <section class="content-panel" aria-label="系统状态概览">
+      <div class="panel-title-row">
+        <PanelTitleHelp :title="`${state.title}概览`" :help="stateOverviewHelp" />
+      </div>
       <div class="detail-note-grid">
         <div v-for="metric in state.metrics" :key="metric.label" class="detail-note-item">
           <span>{{ metric.label }}</span>
@@ -26,7 +29,12 @@
       </div>
     </section>
 
-    <AppCard :title="state.cardTitle" :subtitle="state.cardSubtitle" :tag="state.actionTag">
+    <AppCard
+      :title="state.cardTitle"
+      :subtitle="state.cardSubtitle"
+      :help="stateCardHelp"
+      :tag="state.actionTag"
+    >
       <AppState
         :type="state.stateType"
         :title="state.stateTitle"
@@ -38,7 +46,11 @@
       />
     </AppCard>
 
-    <AppCard title="建议操作" subtitle="保持当前业务数据不受影响，只处理访问路径或维护窗口。">
+    <AppCard
+      title="建议操作"
+      subtitle="保持当前业务数据不受影响，只处理访问路径或维护窗口。"
+      :help="stateActionHelp"
+    >
       <div class="feature-grid">
         <div v-for="item in state.actions" :key="item.title" class="feature-card">
           <strong>{{ item.title }}</strong>
@@ -56,7 +68,9 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppState from '@/components/ui/AppState.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { buildHelpText } from '@/utils/helpText';
 
 type StateTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 type AppStateType = 'empty' | 'error' | 'forbidden' | 'info' | 'loading' | 'success' | 'warning';
@@ -171,4 +185,25 @@ const state = computed(() => {
   const moduleKey = String(route.meta.moduleKey ?? '');
   return stateMap[moduleKey] ?? stateMap['not-found'];
 });
+const stateOverviewHelp = computed(() =>
+  buildHelpText({
+    description: `${state.value.title}概览会说明当前访问为什么被限制，以及业务数据是否受影响。`,
+    suggestion: '先看状态码和处理建议，再决定返回上一页、回首页还是进入对应配置页。',
+    example: '例如遇到 403，先确认角色权限；遇到维护模式，先看维护公告和恢复时间。'
+  })
+);
+const stateCardHelp = computed(() =>
+  buildHelpText({
+    description: state.value.cardSubtitle,
+    suggestion: '不要在异常页反复刷新写入型操作，先回到安全入口或首页确认状态。',
+    example: `例如看到“${state.value.stateTitle}”，可以用下方按钮回到首页或进入${state.value.primaryLabel}。`
+  })
+);
+const stateActionHelp = computed(() =>
+  buildHelpText({
+    description: '这里给出当前状态下最稳的下一步，不直接改业务数据。',
+    suggestion: '按建议先检查路径、权限或维护窗口，确认后再回到业务页面继续处理。',
+    example: '例如旧链接打不开时，从左侧菜单重新进入页面，比手动改地址更稳。'
+  })
+);
 </script>

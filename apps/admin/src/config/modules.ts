@@ -1,3 +1,5 @@
+import { buildRouteHelpText } from '@/utils/helpText';
+
 export type ModuleStatus = 'ready' | 'design-ready' | 'planned' | 'later';
 export type MenuSectionIcon =
   | 'workspace'
@@ -19,6 +21,7 @@ export interface AppModuleItem {
   status: ModuleStatus;
   permission?: string;
   description: string;
+  help?: string[];
   metrics?: Array<{
     label: string;
     value: string;
@@ -906,6 +909,17 @@ export function getModuleDisplayGroup(item: AppModuleItem) {
 
 export function getModuleDisplayDescription(item: AppModuleItem) {
   return item.description.replaceAll('Apple ID', 'ID').replaceAll('Apple ', 'ID ');
+}
+
+export function getModuleDisplayHelp(item: AppModuleItem) {
+  return (
+    item.help ??
+    buildRouteHelpText(
+      getModuleDisplayTitle(item),
+      getModuleDisplayDescription(item),
+      getModuleDisplayGroup(item)
+    )
+  );
 }
 
 export function getModulePermission(item: AppModuleItem) {

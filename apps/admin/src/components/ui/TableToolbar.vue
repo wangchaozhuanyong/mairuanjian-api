@@ -62,6 +62,12 @@
     </div>
 
     <div class="table-toolbar__ops">
+      <FeatureHelp
+        class="table-toolbar__help"
+        placement="bottom"
+        title="列表操作"
+        :text="toolbarHelp"
+      />
       <el-select
         v-if="savedViews.length"
         v-model="savedViewIdModel"
@@ -218,6 +224,8 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, ref, watch } from 'vue';
 import { userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import { buildHelpText } from '@/utils/helpText';
 import type { UserTableView } from '@/types/system';
 
 interface SelectOption {
@@ -315,6 +323,11 @@ const dateOptions: SelectOption[] = [
 const removedViewIds = ref<string[]>([]);
 const viewOverrides = ref<Record<string, Partial<UserTableView>>>({});
 const managingView = ref(false);
+const toolbarHelp = buildHelpText({
+  description: '这里处理当前列表的搜索、筛选、刷新、导出、列显示和保存视图。',
+  suggestion: '先缩小筛选范围，再执行导出、批量处理或主操作，避免误处理不相关记录。',
+  example: '例如先筛出“待发货”订单，确认列表无误后再导出或进入发货处理。'
+});
 
 const defaultStatusOptions: SelectOption[] = [
   { label: '已接入', value: 'ready' },

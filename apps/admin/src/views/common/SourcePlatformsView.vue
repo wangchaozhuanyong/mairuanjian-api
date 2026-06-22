@@ -2071,7 +2071,7 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { dataCenterApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
 import type { DataDictionaryQuery, SourcePlatformQuery } from '@/api/system';
@@ -2133,7 +2133,7 @@ import {
   systemQuickOptionGroups,
   type SystemQuickOptionGroupKey
 } from '@/utils/systemQuickOptions';
-import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const tableKey = 'source_platforms';
 const statusOptions = [
@@ -2790,127 +2790,158 @@ function applyCodeServiceDeliveryModeResult(data: PageResult<DataDictionary>) {
   deliveryModeTotal.value = codeServiceDeliveryModeDictionaries.value.length;
 }
 
+interface SourceOptionResourceConfig<TData> {
+  key: string;
+  activeKey: Ref<string>;
+  loading?: Ref<boolean>;
+  options: DictionaryLoadOptions;
+  cancelScope: string;
+  fetcher: (signal: AbortSignal) => Promise<TData>;
+  apply: (data: TData) => void;
+  errorMessage: string;
+  isCurrent?: () => boolean;
+}
+
+async function loadSourceOptionResource<TData>({
+  key,
+  activeKey,
+  loading: loadingRef,
+  options,
+  cancelScope,
+  fetcher,
+  apply,
+  errorMessage,
+  isCurrent
+}: SourceOptionResourceConfig<TData>) {
+  activeKey.value = key;
+
+  try {
+    await refreshSmartQueryResource({
+      key,
+      fetcher: ({ signal }) => fetcher(signal),
+      apply,
+      background: options.background,
+      cancelPreviousMatching: options.force ? cancelScope : undefined,
+      isCurrent: () => (isCurrent?.() ?? true) && activeKey.value === key,
+      setLoading: loadingRef
+        ? (value) => {
+            loadingRef.value = value;
+          }
+        : undefined,
+      force: options.force ?? true
+    });
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : errorMessage);
+    }
+  }
+}
+
+interface GroupedSourceOptionResourceConfig<TData, TGroup extends string> {
+  key: string;
+  groupKey: TGroup;
+  activeKeys: Record<TGroup, string>;
+  loading?: Ref<boolean>;
+  options: DictionaryLoadOptions;
+  cancelScope: string;
+  fetcher: (signal: AbortSignal) => Promise<TData>;
+  apply: (data: TData) => void;
+  errorMessage: string;
+  isCurrentGroup: boolean;
+}
+
+async function loadGroupedSourceOptionResource<TData, TGroup extends string>({
+  key,
+  groupKey,
+  activeKeys,
+  loading: loadingRef,
+  options,
+  cancelScope,
+  fetcher,
+  apply,
+  errorMessage,
+  isCurrentGroup
+}: GroupedSourceOptionResourceConfig<TData, TGroup>) {
+  activeKeys[groupKey] = key;
+
+  try {
+    await refreshSmartQueryResource({
+      key,
+      fetcher: ({ signal }) => fetcher(signal),
+      apply,
+      background: options.background,
+      cancelPreviousMatching: options.force ? cancelScope : undefined,
+      isCurrent: () => activeKeys[groupKey] === key,
+      setLoading:
+        loadingRef && isCurrentGroup
+          ? (value) => {
+              loadingRef.value = value;
+            }
+          : undefined,
+      force: options.force ?? true
+    });
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : errorMessage);
+    }
+  }
+}
+
 async function loadPlatforms(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildPlatformParams();
   const key = createSmartQueryKey('source-platforms', params);
-  const cached = getSmartQueryData<PageResult<SourcePlatform>>(key);
 
-  activePlatformsQueryKey.value = key;
-
-  if (cached) {
-    applyPlatformResult(cached);
-  }
-
-  loading.value = !cached && !options.background;
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: () => sourcePlatformsApi.list(params),
-      force: options.force ?? true
-    });
-
-    if (activePlatformsQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyPlatformResult(result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载来源平台失败');
-    }
-  } finally {
-    if (activePlatformsQueryKey.value === key) {
-      loading.value = false;
-    }
-  }
+  await loadSourceOptionResource({
+    key,
+    activeKey: activePlatformsQueryKey,
+    loading,
+    options,
+    cancelScope: 'source-platforms',
+    fetcher: (signal) => sourcePlatformsApi.list(params, { signal }),
+    apply: applyPlatformResult,
+    errorMessage: '加载来源平台失败'
+  });
 }
 
 async function loadCustomerTags(options: DictionaryLoadOptions = {}) {
   const params = buildCustomerTagParams();
   const key = createSmartQueryKey('customer-tags', params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
 
-  activeCustomerTagsQueryKey.value = key;
-
-  if (cached) {
-    applyCustomerTagResult(cached);
-  }
-
-  tagLoading.value = !cached && !options.background;
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: () => dataCenterApi.listDictionaries(params),
-      force: options.force ?? true
-    });
-
-    if (activeCustomerTagsQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyCustomerTagResult(result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载客户标签失败');
-    }
-  } finally {
-    if (activeCustomerTagsQueryKey.value === key) {
-      tagLoading.value = false;
-    }
-  }
+  await loadSourceOptionResource({
+    key,
+    activeKey: activeCustomerTagsQueryKey,
+    loading: tagLoading,
+    options,
+    cancelScope: 'customer-tags',
+    fetcher: (signal) => dataCenterApi.listDictionaries(params, { signal }),
+    apply: applyCustomerTagResult,
+    errorMessage: '加载客户标签失败'
+  });
 }
 
 async function loadAppleServiceCategories(options: DictionaryLoadOptions = {}) {
   const params = buildAppleServiceCategoryParams();
   const key = createSmartQueryKey('apple-service-categories', params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
 
-  activeAppleServiceCategoriesQueryKey.value = key;
-
-  if (cached) {
-    applyAppleServiceCategoryResult(cached);
-  }
-
-  categoryLoading.value = !cached && !options.background;
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: async () => {
-        const data = await dataCenterApi.listDictionaries(params);
-        if (options.restoreDefaults && !params.keyword && !params.status && params.page === 1) {
-          const createdDefaults = await ensureDefaultAppleServiceCategories(data.items);
-          if (createdDefaults) {
-            return dataCenterApi.listDictionaries(params);
-          }
+  await loadSourceOptionResource({
+    key,
+    activeKey: activeAppleServiceCategoriesQueryKey,
+    loading: categoryLoading,
+    options,
+    cancelScope: 'apple-service-categories',
+    fetcher: async (signal) => {
+      const data = await dataCenterApi.listDictionaries(params, { signal });
+      if (options.restoreDefaults && !params.keyword && !params.status && params.page === 1) {
+        const createdDefaults = await ensureDefaultAppleServiceCategories(data.items);
+        if (createdDefaults) {
+          return dataCenterApi.listDictionaries(params, { signal });
         }
-        return data;
-      },
-      force: options.force ?? true
-    });
-
-    if (activeAppleServiceCategoriesQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyAppleServiceCategoryResult(result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务分类失败');
-    }
-  } finally {
-    if (activeAppleServiceCategoriesQueryKey.value === key) {
-      categoryLoading.value = false;
-    }
-  }
+      }
+      return data;
+    },
+    apply: applyAppleServiceCategoryResult,
+    errorMessage: '加载 Apple ID 业务分类失败'
+  });
 }
 
 async function loadAppleServiceOptionGroup(
@@ -2919,51 +2950,29 @@ async function loadAppleServiceOptionGroup(
 ) {
   const params = buildAppleServiceOptionParams(groupKey);
   const key = createSmartQueryKey(`apple-service-option-${groupKey}`, params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
   const isCurrentGroup = selectedAppleServiceOptionGroup.value === groupKey;
 
-  activeAppleServiceOptionQueryKeys[groupKey] = key;
-
-  if (cached) {
-    applyAppleServiceOptionResult(groupKey, cached);
-  }
-
-  if (isCurrentGroup) {
-    appleServiceOptionLoading.value = !cached && !options.background;
-  }
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: async () => {
-        const data = await dataCenterApi.listDictionaries(params);
-        if (options.restoreDefaults) {
-          const createdDefaults = await ensureDefaultAppleServiceOptions(groupKey, data.items);
-          if (createdDefaults) {
-            return dataCenterApi.listDictionaries(params);
-          }
+  await loadGroupedSourceOptionResource({
+    key,
+    groupKey,
+    activeKeys: activeAppleServiceOptionQueryKeys,
+    loading: appleServiceOptionLoading,
+    options,
+    cancelScope: `apple-service-option-${groupKey}`,
+    fetcher: async (signal) => {
+      const data = await dataCenterApi.listDictionaries(params, { signal });
+      if (options.restoreDefaults) {
+        const createdDefaults = await ensureDefaultAppleServiceOptions(groupKey, data.items);
+        if (createdDefaults) {
+          return dataCenterApi.listDictionaries(params, { signal });
         }
-        return data;
-      },
-      force: options.force ?? true
-    });
-
-    if (activeAppleServiceOptionQueryKeys[groupKey] !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyAppleServiceOptionResult(groupKey, result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务选项失败');
-    }
-  } finally {
-    if (isCurrentGroup && activeAppleServiceOptionQueryKeys[groupKey] === key) {
-      appleServiceOptionLoading.value = false;
-    }
-  }
+      }
+      return data;
+    },
+    apply: (data) => applyAppleServiceOptionResult(groupKey, data),
+    errorMessage: '加载 Apple ID 业务选项失败',
+    isCurrentGroup
+  });
 }
 
 async function loadNotificationOptionGroup(
@@ -2972,51 +2981,29 @@ async function loadNotificationOptionGroup(
 ) {
   const params = buildNotificationOptionParams(groupKey);
   const key = createSmartQueryKey(`notification-option-${groupKey}`, params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
   const isCurrentGroup = selectedNotificationOptionGroup.value === groupKey;
 
-  activeNotificationOptionQueryKeys[groupKey] = key;
-
-  if (cached) {
-    applyNotificationOptionResult(groupKey, cached);
-  }
-
-  if (isCurrentGroup) {
-    notificationOptionLoading.value = !cached && !options.background;
-  }
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: async () => {
-        const data = await dataCenterApi.listDictionaries(params);
-        if (options.restoreDefaults) {
-          const createdDefaults = await ensureDefaultNotificationOptions(groupKey, data.items);
-          if (createdDefaults) {
-            return dataCenterApi.listDictionaries(params);
-          }
+  await loadGroupedSourceOptionResource({
+    key,
+    groupKey,
+    activeKeys: activeNotificationOptionQueryKeys,
+    loading: notificationOptionLoading,
+    options,
+    cancelScope: `notification-option-${groupKey}`,
+    fetcher: async (signal) => {
+      const data = await dataCenterApi.listDictionaries(params, { signal });
+      if (options.restoreDefaults) {
+        const createdDefaults = await ensureDefaultNotificationOptions(groupKey, data.items);
+        if (createdDefaults) {
+          return dataCenterApi.listDictionaries(params, { signal });
         }
-        return data;
-      },
-      force: options.force ?? true
-    });
-
-    if (activeNotificationOptionQueryKeys[groupKey] !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyNotificationOptionResult(groupKey, result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载通知选项失败');
-    }
-  } finally {
-    if (isCurrentGroup && activeNotificationOptionQueryKeys[groupKey] === key) {
-      notificationOptionLoading.value = false;
-    }
-  }
+      }
+      return data;
+    },
+    apply: (data) => applyNotificationOptionResult(groupKey, data),
+    errorMessage: '加载通知选项失败',
+    isCurrentGroup
+  });
 }
 
 async function loadSystemOptionGroup(
@@ -3025,192 +3012,104 @@ async function loadSystemOptionGroup(
 ) {
   const params = buildSystemOptionParams(groupKey);
   const key = createSmartQueryKey(`system-option-${groupKey}`, params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
   const isCurrentGroup = selectedSystemOptionGroup.value === groupKey;
 
-  activeSystemOptionQueryKeys[groupKey] = key;
-
-  if (cached) {
-    applySystemOptionResult(groupKey, cached);
-  }
-
-  if (isCurrentGroup) {
-    systemOptionLoading.value = !cached && !options.background;
-  }
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: async () => {
-        const data = await dataCenterApi.listDictionaries(params);
-        if (options.restoreDefaults) {
-          const createdDefaults = await ensureDefaultSystemOptions(groupKey, data.items);
-          if (createdDefaults) {
-            return dataCenterApi.listDictionaries(params);
-          }
+  await loadGroupedSourceOptionResource({
+    key,
+    groupKey,
+    activeKeys: activeSystemOptionQueryKeys,
+    loading: systemOptionLoading,
+    options,
+    cancelScope: `system-option-${groupKey}`,
+    fetcher: async (signal) => {
+      const data = await dataCenterApi.listDictionaries(params, { signal });
+      if (options.restoreDefaults) {
+        const createdDefaults = await ensureDefaultSystemOptions(groupKey, data.items);
+        if (createdDefaults) {
+          return dataCenterApi.listDictionaries(params, { signal });
         }
-        return data;
-      },
-      force: options.force ?? true
-    });
-
-    if (activeSystemOptionQueryKeys[groupKey] !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applySystemOptionResult(groupKey, result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载系统与接口选项失败');
-    }
-  } finally {
-    if (isCurrentGroup && activeSystemOptionQueryKeys[groupKey] === key) {
-      systemOptionLoading.value = false;
-    }
-  }
+      }
+      return data;
+    },
+    apply: (data) => applySystemOptionResult(groupKey, data),
+    errorMessage: '加载系统与接口选项失败',
+    isCurrentGroup
+  });
 }
 
 async function loadAppleRegions(options: DictionaryLoadOptions = {}) {
   const params = buildAppleRegionParams();
   const key = createSmartQueryKey('apple-account-regions', params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
 
-  activeAppleRegionsQueryKey.value = key;
-
-  if (cached) {
-    applyAppleRegionResult(cached);
-  }
-
-  regionLoading.value = !cached && !options.background;
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: async () => {
-        const data = await dataCenterApi.listDictionaries(params);
-        if (options.restoreDefaults && !params.keyword && !params.status && params.page === 1) {
-          const createdDefaults = await ensureDefaultAppleRegions(data.items);
-          if (createdDefaults) {
-            return dataCenterApi.listDictionaries(params);
-          }
+  await loadSourceOptionResource({
+    key,
+    activeKey: activeAppleRegionsQueryKey,
+    loading: regionLoading,
+    options,
+    cancelScope: 'apple-account-regions',
+    fetcher: async (signal) => {
+      const data = await dataCenterApi.listDictionaries(params, { signal });
+      if (options.restoreDefaults && !params.keyword && !params.status && params.page === 1) {
+        const createdDefaults = await ensureDefaultAppleRegions(data.items);
+        if (createdDefaults) {
+          return dataCenterApi.listDictionaries(params, { signal });
         }
-        return data;
-      },
-      force: options.force ?? true
-    });
-
-    if (activeAppleRegionsQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyAppleRegionResult(result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 地区失败');
-    }
-  } finally {
-    if (activeAppleRegionsQueryKey.value === key) {
-      regionLoading.value = false;
-    }
-  }
+      }
+      return data;
+    },
+    apply: applyAppleRegionResult,
+    errorMessage: '加载 Apple ID 地区失败'
+  });
 }
 
 async function loadCodeDeliveryMethods(options: DictionaryLoadOptions = {}) {
   const params = buildCodeDeliveryMethodParams();
   const key = createSmartQueryKey('code-delivery-methods', params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
 
-  activeCodeDeliveryMethodsQueryKey.value = key;
-
-  if (cached) {
-    applyCodeDeliveryMethodResult(cached);
-  }
-
-  methodLoading.value = !cached && !options.background;
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: async () => {
-        const data = await dataCenterApi.listDictionaries(params);
-        if (options.restoreDefaults) {
-          const createdDefaults = await ensureDefaultCodeDeliveryMethods(data.items);
-          if (createdDefaults) {
-            return dataCenterApi.listDictionaries(params);
-          }
+  await loadSourceOptionResource({
+    key,
+    activeKey: activeCodeDeliveryMethodsQueryKey,
+    loading: methodLoading,
+    options,
+    cancelScope: 'code-delivery-methods',
+    fetcher: async (signal) => {
+      const data = await dataCenterApi.listDictionaries(params, { signal });
+      if (options.restoreDefaults) {
+        const createdDefaults = await ensureDefaultCodeDeliveryMethods(data.items);
+        if (createdDefaults) {
+          return dataCenterApi.listDictionaries(params, { signal });
         }
-        return data;
-      },
-      force: options.force ?? true
-    });
-
-    if (activeCodeDeliveryMethodsQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyCodeDeliveryMethodResult(result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载兑换码发货方式失败');
-    }
-  } finally {
-    if (activeCodeDeliveryMethodsQueryKey.value === key) {
-      methodLoading.value = false;
-    }
-  }
+      }
+      return data;
+    },
+    apply: applyCodeDeliveryMethodResult,
+    errorMessage: '加载兑换码发货方式失败'
+  });
 }
 
 async function loadCodeServiceDeliveryModes(options: DictionaryLoadOptions = {}) {
   const params = buildCodeServiceDeliveryModeParams();
   const key = createSmartQueryKey('code-service-delivery-modes', params);
-  const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
 
-  activeCodeServiceDeliveryModesQueryKey.value = key;
-
-  if (cached) {
-    applyCodeServiceDeliveryModeResult(cached);
-  }
-
-  deliveryModeLoading.value = !cached && !options.background;
-
-  try {
-    const result = await refreshSmartQuery({
-      key,
-      fetcher: async () => {
-        const data = await dataCenterApi.listDictionaries(params);
-        if (options.restoreDefaults) {
-          const createdDefaults = await ensureDefaultCodeServiceDeliveryModes(data.items);
-          if (createdDefaults) {
-            return dataCenterApi.listDictionaries(params);
-          }
+  await loadSourceOptionResource({
+    key,
+    activeKey: activeCodeServiceDeliveryModesQueryKey,
+    loading: deliveryModeLoading,
+    options,
+    cancelScope: 'code-service-delivery-modes',
+    fetcher: async (signal) => {
+      const data = await dataCenterApi.listDictionaries(params, { signal });
+      if (options.restoreDefaults) {
+        const createdDefaults = await ensureDefaultCodeServiceDeliveryModes(data.items);
+        if (createdDefaults) {
+          return dataCenterApi.listDictionaries(params, { signal });
         }
-        return data;
-      },
-      force: options.force ?? true
-    });
-
-    if (activeCodeServiceDeliveryModesQueryKey.value !== key) {
-      return;
-    }
-
-    if (result.changed || !cached) {
-      applyCodeServiceDeliveryModeResult(result.data);
-    }
-  } catch (error) {
-    if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载兑换码业务发货模式失败');
-    }
-  } finally {
-    if (activeCodeServiceDeliveryModesQueryKey.value === key) {
-      deliveryModeLoading.value = false;
-    }
-  }
+      }
+      return data;
+    },
+    apply: applyCodeServiceDeliveryModeResult,
+    errorMessage: '加载兑换码业务发货模式失败'
+  });
 }
 
 async function ensureDefaultAppleRegions(existingRegions: DataDictionary[]) {

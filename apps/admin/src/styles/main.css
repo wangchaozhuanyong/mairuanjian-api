@@ -3214,6 +3214,11 @@ h1 {
   justify-self: end;
 }
 
+.table-toolbar__help {
+  align-self: center;
+  margin-left: 0;
+}
+
 .table-toolbar__batch {
   grid-column: 1 / -1;
   display: flex;
@@ -3837,6 +3842,14 @@ h1 {
 
 .table-action-group .app-button.el-button + .app-button.el-button {
   margin-left: 0;
+}
+
+.table-header-help {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .el-table .cell > strong {

@@ -643,9 +643,10 @@ async function loadDashboardOverview(
   try {
     await refreshSmartQueryResource({
       key: createSmartQueryKey('dashboard-overview'),
-      fetcher: loadDashboardOverviewData,
+      fetcher: ({ signal }) => loadDashboardOverviewData(signal),
       apply: applyDashboardOverview,
       background: Boolean(options.silent && dashboardDataReady.value),
+      cancelPreviousMatching: options.force ? 'dashboard-overview' : undefined,
       setLoading: (value) => {
         dashboardLoading.value = value;
       },
@@ -709,16 +710,34 @@ function applyDashboardOverview(results: Awaited<ReturnType<typeof loadDashboard
   }
 }
 
-function loadDashboardOverviewData() {
-  return Promise.allSettled([
-    appleAccountsApi.list({ page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
-    appleOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
-    appleRenewalTasksApi.list({ page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' }),
-    codeOrdersApi.list({ page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' }),
-    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }),
-    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }),
-    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'delivery_failed' })
+async function loadDashboardOverviewData(signal?: AbortSignal) {
+  const results = await Promise.allSettled([
+    appleAccountsApi.list(
+      { page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' },
+      { signal }
+    ),
+    appleOrdersApi.list(
+      { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+      { signal }
+    ),
+    appleRenewalTasksApi.list(
+      { page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' },
+      { signal }
+    ),
+    codeOrdersApi.list(
+      { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+      { signal }
+    ),
+    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }, { signal }),
+    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }, { signal }),
+    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'delivery_failed' }, { signal })
   ]);
+
+  if (signal?.aborted) {
+    throw new DOMException('Dashboard request cancelled', 'AbortError');
+  }
+
+  return results;
 }
 
 function getModuleStatusTone(status: ModuleStatus): StatusTone {

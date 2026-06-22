@@ -928,9 +928,10 @@ async function loadTasks(options: { background?: boolean; force?: boolean } = {}
   try {
     await refreshSmartQueryResource({
       key: queryKey,
-      fetcher: () => appleRenewalTasksApi.list(params),
+      fetcher: ({ signal }) => appleRenewalTasksApi.list(params, { signal }),
       apply: applyTaskListResult,
       background: options.background,
+      cancelPreviousMatching: options.force ? 'apple-renewal-tasks' : undefined,
       isCurrent: () => activeTasksQueryKey.value === queryKey,
       setLoading: (value) => {
         loading.value = value;

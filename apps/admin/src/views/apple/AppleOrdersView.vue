@@ -547,9 +547,10 @@ async function loadOrders(options: { background?: boolean; force?: boolean } = {
   try {
     await refreshSmartQueryResource({
       key,
-      fetcher: () => appleOrdersApi.list(params),
+      fetcher: ({ signal }) => appleOrdersApi.list(params, { signal }),
       apply: applyOrderResult,
       background: options.background,
+      cancelPreviousMatching: options.force ? 'apple-orders' : undefined,
       isCurrent: () => activeOrdersQueryKey.value === key,
       setLoading: (value) => {
         loading.value = value;

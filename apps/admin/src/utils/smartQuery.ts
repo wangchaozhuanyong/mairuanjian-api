@@ -12,18 +12,29 @@ export interface SmartQueryResult<TData> {
   updatedAt: number;
 }
 
+export interface SmartQueryFetchContext<TData = unknown> {
+  key: string;
+  signal: AbortSignal;
+  startedAt: number;
+  cached?: TData;
+}
+
+export type SmartQueryFetcher<TData> = (context: SmartQueryFetchContext<TData>) => Promise<TData>;
+
 interface RefreshSmartQueryOptions<TData> {
   key: string;
-  fetcher: () => Promise<TData>;
+  fetcher: SmartQueryFetcher<TData>;
   force?: boolean;
   dedupeMs?: number;
   staleMs?: number;
+  cancelPrevious?: boolean;
 }
 
 interface RefreshSmartQueryResourceOptions<TData> extends RefreshSmartQueryOptions<TData> {
   apply: (data: TData) => void;
   background?: boolean;
   applyCached?: boolean;
+  cancelPreviousMatching?: SmartQueryMatcher;
   isCurrent?: () => boolean;
   setLoading?: (loading: boolean) => void;
 }
@@ -45,15 +56,18 @@ export interface SmartQueryActivitySnapshot {
 type SmartQueryActivityListener = (snapshot: SmartQueryActivitySnapshot) => void;
 
 interface InFlightSmartQuery<TData> {
+  controller: AbortController;
   promise: Promise<SmartQueryResult<TData>>;
+  revision: number;
   startedAt: number;
 }
 
 const queryCache = new Map<string, SmartQueryCacheEntry<unknown>>();
 const inFlightQueries = new Map<string, InFlightSmartQuery<unknown>>();
 const staleQueryKeys = new Map<string, number>();
+const queryRevisions = new Map<string, number>();
 const activityListeners = new Set<SmartQueryActivityListener>();
-const activeQueryKeys = new Set<string>();
+const activeQueryCounts = new Map<string, number>();
 const smartQueryActivity: Omit<SmartQueryActivitySnapshot, 'activeKeys'> = {
   pendingCount: 0
 };
@@ -101,12 +115,26 @@ export function invalidateSmartQueries(matcher: SmartQueryMatcher) {
   for (const key of getSmartQueryKeys(matcher)) {
     queryCache.delete(key);
     staleQueryKeys.delete(key);
+    bumpSmartQueryRevision(key);
     count += 1;
   }
 
   for (const key of Array.from(inFlightQueries.keys())) {
     if (matchesSmartQueryKey(key, matcher)) {
-      inFlightQueries.delete(key);
+      cancelInFlightSmartQuery(key);
+    }
+  }
+
+  return count;
+}
+
+export function cancelSmartQueries(matcher: SmartQueryMatcher) {
+  let count = 0;
+
+  for (const key of Array.from(inFlightQueries.keys())) {
+    if (matchesSmartQueryKey(key, matcher)) {
+      cancelInFlightSmartQuery(key);
+      count += 1;
     }
   }
 
@@ -114,16 +142,19 @@ export function invalidateSmartQueries(matcher: SmartQueryMatcher) {
 }
 
 export function clearSmartQueryCache() {
+  for (const key of Array.from(inFlightQueries.keys())) {
+    cancelInFlightSmartQuery(key);
+  }
+
   queryCache.clear();
-  inFlightQueries.clear();
   staleQueryKeys.clear();
 }
 
 export function getSmartQueryActivitySnapshot(): SmartQueryActivitySnapshot {
   return {
     ...smartQueryActivity,
-    activeKeys: [...activeQueryKeys],
-    pendingCount: activeQueryKeys.size
+    activeKeys: [...activeQueryCounts.keys()],
+    pendingCount: getActiveSmartQueryCount()
   };
 }
 
@@ -141,7 +172,8 @@ export async function refreshSmartQuery<TData>({
   fetcher,
   force = true,
   dedupeMs = DEFAULT_FORCE_DEDUPE_MS,
-  staleMs = DEFAULT_STALE_MS
+  staleMs = DEFAULT_STALE_MS,
+  cancelPrevious = false
 }: RefreshSmartQueryOptions<TData>): Promise<SmartQueryResult<TData>> {
   const cached = queryCache.get(key) as SmartQueryCacheEntry<TData> | undefined;
   const now = Date.now();
@@ -170,27 +202,49 @@ export async function refreshSmartQuery<TData>({
   const pending = inFlightQueries.get(key) as InFlightSmartQuery<TData> | undefined;
 
   if (pending) {
-    const staleMarkedAt = staleQueryKeys.get(key);
+    if (cancelPrevious) {
+      cancelInFlightSmartQuery(key);
+    } else {
+      const staleMarkedAt = staleQueryKeys.get(key);
 
-    if (!staleMarkedAt || staleMarkedAt <= pending.startedAt) {
-      return pending.promise;
+      if (!staleMarkedAt || staleMarkedAt <= pending.startedAt) {
+        return pending.promise;
+      }
+
+      return pending.promise.then(() =>
+        refreshSmartQuery({
+          key,
+          fetcher,
+          force,
+          dedupeMs: 0,
+          staleMs,
+          cancelPrevious
+        })
+      );
     }
-
-    return pending.promise.then(() =>
-      refreshSmartQuery({
-        key,
-        fetcher,
-        force,
-        dedupeMs: 0,
-        staleMs
-      })
-    );
   }
 
   const startedAt = Date.now();
+  const revision = getSmartQueryRevision(key);
+  const controller = new AbortController();
   markSmartQueryStarted(key, startedAt);
-  const promise = fetcher()
+  const promise = fetcher({
+    key,
+    signal: controller.signal,
+    startedAt,
+    cached: cached?.data
+  })
     .then((data) => {
+      if (controller.signal.aborted || getSmartQueryRevision(key) !== revision) {
+        return {
+          data,
+          changed: false,
+          fromCache: Boolean(cached),
+          skipped: true,
+          updatedAt: cached?.updatedAt ?? startedAt
+        };
+      }
+
       const signature = stableSerialize(data);
       const previous = queryCache.get(key) as SmartQueryCacheEntry<TData> | undefined;
       const updatedAt = Date.now();
@@ -239,16 +293,23 @@ export async function refreshSmartQuery<TData>({
       };
     })
     .catch((error: unknown) => {
-      markSmartQueryFailed(key, error);
+      if (!isSmartQueryCanceledError(error)) {
+        markSmartQueryFailed(key, error);
+      }
+
       throw error;
     })
     .finally(() => {
-      inFlightQueries.delete(key);
+      if (inFlightQueries.get(key)?.startedAt === startedAt) {
+        inFlightQueries.delete(key);
+      }
       markSmartQueryFinished(key);
     });
 
   inFlightQueries.set(key, {
+    controller,
     promise: promise as Promise<SmartQueryResult<unknown>>,
+    revision,
     startedAt
   });
 
@@ -259,6 +320,7 @@ export async function refreshSmartQueryResource<TData>({
   apply,
   background = false,
   applyCached = true,
+  cancelPreviousMatching,
   isCurrent,
   setLoading,
   ...queryOptions
@@ -273,6 +335,10 @@ export async function refreshSmartQueryResource<TData>({
   setLoading?.(cached === undefined && !background);
 
   try {
+    if (cancelPreviousMatching) {
+      cancelSmartQueries(cancelPreviousMatching);
+    }
+
     const result = await refreshSmartQuery(queryOptions);
 
     if (isStillCurrent() && (result.changed || cached === undefined)) {
@@ -280,11 +346,36 @@ export async function refreshSmartQueryResource<TData>({
     }
 
     return result;
+  } catch (error) {
+    if (isSmartQueryCanceledError(error)) {
+      return undefined;
+    }
+
+    throw error;
   } finally {
     if (isStillCurrent()) {
       setLoading?.(false);
     }
   }
+}
+
+export function isSmartQueryCanceledError(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+
+  return (
+    candidate.code === 'ERR_CANCELED' ||
+    candidate.name === 'AbortError' ||
+    candidate.name === 'CanceledError' ||
+    candidate.message === 'canceled'
+  );
 }
 
 function matchesSmartQueryKey(key: string, matcher: SmartQueryMatcher) {
@@ -300,8 +391,8 @@ function matchesSmartQueryKey(key: string, matcher: SmartQueryMatcher) {
 }
 
 function markSmartQueryStarted(key: string, startedAt: number) {
-  activeQueryKeys.add(key);
-  smartQueryActivity.pendingCount = activeQueryKeys.size;
+  activeQueryCounts.set(key, (activeQueryCounts.get(key) ?? 0) + 1);
+  smartQueryActivity.pendingCount = getActiveSmartQueryCount();
   smartQueryActivity.lastStartedAt = startedAt;
   emitSmartQueryActivity();
 }
@@ -324,10 +415,41 @@ function markSmartQueryFailed(key: string, error: unknown) {
 }
 
 function markSmartQueryFinished(key: string) {
-  activeQueryKeys.delete(key);
-  smartQueryActivity.pendingCount = activeQueryKeys.size;
+  const nextCount = (activeQueryCounts.get(key) ?? 0) - 1;
+
+  if (nextCount > 0) {
+    activeQueryCounts.set(key, nextCount);
+  } else {
+    activeQueryCounts.delete(key);
+  }
+
+  smartQueryActivity.pendingCount = getActiveSmartQueryCount();
   smartQueryActivity.lastFinishedAt = Date.now();
   emitSmartQueryActivity();
+}
+
+function getActiveSmartQueryCount() {
+  return Array.from(activeQueryCounts.values()).reduce((sum, count) => sum + count, 0);
+}
+
+function getSmartQueryRevision(key: string) {
+  return queryRevisions.get(key) ?? 0;
+}
+
+function bumpSmartQueryRevision(key: string) {
+  queryRevisions.set(key, getSmartQueryRevision(key) + 1);
+}
+
+function cancelInFlightSmartQuery(key: string) {
+  const pending = inFlightQueries.get(key);
+
+  if (!pending) {
+    return;
+  }
+
+  bumpSmartQueryRevision(key);
+  pending.controller.abort();
+  inFlightQueries.delete(key);
 }
 
 function emitSmartQueryActivity() {

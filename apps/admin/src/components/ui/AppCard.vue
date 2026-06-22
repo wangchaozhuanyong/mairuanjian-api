@@ -10,11 +10,11 @@
         <h3 v-if="title" class="app-card__title">
           <span>{{ title }}</span>
           <FeatureHelp
-            v-if="subtitle"
+            v-if="cardHelpItems.length"
             class="app-card__title-help"
             placement="right"
             :title="title"
-            :text="subtitle"
+            :text="cardHelpItems"
           />
         </h3>
         <p v-else-if="subtitle" class="app-card__subtitle">{{ subtitle }}</p>
@@ -44,6 +44,7 @@ import { computed } from 'vue';
 import AppState from '@/components/ui/AppState.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { normalizeHelpText } from '@/utils/helpText';
 
 type AppCardTagTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 
@@ -51,6 +52,7 @@ const props = withDefaults(
   defineProps<{
     title?: string;
     subtitle?: string;
+    help?: string | string[];
     tag?: string;
     tagTone?: AppCardTagTone;
     padded?: boolean;
@@ -68,6 +70,7 @@ const props = withDefaults(
   {
     title: '',
     subtitle: '',
+    help: '',
     tag: '',
     tagTone: 'blue',
     padded: false,
@@ -85,6 +88,7 @@ const props = withDefaults(
 );
 
 const hasState = computed(() => props.loading || Boolean(props.error) || props.empty);
+const cardHelpItems = computed(() => normalizeHelpText(props.help || props.subtitle));
 const stateType = computed(() => {
   if (props.loading) return 'loading';
   if (props.error) return 'error';

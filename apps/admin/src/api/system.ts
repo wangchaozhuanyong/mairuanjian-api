@@ -1,4 +1,4 @@
-import { http, request } from './client';
+import { http, request, type ApiRequestOptions } from './client';
 import type {
   AuditLog,
   Attachment,
@@ -1524,8 +1524,10 @@ export const auditLogsApi = {
 };
 
 export const customersApi = {
-  list(params: CustomerQuery) {
-    return request<PageResult<Customer>>(http.get('/customers', { params }));
+  list(params: CustomerQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<Customer>>(
+      http.get('/customers', { params, signal: options.signal })
+    );
   },
   get(id: string) {
     return request<Customer>(http.get(`/customers/${id}`));
@@ -1545,8 +1547,10 @@ export const customersApi = {
 };
 
 export const sourcePlatformsApi = {
-  list(params: SourcePlatformQuery) {
-    return request<PageResult<SourcePlatform>>(http.get('/source-platforms', { params }));
+  list(params: SourcePlatformQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<SourcePlatform>>(
+      http.get('/source-platforms', { params, signal: options.signal })
+    );
   },
   create(payload: SaveSourcePlatformPayload) {
     return request<SourcePlatform>(http.post('/source-platforms', payload));
@@ -1560,9 +1564,9 @@ export const sourcePlatformsApi = {
 };
 
 export const appleAccountSourceChannelsApi = {
-  list(params: AppleAccountSourceChannelQuery) {
+  list(params: AppleAccountSourceChannelQuery, options: ApiRequestOptions = {}) {
     return request<PageResult<AppleAccountSourceChannel>>(
-      http.get('/apple/account-source-channels', { params })
+      http.get('/apple/account-source-channels', { params, signal: options.signal })
     );
   },
   create(payload: SaveAppleAccountSourceChannelPayload) {
@@ -1579,8 +1583,10 @@ export const appleAccountSourceChannelsApi = {
 };
 
 export const messageTemplatesApi = {
-  list(params: MessageTemplateQuery) {
-    return request<PageResult<MessageTemplate>>(http.get('/message-templates', { params }));
+  list(params: MessageTemplateQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<MessageTemplate>>(
+      http.get('/message-templates', { params, signal: options.signal })
+    );
   },
   create(payload: SaveMessageTemplatePayload) {
     return request<MessageTemplate>(http.post('/message-templates', payload));
@@ -1863,8 +1869,10 @@ export const dataCenterApi = {
       http.patch(`/data/duplicate-merge-jobs/${id}/status`, payload)
     );
   },
-  listDictionaries(params: DataDictionaryQuery) {
-    return request<PageResult<DataDictionary>>(http.get('/data/dictionaries', { params }));
+  listDictionaries(params: DataDictionaryQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<DataDictionary>>(
+      http.get('/data/dictionaries', { params, signal: options.signal })
+    );
   },
   createDictionary(payload: CreateDataDictionaryPayload) {
     return request<DataDictionary>(http.post('/data/dictionaries', payload));
@@ -2092,8 +2100,10 @@ export const attachmentsApi = {
 };
 
 export const appleAccountsApi = {
-  list(params: AppleAccountQuery) {
-    return request<PageResult<AppleAccount>>(http.get('/apple/accounts', { params }));
+  list(params: AppleAccountQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<AppleAccount>>(
+      http.get('/apple/accounts', { params, signal: options.signal })
+    );
   },
   ownershipReport() {
     return request<AppleAccountOwnershipReport>(http.get('/apple/accounts/ownership-report'));
@@ -2164,8 +2174,10 @@ export const appleAccountsApi = {
 };
 
 export const appleServicesApi = {
-  list(params: AppleServiceQuery) {
-    return request<PageResult<AppleService>>(http.get('/apple/services', { params }));
+  list(params: AppleServiceQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<AppleService>>(
+      http.get('/apple/services', { params, signal: options.signal })
+    );
   },
   getBalancePriceRule() {
     return request<AppleBalancePriceRule>(http.get('/apple/services/balance-price-rule'));
@@ -2288,8 +2300,10 @@ export const appleOfficialPricesApi = {
 };
 
 export const codeServicesApi = {
-  list(params: CodeServiceQuery) {
-    return request<PageResult<CodeService>>(http.get('/codes/services', { params }));
+  list(params: CodeServiceQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<CodeService>>(
+      http.get('/codes/services', { params, signal: options.signal })
+    );
   },
   get(id: string) {
     return request<CodeService>(http.get(`/codes/services/${id}`));
@@ -2326,8 +2340,10 @@ export const redeemCodesApi = {
   importBatch(payload: ImportRedeemCodesPayload) {
     return request<RedeemCodeImportResult>(http.post('/codes/batches/import', payload));
   },
-  listInventory(params: RedeemCodeInventoryQuery) {
-    return request<PageResult<RedeemCodeInventoryItem>>(http.get('/codes/inventory', { params }));
+  listInventory(params: RedeemCodeInventoryQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<RedeemCodeInventoryItem>>(
+      http.get('/codes/inventory', { params, signal: options.signal })
+    );
   },
   getInventoryItem(id: string) {
     return request<RedeemCodeInventoryItem>(http.get(`/codes/inventory/${id}`));
@@ -2338,8 +2354,10 @@ export const redeemCodesApi = {
 };
 
 export const codeOrdersApi = {
-  list(params: CodeOrderQuery) {
-    return request<PageResult<CodePlatformOrder>>(http.get('/codes/orders', { params }));
+  list(params: CodeOrderQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<CodePlatformOrder>>(
+      http.get('/codes/orders', { params, signal: options.signal })
+    );
   },
   get(id: string) {
     return request<CodePlatformOrder>(http.get(`/codes/orders/${id}`));
@@ -2424,8 +2442,10 @@ export const codeReportsApi = {
 };
 
 export const appleOrdersApi = {
-  list(params: AppleOrderQuery) {
-    return request<PageResult<AppleOrder>>(http.get('/apple/orders', { params }));
+  list(params: AppleOrderQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<AppleOrder>>(
+      http.get('/apple/orders', { params, signal: options.signal })
+    );
   },
   entryContext(params: { customerId: string; serviceId?: string; serviceAccount?: string }) {
     return request<AppleOrderEntryContext>(http.get('/apple/orders/entry-context', { params }));
@@ -2456,8 +2476,10 @@ export const appleActivationsApi = {
 };
 
 export const appleRenewalTasksApi = {
-  list(params: RenewalTaskQuery) {
-    return request<PageResult<RenewalTask>>(http.get('/apple/renewal-tasks', { params }));
+  list(params: RenewalTaskQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<RenewalTask>>(
+      http.get('/apple/renewal-tasks', { params, signal: options.signal })
+    );
   },
   get(id: string) {
     return request<RenewalTask>(http.get(`/apple/renewal-tasks/${id}`));

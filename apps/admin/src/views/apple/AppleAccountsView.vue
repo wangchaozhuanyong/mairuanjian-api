@@ -1760,7 +1760,9 @@ function getOwnershipLabel(value: AppleAccountOwnershipType) {
   return ownershipOptions.find((item) => item.value === value)?.label ?? value;
 }
 
-function formatAccountSaleCost(account: Pick<AppleAccount, 'ownershipType' | 'purchaseCost' | 'salePrice'>) {
+function formatAccountSaleCost(
+  account: Pick<AppleAccount, 'ownershipType' | 'purchaseCost' | 'salePrice'>
+) {
   if (account.ownershipType !== 'sold') {
     return '-';
   }
@@ -1887,9 +1889,10 @@ async function loadAccounts(options: { background?: boolean; force?: boolean } =
   try {
     await refreshSmartQueryResource({
       key,
-      fetcher: () => appleAccountsApi.list(params),
+      fetcher: ({ signal }) => appleAccountsApi.list(params, { signal }),
       apply: applyAccountListResult,
       background: options.background,
+      cancelPreviousMatching: options.force ? 'apple-accounts' : undefined,
       isCurrent: () => activeAccountsQueryKey.value === key,
       setLoading: (value) => {
         loading.value = value;

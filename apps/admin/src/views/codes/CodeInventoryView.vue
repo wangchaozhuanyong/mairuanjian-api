@@ -707,9 +707,10 @@ async function loadInventory(options: { background?: boolean; force?: boolean } 
   try {
     await refreshSmartQueryResource({
       key,
-      fetcher: () => redeemCodesApi.listInventory(params),
+      fetcher: ({ signal }) => redeemCodesApi.listInventory(params, { signal }),
       apply: applyInventoryListResult,
       background: options.background,
+      cancelPreviousMatching: options.force ? 'code-inventory' : undefined,
       isCurrent: () => activeInventoryQueryKey.value === key,
       setLoading: (value) => {
         loading.value = value;

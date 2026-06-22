@@ -2,13 +2,7 @@
   <PageScaffold :title="title" group="Apple ID 业务" :phase="phase" :description="description">
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row report-panel-title">
-        <PanelTitleHelp
-          title="报表明细"
-          :help="[
-            '这里看 Apple ID 业务到底赚不赚钱。销售额是客户给的钱，成本是用掉的 Apple 余额折成人民币，手续费和退款会一起扣掉。',
-            '上面的筛选怎么选，这里就按这个范围汇总。'
-          ]"
-        />
+        <PanelTitleHelp title="报表明细" :help="reportPanelHelp" />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>{{ activeTabLabel }}</StatusChip>
           <StatusChip tone="blue">订单 {{ report.summary.orderCount }}</StatusChip>
@@ -530,6 +524,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { buildHelpText } from '@/utils/helpText';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 const props = withDefaults(
@@ -545,6 +540,14 @@ const props = withDefaults(
   }
 );
 const APPLE_REPORT_SCOPE = 'apple-reports';
+const reportPanelHelp = computed(() =>
+  buildHelpText({
+    description:
+      '这里看 Apple ID 业务到底赚不赚钱。销售额是客户给的钱，成本是用掉的 Apple 余额折成人民币，手续费和退款会一起扣掉。',
+    suggestion: '先确认日期、状态和关键词范围，再看利润、毛利率和单均利润，避免把无关订单算进去。',
+    example: `例如做${props.title}时，先选近 30 天，再按业务或来源平台查看哪一类最赚钱。`
+  })
+);
 
 const tableKey = props.defaultTab === 'daily' ? 'apple_finance_report' : 'apple_profit_report';
 const statusOptions = [

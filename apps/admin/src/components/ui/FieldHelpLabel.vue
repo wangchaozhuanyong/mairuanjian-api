@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import { buildFieldHelpText, normalizeHelpText } from '@/utils/helpText';
 
 const props = withDefaults(
   defineProps<{
@@ -35,13 +36,9 @@ const props = withDefaults(
 
 const helpItems = computed(() => {
   if (props.help) {
-    const items = Array.isArray(props.help) ? props.help : [props.help];
-    return items.map((item) => item.trim()).filter(Boolean);
+    return normalizeHelpText(props.help);
   }
 
-  return [
-    props.purpose ? `用途：${props.purpose}` : '',
-    props.example ? `举例：${props.example}` : ''
-  ].filter(Boolean);
+  return buildFieldHelpText(props.label, props.purpose, props.example);
 });
 </script>

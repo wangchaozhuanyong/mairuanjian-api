@@ -16,6 +16,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import { normalizeHelpText } from '@/utils/helpText';
 
 const props = withDefaults(
   defineProps<{
@@ -29,11 +30,5 @@ const props = withDefaults(
   }
 );
 
-const helpText = computed(() => {
-  const items = Array.isArray(props.help) ? props.help : [props.help];
-  return items
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join(' ');
-});
+const helpText = computed(() => normalizeHelpText(props.help));
 </script>

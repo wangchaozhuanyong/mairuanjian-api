@@ -40,6 +40,7 @@
     "acceptance:security": "node scripts/acceptance-sensitive-security.mjs",
     "acceptance:launch": "bash scripts/acceptance-launch-local.sh",
     "acceptance:navigation": "node scripts/acceptance-navigation-loading.mjs",
+    "acceptance:loading": "node scripts/acceptance-loading-performance.mjs",
     "acceptance:realtime": "node scripts/acceptance-realtime-refresh.mjs",
     "git:readiness": "node scripts/git-readiness.mjs",
     "git:readiness:verbose": "node scripts/git-readiness.mjs --verbose",

@@ -9,6 +9,10 @@ export const http = axios.create({
   timeout: 15000
 });
 
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
 const serverMessageMap: Record<string, string> = {
   'Invalid username or password': '账号或密码错误，请检查账号和密码后重试。',
   'MFA code is required': '需要输入动态验证码或恢复码。',
@@ -242,6 +246,29 @@ function getAxiosErrorMessage(error: AxiosError<ApiResponse<unknown>>) {
   return normalizeServerMessage(error.message, status);
 }
 
+export function isRequestCanceled(error: unknown) {
+  if (axios.isCancel(error)) {
+    return true;
+  }
+
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+
+  return (
+    candidate.code === 'ERR_CANCELED' ||
+    candidate.name === 'AbortError' ||
+    candidate.name === 'CanceledError' ||
+    candidate.message === 'canceled'
+  );
+}
+
 export async function request<TData>(promise: Promise<{ data: ApiResponse<TData> }>) {
   try {
     const response = await promise;
@@ -253,6 +280,10 @@ export async function request<TData>(promise: Promise<{ data: ApiResponse<TData>
 
     return body.data;
   } catch (error) {
+    if (isRequestCanceled(error)) {
+      throw error;
+    }
+
     if (error instanceof AxiosError) {
       const axiosError = error as AxiosError<ApiResponse<unknown>>;
       const message = getAxiosErrorMessage(axiosError);

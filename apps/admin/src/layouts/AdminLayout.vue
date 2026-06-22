@@ -110,7 +110,7 @@
               class="page-help-button"
               placement="bottom"
               :title="routeTitle"
-              :text="routeDescription"
+              :text="routeHelp"
             />
           </div>
           <div
@@ -440,11 +440,8 @@ import {
 import { notifyRealtimeScopesInvalidated } from '@/realtime/realtimeQueryEvents';
 import { getRealtimeFallbackScopesForModule } from '@/realtime/realtimeRouteScopes';
 import type { NavigationItemBadge, NavigationNotificationBadge } from '@/types/system';
-import {
-  markSmartQueriesStale,
-  subscribeSmartQueryActivity,
-  type SmartQueryActivitySnapshot
-} from '@/utils/smartQuery';
+import { subscribeSmartQueryActivity, type SmartQueryActivitySnapshot } from '@/utils/smartQuery';
+import { normalizeHelpText } from '@/utils/helpText';
 
 const NAV_OPEN_STORAGE_KEY = 'apple_business_sidebar_open_keys';
 const WORKSPACE_TABS_STORAGE_KEY = 'apple_business_workspace_tabs';
@@ -551,8 +548,12 @@ const sectionIconMap = {
 
 const routeTitle = computed(() => String(route.meta.title ?? '后台管理'));
 const routeDescription = computed(() => String(route.meta.description ?? ''));
+const routeHelp = computed(() => {
+  const metaHelp = route.meta.help as string | string[] | undefined;
+  return normalizeHelpText(metaHelp ?? routeDescription.value);
+});
 const routeModuleKey = computed(() => String(route.meta.moduleKey ?? ''));
-const hasRouteHelp = computed(() => Boolean(routeDescription.value));
+const hasRouteHelp = computed(() => routeHelp.value.length > 0);
 const isPageRefreshBusy = computed(
   () => pageRefresh.refreshing.value || pageRefresh.backgroundRefreshing.value
 );
@@ -968,7 +969,6 @@ function handleMenuItemClick(item: AppModuleItem) {
 
 function prefetchWorkspaceRoute(routePath: string) {
   prefetchRouteComponent(routePath);
-  prewarmWorkspaceRouteData(routePath);
 }
 
 function scheduleActivePageRefresh() {
@@ -1002,7 +1002,7 @@ function scheduleActivePageRefresh() {
       void pageRefresh
         .run({
           background: true,
-          force: true,
+          force: false,
           reason: 'route-enter'
         })
         .then((refreshed) => {
@@ -1016,37 +1016,6 @@ function scheduleActivePageRefresh() {
     notifyRealtimeScopesInvalidated(scopes, 'route-enter');
     void refreshNavigationBadges({ silent: true });
   }, ROUTE_AUTO_REFRESH_DELAY_MS);
-}
-
-function prewarmWorkspaceRouteData(routePath: string) {
-  if (!authStore.isAuthenticated) {
-    return;
-  }
-
-  const moduleKey = getMenuItemModuleKey(routePath);
-  const scopes = getRealtimeFallbackScopesForModule(moduleKey);
-
-  for (const scope of scopes) {
-    markSmartQueriesStale(scope);
-  }
-}
-
-function getMenuItemModuleKey(routePath: string) {
-  const normalizedRoutePath = routePath.split(/[?#]/)[0];
-
-  if (SOURCE_OPTIONS_ROUTES.has(normalizedRoutePath)) {
-    return 'source-platforms';
-  }
-
-  for (const section of menuSections) {
-    const item = section.items.find((menuItem) => menuItem.route === normalizedRoutePath);
-
-    if (item) {
-      return item.key;
-    }
-  }
-
-  return undefined;
 }
 
 function prefetchMenuSection(section: MenuSection) {

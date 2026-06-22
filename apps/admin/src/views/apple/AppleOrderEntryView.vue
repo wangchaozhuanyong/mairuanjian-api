@@ -230,7 +230,7 @@
                 label="客户网站账号"
                 purpose="记录客户在目标网站或 App 里的账号，方便开通、续费和售后定位。"
                 example="ChatGPT 业务可以填客户登录邮箱；如果业务不需要客户账号可留空。"
-            />
+              />
             </template>
             <el-input v-model.trim="form.serviceAccount" @blur="loadOrderEntryContext" />
           </el-form-item>
@@ -243,10 +243,7 @@
               />
             </template>
             <el-input v-model.trim="form.currentPlan" />
-            <div
-              v-if="orderContextLoading || orderContext"
-              class="order-entry-history-card"
-            >
+            <div v-if="orderContextLoading || orderContext" class="order-entry-history-card">
               <StatusChip :tone="orderContext ? 'blue' : 'neutral'">
                 {{ orderContext ? '上次记录' : '查询中' }}
               </StatusChip>
@@ -422,7 +419,10 @@
               />
             </template>
             <el-input :model-value="selectedAccountLabel" disabled />
-            <div v-if="selectedAccount && form.appleAccountOwnershipType === 'sold'" class="order-entry-money-hint">
+            <div
+              v-if="selectedAccount && form.appleAccountOwnershipType === 'sold'"
+              class="order-entry-money-hint"
+            >
               ID 成本 {{ formatMoney(selectedAccountPurchaseCost) }}，参考售价
               {{ formatMoney(selectedAccountSalePrice) }}
             </div>
@@ -876,7 +876,9 @@ const regionMatchedServices = computed(() =>
   )
 );
 const serviceCategoryOptions = computed(() => [
-  ...new Set(regionMatchedServices.value.map((service) => getServiceCategoryLabel(service.category)))
+  ...new Set(
+    regionMatchedServices.value.map((service) => getServiceCategoryLabel(service.category))
+  )
 ]);
 const filteredServices = computed(() =>
   regionMatchedServices.value.filter(
@@ -1213,9 +1215,10 @@ async function loadInitialData(
   try {
     await refreshSmartQueryResource({
       key: createSmartQueryKey(ORDER_ENTRY_BASE_SCOPE),
-      fetcher: () => loadOrderEntryBaseData(options),
+      fetcher: ({ signal }) => loadOrderEntryBaseData({ ...options, signal }),
       apply: applyOrderEntryBaseData,
       background: Boolean(options.silent && customers.value.length),
+      cancelPreviousMatching: options.force ? ORDER_ENTRY_BASE_SCOPE : undefined,
       setLoading: (value) => {
         loading.value = value;
       },
@@ -1227,22 +1230,24 @@ async function loadInitialData(
   }
 }
 
-async function loadOrderEntryBaseData(options: { dedupeMs?: number; force?: boolean } = {}) {
+async function loadOrderEntryBaseData(
+  options: { dedupeMs?: number; force?: boolean; signal?: AbortSignal } = {}
+) {
   return Promise.all([
     loadSmartCustomers(
       { page: 1, pageSize: 100, status: 'active' },
-      { force: options.force ?? true, dedupeMs: options.dedupeMs }
+      { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
     ),
     loadSmartSourcePlatforms(
       { page: 1, pageSize: 100, status: 'active' },
-      { force: options.force ?? true, dedupeMs: options.dedupeMs }
+      { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
     ),
     loadSmartAppleServices(
       { page: 1, pageSize: 100, status: 'enabled' },
-      { force: options.force ?? true, dedupeMs: options.dedupeMs }
+      { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
     ),
-    dataCenterApi.listDictionaries(buildCustomerTagParams()),
-    dataCenterApi.listDictionaries(buildAppleRegionParams())
+    dataCenterApi.listDictionaries(buildCustomerTagParams(), { signal: options.signal }),
+    dataCenterApi.listDictionaries(buildAppleRegionParams(), { signal: options.signal })
   ]);
 }
 
@@ -1378,7 +1383,10 @@ async function loadOrderEntryContext() {
     orderContext.value = data.latestOrder;
     if (data.latestOrder) {
       form.currentPlan =
-        data.latestOrder.targetPlan || data.latestOrder.currentPlan || selectedService.value?.name || '';
+        data.latestOrder.targetPlan ||
+        data.latestOrder.currentPlan ||
+        selectedService.value?.name ||
+        '';
     } else if (selectedService.value) {
       form.currentPlan = selectedService.value.name;
     }
@@ -1401,7 +1409,9 @@ function getOrderContextSummary() {
 
   const plan = orderContext.value.targetPlan || orderContext.value.currentPlan || '未记录套餐';
   const expireLabel = formatExpireDelta(orderContext.value.daysUntilExpire ?? null);
-  const cost = readAmount(orderContext.value.appleCostRmb) + readAmount(orderContext.value.appleAccountPurchaseCost);
+  const cost =
+    readAmount(orderContext.value.appleCostRmb) +
+    readAmount(orderContext.value.appleAccountPurchaseCost);
   const profitRate = orderContext.value.profitRate ? `${orderContext.value.profitRate}%` : '-';
 
   return `${selectedServiceRegionLabel.value || form.serviceRegion} / ${plan} / ${expireLabel} / 上次实收 ${formatMoney(

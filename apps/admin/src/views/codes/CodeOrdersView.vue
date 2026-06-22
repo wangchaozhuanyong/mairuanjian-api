@@ -875,7 +875,7 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
   try {
     await refreshSmartQueryResource({
       key,
-      fetcher: async () => {
+      fetcher: async ({ signal }) => {
         const [platformData, serviceData] = await Promise.all([
           loadSmartSourcePlatforms(
             {
@@ -883,7 +883,7 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
               pageSize: 100,
               status: 'active'
             },
-            options
+            { ...options, signal }
           ),
           loadSmartCodeServices(
             {
@@ -891,7 +891,7 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
               pageSize: 100,
               status: 'enabled'
             },
-            options
+            { ...options, signal }
           )
         ]);
 
@@ -902,6 +902,7 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
       },
       apply: applyDependenciesResult,
       background: options.background,
+      cancelPreviousMatching: options.force ? 'code-order-dependencies' : undefined,
       isCurrent: () => activeDependenciesQueryKey.value === key,
       force: options.force ?? true
     });
@@ -934,9 +935,10 @@ async function loadDeliveryMethods(options: { background?: boolean; force?: bool
   try {
     await refreshSmartQueryResource({
       key,
-      fetcher: () => dataCenterApi.listDictionaries(params),
+      fetcher: ({ signal }) => dataCenterApi.listDictionaries(params, { signal }),
       apply: applyDeliveryMethodResult,
       background: options.background,
+      cancelPreviousMatching: options.force ? 'code-order-delivery-methods' : undefined,
       isCurrent: () => activeDeliveryMethodsQueryKey.value === key,
       force: options.force ?? true
     });
@@ -973,9 +975,10 @@ async function loadOrders(options: { background?: boolean; force?: boolean } = {
   try {
     await refreshSmartQueryResource({
       key,
-      fetcher: () => codeOrdersApi.list(params),
+      fetcher: ({ signal }) => codeOrdersApi.list(params, { signal }),
       apply: applyOrderResult,
       background: options.background,
+      cancelPreviousMatching: options.force ? 'code-orders' : undefined,
       isCurrent: () => activeOrdersQueryKey.value === key,
       setLoading: (value) => {
         loading.value = value;
