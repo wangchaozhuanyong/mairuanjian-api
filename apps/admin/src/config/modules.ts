@@ -999,7 +999,11 @@ export const menuSections: MenuSection[] = [
     key: 'ops-platform',
     title: '平台连接',
     icon: 'ops',
-    items: selectModules(systemModules, ['platform-status', 'platform-interface-logs'])
+    items: selectModules(systemModules, [
+      'ops-monitor',
+      'platform-status',
+      'platform-interface-logs'
+    ])
   },
   {
     key: 'system-config',
