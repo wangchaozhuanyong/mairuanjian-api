@@ -142,12 +142,7 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column
-          prop="region"
-          label="地区/币种"
-          min-width="230"
-          sortable="custom"
-        >
+        <el-table-column prop="region" label="地区/币种" min-width="230" sortable="custom">
           <template #header>
             <span class="help-label">
               地区/币种
@@ -160,12 +155,7 @@
             formatAccountRegionCurrency(row.region, row.currency)
           }}</template>
         </el-table-column>
-        <el-table-column
-          prop="currentBalance"
-          label="余额"
-          width="120"
-          sortable="custom"
-        >
+        <el-table-column prop="currentBalance" label="余额" width="120" sortable="custom">
           <template #header>
             <span class="help-label">
               余额
@@ -173,12 +163,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column
-          prop="averageCost"
-          label="平均成本"
-          width="130"
-          sortable="custom"
-        >
+        <el-table-column prop="averageCost" label="平均成本" width="130" sortable="custom">
           <template #header>
             <span class="help-label">
               平均成本
@@ -191,12 +176,7 @@
             {{ getAccountAverageCost(row) }}
           </template>
         </el-table-column>
-        <el-table-column
-          prop="status"
-          label="状态"
-          width="130"
-          sortable="custom"
-        >
+        <el-table-column prop="status" label="状态" width="130" sortable="custom">
           <template #header>
             <span class="help-label">
               状态
@@ -235,12 +215,7 @@
             >
           </template>
         </el-table-column>
-        <el-table-column
-          prop="isManuallyLocked"
-          label="锁定"
-          width="100"
-          sortable="custom"
-        >
+        <el-table-column prop="isManuallyLocked" label="锁定" width="100" sortable="custom">
           <template #header>
             <span class="help-label">
               锁定
@@ -255,12 +230,7 @@
             </StatusChip>
           </template>
         </el-table-column>
-        <el-table-column
-          prop="updatedAt"
-          label="更新时间"
-          min-width="170"
-          sortable="custom"
-        >
+        <el-table-column prop="updatedAt" label="更新时间" min-width="170" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="210" fixed="right">
@@ -1316,11 +1286,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import {
-  appleAccountsApi,
-  dataCenterApi,
-  appleAccountSourceChannelsApi
-} from '@/api/system';
+import { appleAccountsApi, dataCenterApi, appleAccountSourceChannelsApi } from '@/api/system';
 import type { DataDictionaryQuery } from '@/api/system';
 import AppleAccountDrawerSummary from '@/components/business/AppleAccountDrawerSummary.vue';
 import AppButton from '@/components/ui/AppButton.vue';

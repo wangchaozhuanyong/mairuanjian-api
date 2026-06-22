@@ -305,12 +305,7 @@
                 example="没有损耗填 0；给客户补了 3 元成本就填 3。"
               />
             </template>
-            <el-input
-              v-model.trim="form.refundLoss"
-              type="number"
-              inputmode="decimal"
-              min="0"
-            />
+            <el-input v-model.trim="form.refundLoss" type="number" inputmode="decimal" min="0" />
             <div class="order-entry-money-hint">
               折合人民币 {{ formatMoney(refundLossRmbValue) }}
             </div>
