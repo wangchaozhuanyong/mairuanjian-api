@@ -1006,7 +1006,6 @@ const dialogVisible = ref(false);
 const officialSourceDialogVisible = ref(false);
 const officialCheckDialogVisible = ref(false);
 const editingService = ref<AppleService | null>(null);
-const selectedService = ref<AppleService | null>(null);
 const editingOfficialSource = ref<AppleOfficialPriceSource | null>(null);
 const formRef = ref<FormInstance>();
 const services = ref<AppleService[]>([]);
