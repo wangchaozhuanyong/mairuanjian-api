@@ -46,7 +46,7 @@ export const appleServiceQuickOptionGroups: AppleServiceQuickOptionGroupConfig[]
     group: APPLE_SERVICE_PERIOD_TYPE_DICTIONARY_GROUP,
     help: [
       '这里管 Apple ID 业务设置里的业务周期，比如按月、按天、手工。',
-      '这些值会影响订单到期时间，所以只能改显示名称、排序和启停。'
+      '按月和按天都会按“含开通当天”计算到期日，所以只能改显示名称、排序和启停。'
     ]
   },
   {
@@ -55,7 +55,7 @@ export const appleServiceQuickOptionGroups: AppleServiceQuickOptionGroupConfig[]
     group: APPLE_SERVICE_EXPIRE_CALC_TYPE_DICTIONARY_GROUP,
     help: [
       '这里管订单提交后怎么计算到期时间，比如按月算、按天算、手工填。',
-      '它和系统到期逻辑绑定，只支持改名称、排序和启停。'
+      '系统统一采用“先加业务周期，再减 1 天”的口径：5 月 8 日开通 1 个月，到期日是 6 月 7 日。'
     ]
   },
   {
@@ -188,7 +188,7 @@ export function getDefaultAppleServicePeriodTypeDictionaries() {
   return buildDefaultDictionaries(
     APPLE_SERVICE_PERIOD_TYPE_DICTIONARY_GROUP,
     defaultAppleServicePeriodTypes,
-    '系统支持的 Apple ID 业务周期，可在快捷设置里改名称、排序和启停'
+    '系统支持的 Apple ID 业务周期，按含开通当天计算到期日'
   );
 }
 
@@ -196,7 +196,7 @@ export function getDefaultAppleServiceExpireCalcTypeDictionaries() {
   return buildDefaultDictionaries(
     APPLE_SERVICE_EXPIRE_CALC_TYPE_DICTIONARY_GROUP,
     defaultAppleServiceExpireCalcTypes,
-    '系统支持的 Apple ID 到期计算方式，可在快捷设置里改名称、排序和启停'
+    '系统支持的 Apple ID 到期计算方式，统一先加周期再减 1 天'
   );
 }
 

@@ -110,9 +110,14 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+            <div class="table-action-group">
+              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+              <AppButton size="small" variant="danger" @click="removeTemplate(row)">
+                删除
+              </AppButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -150,6 +155,9 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openEdit(template)">编辑</AppButton>
+            <AppButton size="small" variant="danger" @click="removeTemplate(template)">
+              删除
+            </AppButton>
           </div>
         </article>
       </div>
@@ -605,6 +613,31 @@ async function saveTemplate() {
     ElMessage.error(error instanceof Error ? error.message : '保存发货模板失败');
   } finally {
     saving.value = false;
+  }
+}
+
+async function removeTemplate(template: MessageTemplate) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除发货模板「${template.name}」吗？删除后自动发货和售后补发不能再选择这个模板，历史发货记录不受影响。`,
+      '删除发货模板',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消'
+      }
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await messageTemplatesApi.remove(template.id);
+    ElMessage.success('发货模板已删除');
+    selectedTemplates.value = selectedTemplates.value.filter((item) => item.id !== template.id);
+    await loadTemplates({ force: true });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除发货模板失败');
   }
 }
 

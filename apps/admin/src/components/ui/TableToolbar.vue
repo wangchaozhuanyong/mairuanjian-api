@@ -169,6 +169,7 @@
       >
         保存视图
       </AppButton>
+      <slot name="actions" />
       <AppButton
         v-if="showPrimary"
         class="table-toolbar__primary"

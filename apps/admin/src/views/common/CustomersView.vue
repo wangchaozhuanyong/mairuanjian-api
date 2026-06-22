@@ -180,11 +180,14 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
               <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
+              <AppButton size="small" variant="danger" @click="removeCustomer(row)">
+                删除
+              </AppButton>
             </div>
           </template>
         </el-table-column>
@@ -232,6 +235,9 @@
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(customer)">详情</AppButton>
             <AppButton size="small" variant="ghost" @click="openEdit(customer)">编辑</AppButton>
+            <AppButton size="small" variant="danger" @click="removeCustomer(customer)">
+              删除
+            </AppButton>
             <AppButton
               v-if="customer.phoneTail && canRevealPhone"
               size="small"
@@ -849,6 +855,31 @@ async function saveCustomer() {
     ElMessage.error(error instanceof Error ? error.message : '保存客户失败');
   } finally {
     saving.value = false;
+  }
+}
+
+async function removeCustomer(customer: Customer) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除客户「${customer.name}」吗？删除后客户不会再出现在客户列表和新建订单下拉里，历史订单记录保留原关联。`,
+      '删除客户',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消'
+      }
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await customersApi.remove(customer.id);
+    ElMessage.success('客户已删除');
+    selectedCustomers.value = selectedCustomers.value.filter((item) => item.id !== customer.id);
+    await loadCustomers({ force: true });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除客户失败');
   }
 }
 

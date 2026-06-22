@@ -108,6 +108,11 @@
             <el-option label="未锁定" value="false" />
           </el-select>
         </template>
+        <template #actions>
+          <AppButton class="table-toolbar__op" variant="soft" @click="openImport">
+            批量导入
+          </AppButton>
+        </template>
       </TableToolbar>
 
       <el-table
@@ -201,18 +206,27 @@
             </span>
           </template>
           <template #default="{ row }">
-            <StatusChip v-if="row.hasPassword" class="tag-gap" tone="purple">密码</StatusChip>
-            <StatusChip v-if="row.hasSecurityInfo" class="tag-gap" tone="orange">密保</StatusChip>
-            <StatusChip v-if="row.hasPhone" class="tag-gap" tone="blue">手机</StatusChip>
-            <StatusChip v-if="row.hasRecoveryEmail" class="tag-gap" tone="cyan">
-              备用邮箱
-            </StatusChip>
-            <span
-              v-if="
-                !row.hasPassword && !row.hasSecurityInfo && !row.hasPhone && !row.hasRecoveryEmail
-              "
-              >-</span
-            >
+            <div class="apple-account-sensitive-cell">
+              <el-tooltip
+                v-if="getAccountSensitiveBadges(row).length"
+                :content="getAccountSensitiveSummary(row)"
+                placement="top"
+              >
+                <div class="apple-account-sensitive-tags">
+                  <StatusChip
+                    v-for="badge in getVisibleSensitiveBadges(row)"
+                    :key="badge.label"
+                    :tone="badge.tone"
+                  >
+                    {{ badge.label }}
+                  </StatusChip>
+                  <StatusChip v-if="getHiddenSensitiveCount(row) > 0" tone="neutral">
+                    +{{ getHiddenSensitiveCount(row) }}
+                  </StatusChip>
+                </div>
+              </el-tooltip>
+              <span v-else>-</span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="isManuallyLocked" label="锁定" width="100" sortable="custom">
@@ -247,6 +261,9 @@
                     <el-dropdown-item command="topup">充值</el-dropdown-item>
                     <el-dropdown-item command="consumption">消费</el-dropdown-item>
                     <el-dropdown-item command="records">流水</el-dropdown-item>
+                    <el-dropdown-item command="delete" divided class="account-more-menu__danger">
+                      删除 ID
+                    </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -291,21 +308,20 @@
             </div>
             <div>
               <span>敏感资料</span>
-              <div class="mobile-record-card__chips">
-                <StatusChip v-if="account.hasPassword" tone="purple">密码</StatusChip>
-                <StatusChip v-if="account.hasSecurityInfo" tone="orange">密保</StatusChip>
-                <StatusChip v-if="account.hasPhone" tone="blue">手机</StatusChip>
-                <StatusChip v-if="account.hasRecoveryEmail" tone="cyan">备用邮箱</StatusChip>
-                <em
-                  v-if="
-                    !account.hasPassword &&
-                    !account.hasSecurityInfo &&
-                    !account.hasPhone &&
-                    !account.hasRecoveryEmail
-                  "
-                >
-                  未保存
-                </em>
+              <div class="mobile-record-card__chips apple-account-sensitive-tags">
+                <template v-if="getAccountSensitiveBadges(account).length">
+                  <StatusChip
+                    v-for="badge in getVisibleSensitiveBadges(account)"
+                    :key="badge.label"
+                    :tone="badge.tone"
+                  >
+                    {{ badge.label }}
+                  </StatusChip>
+                  <StatusChip v-if="getHiddenSensitiveCount(account) > 0" tone="neutral">
+                    +{{ getHiddenSensitiveCount(account) }}
+                  </StatusChip>
+                </template>
+                <em v-else>未保存</em>
               </div>
             </div>
             <div>
@@ -326,6 +342,9 @@
                   <el-dropdown-item command="topup">充值</el-dropdown-item>
                   <el-dropdown-item command="consumption">消费</el-dropdown-item>
                   <el-dropdown-item command="records">流水</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided class="account-more-menu__danger">
+                    删除 ID
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -339,6 +358,7 @@
           <span>可以新增账号、批量导入，或清空筛选后重新查看当前账号库。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="soft" @click="openImport">批量导入</AppButton>
             <AppButton variant="primary" @click="openCreate">新增 Apple ID</AppButton>
           </div>
         </div>
@@ -1283,7 +1303,7 @@
 
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { appleAccountsApi, dataCenterApi, appleAccountSourceChannelsApi } from '@/api/system';
@@ -1385,7 +1405,18 @@ const router = useRouter();
 
 type AppleAccountPage = Awaited<ReturnType<typeof appleAccountsApi.list>>;
 type AppleAccountListParams = Parameters<typeof appleAccountsApi.list>[0];
-type AccountMoreCommand = 'secret' | 'status-check' | 'topup' | 'consumption' | 'records';
+type AccountMoreCommand =
+  | 'secret'
+  | 'status-check'
+  | 'topup'
+  | 'consumption'
+  | 'records'
+  | 'delete';
+type SensitiveBadgeTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
+type SensitiveBadge = {
+  label: string;
+  tone: SensitiveBadgeTone;
+};
 
 const query = reactive({
   page: 1,
@@ -1630,6 +1661,42 @@ function getAccountAverageCost(account: AppleAccount) {
   }
 
   return formatAverageCost(account.averageCost);
+}
+
+function getAccountSensitiveBadges(account: AppleAccount): SensitiveBadge[] {
+  const badges: SensitiveBadge[] = [];
+
+  if (account.hasPassword) {
+    badges.push({ label: '密码', tone: 'purple' });
+  }
+
+  if (account.hasSecurityInfo) {
+    badges.push({ label: '密保', tone: 'orange' });
+  }
+
+  if (account.hasPhone) {
+    badges.push({ label: '手机', tone: 'blue' });
+  }
+
+  if (account.hasRecoveryEmail) {
+    badges.push({ label: '备用邮箱', tone: 'cyan' });
+  }
+
+  return badges;
+}
+
+function getVisibleSensitiveBadges(account: AppleAccount) {
+  return getAccountSensitiveBadges(account).slice(0, 2);
+}
+
+function getHiddenSensitiveCount(account: AppleAccount) {
+  return Math.max(getAccountSensitiveBadges(account).length - 2, 0);
+}
+
+function getAccountSensitiveSummary(account: AppleAccount) {
+  const labels = getAccountSensitiveBadges(account).map((badge) => badge.label);
+
+  return labels.length > 0 ? `已保存：${labels.join('、')}` : '未保存敏感资料';
 }
 
 function getAccountTotalCostAmount(account: AppleAccount) {
@@ -1897,6 +1964,11 @@ function handleAccountMoreCommand(command: unknown, account: AppleAccount) {
 
   if (accountCommand === 'records') {
     void openRecords(account);
+    return;
+  }
+
+  if (accountCommand === 'delete') {
+    void removeAccount(account);
   }
 }
 
@@ -2228,6 +2300,33 @@ async function submitImport() {
   }
 }
 
+async function removeAccount(account: AppleAccount) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除 ${account.appleIdMasked} 吗？删除后该 ID 不会再出现在账号列表，也不会被自动匹配订单。`,
+      '删除 Apple ID',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消'
+      }
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await appleAccountsApi.remove(account.id);
+    ElMessage.success('Apple ID 已删除');
+    closeAccountActionSurfaces();
+    selectedAccounts.value = selectedAccounts.value.filter((item) => item.id !== account.id);
+    invalidateSmartQueries('apple-accounts');
+    await loadAccounts();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除 Apple ID 失败');
+  }
+}
+
 async function refreshSelectedAccount() {
   invalidateSmartQueries('apple-accounts');
   await loadAccounts();
@@ -2404,3 +2503,26 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 
 onBeforeUnmount(stopRealtimeRefresh);
 </script>
+
+<style scoped>
+.apple-account-sensitive-cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.apple-account-sensitive-tags {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.apple-account-sensitive-tags .status-chip {
+  flex: 0 0 auto;
+}
+</style>

@@ -285,65 +285,103 @@
 
     <AppDrawer
       v-model="actionDrawerVisible"
-      :title="`余额对账操作 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      description="先看账号当前余额和成本，再选择要修正、查记录或查看详情。"
+      title="余额对账操作"
+      description="先确认账号和成本口径，再选择下一步处理。"
       eyebrow="余额对账"
-      size="520px"
+      size="560px"
       :show-confirm="false"
     >
       <div v-if="selectedAccount" class="account-action-panel">
-        <div class="account-action-summary">
-          <div class="account-action-summary__head">
-            <div>
-              <span>当前账号</span>
-              <strong>{{ selectedAccount.appleIdMasked }}</strong>
-              <p>{{ selectedAccount.region }} / {{ selectedAccount.currency }}</p>
-            </div>
+        <section class="account-action-hero" aria-label="当前对账账号">
+          <div class="account-action-hero__top">
+            <span class="account-action-eyebrow">当前账号</span>
             <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
               {{ getStatusLabel(selectedAccount.status) }}
             </StatusChip>
           </div>
+          <strong class="account-action-hero__id">{{ selectedAccount.appleIdMasked }}</strong>
+          <div class="account-action-tags">
+            <span>{{ selectedAccount.region }}</span>
+            <span>{{ selectedAccount.currency }}</span>
+            <span :class="{ 'account-action-tag--warning': selectedAccount.isManuallyLocked }">
+              {{ selectedAccount.isManuallyLocked ? '手动锁定' : '可对账' }}
+            </span>
+          </div>
+        </section>
 
-          <div class="account-action-summary__metrics">
+        <section class="account-action-metrics" aria-label="余额和成本">
+          <div class="account-action-metric account-action-metric--balance">
             <div>
               <span>系统余额</span>
               <strong>{{ selectedAccount.currentBalance }}</strong>
             </div>
+            <em>{{ selectedAccount.currency }}</em>
+          </div>
+          <div class="account-action-metric">
             <div>
               <span>总成本</span>
               <strong>{{ getAccountTotalCostAmount(selectedAccount) }}</strong>
             </div>
+            <em>CNY</em>
+          </div>
+          <div class="account-action-metric">
             <div>
               <span>均价</span>
               <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
             </div>
+            <em>CNY / {{ selectedAccount.currency }}</em>
           </div>
-        </div>
+        </section>
 
-        <div class="account-action-section">
-          <span class="account-action-section__title">对账处理</span>
-          <div class="account-action-grid">
-            <button
-              type="button"
-              class="account-action-card account-action-card--orange"
-              @click="openAdjustDialog(selectedAccount)"
-            >
+        <section class="account-action-section" aria-label="对账处理">
+          <div class="account-action-section__head">
+            <strong>对账处理</strong>
+            <p>修正余额会更新账号余额和成本；查看记录只读，不会改账。</p>
+          </div>
+
+          <button
+            type="button"
+            class="account-action-primary"
+            @click="openAdjustDialog(selectedAccount)"
+          >
+            <span class="account-action-icon account-action-icon--primary">
+              <el-icon><EditPen /></el-icon>
+            </span>
+            <span>
               <strong>修正余额</strong>
-              <span>按实际查到的余额改准系统记录，同时处理人民币总成本。</span>
-            </button>
+              <small>按实际查到的余额改准系统记录，同时处理人民币总成本。</small>
+            </span>
+          </button>
+
+          <div class="account-action-secondary-grid">
             <button
               type="button"
               class="account-action-card"
               @click="openAdjustmentRecords(selectedAccount)"
             >
-              <strong>修正记录</strong>
-              <span>查看每一次余额和成本变化，方便追溯谁改了什么。</span>
+              <span class="account-action-icon">
+                <el-icon><Tickets /></el-icon>
+              </span>
+              <span>
+                <strong>修正记录</strong>
+                <small>查看每一次余额和成本变化，追溯操作来源。</small>
+              </span>
             </button>
             <button type="button" class="account-action-card" @click="openDetail(selectedAccount)">
-              <strong>详情</strong>
-              <span>先在右侧快速看账号信息，需要完整内容再打开详情页。</span>
+              <span class="account-action-icon">
+                <el-icon><View /></el-icon>
+              </span>
+              <span>
+                <strong>账号详情</strong>
+                <small>先快速查看账号信息，需要完整内容再打开详情页。</small>
+              </span>
             </button>
           </div>
+        </section>
+
+        <div class="account-action-note">
+          <StatusChip tone="blue">提示</StatusChip>
+          <p>建议先核对实际余额，再修正系统记录；需要追查历史时先看修正记录。</p>
         </div>
       </div>
     </AppDrawer>
@@ -623,6 +661,7 @@
 
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
+import { EditPen, Tickets, View } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -1191,3 +1230,283 @@ async function initializePage() {
   await loadAccounts({ force: false });
 }
 </script>
+
+<style scoped>
+.account-action-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.account-action-hero {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(219, 232, 255, 0.95);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(234, 241, 255, 0.96), rgba(249, 251, 255, 0.98)), var(--v3-surface);
+}
+
+.account-action-hero__top,
+.account-action-tags,
+.account-action-note,
+.account-action-metric,
+.account-action-primary,
+.account-action-card {
+  min-width: 0;
+}
+
+.account-action-hero__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-action-eyebrow,
+.account-action-metric span,
+.account-action-section__head p,
+.account-action-primary small,
+.account-action-card small,
+.account-action-note p {
+  color: var(--v3-text-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.account-action-eyebrow {
+  font-weight: 800;
+}
+
+.account-action-hero__id {
+  overflow: hidden;
+  color: var(--v3-text);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-action-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-action-tags span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid var(--v3-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--v3-text-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-action-tags .account-action-tag--warning {
+  border-color: var(--v3-orange-border-soft);
+  background: var(--v3-orange-soft);
+  color: #92400e;
+}
+
+.account-action-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-action-metric {
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+  min-height: 108px;
+  padding: 14px;
+  border: 1px solid var(--v3-border);
+  border-radius: 14px;
+  background: var(--v3-surface);
+  box-shadow: var(--v3-shadow-xs);
+}
+
+.account-action-metric--balance {
+  border-color: rgba(37, 99, 235, 0.2);
+  background: linear-gradient(180deg, #ffffff, #f7faff);
+}
+
+.account-action-metric strong {
+  display: block;
+  overflow: hidden;
+  color: var(--v3-text);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-action-metric em {
+  color: var(--v3-muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.account-action-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.account-action-section__head {
+  display: grid;
+  gap: 4px;
+}
+
+.account-action-section__head strong {
+  color: var(--v3-text);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.account-action-section__head p,
+.account-action-note p {
+  margin: 0;
+}
+
+.account-action-primary,
+.account-action-card {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 180ms var(--v3-ease),
+    border-color 180ms var(--v3-ease),
+    background 180ms var(--v3-ease),
+    box-shadow 180ms var(--v3-ease);
+}
+
+.account-action-primary:focus-visible,
+.account-action-card:focus-visible {
+  outline: none;
+  box-shadow: var(--v3-focus-ring);
+}
+
+.account-action-primary:active,
+.account-action-card:active {
+  transform: translateY(1px);
+}
+
+.account-action-primary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--v3-primary), var(--v3-primary-2));
+  color: #ffffff;
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.2);
+}
+
+.account-action-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.24);
+}
+
+.account-action-primary strong,
+.account-action-card strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.account-action-primary small,
+.account-action-card small {
+  display: block;
+  font-size: 12px;
+}
+
+.account-action-primary small {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.account-action-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-action-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-height: 118px;
+  padding: 14px;
+  border: 1px solid var(--v3-border);
+  border-radius: 14px;
+  background: var(--v3-surface);
+  color: var(--v3-text);
+}
+
+.account-action-card:hover {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: var(--v3-surface-2);
+  transform: translateY(-1px);
+  box-shadow: var(--v3-shadow-sm);
+}
+
+.account-action-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--v3-primary-soft);
+  color: var(--v3-primary);
+  font-size: 18px;
+}
+
+.account-action-icon--primary {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.account-action-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--v3-line);
+  border-radius: 14px;
+  background: var(--v3-surface-2);
+}
+
+@media (max-width: 640px) {
+  .account-action-metrics,
+  .account-action-secondary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-action-metric {
+    min-height: 84px;
+  }
+
+  .account-action-hero__id {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+</style>

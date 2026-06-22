@@ -152,11 +152,12 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton variant="ghost" @click="openEdit(row)">编辑</AppButton>
               <AppButton variant="ghost" @click="openMappings(row)">平台映射</AppButton>
+              <AppButton variant="danger" @click="removeService(row)">删除</AppButton>
             </div>
           </template>
         </el-table-column>
@@ -212,6 +213,9 @@
             <AppButton size="small" variant="ghost" @click="openEdit(service)">编辑</AppButton>
             <AppButton size="small" variant="ghost" @click="openMappings(service)">
               平台映射
+            </AppButton>
+            <AppButton size="small" variant="danger" @click="removeService(service)">
+              删除
             </AppButton>
           </div>
         </article>
@@ -1212,6 +1216,35 @@ async function saveService() {
     ElMessage.error(error instanceof Error ? error.message : '保存兑换码业务失败');
   } finally {
     saving.value = false;
+  }
+}
+
+async function removeService(service: CodeService) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除兑换码业务「${service.name}」吗？删除后新订单和平台映射不能再选择该业务，已有库存和历史订单不会被物理删除。`,
+      '删除兑换码业务',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消'
+      }
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await codeServicesApi.remove(service.id);
+    ElMessage.success('兑换码业务已删除');
+    selectedServices.value = selectedServices.value.filter((item) => item.id !== service.id);
+    if (selectedService.value?.id === service.id) {
+      selectedService.value = null;
+      mappingDrawerVisible.value = false;
+    }
+    await loadServices({ force: true });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除兑换码业务失败');
   }
 }
 

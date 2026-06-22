@@ -319,7 +319,7 @@
         </div>
       </div>
 
-      <main class="workspace">
+      <main ref="workspaceRef" class="workspace">
         <RouterView v-slot="{ Component: ViewComponent, route: viewRoute }">
           <Suspense :timeout="220">
             <template #default>
@@ -382,7 +382,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue';
 import { ElMessage } from 'element-plus';
 import {
   Bell,
@@ -459,6 +459,7 @@ const STARTUP_ROUTE_PREFETCH_DELAY_MS = 1_800;
 const ROUTE_AUTO_REFRESH_DELAY_MS = 80;
 const SECURITY_CENTER_ROUTE = '/system/security';
 const SYSTEM_CONFIG_ROUTE = '/system/maintenance';
+const SOURCE_OPTIONS_ROUTE = '/system/source-platforms';
 const SECURITY_CENTER_ROUTES = new Set([
   SECURITY_CENTER_ROUTE,
   '/system/login-logs',
@@ -473,6 +474,18 @@ const SYSTEM_CONFIG_ROUTES = new Set([
   '/system/versions',
   '/system/changelog',
   '/system/parameters'
+]);
+const SOURCE_OPTIONS_ROUTES = new Set([
+  SOURCE_OPTIONS_ROUTE,
+  '/system/source-platforms/platforms',
+  '/system/source-platforms/customer-tags',
+  '/system/source-platforms/apple-service-categories',
+  '/system/source-platforms/apple-regions',
+  '/system/source-platforms/apple-service-options',
+  '/system/source-platforms/code-delivery-methods',
+  '/system/source-platforms/code-delivery-modes',
+  '/system/source-platforms/notification-options',
+  '/system/source-platforms/system-options'
 ]);
 
 interface WorkspaceTab {
@@ -489,6 +502,7 @@ const sidebarOpen = ref(false);
 const menuKeyword = ref('');
 const globalKeyword = ref('');
 const notificationDrawerVisible = ref(false);
+const workspaceRef = ref<HTMLElement | null>(null);
 const activePath = computed(() => route.path);
 const openMenuKeys = ref(readStoredOpenMenuKeys());
 const workspaceCacheVersion = ref(0);
@@ -504,7 +518,9 @@ let startupBadgeRefreshTimer: number | undefined;
 let startupRoutePrefetchTimer: number | undefined;
 let routeAutoRefreshTimer: number | undefined;
 let realtimeFallbackTimer: number | undefined;
+let workspaceScrollRestoreTimer: number | undefined;
 let unsubscribeSmartQueryActivity: (() => void) | undefined;
+const workspaceScrollPositions = new Map<string, number>();
 const globalSearchScopes = [
   {
     mark: 'CU',
@@ -671,6 +687,14 @@ watch(activePath, () => {
 
 watch(activeWorkspaceTabPath, () => addCurrentWorkspaceTab(), { immediate: true });
 
+watch(activeWorkspaceTabPath, (nextPath, previousPath) => {
+  if (previousPath) {
+    saveWorkspaceScroll(previousPath);
+  }
+
+  restoreWorkspaceScroll(nextPath);
+});
+
 watch(
   [activeWorkspaceTabPath, () => pageRefresh.activeVersion.value],
   () => {
@@ -721,9 +745,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  saveWorkspaceScroll(activeWorkspaceTabPath.value);
   window.clearTimeout(startupBadgeRefreshTimer);
   window.clearTimeout(startupRoutePrefetchTimer);
   window.clearTimeout(routeAutoRefreshTimer);
+  window.clearTimeout(workspaceScrollRestoreTimer);
   unsubscribeSmartQueryActivity?.();
 
   if (notificationBadgeTimer) {
@@ -842,6 +868,7 @@ async function switchWorkspaceTab(tab: WorkspaceTab) {
 }
 
 async function closeWorkspaceTab(tab: WorkspaceTab) {
+  workspaceScrollPositions.delete(tab.fullPath);
   const closedIndex = workspaceTabs.value.findIndex((item) => item.fullPath === tab.fullPath);
 
   if (closedIndex < 0) {
@@ -873,11 +900,18 @@ function closeOtherWorkspaceTabs() {
     return;
   }
 
+  const activeFullPath = activeWorkspaceTab.value.fullPath;
   workspaceTabs.value = [activeWorkspaceTab.value];
+  for (const fullPath of workspaceScrollPositions.keys()) {
+    if (fullPath !== activeFullPath) {
+      workspaceScrollPositions.delete(fullPath);
+    }
+  }
 }
 
 function closeAllWorkspaceTabs() {
   workspaceTabs.value = [];
+  workspaceScrollPositions.clear();
   workspaceCacheVersion.value += 1;
 }
 
@@ -999,6 +1033,10 @@ function prewarmWorkspaceRouteData(routePath: string) {
 
 function getMenuItemModuleKey(routePath: string) {
   const normalizedRoutePath = routePath.split(/[?#]/)[0];
+
+  if (SOURCE_OPTIONS_ROUTES.has(normalizedRoutePath)) {
+    return 'source-platforms';
+  }
 
   for (const section of menuSections) {
     const item = section.items.find((menuItem) => menuItem.route === normalizedRoutePath);
@@ -1226,6 +1264,10 @@ function isItemActive(item: AppModuleItem) {
     return SYSTEM_CONFIG_ROUTES.has(activePath.value);
   }
 
+  if (item.route === SOURCE_OPTIONS_ROUTE) {
+    return SOURCE_OPTIONS_ROUTES.has(activePath.value);
+  }
+
   return activePath.value === item.route;
 }
 
@@ -1283,7 +1325,44 @@ async function showRefresh() {
 }
 
 function getWorkspaceViewKey(viewRoute: { path: string; fullPath: string }) {
+  if (SOURCE_OPTIONS_ROUTES.has(viewRoute.path)) {
+    return SOURCE_OPTIONS_ROUTE;
+  }
+
   return viewRoute.path;
+}
+
+function saveWorkspaceScroll(fullPath: string) {
+  const workspace = workspaceRef.value;
+
+  if (!workspace) {
+    return;
+  }
+
+  workspaceScrollPositions.set(fullPath, workspace.scrollTop);
+}
+
+function restoreWorkspaceScroll(fullPath: string) {
+  window.clearTimeout(workspaceScrollRestoreTimer);
+
+  void nextTick(() => {
+    window.requestAnimationFrame(() => {
+      applyWorkspaceScroll(fullPath);
+      workspaceScrollRestoreTimer = window.setTimeout(() => {
+        applyWorkspaceScroll(fullPath);
+      }, 120);
+    });
+  });
+}
+
+function applyWorkspaceScroll(fullPath: string) {
+  const workspace = workspaceRef.value;
+
+  if (!workspace || route.fullPath !== fullPath) {
+    return;
+  }
+
+  workspace.scrollTop = workspaceScrollPositions.get(fullPath) ?? 0;
 }
 
 async function goToOrderEntry() {

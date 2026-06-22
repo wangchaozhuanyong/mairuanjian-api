@@ -1514,30 +1514,57 @@ export class AppleOfficialPricesService {
     plainText: string,
     sourceUrl: string
   ): OfficialPriceCollectedItemDto | null {
-    const currency = source.currency.toUpperCase();
-    const parsedPrice = this.extractProviderPlanPrice(plainText, plan, currency);
-    const catalogPrice = plan.currencyPrices[currency];
+    const requestedCurrency = source.currency.toUpperCase();
+    const parsedPrice = this.extractProviderPlanPrice(plainText, plan, requestedCurrency);
+    const requestedCatalogPrice = plan.currencyPrices[requestedCurrency];
+    const fallbackCatalogCurrency = requestedCatalogPrice
+      ? requestedCurrency
+      : this.getProviderPlanFallbackCurrency(plan, requestedCurrency);
+    const catalogCurrency = requestedCatalogPrice ? requestedCurrency : fallbackCatalogCurrency;
+    const catalogPrice =
+      requestedCatalogPrice ??
+      (fallbackCatalogCurrency ? plan.currencyPrices[fallbackCatalogCurrency] : undefined);
     const officialPrice = plan.preferCatalogPrice
       ? (catalogPrice ?? parsedPrice)
       : (parsedPrice ?? catalogPrice);
     if (!officialPrice) return null;
+    const priceCurrency =
+      parsedPrice || requestedCatalogPrice ? requestedCurrency : catalogCurrency;
+    if (!priceCurrency) return null;
 
     return {
       planCode: plan.planCode,
       serviceName: plan.serviceName,
       category: plan.category,
       region: source.region,
-      currency,
+      currency: priceCurrency,
       officialPrice,
       periodType: plan.periodType,
       periodValue: plan.periodValue,
       rawPayload: {
-        parser: parsedPrice ? 'provider_page_text' : 'provider_catalog_fallback',
+        parser: parsedPrice
+          ? 'provider_page_text'
+          : requestedCatalogPrice
+            ? 'provider_catalog_fallback'
+            : 'provider_catalog_currency_fallback',
         provider: source.provider,
         planCode: plan.planCode,
+        requestedCurrency,
+        catalogCurrency: parsedPrice ? null : priceCurrency,
         sourceUrl
       }
     };
+  }
+
+  private getProviderPlanFallbackCurrency(
+    plan: OfficialPriceProviderPlan,
+    requestedCurrency: string
+  ) {
+    const catalogCurrencies = Object.keys(plan.currencyPrices);
+    if (!catalogCurrencies.length) return null;
+    if (plan.currencyPrices[requestedCurrency]) return requestedCurrency;
+    if (plan.currencyPrices.USD) return 'USD';
+    return catalogCurrencies[0];
   }
 
   private extractProviderPlanPrice(
@@ -2757,25 +2784,61 @@ export class AppleOfficialPricesService {
 
   private getProviderRegionLabel(region: string, currency: string) {
     const labelByRegion: Record<string, string> = {
+      AE: '阿联酋',
+      AR: '阿根廷',
+      AT: '奥地利',
       AU: '澳大利亚',
+      BD: '孟加拉国',
+      BE: '比利时',
       BR: '巴西',
       CA: '加拿大',
+      CH: '瑞士',
+      CL: '智利',
+      CO: '哥伦比亚',
+      CZ: '捷克',
+      DE: '德国',
+      DK: '丹麦',
+      EG: '埃及',
+      ES: '西班牙',
       EU: '欧元区',
+      FI: '芬兰',
+      FR: '法国',
       GB: '英国',
+      GH: '加纳',
+      GR: '希腊',
       HK: '中国香港',
+      HU: '匈牙利',
       ID: '印度尼西亚',
+      IE: '爱尔兰',
+      IL: '以色列',
       IN: '印度',
+      IT: '意大利',
       JP: '日本',
+      KE: '肯尼亚',
       KR: '韩国',
+      MA: '摩洛哥',
       MX: '墨西哥',
       MY: '马来西亚',
+      NG: '尼日利亚',
+      NL: '荷兰',
+      NO: '挪威',
+      NZ: '新西兰',
+      PE: '秘鲁',
       PH: '菲律宾',
+      PK: '巴基斯坦',
+      PL: '波兰',
+      PT: '葡萄牙',
+      RO: '罗马尼亚',
+      SA: '沙特阿拉伯',
+      SE: '瑞典',
       SG: '新加坡',
       TH: '泰国',
       TR: '土耳其',
       TW: '中国台湾',
+      UA: '乌克兰',
       US: '美国',
-      VN: '越南'
+      VN: '越南',
+      ZA: '南非'
     };
     return `${labelByRegion[region] ?? region} ${currency}`;
   }

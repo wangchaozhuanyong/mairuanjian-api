@@ -405,7 +405,13 @@
         <el-tab-pane label="Apple 节点" name="gateways">
           <div class="toolbar">
             <AppButton variant="primary" @click="openGatewayDialog">配置订阅</AppButton>
-            <AppButton :loading="gatewaySyncing" @click="syncAppleGateways">同步节点</AppButton>
+            <AppButton
+              :disabled="!appleGatewayStatus?.configured || gatewaySaving"
+              :loading="gatewaySyncing"
+              @click="() => syncAppleGateways()"
+            >
+              同步节点
+            </AppButton>
           </div>
           <div class="current-box">
             <div>
@@ -488,7 +494,7 @@
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
               <strong>暂无 Apple 检查节点</strong>
-              <span>保存订阅并同步后显示按国家识别的节点。</span>
+              <span>{{ appleGatewayEmptyText }}</span>
             </div>
           </div>
         </el-tab-pane>
@@ -715,8 +721,12 @@
       </el-form>
       <template #footer>
         <AppButton @click="gatewayDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="gatewaySaving" @click="saveGatewaySubscription">
-          保存
+        <AppButton
+          variant="primary"
+          :loading="gatewaySaving || gatewaySyncing"
+          @click="saveGatewaySubscription"
+        >
+          {{ gatewayForm.clearSubscription ? '清空' : '保存并同步' }}
         </AppButton>
       </template>
     </el-dialog>
@@ -786,6 +796,7 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { getApiErrorMessage } from '@/api/client';
 import { dataCenterApi, opsApi, type DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
@@ -927,6 +938,11 @@ const appleGatewayCountryText = computed(() => {
   if (!summary.length) return '-';
   return summary.map((item) => `${item.countryCode} ${item.available}/${item.total}`).join(' · ');
 });
+const appleGatewayEmptyText = computed(() =>
+  appleGatewayStatus.value?.configured
+    ? '订阅已保存但还没有同步出节点，请点击同步节点；保存新订阅会自动同步。'
+    : '保存订阅并同步后显示按国家识别的节点。'
+);
 const activeTabMeta = computed(() => {
   const metaMap: Record<
     string,
@@ -1390,21 +1406,42 @@ async function saveGatewaySubscription() {
       subscriptionUrl: gatewayForm.clearSubscription ? undefined : gatewayForm.subscriptionUrl,
       clearSubscription: gatewayForm.clearSubscription
     });
-    ElMessage.success(gatewayForm.clearSubscription ? '节点订阅已清空' : '节点订阅已保存');
-    gatewayDialogVisible.value = false;
     invalidateSmartQueries('ops-apple-web-gateways');
+
+    if (gatewayForm.clearSubscription) {
+      ElMessage.success('节点订阅已清空');
+      gatewayDialogVisible.value = false;
+      return;
+    }
+
+    gatewayDialogVisible.value = false;
+    await syncAppleGateways({
+      successMessagePrefix: '节点订阅已保存并同步',
+      savedSubscription: true
+    });
   } finally {
     gatewaySaving.value = false;
   }
 }
 
-async function syncAppleGateways() {
+async function syncAppleGateways(
+  options: { successMessagePrefix?: string; savedSubscription?: boolean } = {}
+) {
   gatewaySyncing.value = true;
   try {
     appleGatewayStatus.value = await opsApi.syncAppleWebGateways();
-    ElMessage.success('Apple 检查节点已同步');
+    const prefix = options.successMessagePrefix ?? 'Apple 检查节点已同步';
+    const nodeCount = appleGatewayStatus.value.nodeCount;
+    ElMessage.success(nodeCount ? `${prefix}，识别到 ${nodeCount} 个节点` : `${prefix}，暂无节点`);
     invalidateSmartQueries('ops-apple-web-gateways');
     invalidateSmartQueries('ops-platform-sync');
+  } catch (error) {
+    const message = getApiErrorMessage(error);
+    if (options.savedSubscription) {
+      ElMessage.warning(`订阅已保存，但同步节点失败：${message}`);
+      return;
+    }
+    ElMessage.error(message);
   } finally {
     gatewaySyncing.value = false;
   }

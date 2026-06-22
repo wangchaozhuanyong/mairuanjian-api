@@ -756,11 +756,22 @@ export class AppleOrdersService {
     const expireTime = new Date(startTime);
     if (service.expireCalcType === 'by_day' || service.defaultPeriodType === 'day') {
       expireTime.setDate(expireTime.getDate() + service.defaultPeriodValue);
-      return expireTime;
+    } else {
+      this.addCalendarMonths(expireTime, service.defaultPeriodValue);
     }
+    expireTime.setDate(expireTime.getDate() - 1);
 
-    expireTime.setMonth(expireTime.getMonth() + service.defaultPeriodValue);
     return expireTime;
+  }
+
+  private addCalendarMonths(date: Date, months: number) {
+    const originalDay = date.getDate();
+
+    date.setDate(1);
+    date.setMonth(date.getMonth() + months);
+
+    const lastDayOfTargetMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    date.setDate(Math.min(originalDay, lastDayOfTargetMonth));
   }
 
   private async assertExternalOrderNoAvailable(sourcePlatformId: string, externalOrderNo: string) {

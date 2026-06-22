@@ -488,14 +488,14 @@ const systemModules: AppModuleItem[] = [
   },
   {
     key: 'source-platforms',
-    title: '下拉选项设置',
+    title: '选项设置',
     route: '/system/source-platforms',
     mark: 'QS',
-    group: '客户与来源',
+    group: '系统配置',
     phase: 'Phase 2',
     status: 'ready',
     description:
-      '这里只放日常会改的下拉内容，比如来源平台、客户标签、Apple ID 分类和兑换码发货方式。',
+      '这里维护日常会改的选项内容，比如来源平台、客户标签、Apple ID 分类和兑换码发货方式。',
     features: ['来源平台', '客户标签', 'Apple ID 分类', '地区币种', '发货方式'],
     primaryAction: '新增选项',
     tableColumns: ['名称', '用途', '状态', '排序', '备注']
@@ -942,19 +942,19 @@ export const menuSections: MenuSection[] = [
     key: 'common',
     title: '客户与来源',
     icon: 'common',
-    items: selectModules(systemModules, ['customers', 'source-platforms'])
+    items: selectModules(systemModules, ['customers'])
   },
   {
     key: 'id-business',
     title: 'ID 业务',
     icon: 'id',
     items: selectModules(appleModules, [
+      'order-entry',
       'apple-list',
       'apple-settings',
-      'balance-reconciliation',
-      'order-entry',
       'apple-orders',
       'apple-activations',
+      'balance-reconciliation',
       'finance-center',
       'apple-automation',
       'apple-reports'
@@ -1011,6 +1011,7 @@ export const menuSections: MenuSection[] = [
     icon: 'system',
     items: selectModules(systemModules, [
       'maintenance',
+      'source-platforms',
       'notifications',
       'feature-flags',
       'versions',

@@ -221,7 +221,7 @@
               <FieldHelpLabel
                 label="到期时间"
                 purpose="记录服务什么时候结束，后续续费任务和到期提醒会看这个时间。"
-                example="选择业务后会按业务周期自动填；特殊订单可以手动改成实际到期时间。"
+                example="系统按含开通当天计算：5 月 8 日开通 1 个月，默认填 6 月 7 日。特殊订单可以手动改。"
               />
             </template>
             <el-date-picker
@@ -929,10 +929,21 @@ function calculateServiceExpireTime(service: AppleService | null, startValue: st
   if (service.expireCalcType === 'by_day' || service.defaultPeriodType === 'day') {
     expireTime.setDate(expireTime.getDate() + service.defaultPeriodValue);
   } else {
-    expireTime.setMonth(expireTime.getMonth() + service.defaultPeriodValue);
+    addCalendarMonths(expireTime, service.defaultPeriodValue);
   }
+  expireTime.setDate(expireTime.getDate() - 1);
 
   return formatDateTimeValue(expireTime);
+}
+
+function addCalendarMonths(date: Date, months: number) {
+  const originalDay = date.getDate();
+
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+
+  const lastDayOfTargetMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  date.setDate(Math.min(originalDay, lastDayOfTargetMonth));
 }
 
 function formatDateTimeValue(date: Date) {

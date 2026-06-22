@@ -496,6 +496,90 @@ describe('AppleOfficialPricesService', () => {
     );
   });
 
+  it('uses localized provider catalog prices when the page is blocked', async () => {
+    const { service, tx } = createService({
+      source: {
+        name: 'Gemini 官方价格 MY/MYR',
+        provider: 'gemini',
+        region: 'MY',
+        currency: 'MYR',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://one.google.com/intl/en_my/about/google-ai-plans/'
+      },
+      appleService: {
+        name: 'Google AI Pro 1个月',
+        currency: 'MYR'
+      }
+    });
+    mockFetchBlockedResponse();
+
+    const result = await service.checkProvider(
+      'gemini',
+      { regions: [{ region: 'MY', currency: 'MYR' }] },
+      operator
+    );
+
+    expect(result.provider).toBe('gemini');
+    expect(result.failedCount).toBe(0);
+    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          planCode: 'google_ai_pro_monthly',
+          region: 'MY',
+          currency: 'MYR',
+          officialPrice: '97.99',
+          rawPayload: expect.objectContaining({
+            parser: 'provider_catalog_fallback',
+            requestedCurrency: 'MYR',
+            catalogCurrency: 'MYR'
+          })
+        })
+      })
+    );
+  });
+
+  it('keeps the requested region when falling back to another catalog currency', async () => {
+    const { service, tx } = createService({
+      source: {
+        name: 'ChatGPT 官方价格 SG/SGD',
+        provider: 'chatgpt',
+        region: 'SG',
+        currency: 'SGD',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://openai.com/chatgpt/pricing/'
+      },
+      appleService: {
+        name: 'ChatGPT Plus 1个月',
+        currency: 'USD'
+      }
+    });
+    mockFetchBlockedResponse();
+
+    const result = await service.checkProvider(
+      'chatgpt',
+      { regions: [{ region: 'SG', currency: 'SGD' }] },
+      operator
+    );
+
+    expect(result.provider).toBe('chatgpt');
+    expect(result.failedCount).toBe(0);
+    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          planCode: 'chatgpt_plus_monthly',
+          region: 'SG',
+          currency: 'USD',
+          officialPrice: '20',
+          rawPayload: expect.objectContaining({
+            parser: 'provider_catalog_currency_fallback',
+            requestedCurrency: 'SGD',
+            catalogCurrency: 'USD'
+          })
+        })
+      })
+    );
+  });
+
   it('creates and checks explicit provider regions instead of only the default region', async () => {
     const { service, prisma } = createService({
       source: {
@@ -598,6 +682,36 @@ describe('AppleOfficialPricesService', () => {
           region: 'MY',
           currency: 'MYR',
           value: 'MY:MYR'
+        }),
+        expect.objectContaining({
+          label: '德国 EUR',
+          region: 'DE',
+          currency: 'EUR',
+          value: 'DE:EUR'
+        }),
+        expect.objectContaining({
+          label: '法国 EUR',
+          region: 'FR',
+          currency: 'EUR',
+          value: 'FR:EUR'
+        }),
+        expect.objectContaining({
+          label: '尼日利亚 NGN',
+          region: 'NG',
+          currency: 'NGN',
+          value: 'NG:NGN'
+        }),
+        expect.objectContaining({
+          label: '加纳 GHS',
+          region: 'GH',
+          currency: 'GHS',
+          value: 'GH:GHS'
+        }),
+        expect.objectContaining({
+          label: '巴西 BRL',
+          region: 'BR',
+          currency: 'BRL',
+          value: 'BR:BRL'
         })
       ])
     );

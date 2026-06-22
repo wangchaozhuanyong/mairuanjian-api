@@ -109,6 +109,25 @@ function assert(condition, message) {
   }
 }
 
+function addCalendarMonths(date, months) {
+  const originalDay = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  const lastDayOfTargetMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  date.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+}
+
+function calculateInclusiveExpireTime(startTime, periodType, periodValue) {
+  const expireTime = new Date(startTime);
+  if (periodType === 'day') {
+    expireTime.setDate(expireTime.getDate() + periodValue);
+  } else {
+    addCalendarMonths(expireTime, periodValue);
+  }
+  expireTime.setDate(expireTime.getDate() - 1);
+  return expireTime;
+}
+
 function createApi(token) {
   async function request(method, path, body) {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -220,7 +239,7 @@ async function runAppleWorkflow(api, suffix) {
   );
 
   const now = new Date();
-  const expireTime = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const expireTime = calculateInclusiveExpireTime(now, 'day', 1).toISOString();
   const order = await api.post('/apple/orders', {
     customerId: customer.id,
     sourcePlatformId: platform.id,

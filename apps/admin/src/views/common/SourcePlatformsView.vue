@@ -1,11 +1,26 @@
 <template>
   <PageScaffold
-    title="下拉选项设置"
-    group="客户与来源"
+    title="选项设置"
+    group="系统配置"
     phase="Phase 2"
-    description="这里只放日常会改的下拉内容，比如来源平台、客户标签、Apple ID 分类、地区币种和兑换码发货方式。系统内部用的技术字典不放在这里。"
+    description="这里维护日常会改的选项内容，比如来源平台、客户标签、Apple ID 分类、地区币种和兑换码发货方式。系统内部用的技术字典不放在这里。"
   >
-    <section class="content-panel common-compact-list-panel">
+    <nav class="source-options-nav" aria-label="选项设置导航">
+      <AppButton
+        v-for="section in sourceOptionSections"
+        :key="section.key"
+        class="source-options-nav__button"
+        :variant="isSourceOptionSectionActive(section.key) ? 'primary' : 'soft'"
+        @click="goToSourceOptionSection(section.route)"
+      >
+        {{ section.label }}
+      </AppButton>
+    </nav>
+
+    <section
+      v-if="isSourceOptionSectionActive('platforms')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           title="来源平台"
@@ -212,7 +227,10 @@
       />
     </section>
 
-    <section v-if="false" class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('system-options')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           :title="activeSystemOptionGroup.title"
@@ -330,7 +348,10 @@
       </div>
     </section>
 
-    <section v-if="false" class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('notification-options')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           :title="activeNotificationOptionGroup.title"
@@ -454,7 +475,10 @@
       </div>
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('apple-service-categories')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           title="Apple ID 业务分类"
@@ -593,7 +617,10 @@
       />
     </section>
 
-    <section v-if="false" class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('apple-service-options')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           :title="`Apple ID ${activeAppleServiceOptionGroup.title}`"
@@ -717,7 +744,10 @@
       </div>
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('customer-tags')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           title="客户标签"
@@ -848,7 +878,10 @@
       />
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('apple-regions')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           title="Apple ID 地区/币种"
@@ -990,7 +1023,10 @@
       />
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('code-delivery-methods')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           title="兑换码发货方式"
@@ -1093,7 +1129,10 @@
       </div>
     </section>
 
-    <section class="content-panel common-compact-list-panel">
+    <section
+      v-if="isSourceOptionSectionActive('code-delivery-modes')"
+      class="content-panel common-compact-list-panel"
+    >
       <div class="panel-title-row">
         <PanelTitleHelp
           title="兑换码业务发货模式"
@@ -1883,7 +1922,8 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { dataCenterApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
 import type { DataDictionaryQuery, SourcePlatformQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -1959,6 +1999,61 @@ const platformColumnOptions = [
   { label: '更新时间', value: 'updatedAt' }
 ];
 const batchActions = [{ label: '批量导出', value: 'export' }];
+const sourceOptionSections = [
+  {
+    key: 'platforms',
+    label: '来源平台',
+    route: '/system/source-platforms/platforms'
+  },
+  {
+    key: 'customer-tags',
+    label: '客户标签',
+    route: '/system/source-platforms/customer-tags'
+  },
+  {
+    key: 'apple-service-categories',
+    label: 'Apple ID 分类',
+    route: '/system/source-platforms/apple-service-categories'
+  },
+  {
+    key: 'apple-regions',
+    label: '地区币种',
+    route: '/system/source-platforms/apple-regions'
+  },
+  {
+    key: 'apple-service-options',
+    label: 'ID 业务选项',
+    route: '/system/source-platforms/apple-service-options'
+  },
+  {
+    key: 'code-delivery-methods',
+    label: '兑换码发货方式',
+    route: '/system/source-platforms/code-delivery-methods'
+  },
+  {
+    key: 'code-delivery-modes',
+    label: '兑换码发货模式',
+    route: '/system/source-platforms/code-delivery-modes'
+  },
+  {
+    key: 'notification-options',
+    label: '通知选项',
+    route: '/system/source-platforms/notification-options'
+  },
+  {
+    key: 'system-options',
+    label: '系统与平台选项',
+    route: '/system/source-platforms/system-options'
+  }
+] as const;
+type SourceOptionSectionKey = (typeof sourceOptionSections)[number]['key'];
+type SourceOptionSectionRoute = (typeof sourceOptionSections)[number]['route'];
+const sourceOptionSectionKeys = new Set<SourceOptionSectionKey>(
+  sourceOptionSections.map((section) => section.key)
+);
+
+const route = useRoute();
+const router = useRouter();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -2271,6 +2366,11 @@ const activeDeliveryModeCount = computed(
   () => codeServiceDeliveryModeDictionaries.value.filter((mode) => mode.status === 'active').length
 );
 const filterChips = computed<Array<{ key: string; label: string; value: string }>>(() => []);
+const activeSourceOptionSectionKey = computed<SourceOptionSectionKey>(() => {
+  const sectionKey = route.meta.sourceOptionSection;
+
+  return isSourceOptionSectionKey(sectionKey) ? sectionKey : 'platforms';
+});
 
 const rules: FormRules<typeof form> = {
   name: [{ required: true, message: '请输入平台名称', trigger: 'blur' }]
@@ -2328,6 +2428,22 @@ function getAppleRegionDialCode(region: DataDictionary) {
 
 function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
+}
+
+function isSourceOptionSectionKey(value: unknown): value is SourceOptionSectionKey {
+  return typeof value === 'string' && sourceOptionSectionKeys.has(value as SourceOptionSectionKey);
+}
+
+function isSourceOptionSectionActive(sectionKey: SourceOptionSectionKey) {
+  return activeSourceOptionSectionKey.value === sectionKey;
+}
+
+async function goToSourceOptionSection(routePath: SourceOptionSectionRoute) {
+  if (route.path === routePath) {
+    return;
+  }
+
+  await router.push(routePath);
 }
 
 function buildPlatformParams(): SourcePlatformQuery {
@@ -2686,17 +2802,6 @@ async function loadAppleServiceOptionGroup(
   }
 }
 
-async function loadAppleServiceOptions(options: { background?: boolean; force?: boolean } = {}) {
-  appleServiceOptionLoading.value = !options.background;
-  try {
-    await Promise.all(
-      appleServiceQuickOptionGroups.map((group) => loadAppleServiceOptionGroup(group.key, options))
-    );
-  } finally {
-    appleServiceOptionLoading.value = false;
-  }
-}
-
 async function loadNotificationOptionGroup(
   groupKey: NotificationQuickOptionGroupKey,
   options: { background?: boolean; force?: boolean } = {}
@@ -2748,17 +2853,6 @@ async function loadNotificationOptionGroup(
   }
 }
 
-async function loadNotificationOptions(options: { background?: boolean; force?: boolean } = {}) {
-  notificationOptionLoading.value = !options.background;
-  try {
-    await Promise.all(
-      notificationQuickOptionGroups.map((group) => loadNotificationOptionGroup(group.key, options))
-    );
-  } finally {
-    notificationOptionLoading.value = false;
-  }
-}
-
 async function loadSystemOptionGroup(
   groupKey: SystemQuickOptionGroupKey,
   options: { background?: boolean; force?: boolean } = {}
@@ -2807,17 +2901,6 @@ async function loadSystemOptionGroup(
     if (isCurrentGroup && activeSystemOptionQueryKeys[groupKey] === key) {
       systemOptionLoading.value = false;
     }
-  }
-}
-
-async function loadSystemOptions(options: { background?: boolean; force?: boolean } = {}) {
-  systemOptionLoading.value = !options.background;
-  try {
-    await Promise.all(
-      systemQuickOptionGroups.map((group) => loadSystemOptionGroup(group.key, options))
-    );
-  } finally {
-    systemOptionLoading.value = false;
   }
 }
 
@@ -3285,19 +3368,42 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
+async function loadActiveSourceOptionSection(
+  options: { background?: boolean; force?: boolean } = {}
+) {
+  switch (activeSourceOptionSectionKey.value) {
+    case 'platforms':
+      await Promise.all([loadTableViews(true), loadPlatforms(options)]);
+      break;
+    case 'customer-tags':
+      await loadCustomerTags(options);
+      break;
+    case 'apple-service-categories':
+      await loadAppleServiceCategories(options);
+      break;
+    case 'apple-regions':
+      await loadAppleRegions(options);
+      break;
+    case 'apple-service-options':
+      await loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup.value, options);
+      break;
+    case 'code-delivery-methods':
+      await loadCodeDeliveryMethods(options);
+      break;
+    case 'code-delivery-modes':
+      await loadCodeServiceDeliveryModes(options);
+      break;
+    case 'notification-options':
+      await loadNotificationOptionGroup(selectedNotificationOptionGroup.value, options);
+      break;
+    case 'system-options':
+      await loadSystemOptionGroup(selectedSystemOptionGroup.value, options);
+      break;
+  }
+}
+
 async function initializePage() {
-  await Promise.all([
-    loadTableViews(true),
-    loadPlatforms({ force: false }),
-    loadCustomerTags({ force: false }),
-    loadAppleServiceCategories({ force: false }),
-    loadAppleServiceOptions({ force: false }),
-    loadNotificationOptions({ force: false }),
-    loadSystemOptions({ force: false }),
-    loadAppleRegions({ force: false }),
-    loadCodeDeliveryMethods({ force: false }),
-    loadCodeServiceDeliveryModes({ force: false })
-  ]);
+  await loadActiveSourceOptionSection({ force: false });
 }
 
 function resetForm() {
@@ -4061,87 +4167,43 @@ async function toggleCodeServiceDeliveryModeStatus(mode: DataDictionary) {
 
 onMounted(initializePage);
 
+watch(activeSourceOptionSectionKey, () => {
+  void loadActiveSourceOptionSection({ force: false });
+});
+
+watch(selectedAppleServiceOptionGroup, (groupKey) => {
+  if (activeSourceOptionSectionKey.value === 'apple-service-options') {
+    void loadAppleServiceOptionGroup(groupKey, { force: false });
+  }
+});
+
+watch(selectedNotificationOptionGroup, (groupKey) => {
+  if (activeSourceOptionSectionKey.value === 'notification-options') {
+    void loadNotificationOptionGroup(groupKey, { force: false });
+  }
+});
+
+watch(selectedSystemOptionGroup, (groupKey) => {
+  if (activeSourceOptionSectionKey.value === 'system-options') {
+    void loadSystemOptionGroup(groupKey, { force: false });
+  }
+});
+
 usePageRefresh(
   async (options) => {
-    await Promise.all([
-      loadPlatforms({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadCustomerTags({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadAppleServiceCategories({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadAppleServiceOptions({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadNotificationOptions({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadSystemOptions({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadAppleRegions({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadCodeDeliveryMethods({
-        background: options.background,
-        force: options.force ?? true
-      }),
-      loadCodeServiceDeliveryModes({
-        background: options.background,
-        force: options.force ?? true
-      })
-    ]);
+    await loadActiveSourceOptionSection({
+      background: options.background,
+      force: options.force ?? true
+    });
   },
-  { label: '下拉选项设置' }
+  { label: '选项设置' }
 );
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   ['source-platforms', 'data-dictionaries'],
   () => {
-    void loadPlatforms({
-      background: platforms.value.length > 0,
-      force: true
-    });
-    void loadCustomerTags({
-      background: customerTags.value.length > 0,
-      force: true
-    });
-    void loadAppleServiceCategories({
-      background: appleServiceCategories.value.length > 0,
-      force: true
-    });
-    void loadAppleServiceOptions({
-      background: currentAppleServiceOptionDictionaries.value.length > 0,
-      force: true
-    });
-    void loadNotificationOptions({
-      background: currentNotificationOptionDictionaries.value.length > 0,
-      force: true
-    });
-    void loadSystemOptions({
-      background: currentSystemOptionDictionaries.value.length > 0,
-      force: true
-    });
-    void loadAppleRegions({
-      background: appleRegionDictionaries.value.length > 0,
-      force: true
-    });
-    void loadCodeDeliveryMethods({
-      background: codeDeliveryMethodDictionaries.value.length > 0,
-      force: true
-    });
-    void loadCodeServiceDeliveryModes({
-      background: codeServiceDeliveryModeDictionaries.value.length > 0,
+    void loadActiveSourceOptionSection({
+      background: true,
       force: true
     });
   }
@@ -4151,6 +4213,22 @@ onBeforeUnmount(stopRealtimeRefresh);
 </script>
 
 <style scoped>
+.source-options-nav {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 0 14px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.source-options-nav__button {
+  flex: 0 0 auto;
+}
+
 .common-compact-list-panel .panel-title-row {
   align-items: flex-start;
 }
@@ -4178,6 +4256,11 @@ onBeforeUnmount(stopRealtimeRefresh);
 }
 
 @media (max-width: 840px) {
+  .source-options-nav {
+    margin: 0 -12px;
+    padding: 0 12px 12px;
+  }
+
   .common-compact-list-panel .inline-actions {
     justify-content: flex-start;
     max-width: none;

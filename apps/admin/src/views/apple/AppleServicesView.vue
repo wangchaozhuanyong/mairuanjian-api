@@ -59,10 +59,10 @@
             @change="handleSearch"
           >
             <el-option
-              v-for="category in serviceCategoryOptions"
-              :key="category"
-              :label="getCategoryLabel(category)"
-              :value="category"
+              v-for="category in activeServiceCategoryDictionaries"
+              :key="category.id"
+              :label="getCategoryLabel(category.label)"
+              :value="getCategoryOptionValue(category)"
             />
           </el-select>
           <el-input
@@ -84,15 +84,30 @@
         >
           全部分类
         </AppButton>
-        <AppButton
-          v-for="category in serviceCategoryOptions"
-          :key="category"
-          size="small"
-          :variant="query.category === category ? 'primary' : 'soft'"
-          @click="selectCategory(category)"
+        <div
+          v-for="category in activeServiceCategoryDictionaries"
+          :key="category.id"
+          class="apple-service-category-manage"
         >
-          {{ getCategoryLabel(category) }}
-        </AppButton>
+          <AppButton
+            size="small"
+            :variant="query.category === getCategoryOptionValue(category) ? 'primary' : 'soft'"
+            @click="selectCategory(getCategoryOptionValue(category))"
+          >
+            {{ getCategoryLabel(category.label) }}
+          </AppButton>
+          <AppButton size="small" variant="ghost" @click.stop="openEditManagedCategory(category)">
+            编辑
+          </AppButton>
+          <AppButton
+            size="small"
+            variant="danger"
+            :loading="deletingCategoryId === category.id"
+            @click.stop="deleteManagedCategory(category)"
+          >
+            删除
+          </AppButton>
+        </div>
       </div>
 
       <el-table
@@ -208,10 +223,11 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton variant="ghost" @click="openEdit(row)">编辑</AppButton>
+              <AppButton variant="danger" @click="removeService(row)">删除</AppButton>
             </div>
           </template>
         </el-table-column>
@@ -268,6 +284,9 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openEdit(service)">编辑</AppButton>
+            <AppButton size="small" variant="danger" @click="removeService(service)">
+              删除
+            </AppButton>
           </div>
         </article>
       </div>
@@ -291,18 +310,18 @@
       />
     </section>
 
-    <section class="content-panel apple-official-price-panel">
+    <section ref="officialPricePanelRef" class="content-panel apple-official-price-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
           title="官方价格巡检"
           help="这里用来定期检查官方价格和套餐有没有变。系统只会先生成待确认变化，不会自动改你的业务价格，确认后才同步。"
         />
         <div class="inline-actions">
-          <StatusChip tone="blue" dot>来源 {{ officialPriceSources.length }}</StatusChip>
+          <StatusChip tone="blue" dot>来源 {{ officialSourceTotal }}</StatusChip>
           <StatusChip :tone="pendingOfficialReviews.length ? 'orange' : 'green'" dot>
             待确认 {{ pendingOfficialReviews.length }}
           </StatusChip>
-          <StatusChip tone="purple">快照 {{ officialPriceSnapshots.length }}</StatusChip>
+          <StatusChip tone="purple">快照 {{ officialSnapshotTotal }}</StatusChip>
           <AppButton variant="soft" @click="() => loadOfficialPricePanel()">刷新</AppButton>
           <AppButton variant="primary" @click="openCreateOfficialSource">新增来源</AppButton>
         </div>
@@ -404,6 +423,15 @@
           <StatusChip tone="purple">待确认变化 {{ officialPriceBatch.reviewCount }}</StatusChip>
         </div>
         <div v-if="officialBatchProblemItems.length" class="apple-official-batch-panel__problems">
+          <div class="apple-official-batch-problem apple-official-batch-problem--summary">
+            <StatusChip tone="orange" class="apple-official-batch-problem__status">
+              异常 {{ officialBatchProblemItems.length }}
+            </StatusChip>
+            <span>有地区采集失败或需要人工确认，请到采集结果查看完整原因。</span>
+            <AppButton size="small" variant="soft" @click="showOfficialBatchResults">
+              查看全部
+            </AppButton>
+          </div>
           <div
             v-for="item in officialBatchProblemItems.slice(0, 5)"
             :key="item.id"
@@ -423,7 +451,11 @@
         </div>
       </div>
 
-      <el-tabs v-model="officialPriceTab" class="apple-official-price-tabs">
+      <el-tabs
+        v-model="officialPriceTab"
+        class="apple-official-price-tabs"
+        @tab-change="preserveWorkspaceScrollAfterOfficialTabChange"
+      >
         <el-tab-pane label="待确认变化" name="reviews">
           <el-table
             v-loading="officialPriceLoading"
@@ -528,6 +560,12 @@
               </template>
             </el-table-column>
           </el-table>
+          <PaginationBar
+            v-model:page="officialReviewQuery.page"
+            v-model:page-size="officialReviewQuery.pageSize"
+            :total="officialReviewTotal"
+            @change="() => loadOfficialPricePanel({ preserveOptionCache: true })"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="官方来源" name="sources">
@@ -585,6 +623,59 @@
               </template>
             </el-table-column>
           </el-table>
+          <PaginationBar
+            v-model:page="officialSourceQuery.page"
+            v-model:page-size="officialSourceQuery.pageSize"
+            :total="officialSourceTotal"
+            @change="() => loadOfficialPricePanel({ preserveOptionCache: true })"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="采集结果" name="batch-items">
+          <el-table
+            v-loading="officialPriceLoading"
+            class="desktop-data-table official-batch-items-table"
+            :data="paginatedOfficialBatchItems"
+            row-key="id"
+            empty-text="暂无采集批次结果"
+          >
+            <el-table-column label="来源" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                <strong>{{ getProviderLabel(row.provider) }}</strong>
+                <div class="muted-block">{{ row.sourceName || '-' }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="地区/币种" width="150">
+              <template #default="{ row }">{{ getOfficialBatchItemRegionLabel(row) }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="130">
+              <template #default="{ row }">
+                <StatusChip :tone="getOfficialBatchItemStatusTone(row.status)" dot>
+                  {{ getOfficialBatchItemStatusLabel(row.status) }}
+                </StatusChip>
+              </template>
+            </el-table-column>
+            <el-table-column label="产出" width="150">
+              <template #default="{ row }">
+                快照 {{ row.snapshotCount }} / 待确认 {{ row.reviewCount }}
+              </template>
+            </el-table-column>
+            <el-table-column label="原因/说明" min-width="300" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ getOfficialBatchItemMessage(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="完成时间" min-width="170">
+              <template #default="{ row }">
+                {{ formatDate(row.finishedAt || row.updatedAt || row.createdAt) }}
+              </template>
+            </el-table-column>
+          </el-table>
+          <PaginationBar
+            v-model:page="officialBatchItemQuery.page"
+            v-model:page-size="officialBatchItemQuery.pageSize"
+            :total="officialBatchItems.length"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="采集记录" name="snapshots">
@@ -621,6 +712,12 @@
               <template #default="{ row }">{{ formatDate(row.collectedAt) }}</template>
             </el-table-column>
           </el-table>
+          <PaginationBar
+            v-model:page="officialSnapshotQuery.page"
+            v-model:page-size="officialSnapshotQuery.pageSize"
+            :total="officialSnapshotTotal"
+            @change="() => loadOfficialPricePanel({ preserveOptionCache: true })"
+          />
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -633,12 +730,35 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="apple-service-form-section">基础业务</div>
         <div class="form-grid">
+          <el-form-item prop="primaryRegion">
+            <template #label>
+              <FieldHelpLabel
+                label="国家/地区"
+                purpose="选择这个业务对应的 Apple ID 地区，系统会按地区带出币种，并同步到允许地区里。"
+                example="美国区选 US/USD，马来西亚区选 MY/MYR，港区选 HK/HKD。"
+              />
+            </template>
+            <el-select
+              v-model="form.primaryRegion"
+              class="full-input"
+              filterable
+              placeholder="从采集地区选择"
+              @change="handlePrimaryRegionChange"
+            >
+              <el-option
+                v-for="region in officialCountryOptions"
+                :key="region.value"
+                :label="region.label"
+                :value="region.value"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item prop="category">
             <template #label>
               <FieldHelpLabel
                 label="业务分类"
-                purpose="把业务分组，订单录入时会按分类展示，方便员工快速找到业务。"
-                example="可以填 AI 会员、流媒体、工具订阅；同类业务尽量用同一个分类名。"
+                purpose="把业务分组，订单录入时会按分类展示；官方价格采集到的分类会自动出现在这里。"
+                example="先选国家，再选 ChatGPT、Claude、Gemini 这类官方采集分类。"
               />
             </template>
             <el-select
@@ -648,9 +768,10 @@
               allow-create
               default-first-option
               placeholder="选择或输入分类"
+              @change="handleCategoryChange"
             >
               <el-option
-                v-for="category in serviceCategoryOptions"
+                v-for="category in formServiceCategoryOptions"
                 :key="category"
                 :label="getCategoryLabel(category)"
                 :value="category"
@@ -665,20 +786,50 @@
                 example="例如 ChatGPT Plus 月费、Claude Pro 月费、YouTube Premium 月卡。"
               />
             </template>
-            <el-input v-model.trim="form.name" placeholder="例如 ChatGPT Plus 月费" />
+            <el-select
+              v-model="form.name"
+              class="full-input"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="从官方采集套餐选择，或输入新名称"
+              @change="handleServiceNameSelect"
+            >
+              <el-option
+                v-for="option in officialServiceNameOptions"
+                :key="option.key"
+                :label="getOfficialServiceNameOptionLabel(option)"
+                :value="option.serviceName"
+              />
+            </el-select>
           </el-form-item>
-        </div>
-        <div class="form-grid">
           <el-form-item prop="officialBasePrice">
             <template #label>
               <FieldHelpLabel
                 label="官网官方价格"
-                purpose="官网公开显示的套餐价格，官方价格巡检确认后会自动更新这里。"
-                example="官网 Plus 月费 20 美元就填 20；不同国家套餐按对应币种填写。"
+                purpose="官网公开显示的套餐价格；选择官方采集套餐后会自动带出来，也可以手动输入。"
+                example="官网 Plus 月费 20 美元就选 20 USD；不同国家套餐按对应币种选择。"
               />
             </template>
-            <el-input v-model.trim="form.officialBasePrice" />
+            <el-select
+              v-model="form.officialBasePrice"
+              class="full-input"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="从官方采集价格选择，或输入金额"
+              @change="handleOfficialBasePriceSelect"
+            >
+              <el-option
+                v-for="option in officialPriceValueOptions"
+                :key="option.key"
+                :label="getOfficialPriceValueOptionLabel(option)"
+                :value="option.officialPrice"
+              />
+            </el-select>
           </el-form-item>
+        </div>
+        <div class="form-grid">
           <el-form-item prop="currency">
             <template #label>
               <FieldHelpLabel
@@ -750,8 +901,8 @@
             <template #label>
               <FieldHelpLabel
                 label="业务周期"
-                purpose="订单录入会按这个周期自动填到期时间。"
-                example="月费业务选按月并填 1；7 天试用就选按天并填 7。"
+                purpose="订单录入会按这个周期自动填到期时间，开通当天算第 1 天。"
+                example="5 月 8 日开通 1 个月，到期日填 6 月 7 日；7 天业务到期日填第 7 天。"
               />
             </template>
             <div class="apple-service-period-row">
@@ -770,8 +921,8 @@
             <template #label>
               <FieldHelpLabel
                 label="到期计算"
-                purpose="决定订单录入按月、按天，还是不自动计算到期时间。"
-                example="自然月订阅选按月，固定天数商品选按天，特殊订单选手工。"
+                purpose="决定订单录入按月、按天，还是不自动计算到期时间；按月和按天都含开通当天。"
+                example="自然月订阅选按月，固定天数商品选按天；系统会先加周期再减 1 天。"
               />
             </template>
             <el-select v-model="form.expireCalcType" class="full-input">
@@ -881,6 +1032,55 @@
       <template #footer>
         <AppButton @click="dialogVisible = false">取消</AppButton>
         <AppButton variant="primary" :loading="saving" @click="saveService">保存</AppButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="categoryDialogVisible"
+      title="编辑业务分类"
+      width="min(560px, calc(100vw - 24px))"
+    >
+      <el-form
+        ref="categoryFormRef"
+        :model="categoryForm"
+        :rules="categoryRules"
+        label-position="top"
+      >
+        <el-form-item prop="label">
+          <template #label>
+            <FieldHelpLabel
+              label="分类名称"
+              purpose="控制 Apple ID 业务设置顶部分类按钮和新增业务分类下拉的显示名称。"
+              example="例如 ChatGPT、Claude、Gemini、通用。"
+            />
+          </template>
+          <el-input v-model.trim="categoryForm.label" maxlength="40" show-word-limit />
+        </el-form-item>
+        <div class="form-grid">
+          <el-form-item label="排序">
+            <el-input-number
+              v-model="categoryForm.sortOrder"
+              class="full-input"
+              :min="0"
+              :step="1"
+            />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-radio-group v-model="categoryForm.status">
+              <el-radio-button label="active">启用</el-radio-button>
+              <el-radio-button label="disabled">停用</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+        </div>
+        <el-form-item label="备注">
+          <el-input v-model="categoryForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <AppButton @click="categoryDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="categorySaving" @click="saveManagedCategory">
+          保存
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -1039,7 +1239,7 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
   appleOfficialPricesApi,
   appleServicesApi,
@@ -1114,6 +1314,22 @@ const serviceColumnOptions = [
   { label: '更新时间', value: 'updatedAt' }
 ];
 const batchActions = [{ label: '批量导出', value: 'export' }];
+
+interface OfficialCollectedServiceOption {
+  category: string;
+  collectedAt?: string | null;
+  currency: string;
+  key: string;
+  officialPrice: string;
+  periodType: AppleService['defaultPeriodType'];
+  periodValue: number;
+  planCode?: string | null;
+  provider?: string | null;
+  region: string;
+  serviceName: string;
+  sourceLabel: string;
+}
+
 const officialProviderOptions = [
   { label: 'ChatGPT / OpenAI', value: 'chatgpt' },
   { label: 'Gemini / Google', value: 'gemini' },
@@ -1135,16 +1351,52 @@ const fallbackOfficialAutoRegionOptions: AppleOfficialPriceProviderCatalogRegion
   { label: '韩国 KRW', value: 'KR:KRW', region: 'KR', currency: 'KRW' },
   { label: '英国 GBP', value: 'GB:GBP', region: 'GB', currency: 'GBP' },
   { label: '欧元区 EUR', value: 'EU:EUR', region: 'EU', currency: 'EUR' },
+  { label: '德国 EUR', value: 'DE:EUR', region: 'DE', currency: 'EUR' },
+  { label: '法国 EUR', value: 'FR:EUR', region: 'FR', currency: 'EUR' },
+  { label: '西班牙 EUR', value: 'ES:EUR', region: 'ES', currency: 'EUR' },
+  { label: '意大利 EUR', value: 'IT:EUR', region: 'IT', currency: 'EUR' },
+  { label: '荷兰 EUR', value: 'NL:EUR', region: 'NL', currency: 'EUR' },
+  { label: '爱尔兰 EUR', value: 'IE:EUR', region: 'IE', currency: 'EUR' },
+  { label: '比利时 EUR', value: 'BE:EUR', region: 'BE', currency: 'EUR' },
+  { label: '奥地利 EUR', value: 'AT:EUR', region: 'AT', currency: 'EUR' },
+  { label: '葡萄牙 EUR', value: 'PT:EUR', region: 'PT', currency: 'EUR' },
+  { label: '芬兰 EUR', value: 'FI:EUR', region: 'FI', currency: 'EUR' },
+  { label: '希腊 EUR', value: 'GR:EUR', region: 'GR', currency: 'EUR' },
+  { label: '波兰 PLN', value: 'PL:PLN', region: 'PL', currency: 'PLN' },
+  { label: '瑞典 SEK', value: 'SE:SEK', region: 'SE', currency: 'SEK' },
+  { label: '挪威 NOK', value: 'NO:NOK', region: 'NO', currency: 'NOK' },
+  { label: '丹麦 DKK', value: 'DK:DKK', region: 'DK', currency: 'DKK' },
+  { label: '瑞士 CHF', value: 'CH:CHF', region: 'CH', currency: 'CHF' },
+  { label: '捷克 CZK', value: 'CZ:CZK', region: 'CZ', currency: 'CZK' },
+  { label: '罗马尼亚 RON', value: 'RO:RON', region: 'RO', currency: 'RON' },
+  { label: '匈牙利 HUF', value: 'HU:HUF', region: 'HU', currency: 'HUF' },
+  { label: '乌克兰 UAH', value: 'UA:UAH', region: 'UA', currency: 'UAH' },
   { label: '澳大利亚 AUD', value: 'AU:AUD', region: 'AU', currency: 'AUD' },
+  { label: '新西兰 NZD', value: 'NZ:NZD', region: 'NZ', currency: 'NZD' },
   { label: '加拿大 CAD', value: 'CA:CAD', region: 'CA', currency: 'CAD' },
   { label: '泰国 THB', value: 'TH:THB', region: 'TH', currency: 'THB' },
   { label: '菲律宾 PHP', value: 'PH:PHP', region: 'PH', currency: 'PHP' },
   { label: '印度尼西亚 IDR', value: 'ID:IDR', region: 'ID', currency: 'IDR' },
   { label: '越南 VND', value: 'VN:VND', region: 'VN', currency: 'VND' },
   { label: '印度 INR', value: 'IN:INR', region: 'IN', currency: 'INR' },
+  { label: '巴基斯坦 PKR', value: 'PK:PKR', region: 'PK', currency: 'PKR' },
+  { label: '孟加拉国 BDT', value: 'BD:BDT', region: 'BD', currency: 'BDT' },
   { label: '土耳其 TRY', value: 'TR:TRY', region: 'TR', currency: 'TRY' },
+  { label: '阿联酋 AED', value: 'AE:AED', region: 'AE', currency: 'AED' },
+  { label: '沙特阿拉伯 SAR', value: 'SA:SAR', region: 'SA', currency: 'SAR' },
+  { label: '以色列 ILS', value: 'IL:ILS', region: 'IL', currency: 'ILS' },
   { label: '巴西 BRL', value: 'BR:BRL', region: 'BR', currency: 'BRL' },
-  { label: '墨西哥 MXN', value: 'MX:MXN', region: 'MX', currency: 'MXN' }
+  { label: '墨西哥 MXN', value: 'MX:MXN', region: 'MX', currency: 'MXN' },
+  { label: '阿根廷 ARS', value: 'AR:ARS', region: 'AR', currency: 'ARS' },
+  { label: '智利 CLP', value: 'CL:CLP', region: 'CL', currency: 'CLP' },
+  { label: '哥伦比亚 COP', value: 'CO:COP', region: 'CO', currency: 'COP' },
+  { label: '秘鲁 PEN', value: 'PE:PEN', region: 'PE', currency: 'PEN' },
+  { label: '尼日利亚 NGN', value: 'NG:NGN', region: 'NG', currency: 'NGN' },
+  { label: '加纳 GHS', value: 'GH:GHS', region: 'GH', currency: 'GHS' },
+  { label: '南非 ZAR', value: 'ZA:ZAR', region: 'ZA', currency: 'ZAR' },
+  { label: '肯尼亚 KES', value: 'KE:KES', region: 'KE', currency: 'KES' },
+  { label: '埃及 EGP', value: 'EG:EGP', region: 'EG', currency: 'EGP' },
+  { label: '摩洛哥 MAD', value: 'MA:MAD', region: 'MA', currency: 'MAD' }
 ].map((region) => ({ ...region, sourceUrl: '' }));
 const defaultOfficialAutoRegions = new Set(['US', 'MY', 'SG', 'HK']);
 const balanceRuleOptions: Array<{ label: string; value: AppleBalancePriceRuleType }> = [
@@ -1157,31 +1409,40 @@ const balanceRuleOptions: Array<{ label: string; value: AppleBalancePriceRuleTyp
 const loading = ref(false);
 const saving = ref(false);
 const officialPriceLoading = ref(false);
+const officialPricePanelRef = ref<HTMLElement | null>(null);
 const savingOfficialSource = ref(false);
 const checkingOfficialPrice = ref(false);
 const savingBalanceRule = ref(false);
 const officialSourceCheckId = ref('');
 const officialProviderCheckKey = ref('');
+let officialPriceTabScrollRestoreTimer: ReturnType<typeof setTimeout> | undefined;
 const dialogVisible = ref(false);
+const categoryDialogVisible = ref(false);
 const officialSourceDialogVisible = ref(false);
 const officialCheckDialogVisible = ref(false);
 const editingService = ref<AppleService | null>(null);
+const editingCategory = ref<DataDictionary | null>(null);
 const editingOfficialSource = ref<AppleOfficialPriceSource | null>(null);
 const formRef = ref<FormInstance>();
+const categoryFormRef = ref<FormInstance>();
 const services = ref<AppleService[]>([]);
 const selectedServices = ref<AppleService[]>([]);
 const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
 const officialPriceReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
+const officialPriceOptionReviews = ref<ApplePriceChangeReview[]>([]);
+const officialPriceOptionSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
 const officialPriceBatch = ref<AppleOfficialPriceCheckBatch | null>(null);
 const officialProviderCatalogProviders = ref(fallbackOfficialAutoProviderOptions);
 const officialProviderCatalogRegions = ref(fallbackOfficialAutoRegionOptions);
+const officialSourceTotal = ref(0);
+const officialReviewTotal = ref(0);
+const officialSnapshotTotal = ref(0);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const serviceCategoryDictionaries = ref<DataDictionary[]>([]);
 const periodTypeDictionaries = ref<DataDictionary[]>([]);
 const expireCalcTypeDictionaries = ref<DataDictionary[]>([]);
 const lockRuleDictionaries = ref<DataDictionary[]>([]);
-const knownServiceCategories = ref<string[]>([]);
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
 const savedViews = ref<UserTableView[]>([]);
@@ -1197,6 +1458,8 @@ const selectedOfficialAutoRegions = ref<string[]>(
     .map((region) => region.value)
 );
 const officialBatchPollingTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const categorySaving = ref(false);
+const deletingCategoryId = ref('');
 
 const globalBalanceRuleForm = reactive({
   ruleType: 'percent' as Extract<AppleBalancePriceRuleType, 'percent' | 'fixed_add'>,
@@ -1211,10 +1474,27 @@ const query = reactive({
   category: '',
   currency: ''
 });
+const officialSourceQuery = reactive({
+  page: 1,
+  pageSize: 10
+});
+const officialReviewQuery = reactive({
+  page: 1,
+  pageSize: 10
+});
+const officialSnapshotQuery = reactive({
+  page: 1,
+  pageSize: 10
+});
+const officialBatchItemQuery = reactive({
+  page: 1,
+  pageSize: 10
+});
 
 const form = reactive({
   name: '',
   category: '通用',
+  primaryRegion: 'US',
   defaultPrice: '0',
   officialBasePrice: '0',
   officialCostValue: '0',
@@ -1261,11 +1541,22 @@ const officialCheckForm = reactive({
   scanRemovedPlans: false
 });
 
+const categoryForm = reactive({
+  label: '',
+  sortOrder: 0,
+  status: 'active' as DataDictionary['status'],
+  remark: ''
+});
+
 const rules: FormRules<typeof form> = {
   category: [{ required: true, message: '请选择或输入业务分类', trigger: 'change' }],
   name: [{ required: true, message: '请输入业务名称', trigger: 'blur' }],
+  primaryRegion: [{ required: true, message: '请选择国家/地区', trigger: 'change' }],
   officialBasePrice: [{ required: true, message: '请输入官网官方价格', trigger: 'blur' }],
   currency: [{ required: true, message: '请输入币种', trigger: 'blur' }]
+};
+const categoryRules: FormRules<typeof categoryForm> = {
+  label: [{ required: true, message: '请输入分类名称', trigger: 'blur' }]
 };
 
 const enabledCount = computed(
@@ -1283,15 +1574,57 @@ const inactiveServiceCount = computed(
 const byServiceLockCount = computed(
   () => services.value.filter((service) => service.lockRule === 'by_service').length
 );
-const serviceCategoryOptions = computed(() => {
+const officialCollectedServiceOptions = computed(() => {
+  const optionMap = new Map<string, OfficialCollectedServiceOption>();
+
+  for (const snapshot of officialPriceOptionSnapshots.value) {
+    addOfficialCollectedOption(optionMap, buildOfficialOptionFromSnapshot(snapshot));
+  }
+
+  for (const review of officialPriceOptionReviews.value) {
+    addOfficialCollectedOption(optionMap, buildOfficialOptionFromReview(review));
+  }
+
+  return [...optionMap.values()].sort((left, right) => {
+    const regionOrder = left.region.localeCompare(right.region);
+    if (regionOrder) return regionOrder;
+    const categoryOrder = getCategoryLabel(left.category).localeCompare(
+      getCategoryLabel(right.category),
+      'zh-CN'
+    );
+    if (categoryOrder) return categoryOrder;
+    return left.serviceName.localeCompare(right.serviceName, 'zh-CN');
+  });
+});
+const activeServiceCategoryDictionaries = computed(() =>
+  serviceCategoryDictionaries.value
+    .filter((category) => category.status === 'active')
+    .slice()
+    .sort(
+      (left, right) =>
+        left.sortOrder - right.sortOrder ||
+        getCategoryLabel(left.label).localeCompare(getCategoryLabel(right.label), 'zh-CN')
+    )
+);
+const disabledServiceCategoryValues = computed(() => {
+  const values = new Set<string>();
+  for (const category of serviceCategoryDictionaries.value) {
+    if (category.status !== 'disabled') continue;
+    values.add(getCategoryOptionValue(category));
+  }
+  return values;
+});
+const formServiceCategoryOptions = computed(() => {
+  const disabledValues = disabledServiceCategoryValues.value;
   const categories = [
-    ...serviceCategoryDictionaries.value.map((category) => category.label),
-    ...knownServiceCategories.value,
-    ...services.value.map((service) => service.category),
+    ...activeServiceCategoryDictionaries.value.map((category) => getCategoryOptionValue(category)),
+    ...officialCollectedServiceOptions.value
+      .map((option) => normalizeOptionalCategoryValue(option.category))
+      .filter((category) => category && !disabledValues.has(category)),
     query.category,
     form.category
   ]
-    .map((category) => normalizeCategoryValue(category))
+    .map((category) => normalizeOptionalCategoryValue(category))
     .filter(Boolean);
 
   return [...new Set(categories)].sort((left, right) =>
@@ -1301,9 +1634,22 @@ const serviceCategoryOptions = computed(() => {
 const appleRegionOptions = computed(() =>
   mergeAppleAccountRegionOptions(appleRegionDictionaries.value)
 );
-const appleCurrencyOptions = computed(() =>
-  buildAppleAccountCurrencyOptions(appleRegionOptions.value)
-);
+const appleCurrencyOptions = computed(() => {
+  const options = buildAppleAccountCurrencyOptions(appleRegionOptions.value);
+  const existing = new Set(options.map((option) => option.value));
+
+  for (const item of [...officialCountryOptions.value, ...officialCollectedServiceOptions.value]) {
+    if (!item.currency || existing.has(item.currency)) continue;
+    existing.add(item.currency);
+    options.push({
+      label: item.currency,
+      region: 'region' in item ? item.region : item.value,
+      value: item.currency
+    });
+  }
+
+  return options.sort((left, right) => left.value.localeCompare(right.value));
+});
 const periodTypeOptions = computed(() =>
   buildAppleServicePeriodTypeOptions(periodTypeDictionaries.value)
 );
@@ -1314,10 +1660,86 @@ const lockRuleOptions = computed(() =>
   buildAppleServiceLockRuleOptions(lockRuleDictionaries.value)
 );
 const pendingOfficialReviews = computed(() =>
-  officialPriceReviews.value.filter((review) => review.status === 'pending')
+  officialPriceOptionReviews.value.filter((review) => review.status === 'pending')
 );
 const officialAutoProviderOptions = computed(() => officialProviderCatalogProviders.value);
 const officialAutoRegionOptions = computed(() => officialProviderCatalogRegions.value);
+const officialCountryOptions = computed(() => {
+  const optionMap = new Map<string, { currency: string; label: string; value: string }>();
+
+  for (const source of officialPriceSources.value) {
+    const region = normalizeOfficialReviewCode(source.region);
+    const currency = normalizeOfficialReviewCode(source.currency);
+    if (!region || !currency) continue;
+    optionMap.set(region, {
+      currency,
+      label: getOfficialRegionSelectLabel(region, currency),
+      value: region
+    });
+  }
+
+  for (const option of officialCollectedServiceOptions.value) {
+    if (!option.region || !option.currency) continue;
+    optionMap.set(option.region, {
+      currency: option.currency,
+      label: getOfficialRegionSelectLabel(option.region, option.currency),
+      value: option.region
+    });
+  }
+
+  for (const region of officialAutoRegionOptions.value) {
+    if (optionMap.has(region.region)) continue;
+    optionMap.set(region.region, {
+      currency: region.currency,
+      label: getOfficialRegionSelectLabel(region.region, region.currency),
+      value: region.region
+    });
+  }
+
+  return [...optionMap.values()].sort((left, right) => left.label.localeCompare(right.label));
+});
+const filteredOfficialServiceOptions = computed(() => {
+  const normalizedCategory = normalizeCategoryValue(form.category);
+  const sameRegion = officialCollectedServiceOptions.value.filter(
+    (option) => !form.primaryRegion || option.region === form.primaryRegion
+  );
+  const sameCategory = sameRegion.filter(
+    (option) =>
+      !normalizedCategory || normalizeCategoryValue(option.category) === normalizedCategory
+  );
+
+  return sameCategory.length ? sameCategory : sameRegion;
+});
+const officialServiceNameOptions = computed(() => {
+  const seen = new Set<string>();
+  const options: OfficialCollectedServiceOption[] = [];
+
+  for (const option of filteredOfficialServiceOptions.value) {
+    const key = option.serviceName.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    options.push(option);
+  }
+
+  return options;
+});
+const officialPriceValueOptions = computed(() => {
+  const selectedName = form.name.trim();
+  const sameName = selectedName
+    ? filteredOfficialServiceOptions.value.filter((option) => option.serviceName === selectedName)
+    : filteredOfficialServiceOptions.value;
+  const seen = new Set<string>();
+  const options: OfficialCollectedServiceOption[] = [];
+
+  for (const option of sameName) {
+    const key = `${option.officialPrice}:${option.currency}`;
+    if (!option.officialPrice || seen.has(key)) continue;
+    seen.add(key);
+    options.push(option);
+  }
+
+  return options;
+});
 const officialBatchIsActive = computed(
   () =>
     officialPriceBatch.value?.status === 'queued' || officialPriceBatch.value?.status === 'running'
@@ -1332,6 +1754,11 @@ const officialBatchProblemItems = computed(() =>
     (item) => item.status === 'failed' || item.status === 'waiting_manual_verify'
   )
 );
+const officialBatchItems = computed(() => officialPriceBatch.value?.items ?? []);
+const paginatedOfficialBatchItems = computed(() => {
+  const start = (officialBatchItemQuery.page - 1) * officialBatchItemQuery.pageSize;
+  return officialBatchItems.value.slice(start, start + officialBatchItemQuery.pageSize);
+});
 const officialBatchProgressStatus = computed(() => {
   if (!officialPriceBatch.value) return undefined;
   if (officialPriceBatch.value.status === 'failed') return 'exception';
@@ -1410,6 +1837,265 @@ function calculateAppleBalancePrice(
   return formatDecimalText(base * parseDecimalText(effectiveRuleValue || '1'));
 }
 
+function addOfficialCollectedOption(
+  optionMap: Map<string, OfficialCollectedServiceOption>,
+  option: OfficialCollectedServiceOption | null
+) {
+  if (!option?.serviceName || !option.region || !option.currency || !option.officialPrice) {
+    return;
+  }
+
+  const key = buildOfficialCollectedOptionKey(option);
+  if (!optionMap.has(key)) {
+    optionMap.set(key, option);
+  }
+}
+
+function buildOfficialCollectedOptionKey(option: OfficialCollectedServiceOption) {
+  return [
+    option.region,
+    option.currency,
+    option.planCode || option.serviceName,
+    option.officialPrice
+  ].join('|');
+}
+
+function buildOfficialOptionFromSnapshot(
+  snapshot: AppleOfficialPriceSnapshot
+): OfficialCollectedServiceOption | null {
+  const region = normalizeOfficialReviewCode(snapshot.region);
+  const currency = normalizeOfficialReviewCode(snapshot.currency);
+  const serviceName = snapshot.serviceName.trim();
+  const category = normalizeCategoryValue(snapshot.category || snapshot.provider || '通用');
+  const officialPrice = String(snapshot.officialPrice || '').trim();
+
+  if (!region || !currency || !serviceName || !officialPrice) return null;
+
+  return {
+    category,
+    collectedAt: snapshot.collectedAt,
+    currency,
+    key: `snapshot:${snapshot.id}`,
+    officialPrice,
+    periodType: snapshot.periodType,
+    periodValue: normalizeOfficialPeriodValue(snapshot.periodValue),
+    planCode: snapshot.planCode,
+    provider: snapshot.provider,
+    region,
+    serviceName,
+    sourceLabel: snapshot.source?.name || getProviderLabel(snapshot.provider)
+  };
+}
+
+function buildOfficialOptionFromReview(
+  review: ApplePriceChangeReview
+): OfficialCollectedServiceOption | null {
+  const region = getOfficialReviewRegionCode(review);
+  const currency = getOfficialReviewCurrencyCode(review);
+  const serviceName = getOfficialReviewServiceName(review);
+  const officialPrice =
+    getReviewRecordValue(review.newValue, 'officialBasePrice') ||
+    getReviewRecordValue(review.newValue, 'officialPrice') ||
+    review.snapshot?.officialPrice ||
+    '';
+  const category = normalizeCategoryValue(
+    getReviewRecordValue(review.newValue, 'category') ||
+      getOfficialReviewProviderValue(review) ||
+      '通用'
+  );
+
+  if (!region || !currency || !serviceName || serviceName === '-' || !officialPrice) {
+    return null;
+  }
+
+  return {
+    category,
+    collectedAt: review.snapshot?.collectedAt ?? review.createdAt,
+    currency,
+    key: `review:${review.id}`,
+    officialPrice,
+    periodType: normalizeOfficialPeriodType(getReviewRecordValue(review.newValue, 'periodType')),
+    periodValue: normalizeOfficialPeriodValue(getReviewRecordValue(review.newValue, 'periodValue')),
+    planCode: getReviewRecordValue(review.newValue, 'planCode') || review.snapshot?.planCode,
+    provider: getOfficialReviewProviderValue(review),
+    region,
+    serviceName,
+    sourceLabel: review.source?.name || getProviderLabel(getOfficialReviewProviderValue(review))
+  };
+}
+
+function normalizeOfficialPeriodType(value?: string | null): AppleService['defaultPeriodType'] {
+  const normalized = String(value || '');
+  return isApplePeriodType(normalized) ? normalized : 'month';
+}
+
+function normalizeOfficialPeriodValue(value?: string | number | null) {
+  const normalized = Number(value || 1);
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : 1;
+}
+
+function getOfficialRegionSelectLabel(region: string, currency: string) {
+  const catalogOption = officialAutoRegionOptions.value.find(
+    (item) => item.region === region && item.currency === currency
+  );
+  const fallbackOption = fallbackOfficialAutoRegionOptions.find(
+    (item) => item.region === region && item.currency === currency
+  );
+  const dictionaryOption = appleRegionOptions.value.find((item) => item.code === region);
+  const rawLabel =
+    catalogOption?.label || fallbackOption?.label || dictionaryOption?.labelZh || region;
+  const countryName = rawLabel.endsWith(` ${currency}`)
+    ? rawLabel.slice(0, -currency.length - 1)
+    : rawLabel;
+
+  return `${countryName} · ${region}/${currency}`;
+}
+
+function getOfficialServiceNameOptionLabel(option: OfficialCollectedServiceOption) {
+  return `${option.serviceName} · ${option.officialPrice} ${option.currency} · ${option.sourceLabel}`;
+}
+
+function getOfficialPriceValueOptionLabel(option: OfficialCollectedServiceOption) {
+  return `${option.officialPrice} ${option.currency} · ${option.serviceName}`;
+}
+
+function getDefaultPrimaryRegion() {
+  return (
+    officialCountryOptions.value.find((option) => option.value === 'US')?.value ||
+    officialCountryOptions.value[0]?.value ||
+    appleRegionOptions.value[0]?.code ||
+    'US'
+  );
+}
+
+function handlePrimaryRegionChange() {
+  form.primaryRegion = normalizeOfficialReviewCode(form.primaryRegion);
+  const currency = getCurrencyForOfficialRegion(form.primaryRegion);
+  if (currency) {
+    form.currency = currency;
+  }
+  syncPrimaryRegionToAllowedRegions();
+
+  const option = findOfficialCollectedOption({
+    category: form.category,
+    officialPrice: form.officialBasePrice,
+    region: form.primaryRegion,
+    serviceName: form.name
+  });
+  if (option) {
+    applyOfficialServiceOption(option);
+  }
+}
+
+function handleCategoryChange() {
+  form.category = normalizeCategoryValue(form.category);
+  const option = findOfficialCollectedOption({
+    category: form.category,
+    region: form.primaryRegion,
+    serviceName: form.name
+  });
+  if (option) {
+    applyOfficialServiceOption(option);
+  }
+}
+
+function handleServiceNameSelect(value: string) {
+  form.name = String(value || '').trim();
+  const option = findOfficialCollectedOption({
+    category: form.category,
+    region: form.primaryRegion,
+    serviceName: form.name
+  });
+  if (option) {
+    applyOfficialServiceOption(option);
+  }
+}
+
+function handleOfficialBasePriceSelect(value: string) {
+  form.officialBasePrice = String(value || '').trim();
+  const option = findOfficialCollectedOption({
+    category: form.category,
+    officialPrice: form.officialBasePrice,
+    region: form.primaryRegion,
+    serviceName: form.name
+  });
+  if (option) {
+    applyOfficialServiceOption(option);
+  }
+}
+
+function applyOfficialServiceOption(option: OfficialCollectedServiceOption) {
+  form.primaryRegion = option.region;
+  form.category = normalizeCategoryValue(option.category);
+  form.name = option.serviceName;
+  form.officialBasePrice = option.officialPrice;
+  form.currency = option.currency;
+  form.defaultPeriodType = option.periodType;
+  form.defaultPeriodValue = option.periodValue;
+  syncPrimaryRegionToAllowedRegions(option.region);
+}
+
+function findOfficialCollectedOption(criteria: {
+  category?: string;
+  officialPrice?: string;
+  region?: string;
+  serviceName?: string;
+}) {
+  let candidates = officialCollectedServiceOptions.value;
+  const region = normalizeOfficialReviewCode(criteria.region);
+  const category = normalizeCategoryValue(criteria.category);
+  const serviceName = String(criteria.serviceName || '').trim();
+  const officialPrice = String(criteria.officialPrice || '').trim();
+
+  if (region) {
+    const sameRegion = candidates.filter((option) => option.region === region);
+    if (sameRegion.length) candidates = sameRegion;
+  }
+
+  if (category) {
+    const sameCategory = candidates.filter(
+      (option) => normalizeCategoryValue(option.category) === category
+    );
+    if (sameCategory.length) candidates = sameCategory;
+  }
+
+  if (serviceName) {
+    const sameName = candidates.filter((option) => option.serviceName === serviceName);
+    if (!sameName.length) return null;
+    candidates = sameName;
+  }
+
+  if (officialPrice) {
+    const samePrice = candidates.filter((option) => option.officialPrice === officialPrice);
+    if (samePrice.length) candidates = samePrice;
+  }
+
+  return candidates[0] ?? null;
+}
+
+function getCurrencyForOfficialRegion(region?: string | null) {
+  const normalizedRegion = normalizeOfficialReviewCode(region);
+  if (!normalizedRegion) return '';
+
+  return (
+    officialCountryOptions.value.find((item) => item.value === normalizedRegion)?.currency ||
+    officialAutoRegionOptions.value.find((item) => item.region === normalizedRegion)?.currency ||
+    fallbackOfficialAutoRegionOptions.find((item) => item.region === normalizedRegion)?.currency ||
+    appleRegionOptions.value.find((item) => item.code === normalizedRegion)?.currency ||
+    ''
+  );
+}
+
+function syncPrimaryRegionToAllowedRegions(region = form.primaryRegion) {
+  const normalizedRegion = normalizeOfficialReviewCode(region);
+  if (!normalizedRegion) return;
+
+  form.allowedRegions = [
+    normalizedRegion,
+    ...form.allowedRegions.filter((item) => normalizeOfficialReviewCode(item) !== normalizedRegion)
+  ];
+}
+
 function getProviderLabel(provider?: string | null) {
   return (
     officialProviderOptions.find((option) => option.value === provider)?.label ||
@@ -1475,6 +2161,35 @@ function getOfficialBatchStatusTone(status: AppleOfficialPriceCheckBatch['status
   return 'neutral';
 }
 
+function getOfficialBatchItemStatusLabel(
+  status: AppleOfficialPriceCheckBatch['items'][number]['status']
+) {
+  return (
+    {
+      queued: '排队中',
+      running: '采集中',
+      success: '成功',
+      failed: '失败',
+      waiting_manual_verify: '人工确认',
+      completed: '已完成',
+      cancelled: '已取消',
+      pending: '待开始',
+      need_review: '待复核',
+      skipped: '已跳过'
+    }[status] ?? status
+  );
+}
+
+function getOfficialBatchItemStatusTone(
+  status: AppleOfficialPriceCheckBatch['items'][number]['status']
+) {
+  if (status === 'success') return 'green';
+  if (status === 'failed') return 'red';
+  if (status === 'waiting_manual_verify' || status === 'need_review') return 'orange';
+  if (status === 'running' || status === 'queued' || status === 'pending') return 'blue';
+  return 'neutral';
+}
+
 function getOfficialBatchItemRegionLabel(item: AppleOfficialPriceCheckBatch['items'][number]) {
   const option = officialAutoRegionOptions.value.find(
     (region) => region.region === item.region && region.currency === item.currency
@@ -1483,6 +2198,17 @@ function getOfficialBatchItemRegionLabel(item: AppleOfficialPriceCheckBatch['ite
     (region) => region.region === item.region && region.currency === item.currency
   );
   return `${option?.label || fallback?.label || item.region} / ${item.currency}`;
+}
+
+function getOfficialBatchItemMessage(item: AppleOfficialPriceCheckBatch['items'][number]) {
+  if (item.errorMessage) return item.errorMessage;
+  if (item.message) return item.message;
+  if (item.status === 'success') {
+    return `已生成 ${item.snapshotCount} 条快照、${item.reviewCount} 条待确认变化`;
+  }
+  if (item.status === 'running') return '正在采集官网价格';
+  if (item.status === 'queued' || item.status === 'pending') return '等待后台任务执行';
+  return '暂无说明';
 }
 
 function getStatusLabel(status: AppleService['status']) {
@@ -1513,20 +2239,23 @@ function normalizeCategoryValue(value?: string | null) {
   return normalized;
 }
 
+function normalizeOptionalCategoryValue(value?: string | null) {
+  const normalized = value?.trim();
+  if (!normalized) return '';
+  return normalizeCategoryValue(normalized);
+}
+
+function getCategoryOptionValue(category: DataDictionary) {
+  return normalizeCategoryValue(category.value || category.label);
+}
+
 function getCategoryLabel(category?: string | null) {
   return normalizeCategoryValue(category) || '通用';
 }
 
 function getDefaultCategory() {
-  return query.category || serviceCategoryOptions.value[0] || '通用';
-}
-
-function syncKnownServiceCategories(items: AppleService[]) {
-  const categories = [
-    ...knownServiceCategories.value,
-    ...items.map((service) => normalizeCategoryValue(service.category))
-  ].filter(Boolean);
-  knownServiceCategories.value = [...new Set(categories)];
+  const firstCategory = activeServiceCategoryDictionaries.value[0];
+  return query.category || (firstCategory ? getCategoryOptionValue(firstCategory) : '通用');
 }
 
 function invalidateAppleServiceConsumers() {
@@ -1564,7 +2293,6 @@ async function loadServices(
       dedupeMs: options.dedupeMs ?? 1_200
     });
     services.value = result.data.items;
-    syncKnownServiceCategories(result.data.items);
     total.value = result.data.total;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务失败');
@@ -1763,7 +2491,6 @@ function buildAppleServiceCategoryParams(): DataDictionaryQuery {
     page: 1,
     pageSize: 200,
     group: APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
-    status: 'active',
     sortBy: 'sortOrder',
     sortOrder: 'asc'
   };
@@ -1831,11 +2558,21 @@ async function loadAppleServiceQuickOptions() {
 
 async function ensureAppleServiceCategory(category: string) {
   const normalizedCategory = normalizeCategoryValue(category);
-  const existing = serviceCategoryDictionaries.value.some(
-    (item) => normalizeCategoryValue(item.label) === normalizedCategory
+  const existing = serviceCategoryDictionaries.value.find(
+    (item) =>
+      normalizeCategoryValue(item.label) === normalizedCategory ||
+      normalizeOptionalCategoryValue(item.value) === normalizedCategory
   );
 
   if (existing) {
+    if (existing.status !== 'active' || getCategoryOptionValue(existing) !== normalizedCategory) {
+      await dataCenterApi.updateDictionary(existing.id, {
+        label: normalizedCategory,
+        value: normalizedCategory,
+        status: 'active'
+      });
+      await loadAppleServiceCategories();
+    }
     return;
   }
 
@@ -1845,11 +2582,24 @@ async function ensureAppleServiceCategory(category: string) {
     group: APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
     keyword: normalizedCategory
   });
-  const alreadyExists = data.items.some(
-    (item) => normalizeCategoryValue(item.label) === normalizedCategory
+  const alreadyExists = data.items.find(
+    (item) =>
+      normalizeCategoryValue(item.label) === normalizedCategory ||
+      normalizeOptionalCategoryValue(item.value) === normalizedCategory
   );
 
   if (alreadyExists) {
+    if (
+      alreadyExists.status !== 'active' ||
+      getCategoryOptionValue(alreadyExists) !== normalizedCategory
+    ) {
+      await dataCenterApi.updateDictionary(alreadyExists.id, {
+        label: normalizedCategory,
+        value: normalizedCategory,
+        status: 'active'
+      });
+    }
+    await loadAppleServiceCategories();
     return;
   }
 
@@ -2129,34 +2879,66 @@ function syncOfficialAutoRegionSelection(forceAll = false) {
   selectedOfficialAutoRegions.value = currentSelected.length ? currentSelected : availableValues;
 }
 
-async function loadOfficialPricePanel(options: { silent?: boolean } = {}) {
+async function loadOfficialPricePanel(
+  options: { preserveOptionCache?: boolean; silent?: boolean } = {}
+) {
   if (!options.silent) {
     officialPriceLoading.value = true;
   }
   try {
-    const [sources, reviews, snapshots] = await Promise.all([
+    const shouldRefreshOptionCache =
+      !options.preserveOptionCache ||
+      !officialPriceOptionReviews.value.length ||
+      !officialPriceOptionSnapshots.value.length;
+    const [sources, reviews, snapshots, optionReviews, optionSnapshots] = await Promise.all([
       appleOfficialPricesApi.listSources({
-        page: 1,
-        pageSize: 100,
+        page: officialSourceQuery.page,
+        pageSize: officialSourceQuery.pageSize,
         status: ''
       }),
       appleOfficialPricesApi.listReviews({
-        page: 1,
-        pageSize: 100,
+        page: officialReviewQuery.page,
+        pageSize: officialReviewQuery.pageSize,
         status: '',
         sortBy: 'createdAt',
         sortOrder: 'desc'
       }),
       appleOfficialPricesApi.listSnapshots({
-        page: 1,
-        pageSize: 100,
+        page: officialSnapshotQuery.page,
+        pageSize: officialSnapshotQuery.pageSize,
         sortBy: 'collectedAt',
         sortOrder: 'desc'
-      })
+      }),
+      shouldRefreshOptionCache
+        ? appleOfficialPricesApi.listReviews({
+            page: 1,
+            pageSize: 500,
+            status: '',
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
+          })
+        : Promise.resolve(null),
+      shouldRefreshOptionCache
+        ? appleOfficialPricesApi.listSnapshots({
+            page: 1,
+            pageSize: 500,
+            sortBy: 'collectedAt',
+            sortOrder: 'desc'
+          })
+        : Promise.resolve(null)
     ]);
     officialPriceSources.value = sources.items;
     officialPriceReviews.value = reviews.items;
     officialPriceSnapshots.value = snapshots.items;
+    officialSourceTotal.value = sources.total;
+    officialReviewTotal.value = reviews.total;
+    officialSnapshotTotal.value = snapshots.total;
+    if (optionReviews) {
+      officialPriceOptionReviews.value = optionReviews.items;
+    }
+    if (optionSnapshots) {
+      officialPriceOptionSnapshots.value = optionSnapshots.items;
+    }
     if (!officialCheckForm.sourceId && sources.items.length) {
       officialCheckForm.sourceId = sources.items[0].id;
     }
@@ -2174,6 +2956,7 @@ async function loadLatestOfficialPriceBatch() {
     const previousStatus = officialPriceBatch.value?.status;
     const batch = await appleOfficialPricesApi.getLatestCheckBatch();
     officialPriceBatch.value = batch;
+    normalizeOfficialBatchItemPage();
 
     if (batch && (batch.status === 'queued' || batch.status === 'running')) {
       startOfficialBatchPolling();
@@ -2200,6 +2983,7 @@ async function loadOfficialPriceBatch(batchId: string) {
     const previousStatus = officialPriceBatch.value?.status;
     const batch = await appleOfficialPricesApi.getCheckBatch(batchId);
     officialPriceBatch.value = batch;
+    normalizeOfficialBatchItemPage();
 
     if (batch.status === 'queued' || batch.status === 'running') {
       startOfficialBatchPolling();
@@ -2232,6 +3016,17 @@ function stopOfficialBatchPolling() {
   if (!officialBatchPollingTimer.value) return;
   clearInterval(officialBatchPollingTimer.value);
   officialBatchPollingTimer.value = null;
+}
+
+function normalizeOfficialBatchItemPage() {
+  const totalPages = Math.max(
+    1,
+    Math.ceil(officialBatchItems.value.length / officialBatchItemQuery.pageSize)
+  );
+
+  if (officialBatchItemQuery.page > totalPages) {
+    officialBatchItemQuery.page = totalPages;
+  }
 }
 
 function resetOfficialSourceForm() {
@@ -2421,6 +3216,8 @@ async function handleOfficialProviderCheck(provider: string) {
             regions
           });
     officialPriceBatch.value = batch;
+    officialBatchItemQuery.page = 1;
+    showOfficialBatchResults();
     startOfficialBatchPolling();
     if (batch.reused) {
       ElMessage.warning(batch.message || '已有相同供应商/地区的采集批次正在执行');
@@ -2491,6 +3288,45 @@ function confirmOfficialProviderCheck(provider: string) {
     confirmButtonText: isBatch ? '确认开始批量采集' : '确认开始采集',
     cancelButtonText: '取消采集'
   });
+}
+
+function showOfficialBatchResults() {
+  officialPriceTab.value = 'batch-items';
+  preserveWorkspaceScrollAfterOfficialTabChange();
+}
+
+function preserveWorkspaceScrollAfterOfficialTabChange() {
+  const workspace = getOfficialPriceWorkspace();
+
+  if (!workspace) {
+    return;
+  }
+
+  const scrollTop = workspace.scrollTop;
+  clearTimeout(officialPriceTabScrollRestoreTimer);
+
+  void nextTick(() => {
+    window.requestAnimationFrame(() => {
+      restoreOfficialPriceWorkspaceScroll(scrollTop);
+      officialPriceTabScrollRestoreTimer = setTimeout(() => {
+        restoreOfficialPriceWorkspaceScroll(scrollTop);
+      }, 120);
+    });
+  });
+}
+
+function restoreOfficialPriceWorkspaceScroll(scrollTop: number) {
+  const workspace = getOfficialPriceWorkspace();
+
+  if (!workspace) {
+    return;
+  }
+
+  workspace.scrollTop = scrollTop;
+}
+
+function getOfficialPriceWorkspace() {
+  return officialPricePanelRef.value?.closest<HTMLElement>('.workspace') ?? null;
 }
 
 function syncOfficialCheckService() {
@@ -2624,15 +3460,159 @@ async function ignoreOfficialReview(review: ApplePriceChangeReview) {
   }
 }
 
+function openEditManagedCategory(category: DataDictionary) {
+  editingCategory.value = category;
+  categoryForm.label = getCategoryOptionValue(category);
+  categoryForm.sortOrder = category.sortOrder;
+  categoryForm.status = category.status;
+  categoryForm.remark = category.remark ?? '';
+  categoryDialogVisible.value = true;
+}
+
+async function syncServicesCategoryLabel(oldCategory: string, newCategory: string) {
+  if (oldCategory === newCategory) return 0;
+
+  let syncedCount = 0;
+  for (let index = 0; index < 100; index += 1) {
+    const result = await appleServicesApi.list({
+      page: 1,
+      pageSize: 100,
+      category: oldCategory
+    });
+    if (!result.items.length) return syncedCount;
+
+    await Promise.all(
+      result.items.map((service) =>
+        appleServicesApi.update(service.id, {
+          name: service.name,
+          category: newCategory
+        })
+      )
+    );
+    syncedCount += result.items.length;
+  }
+
+  throw new Error('分类同步数量异常，请稍后重试');
+}
+
+async function saveManagedCategory() {
+  const valid = await categoryFormRef.value?.validate().catch(() => false);
+  if (!valid || !editingCategory.value) {
+    return;
+  }
+
+  const normalizedLabel = normalizeCategoryValue(categoryForm.label);
+  const duplicated = serviceCategoryDictionaries.value.some(
+    (category) =>
+      category.id !== editingCategory.value?.id &&
+      (normalizeCategoryValue(category.label) === normalizedLabel ||
+        normalizeOptionalCategoryValue(category.value) === normalizedLabel)
+  );
+
+  if (duplicated) {
+    ElMessage.error('这个业务分类已经存在');
+    return;
+  }
+
+  const oldCategory = getCategoryOptionValue(editingCategory.value);
+  categorySaving.value = true;
+  try {
+    await dataCenterApi.updateDictionary(editingCategory.value.id, {
+      label: normalizedLabel,
+      value: normalizedLabel,
+      sortOrder: categoryForm.sortOrder,
+      status: categoryForm.status,
+      remark: categoryForm.remark.trim() || null
+    });
+
+    const syncedCount =
+      oldCategory !== normalizedLabel
+        ? await syncServicesCategoryLabel(oldCategory, normalizedLabel)
+        : 0;
+
+    await loadAppleServiceCategories();
+
+    const nextQueryCategory = normalizeOptionalCategoryValue(query.category);
+    if (nextQueryCategory === oldCategory || nextQueryCategory === normalizedLabel) {
+      query.category = categoryForm.status === 'active' ? normalizedLabel : '';
+      query.page = 1;
+    }
+
+    const nextFormCategory = normalizeOptionalCategoryValue(form.category);
+    if (nextFormCategory === oldCategory || nextFormCategory === normalizedLabel) {
+      form.category = categoryForm.status === 'active' ? normalizedLabel : getDefaultCategory();
+    }
+
+    invalidateSmartQueries('data-dictionaries');
+    invalidateAppleServiceConsumers();
+    categoryDialogVisible.value = false;
+    await loadServices({ force: true, dedupeMs: 0 });
+    ElMessage.success(
+      syncedCount > 0 ? `业务分类已保存，并同步 ${syncedCount} 个业务` : '业务分类已保存'
+    );
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存业务分类失败');
+  } finally {
+    categorySaving.value = false;
+  }
+}
+
+async function deleteManagedCategory(category: DataDictionary) {
+  const categoryValue = getCategoryOptionValue(category);
+  try {
+    await ElMessageBox.confirm(
+      `确认删除“${categoryValue}”？删除后它不会再出现在分类按钮和新增业务下拉里，已有业务记录会保留原分类。`,
+      '删除业务分类',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    );
+
+    deletingCategoryId.value = category.id;
+    await dataCenterApi.updateDictionary(category.id, {
+      status: 'disabled'
+    });
+    await loadAppleServiceCategories();
+
+    if (normalizeOptionalCategoryValue(query.category) === categoryValue) {
+      query.category = '';
+      query.page = 1;
+    }
+    if (normalizeOptionalCategoryValue(form.category) === categoryValue) {
+      form.category = getDefaultCategory();
+    }
+
+    invalidateSmartQueries('data-dictionaries');
+    invalidateAppleServiceConsumers();
+    await loadServices({ force: true, dedupeMs: 0 });
+    ElMessage.success('业务分类已删除');
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error instanceof Error ? error.message : '删除业务分类失败');
+    }
+  } finally {
+    deletingCategoryId.value = '';
+  }
+}
+
 function resetForm() {
+  const defaultOfficialOption = officialCollectedServiceOptions.value.find((option) => {
+    const category = normalizeOptionalCategoryValue(option.category);
+    return !category || !disabledServiceCategoryValues.value.has(category);
+  });
+  const defaultPrimaryRegion = defaultOfficialOption?.region || getDefaultPrimaryRegion();
   form.name = '';
-  form.category = getDefaultCategory();
+  form.category = defaultOfficialOption?.category || getDefaultCategory();
+  form.primaryRegion = defaultPrimaryRegion;
   form.defaultPrice = '0';
   form.officialBasePrice = '0';
   form.officialCostValue = '0';
   form.appleBalancePriceRuleType = 'inherit';
   form.appleBalancePriceRuleValue = '';
-  form.currency = 'USD';
+  form.currency =
+    defaultOfficialOption?.currency || getCurrencyForOfficialRegion(defaultPrimaryRegion) || 'USD';
   form.defaultPeriodType = periodTypeOptions.value[0]?.value ?? 'month';
   form.defaultPeriodValue = 1;
   form.expireCalcType = expireCalcTypeOptions.value[0]?.value ?? 'by_month';
@@ -2640,7 +3620,7 @@ function resetForm() {
   form.requireServiceAccount = false;
   form.autoMatchAppleId = true;
   form.lockRule = lockRuleOptions.value[0]?.value ?? 'by_service';
-  form.allowedRegions = [];
+  form.allowedRegions = defaultPrimaryRegion ? [defaultPrimaryRegion] : [];
   form.minBalanceRequired = '0';
   form.status = 'enabled';
   form.remark = '';
@@ -2657,6 +3637,7 @@ function openEdit(service: AppleService) {
   editingService.value = service;
   form.name = service.name;
   form.category = normalizeCategoryValue(service.category);
+  form.primaryRegion = service.allowedRegions[0] ?? '';
   form.defaultPrice = service.defaultPrice;
   form.officialBasePrice = service.officialBasePrice;
   form.officialCostValue = service.officialCostValue;
@@ -2695,6 +3676,7 @@ async function saveService() {
   saving.value = true;
   try {
     const category = normalizeCategoryValue(form.category);
+    syncPrimaryRegionToAllowedRegions();
     await ensureAppleServiceCategory(category);
     const payload = {
       name: form.name,
@@ -2740,11 +3722,40 @@ async function saveService() {
   }
 }
 
+async function removeService(service: AppleService) {
+  try {
+    const confirmed = await confirmAction({
+      title: '确认删除 Apple ID 业务？',
+      actionName: '删除 Apple ID 业务',
+      description: `将删除业务「${service.name}」。`,
+      impact: [
+        `分类：${getCategoryLabel(service.category)}`,
+        `地区/币种：${service.allowedRegions.length ? service.allowedRegions.join('、') : '不限'} / ${service.currency}`,
+        '删除后新订单不能再选择该业务，自动匹配也不会再使用该业务'
+      ],
+      riskNotes: '历史订单、开通记录和报表不会被物理删除，但后续业务录入会少一个可选项。',
+      irreversible: true,
+      risk: 'strong',
+      confirmButtonText: '确认删除业务'
+    });
+    if (!confirmed) return;
+
+    await appleServicesApi.remove(service.id);
+    ElMessage.success('Apple ID 业务已删除');
+    selectedServices.value = selectedServices.value.filter((item) => item.id !== service.id);
+    invalidateAppleServiceConsumers();
+    await loadServices({ force: true, dedupeMs: 0 });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除 Apple ID 业务失败');
+  }
+}
+
 onMounted(initializePage);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();
   stopOfficialBatchPolling();
+  clearTimeout(officialPriceTabScrollRestoreTimer);
 });
 </script>
 
@@ -2754,6 +3765,17 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 0 16px;
+}
+
+.apple-service-category-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.apple-service-category-manage :deep(.app-button--ghost),
+.apple-service-category-manage :deep(.app-button--danger) {
+  padding-inline: 8px;
 }
 
 .apple-service-form-section {
@@ -2892,6 +3914,14 @@ onBeforeUnmount(() => {
   background: #fff;
   color: #475569;
   font-size: 13px;
+}
+
+.apple-official-batch-problem--summary {
+  flex: 1 1 100%;
+}
+
+.apple-official-batch-problem--summary span {
+  flex: 1 1 auto;
 }
 
 .apple-official-batch-problem__status {

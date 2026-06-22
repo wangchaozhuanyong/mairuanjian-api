@@ -54,6 +54,45 @@ describe('AppleOrdersService', () => {
     expect(snapshot.profitAmount.toString()).toBe('86.8');
   });
 
+  it('calculates monthly expire time as the last included service day', () => {
+    const expireTime = calculateExpireTime(
+      {
+        expireCalcType: 'by_month',
+        defaultPeriodType: 'month',
+        defaultPeriodValue: 1
+      },
+      new Date(2026, 4, 8, 6, 10, 6)
+    );
+
+    expect(expireTime?.getTime()).toBe(new Date(2026, 5, 7, 6, 10, 6).getTime());
+  });
+
+  it('calculates day-based expire time as the last included service day', () => {
+    const expireTime = calculateExpireTime(
+      {
+        expireCalcType: 'by_day',
+        defaultPeriodType: 'day',
+        defaultPeriodValue: 7
+      },
+      new Date(2026, 4, 8, 6, 10, 6)
+    );
+
+    expect(expireTime?.getTime()).toBe(new Date(2026, 4, 14, 6, 10, 6).getTime());
+  });
+
+  it('does not overflow monthly expire time past the target month', () => {
+    const expireTime = calculateExpireTime(
+      {
+        expireCalcType: 'by_month',
+        defaultPeriodType: 'month',
+        defaultPeriodValue: 1
+      },
+      new Date(2026, 0, 31, 6, 10, 6)
+    );
+
+    expect(expireTime?.getTime()).toBe(new Date(2026, 1, 27, 6, 10, 6).getTime());
+  });
+
   it('marks account unavailable when balance is insufficient', () => {
     const evaluation = service.evaluateAccountAvailability(
       {
@@ -158,4 +197,19 @@ describe('AppleOrdersService', () => {
 
     expect(count).toHaveBeenCalled();
   });
+
+  function calculateExpireTime(
+    appleService: {
+      expireCalcType: 'by_month' | 'by_day' | 'manual';
+      defaultPeriodType: 'month' | 'day' | 'manual';
+      defaultPeriodValue: number;
+    },
+    startTime: Date
+  ) {
+    return (
+      service as unknown as {
+        calculateExpireTime: (service: typeof appleService, startTime: Date) => Date | null;
+      }
+    ).calculateExpireTime(appleService, startTime);
+  }
 });

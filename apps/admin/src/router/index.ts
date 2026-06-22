@@ -144,6 +144,53 @@ const LEGACY_RENEWAL_VIEW_BY_MODULE_KEY: Record<string, string> = {
   'renewal-topup': 'topup',
   'renewal-waiting-auto': 'auto'
 };
+const SOURCE_OPTIONS_SECTION_ROUTES = [
+  {
+    name: 'source-platforms-platforms',
+    path: '/system/source-platforms/platforms',
+    title: '来源平台'
+  },
+  {
+    name: 'source-platforms-customer-tags',
+    path: '/system/source-platforms/customer-tags',
+    title: '客户标签'
+  },
+  {
+    name: 'source-platforms-apple-service-categories',
+    path: '/system/source-platforms/apple-service-categories',
+    title: 'Apple ID 业务分类'
+  },
+  {
+    name: 'source-platforms-apple-regions',
+    path: '/system/source-platforms/apple-regions',
+    title: 'Apple ID 地区/币种'
+  },
+  {
+    name: 'source-platforms-apple-service-options',
+    path: '/system/source-platforms/apple-service-options',
+    title: 'Apple ID 业务选项'
+  },
+  {
+    name: 'source-platforms-code-delivery-methods',
+    path: '/system/source-platforms/code-delivery-methods',
+    title: '兑换码发货方式'
+  },
+  {
+    name: 'source-platforms-code-delivery-modes',
+    path: '/system/source-platforms/code-delivery-modes',
+    title: '兑换码业务发货模式'
+  },
+  {
+    name: 'source-platforms-notification-options',
+    path: '/system/source-platforms/notification-options',
+    title: '通知选项'
+  },
+  {
+    name: 'source-platforms-system-options',
+    path: '/system/source-platforms/system-options',
+    title: '系统与平台选项'
+  }
+] as const;
 
 for (const module of allModules) {
   const loader = readyPageComponents[module.key as keyof typeof readyPageComponents];
@@ -155,6 +202,9 @@ for (const module of allModules) {
 
 routeComponentLoaders.set('/login', LoginView as RouteComponentLoader);
 routeComponentLoaders.set('/system/customers/detail', CustomerDetailView as RouteComponentLoader);
+for (const sectionRoute of SOURCE_OPTIONS_SECTION_ROUTES) {
+  routeComponentLoaders.set(sectionRoute.path, SourcePlatformsView as RouteComponentLoader);
+}
 
 function normalizeRoutePath(routePath: string) {
   return routePath.split(/[?#]/)[0] || routePath;
@@ -331,6 +381,15 @@ const moduleRoutes = allModules.map((module) => {
     };
   }
 
+  if (module.key === 'source-platforms') {
+    return {
+      path: module.route.replace(/^\//, ''),
+      name: module.key,
+      redirect: '/system/source-platforms/platforms',
+      meta
+    };
+  }
+
   return {
     path: module.route.replace(/^\//, ''),
     name: module.key,
@@ -362,6 +421,21 @@ const ROUTE_PREFETCH_IDLE_TIMEOUT_MS = 2_000;
 const ROUTE_BACKGROUND_PREFETCH_LIMIT = 8;
 const ROUTE_PENDING_DELAY_MS = 180;
 const ROUTE_PENDING_SETTLE_MS = 120;
+const sourceOptionsSectionRoutes = SOURCE_OPTIONS_SECTION_ROUTES.map((sectionRoute) => ({
+  path: sectionRoute.path.replace(/^\//, ''),
+  name: sectionRoute.name,
+  component: SourcePlatformsView,
+  meta: {
+    title: sectionRoute.title,
+    group: '系统配置',
+    phase: 'Phase 2',
+    description: '维护选项设置里的单个配置板块。',
+    moduleKey: 'source-platforms',
+    permission: 'source_platform.view',
+    status: 'ready',
+    sourceOptionSection: sectionRoute.name.replace('source-platforms-', '')
+  }
+}));
 
 type PublicMaintenanceMode = Awaited<ReturnType<typeof maintenanceApi.getPublicMode>>;
 
@@ -503,6 +577,7 @@ export const router = createRouter({
           redirect: '/workspace/work-orders'
         },
         ...moduleRoutes,
+        ...sourceOptionsSectionRoutes,
         {
           path: 'system/customers/detail',
           name: 'customer-detail',
