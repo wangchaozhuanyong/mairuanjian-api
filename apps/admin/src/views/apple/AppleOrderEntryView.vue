@@ -130,6 +130,55 @@
             </template>
             <el-input v-model.trim="form.externalOrderNo" />
           </el-form-item>
+          <el-form-item prop="serviceRegion">
+            <template #label>
+              <FieldHelpLabel
+                label="国家"
+                purpose="先确定 Apple ID 地区，后面的分类和业务只展示这个国家可开的项目。"
+                example="美区业务先选 US，美国区账号才会进入匹配。"
+              />
+            </template>
+            <el-select
+              v-model="form.serviceRegion"
+              class="full-input"
+              clearable
+              filterable
+              placeholder="请选择国家 / 地区"
+              @change="handleServiceRegionChange"
+            >
+              <el-option
+                v-for="item in serviceRegionOptions"
+                :key="item.code"
+                :label="item.label"
+                :value="item.code"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item prop="serviceCategory">
+            <template #label>
+              <FieldHelpLabel
+                label="分类"
+                purpose="按业务分类缩小范围，避免订单录入时在一长串业务里找。"
+                example="先选 AI 订阅，再选具体的 Plus 月费或年费。"
+              />
+            </template>
+            <el-select
+              v-model="form.serviceCategory"
+              class="full-input"
+              clearable
+              filterable
+              placeholder="请选择分类"
+              :disabled="!form.serviceRegion"
+              @change="handleServiceCategoryChange"
+            >
+              <el-option
+                v-for="category in serviceCategoryOptions"
+                :key="category"
+                :label="category"
+                :value="category"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item prop="serviceId">
             <template #label>
               <FieldHelpLabel
@@ -143,20 +192,16 @@
               class="full-input"
               filterable
               :loading="loading"
+              :disabled="!form.serviceRegion || !form.serviceCategory"
+              placeholder="请选择业务"
               @change="handleServiceChange"
             >
-              <el-option-group
-                v-for="group in serviceGroups"
-                :key="group.category"
-                :label="group.category"
-              >
-                <el-option
-                  v-for="service in group.items"
-                  :key="service.id"
-                  :label="`${service.name} · ${service.officialCostValue} ${service.currency}`"
-                  :value="service.id"
-                />
-              </el-option-group>
+              <el-option
+                v-for="service in filteredServices"
+                :key="service.id"
+                :label="`${service.name} · ${service.officialCostValue} ${service.currency}`"
+                :value="service.id"
+              />
               <template #empty>
                 <div class="order-entry-select-empty">
                   <span>
@@ -185,9 +230,9 @@
                 label="客户网站账号"
                 purpose="记录客户在目标网站或 App 里的账号，方便开通、续费和售后定位。"
                 example="ChatGPT 业务可以填客户登录邮箱；如果业务不需要客户账号可留空。"
-              />
+            />
             </template>
-            <el-input v-model.trim="form.serviceAccount" />
+            <el-input v-model.trim="form.serviceAccount" @blur="loadOrderEntryContext" />
           </el-form-item>
           <el-form-item>
             <template #label>
@@ -198,6 +243,18 @@
               />
             </template>
             <el-input v-model.trim="form.currentPlan" />
+            <div
+              v-if="orderContextLoading || orderContext"
+              class="order-entry-history-card"
+            >
+              <StatusChip :tone="orderContext ? 'blue' : 'neutral'">
+                {{ orderContext ? '上次记录' : '查询中' }}
+              </StatusChip>
+              <span v-if="orderContext">
+                {{ getOrderContextSummary() }}
+              </span>
+              <span v-else>正在读取客户上次套餐和收费记录...</span>
+            </div>
           </el-form-item>
 
           <el-form-item>
@@ -266,6 +323,20 @@
             <div class="order-entry-money-hint">
               {{ paidAmountRmbHint }}
             </div>
+            <div class="order-entry-margin-calculator">
+              <el-input
+                v-model.trim="form.targetGrossMargin"
+                type="number"
+                inputmode="decimal"
+                min="0"
+                max="99"
+                placeholder="毛利率 %"
+              />
+              <AppButton size="small" variant="soft" @click="fillPaidAmountByMargin">
+                反算实收
+              </AppButton>
+              <span>{{ suggestedPaidAmountHint }}</span>
+            </div>
           </el-form-item>
           <el-form-item v-if="form.paidCurrency !== 'CNY'" prop="paidExchangeRateToRmb">
             <template #label>
@@ -325,6 +396,23 @@
               placeholder="按业务官方消耗自动带出"
             />
           </el-form-item>
+          <el-form-item prop="appleAccountOwnershipType">
+            <template #label>
+              <FieldHelpLabel
+                label="ID 处理方式"
+                purpose="寄存只扣 Apple 余额成本；售出会把 Apple ID 本身成本一起计入订单利润。"
+                example="ID 留在你这边继续用选寄存；ID 卖给客户以后不再复用选售出。"
+              />
+            </template>
+            <el-select
+              v-model="form.appleAccountOwnershipType"
+              class="full-input"
+              @change="handleAppleAccountOwnershipTypeChange"
+            >
+              <el-option label="寄存使用" value="consigned" />
+              <el-option label="售出给客户" value="sold" />
+            </el-select>
+          </el-form-item>
           <el-form-item prop="appleAccountId">
             <template #label>
               <FieldHelpLabel
@@ -334,6 +422,10 @@
               />
             </template>
             <el-input :model-value="selectedAccountLabel" disabled />
+            <div v-if="selectedAccount && form.appleAccountOwnershipType === 'sold'" class="order-entry-money-hint">
+              ID 成本 {{ formatMoney(selectedAccountPurchaseCost) }}，参考售价
+              {{ formatMoney(selectedAccountSalePrice) }}
+            </div>
           </el-form-item>
         </div>
 
@@ -422,6 +514,18 @@
           <el-table-column label="均价" width="100">
             <template #default="{ row }">{{ formatAverageCost(row.avgUnitCost) }}</template>
           </el-table-column>
+          <el-table-column label="ID类型" width="100">
+            <template #default="{ row }">
+              <StatusChip :tone="row.ownershipType === 'sold' ? 'orange' : 'blue'">
+                {{ getOwnershipLabel(row.ownershipType) }}
+              </StatusChip>
+            </template>
+          </el-table-column>
+          <el-table-column label="ID成本" width="110">
+            <template #default="{ row }">
+              {{ row.ownershipType === 'sold' ? formatMoney(readAmount(row.purchaseCost)) : '-' }}
+            </template>
+          </el-table-column>
           <el-table-column label="状态" min-width="150">
             <template #default="{ row }">
               <StatusChip :tone="getAvailabilityTone(row.availability)" dot>
@@ -473,6 +577,10 @@
               <div>
                 <span>均价</span>
                 <strong>{{ formatAverageCost(account.avgUnitCost) }}</strong>
+              </div>
+              <div>
+                <span>ID类型</span>
+                <strong>{{ getOwnershipLabel(account.ownershipType) }}</strong>
               </div>
               <div>
                 <span>状态原因</span>
@@ -538,8 +646,8 @@
           <div class="apple-core-alert apple-core-alert--green">
             <StatusChip tone="green">利润</StatusChip>
             <div>
-              <strong>预计利润 {{ estimatedProfit }}</strong>
-              <p>客户实收减 Apple 余额成本、平台手续费和退款/补发损耗。</p>
+              <strong>预计利润 {{ estimatedProfit }}，毛利率 {{ estimatedProfitRate }}</strong>
+              <p>客户实收减 Apple 余额成本、售出 ID 成本、平台手续费和退款/补发损耗。</p>
             </div>
           </div>
           <div
@@ -593,10 +701,16 @@ import AppCard from '@/components/ui/AppCard.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
-import { buildQuickSettingCode, CUSTOMER_TAG_DICTIONARY_GROUP } from '@/config/quickSettings';
+import {
+  APPLE_ACCOUNT_REGION_DICTIONARY_GROUP,
+  buildQuickSettingCode,
+  CUSTOMER_TAG_DICTIONARY_GROUP
+} from '@/config/quickSettings';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { CustomerProfileFormModel } from '@/types/customerProfileForm';
 import type {
+  AppleAccountOwnershipType,
+  AppleOrderEntryContext,
   AppleService,
   AvailableAppleAccount,
   Customer,
@@ -611,6 +725,10 @@ import {
   createCustomerProfileFormModel,
   resetCustomerProfileForm
 } from '@/utils/customerProfileForm';
+import {
+  formatAppleAccountRegionOptionLabel,
+  mergeAppleAccountRegionOptions
+} from '@/utils/appleAccountRegion';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 import {
   loadSmartAppleServices,
@@ -630,20 +748,24 @@ const loading = ref(false);
 const saving = ref(false);
 const matchingLoading = ref(false);
 const customerSearching = ref(false);
+const orderContextLoading = ref(false);
 const formRef = ref<FormInstance>();
 const newCustomerFormRef = ref<InstanceType<typeof CustomerProfileForm>>();
 const customers = ref<Customer[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
 const customerTagDictionaries = ref<DataDictionary[]>([]);
+const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const services = ref<AppleService[]>([]);
 const availableAccounts = ref<AvailableAppleAccount[]>([]);
 const selectedAccount = ref<AvailableAppleAccount | null>(null);
+const orderContext = ref<AppleOrderEntryContext['latestOrder'] | null>(null);
 const newCustomerDialogVisible = ref(false);
 const newCustomerDraft = ref<SaveCustomerPayload | null>(null);
 const customerNoticeVisible = ref(false);
 const matchKeyword = ref('');
 const customerSearchKeyword = ref('');
 let customerSearchRequestId = 0;
+let orderContextRequestId = 0;
 
 const paidCurrencyOptions: Array<{ label: string; value: PaidCurrency }> = [
   { label: '人民币 CNY', value: 'CNY' },
@@ -656,8 +778,11 @@ const form = reactive({
   customerId: '',
   sourcePlatformId: '',
   externalOrderNo: '',
+  serviceRegion: '',
+  serviceCategory: '',
   serviceId: '',
   appleAccountId: '',
+  appleAccountOwnershipType: 'consigned' as AppleAccountOwnershipType,
   serviceAccount: '',
   currentPlan: '',
   targetPlan: '',
@@ -666,6 +791,7 @@ const form = reactive({
   paidAmount: '',
   paidCurrency: 'CNY' as PaidCurrency,
   paidExchangeRateToRmb: '1',
+  targetGrossMargin: '',
   platformFee: '0.00',
   refundLoss: '0',
   appleCostValue: '',
@@ -675,6 +801,8 @@ const form = reactive({
 const newCustomerForm = reactive<CustomerProfileFormModel>(createCustomerProfileFormModel());
 
 const rules: FormRules<typeof form> = {
+  serviceRegion: [{ required: true, message: '请选择国家', trigger: 'change' }],
+  serviceCategory: [{ required: true, message: '请选择分类', trigger: 'change' }],
   serviceId: [{ required: true, message: '请选择业务', trigger: 'change' }],
   paidAmount: [{ required: true, message: '请输入客户实收', trigger: 'blur' }],
   paidExchangeRateToRmb: [
@@ -696,6 +824,7 @@ const rules: FormRules<typeof form> = {
     }
   ],
   appleCostValue: [{ required: true, message: '请输入 Apple 消耗金额', trigger: 'blur' }],
+  appleAccountOwnershipType: [{ required: true, message: '请选择 ID 处理方式', trigger: 'change' }],
   appleAccountId: [{ required: true, message: '请选择可用 Apple ID', trigger: 'change' }]
 };
 
@@ -713,22 +842,57 @@ const selectedCustomer = computed(
   () => customers.value.find((customer) => customer.id === form.customerId) ?? null
 );
 const hasOrderCustomer = computed(() => Boolean(form.customerId || newCustomerDraft.value));
-const serviceGroups = computed(() => {
-  const groupedServices = new Map<string, AppleService[]>();
+const appleRegionOptions = computed(() =>
+  mergeAppleAccountRegionOptions(appleRegionDictionaries.value)
+);
+const serviceRegionOptions = computed(() => {
+  const serviceRegionCodes = new Set(
+    services.value.flatMap((service) => service.allowedRegions ?? [])
+  );
+  const baseOptions = serviceRegionCodes.size
+    ? appleRegionOptions.value.filter((item) => serviceRegionCodes.has(item.code))
+    : appleRegionOptions.value;
+  const missingCodes = [...serviceRegionCodes].filter(
+    (code) => !baseOptions.some((item) => item.code === code)
+  );
 
-  for (const service of services.value) {
-    const category = getServiceCategoryLabel(service.category);
-    groupedServices.set(category, [...(groupedServices.get(category) ?? []), service]);
-  }
-
-  return Array.from(groupedServices.entries()).map(([category, items]) => ({
-    category,
-    items
-  }));
+  return [
+    ...baseOptions.map((item) => ({
+      code: item.code,
+      label: formatAppleAccountRegionOptionLabel(item)
+    })),
+    ...missingCodes.map((code) => ({
+      code,
+      label: code
+    }))
+  ];
 });
+const regionMatchedServices = computed(() =>
+  services.value.filter(
+    (service) =>
+      !form.serviceRegion ||
+      !service.allowedRegions.length ||
+      service.allowedRegions.includes(form.serviceRegion)
+  )
+);
+const serviceCategoryOptions = computed(() => [
+  ...new Set(regionMatchedServices.value.map((service) => getServiceCategoryLabel(service.category)))
+]);
+const filteredServices = computed(() =>
+  regionMatchedServices.value.filter(
+    (service) => getServiceCategoryLabel(service.category) === form.serviceCategory
+  )
+);
+const selectedServiceRegionLabel = computed(
+  () => serviceRegionOptions.value.find((item) => item.code === form.serviceRegion)?.label ?? ''
+);
 const selectedAccountLabel = computed(() =>
   selectedAccount.value
-    ? `${selectedAccount.value.accountMasked} / ${selectedAccount.value.balance} ${selectedAccount.value.currency}`
+    ? [
+        selectedAccount.value.accountMasked,
+        `${selectedAccount.value.balance} ${selectedAccount.value.currency}`,
+        getOwnershipLabel(selectedAccount.value.ownershipType)
+      ].join(' / ')
     : '未选择'
 );
 const customerTagOptions = computed(() => [
@@ -745,13 +909,11 @@ const newCustomerDraftSummary = computed(() => {
     return '';
   }
 
-  const meta = [
-    customer.wechat ? `微信 ${customer.wechat}` : '',
+  return formatCustomerProfileSummary(
+    customer.name,
     customer.phone ? '已填手机号' : '',
-    sourcePlatforms.value.find((platform) => platform.id === customer.sourcePlatformId)?.name ?? ''
-  ].filter(Boolean);
-
-  return meta.length ? `${customer.name} · ${meta.join(' · ')}` : customer.name;
+    customer.wechat
+  );
 });
 const availableMatchCount = computed(
   () => availableAccounts.value.filter((account) => account.availability === 'available').length
@@ -774,18 +936,42 @@ const estimatedAppleCostRmb = computed(() => {
 
   return formatMoney(estimatedAppleCostValue.value);
 });
+const selectedAccountPurchaseCost = computed(() => {
+  if (form.appleAccountOwnershipType !== 'sold' || !selectedAccount.value) {
+    return 0;
+  }
+
+  return readAmount(selectedAccount.value.purchaseCost);
+});
+const selectedAccountSalePrice = computed(() => {
+  if (form.appleAccountOwnershipType !== 'sold' || !selectedAccount.value) {
+    return 0;
+  }
+
+  return readAmount(selectedAccount.value.salePrice);
+});
+const estimatedTotalCost = computed(
+  () =>
+    (estimatedAppleCostValue.value ?? 0) +
+    selectedAccountPurchaseCost.value +
+    platformFeeRmbValue.value +
+    refundLossRmbValue.value
+);
 const estimatedProfit = computed(() => {
   if (!form.paidAmount || estimatedAppleCostValue.value === null) {
     return '-';
   }
 
-  const value =
-    paidAmountRmbValue.value -
-    estimatedAppleCostValue.value -
-    platformFeeRmbValue.value -
-    refundLossRmbValue.value;
+  const value = paidAmountRmbValue.value - estimatedTotalCost.value;
 
   return formatMoney(value);
+});
+const estimatedProfitRate = computed(() => {
+  if (!paidAmountRmbValue.value || estimatedProfit.value === '-') {
+    return '-';
+  }
+
+  return `${((readAmount(estimatedProfit.value) / paidAmountRmbValue.value) * 100).toFixed(2)}%`;
 });
 const paidExchangeRateValue = computed(() =>
   form.paidCurrency === 'CNY' ? 1 : readAmount(form.paidExchangeRateToRmb)
@@ -800,12 +986,27 @@ const paidAmountRmbHint = computed(() => {
 
   return `折合人民币 ${formatMoney(paidAmountRmbValue.value)}`;
 });
+const suggestedPaidAmountRmb = computed(() => {
+  const margin = readAmount(form.targetGrossMargin);
+
+  if (estimatedTotalCost.value <= 0 || margin <= 0 || margin >= 100) {
+    return null;
+  }
+
+  return estimatedTotalCost.value / (1 - margin / 100);
+});
+const suggestedPaidAmountHint = computed(() =>
+  suggestedPaidAmountRmb.value === null
+    ? '选择 ID 后可按目标毛利率反算'
+    : `建议实收 ${formatMoney(suggestedPaidAmountRmb.value)} CNY`
+);
 const orderCostBars = computed(() => {
   const paidAmount = paidAmountRmbValue.value;
   const appleCost = estimatedAppleCostValue.value ?? 0;
+  const idCost = selectedAccountPurchaseCost.value;
   const platformFee = platformFeeRmbValue.value;
   const refundLoss = refundLossRmbValue.value;
-  const base = Math.max(paidAmount, appleCost + platformFee + refundLoss, 1);
+  const base = Math.max(paidAmount, appleCost + idCost + platformFee + refundLoss, 1);
 
   return [
     {
@@ -819,6 +1020,12 @@ const orderCostBars = computed(() => {
       value: estimatedAppleCostValue.value === null ? '-' : `${formatMoney(appleCost)} CNY`,
       percent: getCostPercent(appleCost, base),
       tone: 'green'
+    },
+    {
+      label: 'ID成本',
+      value: idCost > 0 ? `${formatMoney(idCost)} CNY` : '-',
+      percent: getCostPercent(idCost, base),
+      tone: 'purple'
     },
     {
       label: '手续费',
@@ -861,6 +1068,10 @@ function formatAverageCost(value: string | number | null | undefined) {
   return readAmount(value).toFixed(2);
 }
 
+function getOwnershipLabel(value: AppleAccountOwnershipType) {
+  return value === 'sold' ? '售出' : '寄存';
+}
+
 function buildCustomerTagParams(): DataDictionaryQuery {
   return {
     page: 1,
@@ -872,8 +1083,23 @@ function buildCustomerTagParams(): DataDictionaryQuery {
   };
 }
 
+function buildAppleRegionParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 200,
+    group: APPLE_ACCOUNT_REGION_DICTIONARY_GROUP,
+    status: 'active',
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
 function applyCustomerTagResult(data: PageResult<DataDictionary>) {
   customerTagDictionaries.value = data.items;
+}
+
+function applyAppleRegionResult(data: PageResult<DataDictionary>) {
+  appleRegionDictionaries.value = data.items;
 }
 
 function getServiceCategoryLabel(category?: string | null) {
@@ -908,6 +1134,20 @@ function handlePaidCurrencyChange() {
     form.paidExchangeRateToRmb = '';
   }
 
+  syncDerivedOrderAmounts();
+}
+
+function fillPaidAmountByMargin() {
+  if (suggestedPaidAmountRmb.value === null) {
+    ElMessage.warning('请先选择 Apple ID，并填写 0-99 之间的目标毛利率');
+    return;
+  }
+
+  const exchangeRate = paidExchangeRateValue.value || 1;
+  form.paidAmount =
+    form.paidCurrency === 'CNY'
+      ? formatMoney(suggestedPaidAmountRmb.value)
+      : formatMoney(suggestedPaidAmountRmb.value / exchangeRate);
   syncDerivedOrderAmounts();
 }
 
@@ -1001,12 +1241,13 @@ async function loadOrderEntryBaseData(options: { dedupeMs?: number; force?: bool
       { page: 1, pageSize: 100, status: 'enabled' },
       { force: options.force ?? true, dedupeMs: options.dedupeMs }
     ),
-    dataCenterApi.listDictionaries(buildCustomerTagParams())
+    dataCenterApi.listDictionaries(buildCustomerTagParams()),
+    dataCenterApi.listDictionaries(buildAppleRegionParams())
   ]);
 }
 
 function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryBaseData>>) {
-  const [customerData, platformData, serviceData, customerTagData] = data;
+  const [customerData, platformData, serviceData, customerTagData, appleRegionData] = data;
   customers.value = mergeCustomerItems(
     customerData.items,
     selectedCustomer.value ? [selectedCustomer.value] : []
@@ -1014,6 +1255,7 @@ function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryB
   sourcePlatforms.value = platformData.items;
   services.value = serviceData.items;
   applyCustomerTagResult(customerTagData);
+  applyAppleRegionResult(appleRegionData);
 }
 
 function mergeCustomerItems(items: Customer[], pinnedItems: Customer[] = []) {
@@ -1068,6 +1310,7 @@ function handleCustomerSelectVisibleChange(visible: boolean) {
 
 function handleCustomerChange(customerId: string) {
   if (!customerId) {
+    orderContext.value = null;
     return;
   }
 
@@ -1078,32 +1321,141 @@ function handleCustomerChange(customerId: string) {
     form.sourcePlatformId = customer.sourcePlatformId;
     syncDerivedOrderAmounts();
   }
+
+  void loadOrderEntryContext();
 }
 
 function getCustomerMeta(customer: Customer) {
-  return [
-    customer.sourcePlatform?.name ?? '',
-    customer.wechat ? `微信 ${customer.wechat}` : '',
-    customer.maskedPhone ?? (customer.phoneTail ? `尾号 ${customer.phoneTail}` : '')
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  return [getCustomerPhoneLabel(customer), customer.wechat ?? ''].filter(Boolean).join(' / ');
 }
 
 function getCustomerOptionLabel(customer: Customer) {
-  const meta = getCustomerMeta(customer);
-  return meta ? `${customer.name} · ${meta}` : customer.name;
+  return formatCustomerProfileSummary(
+    customer.name,
+    getCustomerPhoneLabel(customer),
+    customer.wechat
+  );
+}
+
+function getCustomerPhoneLabel(customer: Customer) {
+  return customer.maskedPhone ?? (customer.phoneTail ? `尾号 ${customer.phoneTail}` : '');
+}
+
+function formatCustomerProfileSummary(name: string, phone?: string | null, wechat?: string | null) {
+  return [name, phone, wechat]
+    .map((item) => item?.trim())
+    .filter(Boolean)
+    .join(' / ');
 }
 
 function handleSourcePlatformChange() {
   syncDerivedOrderAmounts();
 }
 
-async function handleServiceChange() {
-  const service = selectedService.value;
+async function loadOrderEntryContext() {
+  const requestId = ++orderContextRequestId;
+
+  if (!form.customerId || !form.serviceId) {
+    orderContext.value = null;
+    if (selectedService.value && !form.currentPlan) {
+      form.currentPlan = selectedService.value.name;
+    }
+    return;
+  }
+
+  orderContextLoading.value = true;
+  try {
+    const data = await appleOrdersApi.entryContext({
+      customerId: form.customerId,
+      serviceId: form.serviceId,
+      serviceAccount: form.serviceAccount || undefined
+    });
+
+    if (requestId !== orderContextRequestId) {
+      return;
+    }
+
+    orderContext.value = data.latestOrder;
+    if (data.latestOrder) {
+      form.currentPlan =
+        data.latestOrder.targetPlan || data.latestOrder.currentPlan || selectedService.value?.name || '';
+    } else if (selectedService.value) {
+      form.currentPlan = selectedService.value.name;
+    }
+  } catch (error) {
+    if (requestId === orderContextRequestId) {
+      orderContext.value = null;
+      ElMessage.error(error instanceof Error ? error.message : '读取客户历史套餐失败');
+    }
+  } finally {
+    if (requestId === orderContextRequestId) {
+      orderContextLoading.value = false;
+    }
+  }
+}
+
+function getOrderContextSummary() {
+  if (!orderContext.value) {
+    return '';
+  }
+
+  const plan = orderContext.value.targetPlan || orderContext.value.currentPlan || '未记录套餐';
+  const expireLabel = formatExpireDelta(orderContext.value.daysUntilExpire ?? null);
+  const cost = readAmount(orderContext.value.appleCostRmb) + readAmount(orderContext.value.appleAccountPurchaseCost);
+  const profitRate = orderContext.value.profitRate ? `${orderContext.value.profitRate}%` : '-';
+
+  return `${selectedServiceRegionLabel.value || form.serviceRegion} / ${plan} / ${expireLabel} / 上次实收 ${formatMoney(
+    readAmount(orderContext.value.paidAmountRmb)
+  )} CNY / 成本 ${formatMoney(cost)} CNY / 利润率 ${profitRate}`;
+}
+
+function formatExpireDelta(days: number | null) {
+  if (days === null) {
+    return '未记录到期';
+  }
+
+  if (days >= 0) {
+    return `还有 ${days} 天到期`;
+  }
+
+  return `已过期 ${Math.abs(days)} 天`;
+}
+
+function clearSelectedAccount() {
   selectedAccount.value = null;
   form.appleAccountId = '';
   availableAccounts.value = [];
+}
+
+function clearSelectedService() {
+  form.serviceId = '';
+  form.appleCostValue = '';
+  form.targetPlan = '';
+  form.currentPlan = '';
+  form.expireTime = '';
+  orderContext.value = null;
+  clearSelectedAccount();
+}
+
+function handleServiceRegionChange() {
+  form.serviceCategory = '';
+  clearSelectedService();
+}
+
+function handleServiceCategoryChange() {
+  clearSelectedService();
+}
+
+async function handleAppleAccountOwnershipTypeChange() {
+  clearSelectedAccount();
+  if (form.serviceId) {
+    await loadAvailableAccounts({ autoSelect: selectedService.value?.autoMatchAppleId });
+  }
+}
+
+async function handleServiceChange() {
+  const service = selectedService.value;
+  clearSelectedAccount();
 
   if (!service) {
     form.expireTime = '';
@@ -1113,8 +1465,10 @@ async function handleServiceChange() {
   form.paidAmount = service.defaultPrice;
   form.appleCostValue = service.officialCostValue;
   form.targetPlan = service.name;
+  form.currentPlan = service.name;
   syncExpireTimeFromService();
   syncDerivedOrderAmounts();
+  await loadOrderEntryContext();
   await loadAvailableAccounts({ autoSelect: service.autoMatchAppleId });
 }
 
@@ -1175,6 +1529,7 @@ async function loadAvailableAccounts(options: { autoSelect?: boolean } = {}) {
       amountRequired: form.appleCostValue || undefined,
       currency: selectedService.value?.currency,
       keyword: matchKeyword.value || undefined,
+      ownershipType: form.appleAccountOwnershipType,
       showUnavailable: 'true'
     });
     availableAccounts.value = data.items;
@@ -1245,6 +1600,7 @@ async function submitOrder() {
       platformFee: form.platformFee || undefined,
       refundLoss: form.refundLoss || '0',
       appleCostValue: form.appleCostValue,
+      appleAccountOwnershipType: form.appleAccountOwnershipType,
       remark: form.remark || null
     });
     ElMessage.success(`订单已创建：${order.orderNo}`);
@@ -1307,8 +1663,11 @@ function resetOrderForm() {
   form.customerId = '';
   form.sourcePlatformId = '';
   form.externalOrderNo = '';
+  form.serviceRegion = '';
+  form.serviceCategory = '';
   form.serviceId = '';
   form.appleAccountId = '';
+  form.appleAccountOwnershipType = 'consigned';
   form.serviceAccount = '';
   form.currentPlan = '';
   form.targetPlan = '';
@@ -1317,11 +1676,13 @@ function resetOrderForm() {
   form.paidAmount = '';
   form.paidCurrency = 'CNY';
   form.paidExchangeRateToRmb = '1';
+  form.targetGrossMargin = '';
   form.platformFee = '0.00';
   form.refundLoss = '0';
   form.appleCostValue = '';
   form.remark = '';
   selectedAccount.value = null;
+  orderContext.value = null;
   newCustomerDraft.value = null;
   customerNoticeVisible.value = false;
   resetCustomerProfileForm(newCustomerForm);
@@ -1429,15 +1790,68 @@ onBeforeUnmount(() => {
   line-height: 1.4;
 }
 
+.order-entry-history-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.order-entry-history-card span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-entry-margin-calculator {
+  display: grid;
+  grid-template-columns: minmax(0, 120px) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.order-entry-margin-calculator span {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.order-cost-track__bar--purple) {
+  background: #8b5cf6;
+}
+
 @media (max-width: 720px) {
   .order-entry-customer-picker,
-  .order-entry-money-input {
+  .order-entry-money-input,
+  .order-entry-margin-calculator {
     grid-template-columns: 1fr;
   }
 
   .order-entry-customer-picker__create,
   .order-entry-money-input__currency {
     width: 100%;
+  }
+
+  .order-entry-history-card {
+    align-items: flex-start;
+  }
+
+  .order-entry-history-card span:last-child,
+  .order-entry-margin-calculator span {
+    white-space: normal;
   }
 }
 </style>

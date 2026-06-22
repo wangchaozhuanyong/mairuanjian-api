@@ -297,7 +297,27 @@ describe('DataCenterService', () => {
       },
       dataDictionary: {
         findMany: jest.fn().mockResolvedValue([dictionary]),
-        count: jest.fn().mockResolvedValue(1)
+        count: jest.fn().mockResolvedValue(1),
+        findUnique: jest.fn().mockResolvedValue(dictionary),
+        create: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            ...dictionary,
+            ...data,
+            id: dictionary.id,
+            createdAt: now,
+            updatedAt: now,
+            createdBy: backupJob.createdBy,
+            updatedBy: backupJob.createdBy
+          })
+        ),
+        update: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            ...dictionary,
+            ...data,
+            updatedBy: backupJob.createdBy
+          })
+        ),
+        delete: jest.fn().mockResolvedValue(dictionary)
       },
       systemParameter: {
         findMany: jest.fn().mockResolvedValue([systemParameter]),
@@ -860,6 +880,26 @@ describe('DataCenterService', () => {
           status: 'active'
         }),
         orderBy: [{ label: 'desc' }, { group: 'asc' }, { sortOrder: 'asc' }, { code: 'asc' }]
+      })
+    );
+  });
+
+  it('deletes a dictionary and writes audit log', async () => {
+    const { service, prisma, auditLogsService } = createService();
+
+    const result = await service.deleteDictionary(dictionary.id, user);
+
+    expect(result).toEqual({ deleted: true });
+    expect(prisma.dataDictionary.delete).toHaveBeenCalledWith({
+      where: { id: dictionary.id }
+    });
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        module: 'data',
+        action: 'data.dictionary.delete',
+        objectType: 'data_dictionary',
+        objectId: dictionary.id,
+        afterData: undefined
       })
     );
   });

@@ -11,6 +11,14 @@ describe('AppleAccountsService', () => {
     {} as AuditLogsService,
     {} as FieldEncryptionService
   );
+  const ownershipDefaults = {
+    ownershipType: 'consigned' as const,
+    purchaseCost: new Prisma.Decimal(0),
+    salePrice: new Prisma.Decimal(0),
+    soldAt: null,
+    soldOrderId: null,
+    soldCustomerId: null
+  };
 
   it('calculates average cost from balance and total cost', () => {
     expect(service.calculateAverageCost('100', '650')).toBe('6.50000000');
@@ -31,6 +39,7 @@ describe('AppleAccountsService', () => {
       currentBalance: new Prisma.Decimal(100),
       balanceCostAmount: new Prisma.Decimal(80),
       averageCost: new Prisma.Decimal('0.8'),
+      ...ownershipDefaults,
       status: 'normal',
       isManuallyLocked: false,
       manualLockReason: null,
@@ -256,6 +265,7 @@ describe('AppleAccountsService', () => {
             currentBalance: new Prisma.Decimal(0),
             balanceCostAmount: new Prisma.Decimal(0),
             averageCost: new Prisma.Decimal(0),
+            ...ownershipDefaults,
             status: 'normal',
             isManuallyLocked: false,
             manualLockReason: null,
@@ -334,6 +344,7 @@ describe('AppleAccountsService', () => {
             currentBalance: new Prisma.Decimal(0),
             balanceCostAmount: new Prisma.Decimal(0),
             averageCost: new Prisma.Decimal(0),
+            ...ownershipDefaults,
             status: 'normal',
             isManuallyLocked: false,
             manualLockReason: null,

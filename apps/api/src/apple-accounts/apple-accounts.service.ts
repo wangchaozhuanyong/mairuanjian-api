@@ -5,7 +5,12 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import type { AppleAccount, AppleAccountStatus, Prisma } from '@prisma/client';
+import type {
+  AppleAccount,
+  AppleAccountOwnershipType,
+  AppleAccountStatus,
+  Prisma
+} from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -36,6 +41,7 @@ interface ListAppleAccountsQuery extends PaginationQuery {
   status?: string;
   currency?: string;
   region?: string;
+  ownershipType?: string;
   locked?: string;
   sourceChannelId?: string;
   sortBy?: string;
@@ -67,6 +73,9 @@ interface AppleAccountImportPlanItem {
   currentBalance: string;
   balanceCostAmount: string;
   averageCost: string;
+  ownershipType: AppleAccountOwnershipType;
+  purchaseCost: string;
+  salePrice: string;
   sourceChannelId: string | null;
   status: AppleAccountStatus;
   isManuallyLocked: boolean;
@@ -110,6 +119,9 @@ const APPLE_ACCOUNT_SORT_FIELDS: Record<string, keyof Prisma.AppleAccountOrderBy
     currentBalance: 'currentBalance',
     balanceCostAmount: 'balanceCostAmount',
     averageCost: 'averageCost',
+    ownershipType: 'ownershipType',
+    purchaseCost: 'purchaseCost',
+    salePrice: 'salePrice',
     status: 'status',
     isManuallyLocked: 'isManuallyLocked',
     createdAt: 'createdAt',
@@ -163,10 +175,12 @@ export class AppleAccountsService {
         const pagination = getPagination(query);
         const keyword = query.keyword?.trim().toLowerCase();
         const status = this.parseStatus(query.status, false);
+        const ownershipType = this.parseOwnershipType(query.ownershipType, false);
         const locked = this.parseBoolean(query.locked);
         const where: Prisma.AppleAccountWhereInput = {
           deletedAt: null,
           status: status ?? undefined,
+          ownershipType: ownershipType ?? undefined,
           currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
           region: query.region ? query.region.trim().toUpperCase() : undefined,
           isManuallyLocked: locked,
@@ -218,6 +232,44 @@ export class AppleAccountsService {
     return this.toResponse(account);
   }
 
+  async ownershipReport() {
+    const groups = await this.prisma.appleAccount.groupBy({
+      by: ['ownershipType'],
+      where: {
+        deletedAt: null
+      },
+      _count: {
+        _all: true
+      },
+      _sum: {
+        currentBalance: true,
+        balanceCostAmount: true,
+        purchaseCost: true,
+        salePrice: true
+      }
+    });
+    const report = {
+      consigned: this.emptyOwnershipReportGroup('consigned'),
+      sold: this.emptyOwnershipReportGroup('sold')
+    };
+
+    for (const group of groups) {
+      const purchaseCost = new PrismaNamespace.Decimal(group._sum.purchaseCost ?? 0);
+      const salePrice = new PrismaNamespace.Decimal(group._sum.salePrice ?? 0);
+      report[group.ownershipType] = {
+        ownershipType: group.ownershipType,
+        count: group._count._all,
+        currentBalance: new PrismaNamespace.Decimal(group._sum.currentBalance ?? 0).toFixed(4),
+        balanceCostAmount: new PrismaNamespace.Decimal(group._sum.balanceCostAmount ?? 0).toFixed(4),
+        purchaseCost: purchaseCost.toFixed(4),
+        salePrice: salePrice.toFixed(4),
+        saleProfit: salePrice.minus(purchaseCost).toDecimalPlaces(4).toFixed(4)
+      };
+    }
+
+    return report;
+  }
+
   invalidateListCache() {
     this.listCache.clear();
   }
@@ -231,6 +283,9 @@ export class AppleAccountsService {
     const currentBalance = this.normalizeMoney(dto.currentBalance, 'currentBalance');
     const balanceCostAmount = this.normalizeMoney(dto.balanceCostAmount, 'balanceCostAmount');
     const averageCost = this.calculateAverageCost(currentBalance, balanceCostAmount);
+    const ownershipType = this.parseOwnershipType(dto.ownershipType, false) ?? 'consigned';
+    const purchaseCost = this.normalizeMoney(dto.purchaseCost, 'purchaseCost');
+    const salePrice = this.normalizeMoney(dto.salePrice, 'salePrice');
     const isManuallyLocked = Boolean(dto.isManuallyLocked);
     const region = normalizeAppleAccountRegion(dto.region);
     const currency = normalizeAppleAccountCurrency(region, dto.currency);
@@ -248,6 +303,9 @@ export class AppleAccountsService {
         currentBalance,
         balanceCostAmount,
         averageCost,
+        ownershipType,
+        purchaseCost,
+        salePrice,
         sourceChannelId,
         status: this.parseStatus(dto.status, true) ?? 'normal',
         isManuallyLocked,
@@ -320,6 +378,9 @@ export class AppleAccountsService {
               currentBalance: item.currentBalance,
               balanceCostAmount: item.balanceCostAmount,
               averageCost: item.averageCost,
+              ownershipType: item.ownershipType,
+              purchaseCost: item.purchaseCost,
+              salePrice: item.salePrice,
               sourceChannelId: item.sourceChannelId,
               status: item.status,
               isManuallyLocked: item.isManuallyLocked,
@@ -436,6 +497,22 @@ export class AppleAccountsService {
 
     if (dto.currentBalance !== undefined || dto.balanceCostAmount !== undefined) {
       data.averageCost = this.calculateAverageCost(currentBalance, balanceCostAmount);
+    }
+
+    if (dto.ownershipType !== undefined) {
+      const nextOwnershipType = this.parseOwnershipType(dto.ownershipType, true);
+      if (existingAccount.ownershipType === 'sold' && nextOwnershipType !== 'sold') {
+        throw new BadRequestException('Sold Apple ID cannot be changed back to consigned');
+      }
+      data.ownershipType = nextOwnershipType;
+    }
+
+    if (dto.purchaseCost !== undefined) {
+      data.purchaseCost = this.normalizeMoney(dto.purchaseCost, 'purchaseCost');
+    }
+
+    if (dto.salePrice !== undefined) {
+      data.salePrice = this.normalizeMoney(dto.salePrice, 'salePrice');
     }
 
     if (dto.status !== undefined) {
@@ -805,6 +882,9 @@ export class AppleAccountsService {
           currentBalance,
           balanceCostAmount,
           averageCost: this.calculateAverageCost(currentBalance, balanceCostAmount),
+          ownershipType: 'consigned',
+          purchaseCost: '0',
+          salePrice: '0',
           sourceChannelId,
           status: this.parseStatus(item.data.status, true) ?? 'normal',
           isManuallyLocked: this.parseImportBoolean(item.data.isManuallyLocked),
@@ -942,6 +1022,23 @@ export class AppleAccountsService {
     }
 
     return undefined;
+  }
+
+  private parseOwnershipType(value: unknown, strict: true): AppleAccountOwnershipType;
+  private parseOwnershipType(value: unknown, strict?: false): AppleAccountOwnershipType | undefined;
+  private parseOwnershipType(value: unknown, strict = false) {
+    if (value === undefined || value === null || value === '') {
+      if (strict) {
+        throw new BadRequestException('ownershipType is required');
+      }
+      return undefined;
+    }
+
+    if (value === 'consigned' || value === 'sold') {
+      return value satisfies AppleAccountOwnershipType;
+    }
+
+    throw new BadRequestException('ownershipType must be consigned or sold');
   }
 
   private parseBoolean(value: unknown) {
@@ -1126,6 +1223,18 @@ export class AppleAccountsService {
     return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
   }
 
+  private emptyOwnershipReportGroup(ownershipType: AppleAccountOwnershipType) {
+    return {
+      ownershipType,
+      count: 0,
+      currentBalance: '0.0000',
+      balanceCostAmount: '0.0000',
+      purchaseCost: '0.0000',
+      salePrice: '0.0000',
+      saleProfit: '0.0000'
+    };
+  }
+
   private toResponse(account: AppleAccountWithSourceChannel) {
     const sourceChannel = account.sourceChannel
       ? {
@@ -1144,6 +1253,12 @@ export class AppleAccountsService {
       currentBalance: account.currentBalance.toString(),
       balanceCostAmount: account.balanceCostAmount.toString(),
       averageCost: account.averageCost.toString(),
+      ownershipType: account.ownershipType,
+      purchaseCost: account.purchaseCost.toString(),
+      salePrice: account.salePrice.toString(),
+      soldAt: account.soldAt,
+      soldOrderId: account.soldOrderId,
+      soldCustomerId: account.soldCustomerId,
       sourceChannelId: account.sourceChannelId,
       sourceChannel,
       sourcePlatformId: account.sourceChannelId,

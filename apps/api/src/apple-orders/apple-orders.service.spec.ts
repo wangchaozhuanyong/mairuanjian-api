@@ -21,6 +21,11 @@ describe('AppleOrdersService', () => {
     currentBalance: new Prisma.Decimal('50'),
     balanceCostAmount: new Prisma.Decimal('280'),
     averageCost: new Prisma.Decimal('5.6'),
+    ownershipType: 'consigned' as const,
+    purchaseCost: new Prisma.Decimal('0'),
+    salePrice: new Prisma.Decimal('0'),
+    soldOrderId: null,
+    soldCustomerId: null,
     status: 'normal' as const,
     isManuallyLocked: false,
     manualLockReason: null,
@@ -34,7 +39,9 @@ describe('AppleOrdersService', () => {
       platformFeeRmb: '3',
       refundLossRmb: '0',
       appleCostValue: '20',
-      averageCost: '5.6'
+      averageCost: '5.6',
+      appleAccountPurchaseCost: '0',
+      appleAccountSalePrice: '0'
     });
 
     expect(snapshot.appleCostRmb.toString()).toBe('112');
@@ -47,11 +54,29 @@ describe('AppleOrdersService', () => {
       platformFeeRmb: new Prisma.Decimal('1').mul('7.2'),
       refundLossRmb: '0',
       appleCostValue: '10',
-      averageCost: '5'
+      averageCost: '5',
+      appleAccountPurchaseCost: '0',
+      appleAccountSalePrice: '0'
     });
 
     expect(snapshot.appleCostRmb.toString()).toBe('50');
     expect(snapshot.profitAmount.toString()).toBe('86.8');
+  });
+
+  it('includes sold Apple ID purchase cost in actual order profit', () => {
+    const snapshot = service.calculateOrderFinancials({
+      paidAmountRmb: '188',
+      platformFeeRmb: '3',
+      refundLossRmb: '0',
+      appleCostValue: '20',
+      averageCost: '5.6',
+      appleAccountPurchaseCost: '30',
+      appleAccountSalePrice: '50'
+    });
+
+    expect(snapshot.appleCostRmb.toString()).toBe('112');
+    expect(snapshot.appleAccountSaleProfit.toString()).toBe('20');
+    expect(snapshot.profitAmount.toString()).toBe('43');
   });
 
   it('calculates monthly expire time as the last included service day', () => {

@@ -15,5 +15,6 @@ export interface CreateAppleOrderDto {
   platformFee?: string | number;
   refundLoss?: string | number;
   appleCostValue?: string | number;
+  appleAccountOwnershipType?: 'consigned' | 'sold';
   remark?: string | null;
 }

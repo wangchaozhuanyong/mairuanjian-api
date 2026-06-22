@@ -1628,6 +1628,23 @@ export class DataCenterService {
     return this.toDictionaryResponse(updated);
   }
 
+  async deleteDictionary(id: string, operator?: AuthenticatedUser) {
+    const dictionary = await this.findDictionaryOrThrow(id);
+    await this.prisma.dataDictionary.delete({
+      where: { id: dictionary.id }
+    });
+
+    await this.writeAudit(
+      operator,
+      'data.dictionary.delete',
+      'data_dictionary',
+      dictionary.id,
+      this.toDictionaryResponse(dictionary),
+      undefined
+    );
+    return { deleted: true };
+  }
+
   async listSystemParameters(query: ListSystemParametersQuery) {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();

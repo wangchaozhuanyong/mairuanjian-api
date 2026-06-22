@@ -477,6 +477,14 @@ export class DataCenterController {
     return dictionary;
   }
 
+  @Delete('dictionaries/:id')
+  @RequirePermissions('data.dictionary.manage')
+  async deleteDictionary(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.dataCenterService.deleteDictionary(id, operator);
+    this.publishDataEvent('data.dictionary.deleted', 'dictionary', 'deleted', id);
+    return result;
+  }
+
   @Get('system-parameters')
   @RequirePermissions('data.system_parameter.manage')
   listSystemParameters(

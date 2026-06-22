@@ -1,4 +1,4 @@
-import type { AppleAccountStatus } from '@prisma/client';
+import type { AppleAccountOwnershipType, AppleAccountStatus } from '@prisma/client';
 
 export interface CreateAppleAccountDto {
   appleId: string;
@@ -6,6 +6,9 @@ export interface CreateAppleAccountDto {
   currency?: string;
   currentBalance?: string | number;
   balanceCostAmount?: string | number;
+  ownershipType?: AppleAccountOwnershipType;
+  purchaseCost?: string | number;
+  salePrice?: string | number;
   sourceChannelId?: string | null;
   sourcePlatformId?: string | null;
   status?: AppleAccountStatus;

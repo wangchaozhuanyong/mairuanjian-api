@@ -30,6 +30,8 @@
           <StatusChip tone="purple">资料 {{ secretReadyCount }}</StatusChip>
           <StatusChip tone="cyan">余额 {{ totalBalance }}</StatusChip>
           <StatusChip tone="orange">均价 {{ averageCostSummary }}</StatusChip>
+          <StatusChip tone="blue">寄存 {{ ownershipReport?.consigned.count ?? 0 }}</StatusChip>
+          <StatusChip tone="purple">售出 {{ ownershipReport?.sold.count ?? 0 }}</StatusChip>
         </div>
       </div>
 
@@ -95,6 +97,20 @@
               :key="item.id"
               :label="item.name"
               :value="item.id"
+            />
+          </el-select>
+          <el-select
+            v-model="query.ownershipType"
+            class="table-toolbar__select"
+            placeholder="ID类型"
+            clearable
+            @change="applyFilters"
+          >
+            <el-option
+              v-for="item in ownershipOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
             />
           </el-select>
           <el-select
@@ -179,6 +195,18 @@
           </template>
           <template #default="{ row }">
             {{ getAccountAverageCost(row) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="ownershipType" label="ID类型" width="120" sortable="custom">
+          <template #default="{ row }">
+            <StatusChip :tone="row.ownershipType === 'sold' ? 'purple' : 'blue'">
+              {{ getOwnershipLabel(row.ownershipType) }}
+            </StatusChip>
+          </template>
+        </el-table-column>
+        <el-table-column label="ID成本/售价" min-width="150">
+          <template #default="{ row }">
+            {{ formatAccountSaleCost(row) }}
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="130" sortable="custom">
@@ -292,6 +320,10 @@
             <div>
               <span>平均成本</span>
               <strong>{{ getAccountAverageCost(account) }}</strong>
+            </div>
+            <div>
+              <span>ID类型</span>
+              <strong>{{ getOwnershipLabel(account.ownershipType) }}</strong>
             </div>
           </div>
 
@@ -411,6 +443,14 @@
               <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
                 {{ getStatusLabel(selectedAccount.status) }}
               </StatusChip>
+            </el-descriptions-item>
+            <el-descriptions-item label="ID类型">
+              <StatusChip :tone="selectedAccount.ownershipType === 'sold' ? 'purple' : 'blue'">
+                {{ getOwnershipLabel(selectedAccount.ownershipType) }}
+              </StatusChip>
+            </el-descriptions-item>
+            <el-descriptions-item label="ID成本/售价">
+              {{ formatAccountSaleCost(selectedAccount) }}
             </el-descriptions-item>
             <el-descriptions-item label="手动锁定">
               <StatusChip :tone="selectedAccount.isManuallyLocked ? 'red' : 'green'" dot>
@@ -579,6 +619,49 @@
               v-model.trim="form.balanceCostAmount"
               placeholder="例如 5.90，表示每 1 美元余额成本 5.90 元人民币"
             />
+          </el-form-item>
+        </div>
+        <div class="form-grid">
+          <el-form-item prop="ownershipType">
+            <template #label>
+              <FieldHelpLabel
+                label="ID类型"
+                purpose="寄存表示 ID 留在你这边继续接单；售出表示这个 ID 会卖给客户并单独计入订单成本。"
+                example="常规代开选寄存；把完整账号卖给客户选售出。"
+              />
+            </template>
+            <el-select
+              v-model="form.ownershipType"
+              class="full-input"
+              :disabled="editingAccount?.ownershipType === 'sold'"
+            >
+              <el-option
+                v-for="item in ownershipOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item prop="purchaseCost">
+            <template #label>
+              <FieldHelpLabel
+                label="ID购入成本"
+                purpose="这个 Apple ID 本身的人民币采购成本，售出订单会把它计入实际利润。"
+                example="买这个 ID 花了 30 元，就填 30。"
+              />
+            </template>
+            <el-input v-model.trim="form.purchaseCost" type="number" inputmode="decimal" min="0" />
+          </el-form-item>
+          <el-form-item prop="salePrice">
+            <template #label>
+              <FieldHelpLabel
+                label="ID参考售价"
+                purpose="卖给客户时的参考价格，用于售出报表统计，不替代订单客户实收。"
+                example="准备按 50 元卖出，就填 50。"
+              />
+            </template>
+            <el-input v-model.trim="form.salePrice" type="number" inputmode="decimal" min="0" />
           </el-form-item>
         </div>
         <div class="form-grid">
@@ -1323,6 +1406,8 @@ import { useAuthStore } from '@/stores/auth';
 import type {
   AppleAccount,
   AppleAccountImportResult,
+  AppleAccountOwnershipReport,
+  AppleAccountOwnershipType,
   AppleAccountSecretField,
   AppleBalanceConsumption,
   AppleBalanceTopup,
@@ -1365,6 +1450,10 @@ const lockedOptions = [
   { label: '已锁定', value: 'true' },
   { label: '未锁定', value: 'false' }
 ];
+const ownershipOptions: Array<{ label: string; value: AppleAccountOwnershipType }> = [
+  { label: '寄存', value: 'consigned' },
+  { label: '售出', value: 'sold' }
+];
 const batchActions = [{ label: '批量导出', value: 'export' }];
 
 const loading = ref(false);
@@ -1396,6 +1485,7 @@ const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const topups = ref<AppleBalanceTopup[]>([]);
 const consumptions = ref<AppleBalanceConsumption[]>([]);
 const importResult = ref<AppleAccountImportResult | null>(null);
+const ownershipReport = ref<AppleAccountOwnershipReport | null>(null);
 const selectedAccounts = ref<AppleAccount[]>([]);
 const total = ref(0);
 const activeAccountsQueryKey = ref('');
@@ -1425,6 +1515,7 @@ const query = reactive({
   status: '',
   region: '',
   currency: '',
+  ownershipType: '' as AppleAccountOwnershipType | '',
   sourceChannelId: '',
   locked: '',
   sortBy: '',
@@ -1437,6 +1528,9 @@ const form = reactive({
   currency: 'USD',
   currentBalance: '0',
   balanceCostAmount: '0',
+  ownershipType: 'consigned' as AppleAccountOwnershipType,
+  purchaseCost: '0',
+  salePrice: '0',
   sourceChannelId: '',
   status: 'normal' as AppleAccount['status'],
   isManuallyLocked: false,
@@ -1484,7 +1578,8 @@ const rules: FormRules<typeof form> = {
   region: [{ required: true, message: '请选择地区', trigger: 'change' }],
   currency: [{ required: true, message: '请选择币种', trigger: 'change' }],
   currentBalance: [{ required: true, message: '请输入余额', trigger: 'blur' }],
-  balanceCostAmount: [{ required: true, message: '请输入平均成本', trigger: 'blur' }]
+  balanceCostAmount: [{ required: true, message: '请输入平均成本', trigger: 'blur' }],
+  ownershipType: [{ required: true, message: '请选择 ID 类型', trigger: 'change' }]
 };
 
 const importRules: FormRules<typeof importForm> = {
@@ -1544,6 +1639,7 @@ const secretReadyCount = computed(
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
   const lockedLabel = lockedOptions.find((item) => item.value === query.locked)?.label;
+  const ownershipLabel = ownershipOptions.find((item) => item.value === query.ownershipType)?.label;
 
   if (query.region) {
     chips.push({ key: 'region', label: '地区', value: query.region });
@@ -1551,6 +1647,10 @@ const filterChips = computed(() => {
 
   if (query.currency) {
     chips.push({ key: 'currency', label: '币种', value: query.currency });
+  }
+
+  if (query.ownershipType && ownershipLabel) {
+    chips.push({ key: 'ownershipType', label: 'ID类型', value: ownershipLabel });
   }
 
   if (query.sourceChannelId) {
@@ -1594,6 +1694,7 @@ const accountSortFieldMap: Record<string, string> = {
   currentBalance: 'currentBalance',
   balanceCostAmount: 'averageCost',
   averageCost: 'averageCost',
+  ownershipType: 'ownershipType',
   status: 'status',
   isManuallyLocked: 'isManuallyLocked',
   updatedAt: 'updatedAt'
@@ -1653,6 +1754,20 @@ function formatAverageCost(value: string | null | undefined) {
 
 function formatAccountRegionCurrency(region: string, currency: string) {
   return formatRegionCurrency(region, currency, appleRegionOptions.value);
+}
+
+function getOwnershipLabel(value: AppleAccountOwnershipType) {
+  return ownershipOptions.find((item) => item.value === value)?.label ?? value;
+}
+
+function formatAccountSaleCost(account: Pick<AppleAccount, 'ownershipType' | 'purchaseCost' | 'salePrice'>) {
+  if (account.ownershipType !== 'sold') {
+    return '-';
+  }
+
+  return `成本 ${parseDecimalInput(account.purchaseCost).toFixed(2)} / 售价 ${parseDecimalInput(
+    account.salePrice
+  ).toFixed(2)}`;
 }
 
 function getAccountAverageCost(account: AppleAccount) {
@@ -1788,6 +1903,14 @@ async function loadAccounts(options: { background?: boolean; force?: boolean } =
   }
 }
 
+async function loadOwnershipReport() {
+  try {
+    ownershipReport.value = await appleAccountsApi.ownershipReport();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载 ID 类型报表失败');
+  }
+}
+
 function buildAccountListParams(): AppleAccountListParams {
   return {
     page: query.page,
@@ -1796,6 +1919,7 @@ function buildAccountListParams(): AppleAccountListParams {
     status: query.status || undefined,
     region: query.region || undefined,
     currency: query.currency || undefined,
+    ownershipType: query.ownershipType || undefined,
     sourceChannelId: query.sourceChannelId || undefined,
     locked: query.locked || undefined,
     sortBy: query.sortBy || undefined,
@@ -1806,6 +1930,7 @@ function buildAccountListParams(): AppleAccountListParams {
 function applyAccountListResult(data: AppleAccountPage) {
   accounts.value = data.items;
   total.value = data.total;
+  void loadOwnershipReport();
 }
 
 async function loadAppleAccountSourceChannels() {
@@ -1856,6 +1981,7 @@ function clearFilters() {
   query.status = '';
   query.region = '';
   query.currency = '';
+  query.ownershipType = '';
   query.sourceChannelId = '';
   query.locked = '';
   query.sortBy = '';
@@ -1873,6 +1999,9 @@ function removeFilter(key: string) {
   }
   if (key === 'currency') {
     query.currency = '';
+  }
+  if (key === 'ownershipType') {
+    query.ownershipType = '';
   }
   if (key === 'sourceChannelId') {
     query.sourceChannelId = '';
@@ -1915,6 +2044,9 @@ function resetForm() {
   syncFormCurrency();
   form.currentBalance = '0';
   form.balanceCostAmount = '0';
+  form.ownershipType = 'consigned';
+  form.purchaseCost = '0';
+  form.salePrice = '0';
   form.sourceChannelId = '';
   form.status = 'normal';
   form.isManuallyLocked = false;
@@ -1994,6 +2126,9 @@ function openEdit(account: AppleAccount) {
   syncFormCurrency();
   form.currentBalance = account.currentBalance;
   form.balanceCostAmount = getAccountAverageCost(account);
+  form.ownershipType = account.ownershipType;
+  form.purchaseCost = account.purchaseCost;
+  form.salePrice = account.salePrice;
   form.sourceChannelId = account.sourceChannelId ?? '';
   form.status = account.status;
   form.isManuallyLocked = account.isManuallyLocked;
@@ -2210,6 +2345,9 @@ async function saveAccount() {
       currency: form.currency,
       currentBalance: form.currentBalance,
       balanceCostAmount: getAccountFormTotalCostAmount(),
+      ownershipType: form.ownershipType,
+      purchaseCost: form.purchaseCost || '0',
+      salePrice: form.salePrice || '0',
       sourceChannelId: form.sourceChannelId || null,
       status: form.status,
       isManuallyLocked: form.isManuallyLocked,

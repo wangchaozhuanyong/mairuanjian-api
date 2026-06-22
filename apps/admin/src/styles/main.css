@@ -628,6 +628,9 @@ h1 {
 .nav-section-body {
   display: grid;
   gap: 4px;
+  margin-left: 8px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .nav-link {
@@ -3790,11 +3793,38 @@ h1 {
   min-width: max-content;
 }
 
+.table-inline-cell {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.table-inline-cell__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-inline-action.app-button.el-button,
+.table-inline-cell .app-button.el-button {
+  flex: 0 0 auto;
+  margin-left: 0;
+}
+
 .table-action-group--wrap {
   flex-wrap: wrap;
   min-width: 0;
   max-width: 100%;
   justify-content: flex-start;
+}
+
+.desktop-data-table .table-action-group--wrap {
+  flex-wrap: nowrap;
 }
 
 .table-action-group .app-button.el-button {
@@ -5318,6 +5348,25 @@ h3.section-title {
   line-height: 1.45;
   word-break: normal;
   overflow-wrap: anywhere;
+}
+
+.desktop-data-table .cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.desktop-data-table th .cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.desktop-data-table .help-label,
+.desktop-data-table .field-help-label {
+  white-space: nowrap;
 }
 
 .el-table .el-table__inner-wrapper::before,

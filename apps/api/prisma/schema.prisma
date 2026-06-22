@@ -55,6 +55,11 @@ enum AppleAccountStatus {
   unknown
 }
 
+enum AppleAccountOwnershipType {
+  consigned
+  sold
+}
+
 enum AppleServiceStatus {
   enabled
   paused
@@ -539,6 +544,7 @@ model Customer {
   updatedBy                   User?                        @relation("CustomerUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   appleOrders                 AppleOrder[]
   activations                 ServiceActivation[]
+  soldAppleAccounts           AppleAccount[]               @relation("AppleAccountSoldCustomer")
   renewalTasks                RenewalTask[]
   appleAccountActionPlanItems AppleAccountActionPlanItem[]
   automationTasks             AutomationTask[]
@@ -628,40 +634,48 @@ model MessageTemplate {
 }
 
 model AppleAccount {
-  id                     String             @id @default(uuid()) @db.Uuid
-  appleId                String             @map("apple_id") @db.VarChar(255)
-  appleIdNormalized      String             @unique @map("apple_id_normalized") @db.VarChar(255)
-  region                 String             @default("US") @db.VarChar(50)
-  currency               String             @default("USD") @db.VarChar(10)
-  currentBalance         Decimal            @default(0) @map("current_balance") @db.Decimal(18, 4)
-  balanceCostAmount      Decimal            @default(0) @map("balance_cost_amount") @db.Decimal(18, 4)
-  averageCost            Decimal            @default(0) @map("average_cost") @db.Decimal(18, 8)
-  status                 AppleAccountStatus @default(normal)
-  isManuallyLocked       Boolean            @default(false) @map("is_manually_locked")
-  manualLockReason       String?            @map("manual_lock_reason") @db.Text
-  sourceChannelId        String?            @map("source_channel_id") @db.Uuid
-  lockedAt               DateTime?          @map("locked_at") @db.Timestamptz(6)
-  lockedByUserId         String?            @map("locked_by_user_id") @db.Uuid
-  passwordEncrypted      String?            @map("password_encrypted") @db.Text
-  securityInfoEncrypted  String?            @map("security_info_encrypted") @db.Text
-  phoneEncrypted         String?            @map("phone_encrypted") @db.Text
-  recoveryEmailEncrypted String?            @map("recovery_email_encrypted") @db.Text
-  remark                 String?            @db.Text
-  createdByUserId        String?            @map("created_by_user_id") @db.Uuid
-  updatedByUserId        String?            @map("updated_by_user_id") @db.Uuid
-  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt              DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  id                     String                    @id @default(uuid()) @db.Uuid
+  appleId                String                    @map("apple_id") @db.VarChar(255)
+  appleIdNormalized      String                    @unique @map("apple_id_normalized") @db.VarChar(255)
+  region                 String                    @default("US") @db.VarChar(50)
+  currency               String                    @default("USD") @db.VarChar(10)
+  currentBalance         Decimal                   @default(0) @map("current_balance") @db.Decimal(18, 4)
+  balanceCostAmount      Decimal                   @default(0) @map("balance_cost_amount") @db.Decimal(18, 4)
+  averageCost            Decimal                   @default(0) @map("average_cost") @db.Decimal(18, 8)
+  ownershipType          AppleAccountOwnershipType @default(consigned) @map("ownership_type")
+  purchaseCost           Decimal                   @default(0) @map("purchase_cost") @db.Decimal(18, 4)
+  salePrice              Decimal                   @default(0) @map("sale_price") @db.Decimal(18, 4)
+  soldAt                 DateTime?                 @map("sold_at") @db.Timestamptz(6)
+  soldOrderId            String?                   @unique @map("sold_order_id") @db.Uuid
+  soldCustomerId         String?                   @map("sold_customer_id") @db.Uuid
+  status                 AppleAccountStatus        @default(normal)
+  isManuallyLocked       Boolean                   @default(false) @map("is_manually_locked")
+  manualLockReason       String?                   @map("manual_lock_reason") @db.Text
+  sourceChannelId        String?                   @map("source_channel_id") @db.Uuid
+  lockedAt               DateTime?                 @map("locked_at") @db.Timestamptz(6)
+  lockedByUserId         String?                   @map("locked_by_user_id") @db.Uuid
+  passwordEncrypted      String?                   @map("password_encrypted") @db.Text
+  securityInfoEncrypted  String?                   @map("security_info_encrypted") @db.Text
+  phoneEncrypted         String?                   @map("phone_encrypted") @db.Text
+  recoveryEmailEncrypted String?                   @map("recovery_email_encrypted") @db.Text
+  remark                 String?                   @db.Text
+  createdByUserId        String?                   @map("created_by_user_id") @db.Uuid
+  updatedByUserId        String?                   @map("updated_by_user_id") @db.Uuid
+  createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?                 @map("deleted_at") @db.Timestamptz(6)
 
   createdBy       User?                      @relation("AppleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedBy       User?                      @relation("AppleAccountUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   lockedBy        User?                      @relation("AppleAccountLockedBy", fields: [lockedByUserId], references: [id], onDelete: SetNull)
   sourceChannel   AppleAccountSourceChannel? @relation(fields: [sourceChannelId], references: [id], onDelete: SetNull)
+  soldOrder       AppleOrder?                @relation("AppleAccountSoldOrder", fields: [soldOrderId], references: [id], onDelete: SetNull)
+  soldCustomer    Customer?                  @relation("AppleAccountSoldCustomer", fields: [soldCustomerId], references: [id], onDelete: SetNull)
   topups          AppleBalanceTopup[]
   consumptions    AppleBalanceConsumption[]
   adjustments     AppleBalanceAdjustment[]
   statusChecks    AppleAccountStatusCheck[]
-  orders          AppleOrder[]
+  orders          AppleOrder[]               @relation("AppleAccountOrders")
   activations     ServiceActivation[]
   locks           AppleAccountLock[]
   renewalTasks    RenewalTask[]
@@ -670,6 +684,8 @@ model AppleAccount {
 
   @@index([status])
   @@index([currency])
+  @@index([ownershipType])
+  @@index([soldCustomerId])
   @@index([isManuallyLocked])
   @@index([sourceChannelId])
   @@index([deletedAt])
@@ -1245,45 +1261,50 @@ model RedeemCode {
 }
 
 model AppleOrder {
-  id                    String           @id @default(uuid()) @db.Uuid
-  orderNo               String           @unique @map("order_no") @db.VarChar(40)
-  customerId            String           @map("customer_id") @db.Uuid
-  sourcePlatformId      String?          @map("source_platform_id") @db.Uuid
-  externalOrderNo       String?          @map("external_order_no") @db.VarChar(120)
-  serviceId             String           @map("service_id") @db.Uuid
-  appleAccountId        String?          @map("apple_account_id") @db.Uuid
-  serviceAccount        String?          @map("service_account") @db.VarChar(255)
-  currentPlan           String?          @map("current_plan") @db.VarChar(120)
-  targetPlan            String?          @map("target_plan") @db.VarChar(120)
-  startTime             DateTime?        @map("start_time") @db.Timestamptz(6)
-  expireTime            DateTime?        @map("expire_time") @db.Timestamptz(6)
-  paidAmount            Decimal          @default(0) @map("paid_amount") @db.Decimal(18, 2)
-  paidCurrency          String           @default("CNY") @map("paid_currency") @db.VarChar(10)
-  paidExchangeRateToRmb Decimal          @default(1) @map("paid_exchange_rate_to_rmb") @db.Decimal(18, 8)
-  paidAmountRmb         Decimal          @default(0) @map("paid_amount_rmb") @db.Decimal(18, 4)
-  platformFee           Decimal          @default(0) @map("platform_fee") @db.Decimal(18, 2)
-  platformFeeRmb        Decimal          @default(0) @map("platform_fee_rmb") @db.Decimal(18, 4)
-  refundLoss            Decimal          @default(0) @map("refund_loss") @db.Decimal(18, 2)
-  refundLossRmb         Decimal          @default(0) @map("refund_loss_rmb") @db.Decimal(18, 4)
-  appleCostValue        Decimal          @default(0) @map("apple_cost_value") @db.Decimal(18, 4)
-  appleCostRmb          Decimal          @default(0) @map("apple_cost_rmb") @db.Decimal(18, 4)
-  profitAmount          Decimal          @default(0) @map("profit_amount") @db.Decimal(18, 4)
-  status                AppleOrderStatus @default(active)
-  remark                String?          @db.Text
-  createdByUserId       String?          @map("created_by_user_id") @db.Uuid
-  updatedByUserId       String?          @map("updated_by_user_id") @db.Uuid
-  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                        String                    @id @default(uuid()) @db.Uuid
+  orderNo                   String                    @unique @map("order_no") @db.VarChar(40)
+  customerId                String                    @map("customer_id") @db.Uuid
+  sourcePlatformId          String?                   @map("source_platform_id") @db.Uuid
+  externalOrderNo           String?                   @map("external_order_no") @db.VarChar(120)
+  serviceId                 String                    @map("service_id") @db.Uuid
+  appleAccountId            String?                   @map("apple_account_id") @db.Uuid
+  serviceAccount            String?                   @map("service_account") @db.VarChar(255)
+  currentPlan               String?                   @map("current_plan") @db.VarChar(120)
+  targetPlan                String?                   @map("target_plan") @db.VarChar(120)
+  startTime                 DateTime?                 @map("start_time") @db.Timestamptz(6)
+  expireTime                DateTime?                 @map("expire_time") @db.Timestamptz(6)
+  paidAmount                Decimal                   @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  paidCurrency              String                    @default("CNY") @map("paid_currency") @db.VarChar(10)
+  paidExchangeRateToRmb     Decimal                   @default(1) @map("paid_exchange_rate_to_rmb") @db.Decimal(18, 8)
+  paidAmountRmb             Decimal                   @default(0) @map("paid_amount_rmb") @db.Decimal(18, 4)
+  platformFee               Decimal                   @default(0) @map("platform_fee") @db.Decimal(18, 2)
+  platformFeeRmb            Decimal                   @default(0) @map("platform_fee_rmb") @db.Decimal(18, 4)
+  refundLoss                Decimal                   @default(0) @map("refund_loss") @db.Decimal(18, 2)
+  refundLossRmb             Decimal                   @default(0) @map("refund_loss_rmb") @db.Decimal(18, 4)
+  appleCostValue            Decimal                   @default(0) @map("apple_cost_value") @db.Decimal(18, 4)
+  appleCostRmb              Decimal                   @default(0) @map("apple_cost_rmb") @db.Decimal(18, 4)
+  appleAccountOwnershipType AppleAccountOwnershipType @default(consigned) @map("apple_account_ownership_type")
+  appleAccountPurchaseCost  Decimal                   @default(0) @map("apple_account_purchase_cost") @db.Decimal(18, 4)
+  appleAccountSalePrice     Decimal                   @default(0) @map("apple_account_sale_price") @db.Decimal(18, 4)
+  appleAccountSaleProfit    Decimal                   @default(0) @map("apple_account_sale_profit") @db.Decimal(18, 4)
+  profitAmount              Decimal                   @default(0) @map("profit_amount") @db.Decimal(18, 4)
+  status                    AppleOrderStatus          @default(active)
+  remark                    String?                   @db.Text
+  createdByUserId           String?                   @map("created_by_user_id") @db.Uuid
+  updatedByUserId           String?                   @map("updated_by_user_id") @db.Uuid
+  createdAt                 DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  customer       Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  sourcePlatform SourcePlatform?    @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
-  service        AppleService       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  appleAccount   AppleAccount?      @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
-  createdBy      User?              @relation("AppleOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy      User?              @relation("AppleOrderUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  activation     ServiceActivation?
-  locks          AppleAccountLock[]
-  renewalTasks   RenewalTask[]
+  customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sourcePlatform   SourcePlatform?    @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
+  service          AppleService       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  appleAccount     AppleAccount?      @relation("AppleAccountOrders", fields: [appleAccountId], references: [id], onDelete: Restrict)
+  soldAppleAccount AppleAccount?      @relation("AppleAccountSoldOrder")
+  createdBy        User?              @relation("AppleOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy        User?              @relation("AppleOrderUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  activation       ServiceActivation?
+  locks            AppleAccountLock[]
+  renewalTasks     RenewalTask[]
 
   @@unique([sourcePlatformId, externalOrderNo])
   @@index([customerId])
@@ -1296,36 +1317,40 @@ model AppleOrder {
 }
 
 model ServiceActivation {
-  id                    String                  @id @default(uuid()) @db.Uuid
-  orderId               String                  @unique @map("order_id") @db.Uuid
-  customerId            String                  @map("customer_id") @db.Uuid
-  appleAccountId        String?                 @map("apple_account_id") @db.Uuid
-  serviceId             String                  @map("service_id") @db.Uuid
-  currentPlan           String?                 @map("current_plan") @db.VarChar(120)
-  targetPlan            String?                 @map("target_plan") @db.VarChar(120)
-  startTime             DateTime?               @map("start_time") @db.Timestamptz(6)
-  expireTime            DateTime?               @map("expire_time") @db.Timestamptz(6)
-  consumedValue         Decimal                 @default(0) @map("consumed_value") @db.Decimal(18, 4)
-  currency              String                  @default("USD") @db.VarChar(10)
-  avgUnitCost           Decimal                 @default(0) @map("avg_unit_cost") @db.Decimal(18, 8)
-  costRmb               Decimal                 @default(0) @map("cost_rmb") @db.Decimal(18, 4)
-  paidAmount            Decimal                 @default(0) @map("paid_amount") @db.Decimal(18, 2)
-  paidCurrency          String                  @default("CNY") @map("paid_currency") @db.VarChar(10)
-  paidExchangeRateToRmb Decimal                 @default(1) @map("paid_exchange_rate_to_rmb") @db.Decimal(18, 8)
-  paidAmountRmb         Decimal                 @default(0) @map("paid_amount_rmb") @db.Decimal(18, 4)
-  platformFee           Decimal                 @default(0) @map("platform_fee") @db.Decimal(18, 2)
-  platformFeeRmb        Decimal                 @default(0) @map("platform_fee_rmb") @db.Decimal(18, 4)
-  refundLoss            Decimal                 @default(0) @map("refund_loss") @db.Decimal(18, 2)
-  refundLossRmb         Decimal                 @default(0) @map("refund_loss_rmb") @db.Decimal(18, 4)
-  profitAmount          Decimal                 @default(0) @map("profit_amount") @db.Decimal(18, 4)
-  sourcePlatformId      String?                 @map("source_platform_id") @db.Uuid
-  externalOrderNo       String?                 @map("external_order_no") @db.VarChar(120)
-  status                ServiceActivationStatus @default(active)
-  autoRenewStatus       AutoRenewStatus         @default(unknown) @map("auto_renew_status")
-  renewalDecision       RenewalDecision         @default(unconfirmed) @map("renewal_decision")
-  renewalNote           String?                 @map("renewal_note") @db.Text
-  createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                        String                    @id @default(uuid()) @db.Uuid
+  orderId                   String                    @unique @map("order_id") @db.Uuid
+  customerId                String                    @map("customer_id") @db.Uuid
+  appleAccountId            String?                   @map("apple_account_id") @db.Uuid
+  serviceId                 String                    @map("service_id") @db.Uuid
+  currentPlan               String?                   @map("current_plan") @db.VarChar(120)
+  targetPlan                String?                   @map("target_plan") @db.VarChar(120)
+  startTime                 DateTime?                 @map("start_time") @db.Timestamptz(6)
+  expireTime                DateTime?                 @map("expire_time") @db.Timestamptz(6)
+  consumedValue             Decimal                   @default(0) @map("consumed_value") @db.Decimal(18, 4)
+  currency                  String                    @default("USD") @db.VarChar(10)
+  avgUnitCost               Decimal                   @default(0) @map("avg_unit_cost") @db.Decimal(18, 8)
+  costRmb                   Decimal                   @default(0) @map("cost_rmb") @db.Decimal(18, 4)
+  paidAmount                Decimal                   @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  paidCurrency              String                    @default("CNY") @map("paid_currency") @db.VarChar(10)
+  paidExchangeRateToRmb     Decimal                   @default(1) @map("paid_exchange_rate_to_rmb") @db.Decimal(18, 8)
+  paidAmountRmb             Decimal                   @default(0) @map("paid_amount_rmb") @db.Decimal(18, 4)
+  platformFee               Decimal                   @default(0) @map("platform_fee") @db.Decimal(18, 2)
+  platformFeeRmb            Decimal                   @default(0) @map("platform_fee_rmb") @db.Decimal(18, 4)
+  refundLoss                Decimal                   @default(0) @map("refund_loss") @db.Decimal(18, 2)
+  refundLossRmb             Decimal                   @default(0) @map("refund_loss_rmb") @db.Decimal(18, 4)
+  appleAccountOwnershipType AppleAccountOwnershipType @default(consigned) @map("apple_account_ownership_type")
+  appleAccountPurchaseCost  Decimal                   @default(0) @map("apple_account_purchase_cost") @db.Decimal(18, 4)
+  appleAccountSalePrice     Decimal                   @default(0) @map("apple_account_sale_price") @db.Decimal(18, 4)
+  appleAccountSaleProfit    Decimal                   @default(0) @map("apple_account_sale_profit") @db.Decimal(18, 4)
+  profitAmount              Decimal                   @default(0) @map("profit_amount") @db.Decimal(18, 4)
+  sourcePlatformId          String?                   @map("source_platform_id") @db.Uuid
+  externalOrderNo           String?                   @map("external_order_no") @db.VarChar(120)
+  status                    ServiceActivationStatus   @default(active)
+  autoRenewStatus           AutoRenewStatus           @default(unknown) @map("auto_renew_status")
+  renewalDecision           RenewalDecision           @default(unconfirmed) @map("renewal_decision")
+  renewalNote               String?                   @map("renewal_note") @db.Text
+  createdAt                 DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   order           AppleOrder                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   customer        Customer                     @relation(fields: [customerId], references: [id], onDelete: Restrict)

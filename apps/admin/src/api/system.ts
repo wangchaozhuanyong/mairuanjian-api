@@ -7,6 +7,8 @@ import type {
   AppleActionPlanItem,
   AppleAccount,
   AppleAccountImportResult,
+  AppleAccountOwnershipReport,
+  AppleAccountOwnershipType,
   AppleAccountSecretField,
   AppleAccountSourceChannel,
   AppleAccountStatusCheck,
@@ -16,6 +18,7 @@ import type {
   AppleBalanceConsumption,
   AppleBalanceTopup,
   AppleOrder,
+  AppleOrderEntryContext,
   AppleProfitReport,
   CodeAfterSale,
   CodeDeliveryLog,
@@ -560,6 +563,7 @@ export interface MaintenanceParameterQuery {
 export interface AppleAccountQuery extends CommonPageQuery {
   currency?: string;
   region?: string;
+  ownershipType?: AppleAccountOwnershipType | '';
   locked?: string;
   sourceChannelId?: string;
   sortBy?: string;
@@ -982,6 +986,9 @@ export interface SaveAppleAccountPayload {
   currency?: string;
   currentBalance?: string;
   balanceCostAmount?: string;
+  ownershipType?: AppleAccountOwnershipType;
+  purchaseCost?: string;
+  salePrice?: string;
   sourceChannelId?: string | null;
   status?: AppleAccount['status'];
   isManuallyLocked?: boolean;
@@ -1279,6 +1286,7 @@ export interface CreateAppleOrderPayload {
   platformFee?: string;
   refundLoss?: string;
   appleCostValue?: string;
+  appleAccountOwnershipType?: AppleAccountOwnershipType;
   remark?: string | null;
 }
 
@@ -1287,6 +1295,7 @@ export interface AvailableAppleAccountQuery {
   amountRequired?: string;
   currency?: string;
   keyword?: string;
+  ownershipType?: AppleAccountOwnershipType;
   showUnavailable?: string;
 }
 
@@ -1863,6 +1872,9 @@ export const dataCenterApi = {
   updateDictionary(id: string, payload: UpdateDataDictionaryPayload) {
     return request<DataDictionary>(http.patch(`/data/dictionaries/${id}`, payload));
   },
+  removeDictionary(id: string) {
+    return request<{ deleted: boolean }>(http.delete(`/data/dictionaries/${id}`));
+  },
   listSystemParameters(params: SystemParameterQuery) {
     return request<PageResult<SystemParameter>>(http.get('/data/system-parameters', { params }));
   },
@@ -2082,6 +2094,9 @@ export const attachmentsApi = {
 export const appleAccountsApi = {
   list(params: AppleAccountQuery) {
     return request<PageResult<AppleAccount>>(http.get('/apple/accounts', { params }));
+  },
+  ownershipReport() {
+    return request<AppleAccountOwnershipReport>(http.get('/apple/accounts/ownership-report'));
   },
   get(id: string) {
     return request<AppleAccount>(http.get(`/apple/accounts/${id}`));
@@ -2411,6 +2426,9 @@ export const codeReportsApi = {
 export const appleOrdersApi = {
   list(params: AppleOrderQuery) {
     return request<PageResult<AppleOrder>>(http.get('/apple/orders', { params }));
+  },
+  entryContext(params: { customerId: string; serviceId?: string; serviceAccount?: string }) {
+    return request<AppleOrderEntryContext>(http.get('/apple/orders/entry-context', { params }));
   },
   get(id: string) {
     return request<AppleOrder>(http.get(`/apple/orders/${id}`));

@@ -267,13 +267,19 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无 {{ activeSystemOptionGroup.title }}</strong>
-            <span>系统会自动补齐默认选项，刷新后即可管理。</span>
+            <span>需要系统默认项时，可以手动恢复默认选项。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton
                 variant="primary"
-                @click="() => loadSystemOptionGroup(selectedSystemOptionGroup, { force: true })"
+                @click="
+                  () =>
+                    loadSystemOptionGroup(selectedSystemOptionGroup, {
+                      force: true,
+                      restoreDefaults: true
+                    })
+                "
               >
-                刷新选项
+                恢复默认选项
               </AppButton>
             </div>
           </div>
@@ -289,7 +295,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditSystemOption(row)">
@@ -302,6 +308,14 @@
                 @click="toggleSystemOptionStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteSystemOption(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -342,6 +356,14 @@
               @click="toggleSystemOptionStatus(option)"
             >
               {{ option.status === 'active' ? '停用' : '启用' }}
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === option.id"
+              @click="deleteSystemOption(option)"
+            >
+              删除
             </AppButton>
           </div>
         </article>
@@ -391,16 +413,19 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无 {{ activeNotificationOptionGroup.title }}</strong>
-            <span>系统会自动补齐默认选项，刷新后即可管理。</span>
+            <span>需要系统默认项时，可以手动恢复默认选项。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton
                 variant="primary"
                 @click="
                   () =>
-                    loadNotificationOptionGroup(selectedNotificationOptionGroup, { force: true })
+                    loadNotificationOptionGroup(selectedNotificationOptionGroup, {
+                      force: true,
+                      restoreDefaults: true
+                    })
                 "
               >
-                刷新选项
+                恢复默认选项
               </AppButton>
             </div>
           </div>
@@ -416,7 +441,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditNotificationOption(row)">
@@ -429,6 +454,14 @@
                 @click="toggleNotificationOptionStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteNotificationOption(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -469,6 +502,14 @@
               @click="toggleNotificationOptionStatus(option)"
             >
               {{ option.status === 'active' ? '停用' : '启用' }}
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === option.id"
+              @click="deleteNotificationOption(option)"
+            >
+              删除
             </AppButton>
           </div>
         </article>
@@ -534,6 +575,9 @@
             <span>可以新增分类，后面 Apple ID 业务设置里就能直接选择。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearCategoryFilters">清空筛选</AppButton>
+              <AppButton variant="soft" @click="restoreDefaultAppleServiceCategories">
+                恢复默认分类
+              </AppButton>
               <AppButton variant="primary" @click="openCreateCategory">新增业务分类</AppButton>
             </div>
           </div>
@@ -551,7 +595,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditCategory(row)"
@@ -564,6 +608,14 @@
                 @click="toggleAppleServiceCategoryStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteAppleServiceCategory(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -604,6 +656,14 @@
               @click="toggleAppleServiceCategoryStatus(category)"
             >
               {{ category.status === 'active' ? '停用' : '启用' }}
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === category.id"
+              @click="deleteAppleServiceCategory(category)"
+            >
+              删除
             </AppButton>
           </div>
         </article>
@@ -660,16 +720,19 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无 {{ activeAppleServiceOptionGroup.title }}</strong>
-            <span>系统会自动补齐默认选项，刷新后即可管理。</span>
+            <span>需要系统默认项时，可以手动恢复默认选项。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton
                 variant="primary"
                 @click="
                   () =>
-                    loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup, { force: true })
+                    loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup, {
+                      force: true,
+                      restoreDefaults: true
+                    })
                 "
               >
-                刷新选项
+                恢复默认选项
               </AppButton>
             </div>
           </div>
@@ -685,7 +748,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditAppleServiceOption(row)">
@@ -698,6 +761,14 @@
                 @click="toggleAppleServiceOptionStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteAppleServiceOption(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -738,6 +809,14 @@
               @click="toggleAppleServiceOptionStatus(option)"
             >
               {{ option.status === 'active' ? '停用' : '启用' }}
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === option.id"
+              @click="deleteAppleServiceOption(option)"
+            >
+              删除
             </AppButton>
           </div>
         </article>
@@ -820,7 +899,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditTag(row)">编辑</AppButton>
@@ -831,6 +910,14 @@
                 @click="toggleCustomerTagStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteCustomerTag(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -865,6 +952,14 @@
               @click="toggleCustomerTagStatus(tag)"
             >
               {{ tag.status === 'active' ? '停用' : '启用' }}
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === tag.id"
+              @click="deleteCustomerTag(tag)"
+            >
+              删除
             </AppButton>
           </div>
         </article>
@@ -937,6 +1032,9 @@
             <span>可以新增地区，后面新增 Apple ID 时就能直接选择。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearRegionFilters">清空筛选</AppButton>
+              <AppButton variant="soft" @click="restoreDefaultAppleRegions">
+                恢复默认地区
+              </AppButton>
               <AppButton variant="primary" @click="openCreateRegion">新增地区</AppButton>
             </div>
           </div>
@@ -959,7 +1057,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditRegion(row)">编辑</AppButton>
@@ -970,6 +1068,14 @@
                 @click="toggleAppleRegionStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteAppleRegion(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -1010,6 +1116,14 @@
               @click="toggleAppleRegionStatus(region)"
             >
               {{ region.status === 'active' ? '停用' : '启用' }}
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === region.id"
+              @click="deleteAppleRegion(region)"
+            >
+              删除
             </AppButton>
           </div>
         </article>
@@ -1055,10 +1169,13 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无发货方式</strong>
-            <span>系统会自动补齐默认发货方式，刷新后即可管理。</span>
+            <span>需要系统默认发货方式时，可以手动恢复默认项。</span>
             <div class="apple-core-empty-state__actions">
-              <AppButton variant="primary" @click="() => loadCodeDeliveryMethods({ force: true })">
-                刷新发货方式
+              <AppButton
+                variant="primary"
+                @click="() => loadCodeDeliveryMethods({ force: true, restoreDefaults: true })"
+              >
+                恢复默认发货方式
               </AppButton>
             </div>
           </div>
@@ -1074,7 +1191,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditMethod(row)">编辑</AppButton>
@@ -1085,6 +1202,14 @@
                 @click="toggleCodeDeliveryMethodStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteCodeDeliveryMethod(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -1124,6 +1249,14 @@
             >
               {{ method.status === 'active' ? '停用' : '启用' }}
             </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === method.id"
+              @click="deleteCodeDeliveryMethod(method)"
+            >
+              删除
+            </AppButton>
           </div>
         </article>
       </div>
@@ -1161,13 +1294,13 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无发货模式</strong>
-            <span>系统会自动补齐默认发货模式，刷新后即可管理。</span>
+            <span>需要系统默认发货模式时，可以手动恢复默认项。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton
                 variant="primary"
-                @click="() => loadCodeServiceDeliveryModes({ force: true })"
+                @click="() => loadCodeServiceDeliveryModes({ force: true, restoreDefaults: true })"
               >
-                刷新发货模式
+                恢复默认发货模式
               </AppButton>
             </div>
           </div>
@@ -1183,7 +1316,7 @@
         <el-table-column prop="updatedAt" label="更新时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openEditDeliveryMode(row)">
@@ -1196,6 +1329,14 @@
                 @click="toggleCodeServiceDeliveryModeStatus(row)"
               >
                 {{ row.status === 'active' ? '停用' : '启用' }}
+              </AppButton>
+              <AppButton
+                size="small"
+                variant="danger"
+                :loading="deletingDictionaryId === row.id"
+                @click="deleteCodeServiceDeliveryMode(row)"
+              >
+                删除
               </AppButton>
             </div>
           </template>
@@ -1236,6 +1377,14 @@
               @click="toggleCodeServiceDeliveryModeStatus(mode)"
             >
               {{ mode.status === 'active' ? '停用' : '启用' }}
+            </AppButton>
+            <AppButton
+              size="small"
+              variant="danger"
+              :loading="deletingDictionaryId === mode.id"
+              @click="deleteCodeServiceDeliveryMode(mode)"
+            >
+              删除
             </AppButton>
           </div>
         </article>
@@ -2048,6 +2197,18 @@ const sourceOptionSections = [
 ] as const;
 type SourceOptionSectionKey = (typeof sourceOptionSections)[number]['key'];
 type SourceOptionSectionRoute = (typeof sourceOptionSections)[number]['route'];
+type DictionaryLoadOptions = {
+  background?: boolean;
+  force?: boolean;
+  restoreDefaults?: boolean;
+};
+type DictionaryDeleteContext = {
+  entityLabel: string;
+  confirmDetail: string;
+  displayName?: string;
+  beforeReload?: () => void;
+  reload: () => Promise<void>;
+};
 const sourceOptionSectionKeys = new Set<SourceOptionSectionKey>(
   sourceOptionSections.map((section) => section.key)
 );
@@ -2074,6 +2235,7 @@ const methodSaving = ref(false);
 const deliveryModeLoading = ref(false);
 const deliveryModeSaving = ref(false);
 const deletingPlatformId = ref('');
+const deletingDictionaryId = ref('');
 const updatingTagId = ref('');
 const updatingCategoryId = ref('');
 const updatingAppleServiceOptionId = ref('');
@@ -2666,7 +2828,7 @@ async function loadPlatforms(options: { background?: boolean; force?: boolean } 
   }
 }
 
-async function loadCustomerTags(options: { background?: boolean; force?: boolean } = {}) {
+async function loadCustomerTags(options: DictionaryLoadOptions = {}) {
   const params = buildCustomerTagParams();
   const key = createSmartQueryKey('customer-tags', params);
   const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
@@ -2704,7 +2866,7 @@ async function loadCustomerTags(options: { background?: boolean; force?: boolean
   }
 }
 
-async function loadAppleServiceCategories(options: { background?: boolean; force?: boolean } = {}) {
+async function loadAppleServiceCategories(options: DictionaryLoadOptions = {}) {
   const params = buildAppleServiceCategoryParams();
   const key = createSmartQueryKey('apple-service-categories', params);
   const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
@@ -2722,7 +2884,7 @@ async function loadAppleServiceCategories(options: { background?: boolean; force
       key,
       fetcher: async () => {
         const data = await dataCenterApi.listDictionaries(params);
-        if (!params.keyword && !params.status && params.page === 1) {
+        if (options.restoreDefaults && !params.keyword && !params.status && params.page === 1) {
           const createdDefaults = await ensureDefaultAppleServiceCategories(data.items);
           if (createdDefaults) {
             return dataCenterApi.listDictionaries(params);
@@ -2753,7 +2915,7 @@ async function loadAppleServiceCategories(options: { background?: boolean; force
 
 async function loadAppleServiceOptionGroup(
   groupKey: AppleServiceQuickOptionGroupKey,
-  options: { background?: boolean; force?: boolean } = {}
+  options: DictionaryLoadOptions = {}
 ) {
   const params = buildAppleServiceOptionParams(groupKey);
   const key = createSmartQueryKey(`apple-service-option-${groupKey}`, params);
@@ -2775,9 +2937,11 @@ async function loadAppleServiceOptionGroup(
       key,
       fetcher: async () => {
         const data = await dataCenterApi.listDictionaries(params);
-        const createdDefaults = await ensureDefaultAppleServiceOptions(groupKey, data.items);
-        if (createdDefaults) {
-          return dataCenterApi.listDictionaries(params);
+        if (options.restoreDefaults) {
+          const createdDefaults = await ensureDefaultAppleServiceOptions(groupKey, data.items);
+          if (createdDefaults) {
+            return dataCenterApi.listDictionaries(params);
+          }
         }
         return data;
       },
@@ -2804,7 +2968,7 @@ async function loadAppleServiceOptionGroup(
 
 async function loadNotificationOptionGroup(
   groupKey: NotificationQuickOptionGroupKey,
-  options: { background?: boolean; force?: boolean } = {}
+  options: DictionaryLoadOptions = {}
 ) {
   const params = buildNotificationOptionParams(groupKey);
   const key = createSmartQueryKey(`notification-option-${groupKey}`, params);
@@ -2826,9 +2990,11 @@ async function loadNotificationOptionGroup(
       key,
       fetcher: async () => {
         const data = await dataCenterApi.listDictionaries(params);
-        const createdDefaults = await ensureDefaultNotificationOptions(groupKey, data.items);
-        if (createdDefaults) {
-          return dataCenterApi.listDictionaries(params);
+        if (options.restoreDefaults) {
+          const createdDefaults = await ensureDefaultNotificationOptions(groupKey, data.items);
+          if (createdDefaults) {
+            return dataCenterApi.listDictionaries(params);
+          }
         }
         return data;
       },
@@ -2855,7 +3021,7 @@ async function loadNotificationOptionGroup(
 
 async function loadSystemOptionGroup(
   groupKey: SystemQuickOptionGroupKey,
-  options: { background?: boolean; force?: boolean } = {}
+  options: DictionaryLoadOptions = {}
 ) {
   const params = buildSystemOptionParams(groupKey);
   const key = createSmartQueryKey(`system-option-${groupKey}`, params);
@@ -2877,9 +3043,11 @@ async function loadSystemOptionGroup(
       key,
       fetcher: async () => {
         const data = await dataCenterApi.listDictionaries(params);
-        const createdDefaults = await ensureDefaultSystemOptions(groupKey, data.items);
-        if (createdDefaults) {
-          return dataCenterApi.listDictionaries(params);
+        if (options.restoreDefaults) {
+          const createdDefaults = await ensureDefaultSystemOptions(groupKey, data.items);
+          if (createdDefaults) {
+            return dataCenterApi.listDictionaries(params);
+          }
         }
         return data;
       },
@@ -2904,7 +3072,7 @@ async function loadSystemOptionGroup(
   }
 }
 
-async function loadAppleRegions(options: { background?: boolean; force?: boolean } = {}) {
+async function loadAppleRegions(options: DictionaryLoadOptions = {}) {
   const params = buildAppleRegionParams();
   const key = createSmartQueryKey('apple-account-regions', params);
   const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
@@ -2922,7 +3090,7 @@ async function loadAppleRegions(options: { background?: boolean; force?: boolean
       key,
       fetcher: async () => {
         const data = await dataCenterApi.listDictionaries(params);
-        if (!params.keyword && !params.status && params.page === 1) {
+        if (options.restoreDefaults && !params.keyword && !params.status && params.page === 1) {
           const createdDefaults = await ensureDefaultAppleRegions(data.items);
           if (createdDefaults) {
             return dataCenterApi.listDictionaries(params);
@@ -2951,7 +3119,7 @@ async function loadAppleRegions(options: { background?: boolean; force?: boolean
   }
 }
 
-async function loadCodeDeliveryMethods(options: { background?: boolean; force?: boolean } = {}) {
+async function loadCodeDeliveryMethods(options: DictionaryLoadOptions = {}) {
   const params = buildCodeDeliveryMethodParams();
   const key = createSmartQueryKey('code-delivery-methods', params);
   const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
@@ -2969,9 +3137,11 @@ async function loadCodeDeliveryMethods(options: { background?: boolean; force?: 
       key,
       fetcher: async () => {
         const data = await dataCenterApi.listDictionaries(params);
-        const createdDefaults = await ensureDefaultCodeDeliveryMethods(data.items);
-        if (createdDefaults) {
-          return dataCenterApi.listDictionaries(params);
+        if (options.restoreDefaults) {
+          const createdDefaults = await ensureDefaultCodeDeliveryMethods(data.items);
+          if (createdDefaults) {
+            return dataCenterApi.listDictionaries(params);
+          }
         }
         return data;
       },
@@ -2996,9 +3166,7 @@ async function loadCodeDeliveryMethods(options: { background?: boolean; force?: 
   }
 }
 
-async function loadCodeServiceDeliveryModes(
-  options: { background?: boolean; force?: boolean } = {}
-) {
+async function loadCodeServiceDeliveryModes(options: DictionaryLoadOptions = {}) {
   const params = buildCodeServiceDeliveryModeParams();
   const key = createSmartQueryKey('code-service-delivery-modes', params);
   const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
@@ -3016,9 +3184,11 @@ async function loadCodeServiceDeliveryModes(
       key,
       fetcher: async () => {
         const data = await dataCenterApi.listDictionaries(params);
-        const createdDefaults = await ensureDefaultCodeServiceDeliveryModes(data.items);
-        if (createdDefaults) {
-          return dataCenterApi.listDictionaries(params);
+        if (options.restoreDefaults) {
+          const createdDefaults = await ensureDefaultCodeServiceDeliveryModes(data.items);
+          if (createdDefaults) {
+            return dataCenterApi.listDictionaries(params);
+          }
         }
         return data;
       },
@@ -3252,6 +3422,15 @@ function clearCategoryFilters() {
   void loadAppleServiceCategories();
 }
 
+async function restoreDefaultAppleServiceCategories() {
+  categoryQuery.page = 1;
+  categoryQuery.keyword = '';
+  categoryQuery.status = '';
+  categoryQuery.sortBy = '';
+  categoryQuery.sortOrder = '';
+  await loadAppleServiceCategories({ force: true, restoreDefaults: true });
+}
+
 function clearRegionFilters() {
   regionQuery.page = 1;
   regionQuery.keyword = '';
@@ -3259,6 +3438,15 @@ function clearRegionFilters() {
   regionQuery.sortBy = 'sortOrder';
   regionQuery.sortOrder = 'asc';
   void loadAppleRegions();
+}
+
+async function restoreDefaultAppleRegions() {
+  regionQuery.page = 1;
+  regionQuery.keyword = '';
+  regionQuery.status = '';
+  regionQuery.sortBy = 'sortOrder';
+  regionQuery.sortOrder = 'asc';
+  await loadAppleRegions({ force: true, restoreDefaults: true });
 }
 
 function removeFilter() {
@@ -3368,9 +3556,7 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-async function loadActiveSourceOptionSection(
-  options: { background?: boolean; force?: boolean } = {}
-) {
+async function loadActiveSourceOptionSection(options: DictionaryLoadOptions = {}) {
   switch (activeSourceOptionSectionKey.value) {
     case 'platforms':
       await Promise.all([loadTableViews(true), loadPlatforms(options)]);
@@ -3618,6 +3804,122 @@ async function deletePlatform(platform: SourcePlatform) {
   } finally {
     deletingPlatformId.value = '';
   }
+}
+
+async function deleteDictionaryOption(
+  dictionary: DataDictionary,
+  context: DictionaryDeleteContext
+) {
+  const displayName = context.displayName ?? dictionary.label;
+
+  try {
+    await ElMessageBox.confirm(
+      `确认删除“${displayName}”？${context.confirmDetail}`,
+      `删除${context.entityLabel}`,
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    );
+
+    deletingDictionaryId.value = dictionary.id;
+    await dataCenterApi.removeDictionary(dictionary.id);
+    ElMessage.success(`${context.entityLabel}已删除`);
+    context.beforeReload?.();
+    await context.reload();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error instanceof Error ? error.message : `删除${context.entityLabel}失败`);
+    }
+  } finally {
+    deletingDictionaryId.value = '';
+  }
+}
+
+async function deleteCustomerTag(tag: DataDictionary) {
+  await deleteDictionaryOption(tag, {
+    entityLabel: '客户标签',
+    confirmDetail: '删除后不会再出现在客户标签列表和新增客户下拉里，已有客户身上的文字标签会保留。',
+    beforeReload: () => {
+      if (customerTags.value.length === 1 && tagQuery.page > 1) {
+        tagQuery.page -= 1;
+      }
+    },
+    reload: () => loadCustomerTags({ force: true })
+  });
+}
+
+async function deleteAppleServiceCategory(category: DataDictionary) {
+  await deleteDictionaryOption(category, {
+    entityLabel: 'Apple ID 业务分类',
+    confirmDetail: '删除后不会再出现在 Apple ID 业务分类下拉里，历史业务记录会保留原分类文字。',
+    beforeReload: () => {
+      if (appleServiceCategories.value.length === 1 && categoryQuery.page > 1) {
+        categoryQuery.page -= 1;
+      }
+    },
+    reload: () => loadAppleServiceCategories({ force: true })
+  });
+}
+
+async function deleteAppleServiceOption(option: DataDictionary) {
+  const group = activeAppleServiceOptionGroup.value;
+  await deleteDictionaryOption(option, {
+    entityLabel: group.title,
+    confirmDetail: `删除后不会再出现在 ${group.title} 下拉里，历史业务不受影响。`,
+    reload: () =>
+      loadAppleServiceOptionGroup(selectedAppleServiceOptionGroup.value, { force: true })
+  });
+}
+
+async function deleteNotificationOption(option: DataDictionary) {
+  const group = activeNotificationOptionGroup.value;
+  await deleteDictionaryOption(option, {
+    entityLabel: group.title,
+    confirmDetail: `删除后不会再出现在 ${group.title} 下拉里，历史通知记录不受影响。`,
+    reload: () =>
+      loadNotificationOptionGroup(selectedNotificationOptionGroup.value, { force: true })
+  });
+}
+
+async function deleteSystemOption(option: DataDictionary) {
+  const group = activeSystemOptionGroup.value;
+  await deleteDictionaryOption(option, {
+    entityLabel: group.title,
+    confirmDetail: `删除后不会再出现在 ${group.title} 下拉里，历史配置不受影响。`,
+    reload: () => loadSystemOptionGroup(selectedSystemOptionGroup.value, { force: true })
+  });
+}
+
+async function deleteAppleRegion(region: DataDictionary) {
+  await deleteDictionaryOption(region, {
+    entityLabel: 'Apple ID 地区',
+    displayName: `${region.code.toLowerCase()} / ${region.label}`,
+    confirmDetail: '删除后新增 Apple ID 不会再出现这个地区，历史账号不受影响。',
+    beforeReload: () => {
+      if (appleRegionDictionaries.value.length === 1 && regionQuery.page > 1) {
+        regionQuery.page -= 1;
+      }
+    },
+    reload: () => loadAppleRegions({ force: true })
+  });
+}
+
+async function deleteCodeDeliveryMethod(method: DataDictionary) {
+  await deleteDictionaryOption(method, {
+    entityLabel: '兑换码发货方式',
+    confirmDetail: '删除后不会再出现在发货方式下拉里，历史发货记录不受影响。',
+    reload: () => loadCodeDeliveryMethods({ force: true })
+  });
+}
+
+async function deleteCodeServiceDeliveryMode(mode: DataDictionary) {
+  await deleteDictionaryOption(mode, {
+    entityLabel: '兑换码业务发货模式',
+    confirmDetail: '删除后不会再出现在兑换码业务设置下拉里，历史业务不受影响。',
+    reload: () => loadCodeServiceDeliveryModes({ force: true })
+  });
 }
 
 async function saveCustomerTag() {

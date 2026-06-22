@@ -7,6 +7,7 @@ import {
 import type {
   AppleAccount,
   AppleAccountLock,
+  AppleAccountOwnershipType,
   AppleOrderStatus,
   AppleService,
   Prisma,
@@ -36,7 +37,14 @@ interface AvailableAccountsQuery {
   amountRequired?: string;
   currency?: string;
   keyword?: string;
+  ownershipType?: string;
   showUnavailable?: string;
+}
+
+interface OrderEntryContextQuery {
+  customerId?: string;
+  serviceId?: string;
+  serviceAccount?: string;
 }
 
 interface MatchEvaluation {
@@ -50,11 +58,14 @@ interface OrderFinancialInput {
   refundLossRmb: PrismaNamespace.Decimal.Value;
   appleCostValue: PrismaNamespace.Decimal.Value;
   averageCost: PrismaNamespace.Decimal.Value;
+  appleAccountPurchaseCost: PrismaNamespace.Decimal.Value;
+  appleAccountSalePrice: PrismaNamespace.Decimal.Value;
 }
 
 interface OrderFinancialSnapshot {
   appleCostRmb: PrismaNamespace.Decimal;
   profitAmount: PrismaNamespace.Decimal;
+  appleAccountSaleProfit: PrismaNamespace.Decimal;
 }
 
 type MatchableAccount = Pick<
@@ -66,6 +77,11 @@ type MatchableAccount = Pick<
   | 'currentBalance'
   | 'balanceCostAmount'
   | 'averageCost'
+  | 'ownershipType'
+  | 'purchaseCost'
+  | 'salePrice'
+  | 'soldOrderId'
+  | 'soldCustomerId'
   | 'status'
   | 'isManuallyLocked'
   | 'manualLockReason'
@@ -187,16 +203,48 @@ export class AppleOrdersService {
     return this.toOrderResponse(order);
   }
 
+  async getOrderEntryContext(query: OrderEntryContextQuery) {
+    const customerId = this.normalizeRequiredId(query.customerId, 'customerId');
+    const serviceId = this.normalizeNullableString(query.serviceId);
+    const serviceAccount = this.normalizeNullableString(query.serviceAccount);
+
+    const latestOrder = await this.prisma.appleOrder.findFirst({
+      where: {
+        customerId,
+        serviceId: serviceId ?? undefined,
+        serviceAccount: serviceAccount
+          ? {
+              equals: serviceAccount,
+              mode: 'insensitive'
+            }
+          : undefined,
+        status: {
+          not: 'cancelled'
+        }
+      },
+      include: orderInclude,
+      orderBy: [{ expireTime: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    return {
+      latestOrder: latestOrder ? this.toOrderEntryContextResponse(latestOrder) : null,
+      checkedAt: new Date()
+    };
+  }
+
   async listAvailableAccounts(query: AvailableAccountsQuery) {
     const service = await this.resolveService(query.serviceId);
     const amountRequired = this.resolveAmountRequired(query.amountRequired, service);
     const currency = (query.currency || service.currency).trim().toUpperCase();
+    const ownershipType = this.parseAppleAccountOwnershipType(query.ownershipType);
     const showUnavailable = this.parseBoolean(query.showUnavailable, true);
     const keyword = query.keyword?.trim().toLowerCase();
 
     const accounts = await this.prisma.appleAccount.findMany({
       where: {
         deletedAt: null,
+        ownershipType: ownershipType === 'sold' ? undefined : 'consigned',
+        soldOrderId: null,
         OR: keyword
           ? [
               { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
@@ -221,7 +269,8 @@ export class AppleOrdersService {
       .map((account) => {
         const evaluation = this.evaluateAccountAvailability(account, service, {
           amountRequired,
-          currency
+          currency,
+          ownershipType
         });
 
         return this.toAvailableAccountResponse(account, evaluation);
@@ -285,6 +334,9 @@ export class AppleOrdersService {
         'appleCostValue',
         service.officialCostValue
       );
+      const appleAccountOwnershipType = this.parseAppleAccountOwnershipType(
+        dto.appleAccountOwnershipType
+      );
       const platformFee =
         dto.platformFee === undefined
           ? this.calculatePlatformFee(paidAmount, sourcePlatform)
@@ -304,17 +356,28 @@ export class AppleOrdersService {
           tx,
           dto.appleAccountId,
           service,
-          appleCostValue
+          appleCostValue,
+          appleAccountOwnershipType
         );
       }
 
       const averageCost = appleAccount?.averageCost ?? new PrismaNamespace.Decimal(0);
+      const appleAccountPurchaseCost =
+        appleAccount && appleAccountOwnershipType === 'sold'
+          ? new PrismaNamespace.Decimal(appleAccount.purchaseCost)
+          : new PrismaNamespace.Decimal(0);
+      const appleAccountSalePrice =
+        appleAccount && appleAccountOwnershipType === 'sold'
+          ? new PrismaNamespace.Decimal(appleAccount.salePrice)
+          : new PrismaNamespace.Decimal(0);
       const financials = this.calculateOrderFinancials({
         paidAmountRmb,
         platformFeeRmb,
         refundLossRmb,
         appleCostValue,
-        averageCost
+        averageCost,
+        appleAccountPurchaseCost,
+        appleAccountSalePrice
       });
       const orderNo = this.generateOrderNo();
 
@@ -341,6 +404,10 @@ export class AppleOrdersService {
           refundLossRmb,
           appleCostValue,
           appleCostRmb: financials.appleCostRmb,
+          appleAccountOwnershipType,
+          appleAccountPurchaseCost,
+          appleAccountSalePrice,
+          appleAccountSaleProfit: financials.appleAccountSaleProfit,
           profitAmount: financials.profitAmount,
           status: 'active',
           remark: this.normalizeNullableString(dto.remark),
@@ -377,6 +444,15 @@ export class AppleOrdersService {
         });
       }
 
+      if (appleAccount && appleAccountOwnershipType === 'sold') {
+        await this.markAppleAccountSold(tx, appleAccount, {
+          orderId: order.id,
+          customerId,
+          salePrice: appleAccountSalePrice,
+          operatorId: operator?.id
+        });
+      }
+
       await tx.serviceActivation.create({
         data: {
           orderId: order.id,
@@ -399,6 +475,10 @@ export class AppleOrdersService {
           platformFeeRmb,
           refundLoss,
           refundLossRmb,
+          appleAccountOwnershipType,
+          appleAccountPurchaseCost,
+          appleAccountSalePrice,
+          appleAccountSaleProfit: financials.appleAccountSaleProfit,
           profitAmount: financials.profitAmount,
           sourcePlatformId: sourcePlatform?.id,
           externalOrderNo,
@@ -440,6 +520,8 @@ export class AppleOrdersService {
         paidAmountRmb: createdOrder.paidAmountRmb.toString(),
         appleCostValue: createdOrder.appleCostValue.toString(),
         appleCostRmb: createdOrder.appleCostRmb.toString(),
+        appleAccountOwnershipType: createdOrder.appleAccountOwnershipType,
+        appleAccountPurchaseCost: createdOrder.appleAccountPurchaseCost.toString(),
         profitAmount: createdOrder.profitAmount.toString()
       }),
       remark: `Created Apple order ${createdOrder.orderNo}`
@@ -454,26 +536,35 @@ export class AppleOrdersService {
     const refundLossRmb = new PrismaNamespace.Decimal(input.refundLossRmb);
     const appleCostValue = new PrismaNamespace.Decimal(input.appleCostValue);
     const averageCost = new PrismaNamespace.Decimal(input.averageCost);
+    const appleAccountPurchaseCost = new PrismaNamespace.Decimal(input.appleAccountPurchaseCost);
+    const appleAccountSalePrice = new PrismaNamespace.Decimal(input.appleAccountSalePrice);
 
     if (
       paidAmountRmb.lessThan(0) ||
       platformFeeRmb.lessThan(0) ||
       refundLossRmb.lessThan(0) ||
       appleCostValue.lessThan(0) ||
-      averageCost.lessThan(0)
+      averageCost.lessThan(0) ||
+      appleAccountPurchaseCost.lessThan(0) ||
+      appleAccountSalePrice.lessThan(0)
     ) {
       throw new BadRequestException('Order amount fields must be non-negative');
     }
 
     const appleCostRmb = appleCostValue.mul(averageCost).toDecimalPlaces(4);
+    const appleAccountSaleProfit = appleAccountSalePrice
+      .minus(appleAccountPurchaseCost)
+      .toDecimalPlaces(4);
     const profitAmount = paidAmountRmb
       .minus(platformFeeRmb)
       .minus(refundLossRmb)
       .minus(appleCostRmb)
+      .minus(appleAccountPurchaseCost)
       .toDecimalPlaces(4);
 
     return {
       appleCostRmb,
+      appleAccountSaleProfit,
       profitAmount
     };
   }
@@ -481,7 +572,11 @@ export class AppleOrdersService {
   evaluateAccountAvailability(
     account: MatchableAccount,
     service: Pick<AppleService, 'id' | 'currency' | 'allowedRegions' | 'lockRule'>,
-    options: { amountRequired: PrismaNamespace.Decimal; currency: string }
+    options: {
+      amountRequired: PrismaNamespace.Decimal;
+      currency: string;
+      ownershipType?: AppleAccountOwnershipType;
+    }
   ): MatchEvaluation {
     if (account.deletedAt) {
       return { availability: 'unavailable', reason: '账号已删除' };
@@ -502,6 +597,17 @@ export class AppleOrdersService {
           ? `账号已手动锁定：${account.manualLockReason}`
           : '账号已手动锁定'
       };
+    }
+
+    if (account.soldOrderId) {
+      return { availability: 'unavailable', reason: '该 Apple ID 已售出给客户' };
+    }
+
+    if (
+      (options.ownershipType ?? 'consigned') === 'consigned' &&
+      account.ownershipType !== 'consigned'
+    ) {
+      return { availability: 'unavailable', reason: '该 Apple ID 不是寄存类型' };
     }
 
     if (account.currency !== options.currency) {
@@ -545,14 +651,15 @@ export class AppleOrdersService {
     tx: Prisma.TransactionClient,
     appleAccountId: string | null | undefined,
     service: AppleService,
-    appleCostValue: PrismaNamespace.Decimal
+    appleCostValue: PrismaNamespace.Decimal,
+    ownershipType: AppleAccountOwnershipType
   ) {
     const account = appleAccountId
       ? await tx.appleAccount.findFirst({
           where: { id: appleAccountId, deletedAt: null },
           include: { locks: { where: { status: 'active' } } }
         })
-      : await this.findFirstAvailableAccount(tx, service, appleCostValue);
+      : await this.findFirstAvailableAccount(tx, service, appleCostValue, ownershipType);
 
     if (!account) {
       throw new BadRequestException('No available Apple ID found');
@@ -560,7 +667,8 @@ export class AppleOrdersService {
 
     const evaluation = this.evaluateAccountAvailability(account, service, {
       amountRequired: appleCostValue,
-      currency: service.currency
+      currency: service.currency,
+      ownershipType
     });
 
     if (evaluation.availability !== 'available') {
@@ -573,12 +681,15 @@ export class AppleOrdersService {
   private async findFirstAvailableAccount(
     tx: Prisma.TransactionClient,
     service: AppleService,
-    amountRequired: PrismaNamespace.Decimal
+    amountRequired: PrismaNamespace.Decimal,
+    ownershipType: AppleAccountOwnershipType
   ) {
     const accounts = await tx.appleAccount.findMany({
       where: {
         deletedAt: null,
-        currency: service.currency
+        currency: service.currency,
+        ownershipType: ownershipType === 'sold' ? undefined : 'consigned',
+        soldOrderId: null
       },
       include: {
         locks: {
@@ -593,7 +704,8 @@ export class AppleOrdersService {
       accounts.find((account) => {
         const evaluation = this.evaluateAccountAvailability(account, service, {
           amountRequired,
-          currency: service.currency
+          currency: service.currency,
+          ownershipType
         });
         return evaluation.availability === 'available';
       }) ?? null
@@ -695,6 +807,41 @@ export class AppleOrdersService {
 
     if (result.count !== 1) {
       throw new ConflictException('Apple ID balance changed while creating order, please retry');
+    }
+  }
+
+  private async markAppleAccountSold(
+    tx: Prisma.TransactionClient,
+    account: Pick<AppleAccount, 'id' | 'soldOrderId'>,
+    input: {
+      orderId: string;
+      customerId: string;
+      salePrice: PrismaNamespace.Decimal;
+      operatorId?: string;
+    }
+  ) {
+    if (account.soldOrderId) {
+      throw new ConflictException('Apple ID has already been sold');
+    }
+
+    const result = await tx.appleAccount.updateMany({
+      where: {
+        id: account.id,
+        deletedAt: null,
+        soldOrderId: null
+      },
+      data: {
+        ownershipType: 'sold',
+        salePrice: input.salePrice,
+        soldOrderId: input.orderId,
+        soldCustomerId: input.customerId,
+        soldAt: new Date(),
+        updatedByUserId: input.operatorId
+      }
+    });
+
+    if (result.count !== 1) {
+      throw new ConflictException('Apple ID sale state changed while creating order, please retry');
     }
   }
 
@@ -810,6 +957,18 @@ export class AppleOrdersService {
     }
 
     return undefined;
+  }
+
+  private parseAppleAccountOwnershipType(value: unknown): AppleAccountOwnershipType {
+    if (value === undefined || value === null || value === '') {
+      return 'consigned';
+    }
+
+    if (value === 'consigned' || value === 'sold') {
+      return value satisfies AppleAccountOwnershipType;
+    }
+
+    throw new BadRequestException('appleAccountOwnershipType must be consigned or sold');
   }
 
   private buildOrderBy(query: ListAppleOrdersQuery): Prisma.AppleOrderOrderByWithRelationInput[] {
@@ -931,11 +1090,66 @@ export class AppleOrdersService {
       balance: account.currentBalance.toString(),
       balanceCostAmount: account.balanceCostAmount.toString(),
       avgUnitCost: account.averageCost.toString(),
+      ownershipType: account.ownershipType,
+      purchaseCost: account.purchaseCost.toString(),
+      salePrice: account.salePrice.toString(),
+      soldCustomerId: account.soldCustomerId,
       status: account.status,
       isManuallyLocked: account.isManuallyLocked,
       availability: evaluation.availability,
       reason: evaluation.reason
     };
+  }
+
+  private toOrderEntryContextResponse(
+    order: Prisma.AppleOrderGetPayload<{ include: typeof orderInclude }>
+  ) {
+    const daysUntilExpire = this.calculateSignedDaysUntil(order.expireTime);
+    const paidAmountRmb = new PrismaNamespace.Decimal(order.paidAmountRmb);
+    const profitAmount = new PrismaNamespace.Decimal(order.profitAmount);
+
+    return {
+      orderId: order.id,
+      orderNo: order.orderNo,
+      serviceId: order.serviceId,
+      serviceName: order.service.name,
+      serviceCategory: order.service.category,
+      serviceAccount: order.serviceAccount,
+      currentPlan: order.currentPlan,
+      targetPlan: order.targetPlan,
+      startTime: order.startTime,
+      expireTime: order.expireTime,
+      daysUntilExpire,
+      expireStatus:
+        daysUntilExpire === null ? null : daysUntilExpire >= 0 ? 'active' : 'expired',
+      paidAmount: order.paidAmount.toString(),
+      paidCurrency: order.paidCurrency,
+      paidAmountRmb: order.paidAmountRmb.toString(),
+      platformFeeRmb: order.platformFeeRmb.toString(),
+      refundLossRmb: order.refundLossRmb.toString(),
+      appleCostValue: order.appleCostValue.toString(),
+      appleCostRmb: order.appleCostRmb.toString(),
+      appleAccountOwnershipType: order.appleAccountOwnershipType,
+      appleAccountPurchaseCost: order.appleAccountPurchaseCost.toString(),
+      appleAccountSalePrice: order.appleAccountSalePrice.toString(),
+      profitAmount: order.profitAmount.toString(),
+      profitRate:
+        paidAmountRmb.greaterThan(0)
+          ? profitAmount.div(paidAmountRmb).mul(100).toDecimalPlaces(2).toString()
+          : null,
+      status: order.status,
+      createdAt: order.createdAt
+    };
+  }
+
+  private calculateSignedDaysUntil(value: Date | null) {
+    if (!value) {
+      return null;
+    }
+
+    const diff = value.getTime() - Date.now();
+    const days = diff / 86_400_000;
+    return diff >= 0 ? Math.ceil(days) : Math.floor(days);
   }
 
   private toOrderResponse(order: Prisma.AppleOrderGetPayload<{ include: typeof orderInclude }>) {
@@ -960,7 +1174,10 @@ export class AppleOrdersService {
             region: order.appleAccount.region,
             currency: order.appleAccount.currency,
             currentBalance: order.appleAccount.currentBalance.toString(),
-            averageCost: order.appleAccount.averageCost.toString()
+            averageCost: order.appleAccount.averageCost.toString(),
+            ownershipType: order.appleAccount.ownershipType,
+            purchaseCost: order.appleAccount.purchaseCost.toString(),
+            salePrice: order.appleAccount.salePrice.toString()
           }
         : null,
       serviceAccount: order.serviceAccount,
@@ -978,6 +1195,10 @@ export class AppleOrdersService {
       refundLossRmb: order.refundLossRmb.toString(),
       appleCostValue: order.appleCostValue.toString(),
       appleCostRmb: order.appleCostRmb.toString(),
+      appleAccountOwnershipType: order.appleAccountOwnershipType,
+      appleAccountPurchaseCost: order.appleAccountPurchaseCost.toString(),
+      appleAccountSalePrice: order.appleAccountSalePrice.toString(),
+      appleAccountSaleProfit: order.appleAccountSaleProfit.toString(),
       profitAmount: order.profitAmount.toString(),
       status: order.status,
       remark: order.remark,

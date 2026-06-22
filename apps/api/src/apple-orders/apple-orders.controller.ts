@@ -40,6 +40,20 @@ export class AppleOrdersController {
     });
   }
 
+  @Get('entry-context')
+  @RequirePermissions('apple.order.create')
+  getEntryContext(
+    @Query('customerId') customerId?: string,
+    @Query('serviceId') serviceId?: string,
+    @Query('serviceAccount') serviceAccount?: string
+  ) {
+    return this.appleOrdersService.getOrderEntryContext({
+      customerId,
+      serviceId,
+      serviceAccount
+    });
+  }
+
   @Get(':id')
   @RequirePermissions('apple.order.view')
   get(@Param('id') id: string) {
@@ -76,6 +90,7 @@ export class AppleMatchingController {
     @Query('amountRequired') amountRequired?: string,
     @Query('currency') currency?: string,
     @Query('keyword') keyword?: string,
+    @Query('ownershipType') ownershipType?: string,
     @Query('showUnavailable') showUnavailable?: string
   ) {
     return this.appleOrdersService.listAvailableAccounts({
@@ -83,6 +98,7 @@ export class AppleMatchingController {
       amountRequired,
       currency,
       keyword,
+      ownershipType,
       showUnavailable
     });
   }

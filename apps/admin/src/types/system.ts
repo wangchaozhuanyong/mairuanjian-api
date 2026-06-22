@@ -82,6 +82,8 @@ export interface AppleAccountSourceChannel {
   updatedAt: string;
 }
 
+export type AppleAccountOwnershipType = 'consigned' | 'sold';
+
 export interface Customer {
   id: string;
   name: string;
@@ -868,6 +870,12 @@ export interface AppleAccount {
   currentBalance: string;
   balanceCostAmount: string;
   averageCost: string;
+  ownershipType: AppleAccountOwnershipType;
+  purchaseCost: string;
+  salePrice: string;
+  soldAt?: string | null;
+  soldOrderId?: string | null;
+  soldCustomerId?: string | null;
   sourceChannelId?: string | null;
   sourceChannel?: Pick<AppleAccountSourceChannel, 'id' | 'name' | 'status'> | null;
   sourcePlatformId?: string | null;
@@ -1187,6 +1195,10 @@ export interface AvailableAppleAccount {
   balance: string;
   balanceCostAmount: string;
   avgUnitCost: string;
+  ownershipType: AppleAccountOwnershipType;
+  purchaseCost: string;
+  salePrice: string;
+  soldCustomerId?: string | null;
   status: AppleAccount['status'];
   isManuallyLocked: boolean;
   availability: 'available' | 'unavailable' | 'need_confirm';
@@ -1211,6 +1223,9 @@ export interface AppleOrder {
     currency: string;
     currentBalance: string;
     averageCost: string;
+    ownershipType: AppleAccountOwnershipType;
+    purchaseCost: string;
+    salePrice: string;
   } | null;
   serviceAccount?: string | null;
   currentPlan?: string | null;
@@ -1227,6 +1242,10 @@ export interface AppleOrder {
   refundLossRmb: string;
   appleCostValue: string;
   appleCostRmb: string;
+  appleAccountOwnershipType: AppleAccountOwnershipType;
+  appleAccountPurchaseCost: string;
+  appleAccountSalePrice: string;
+  appleAccountSaleProfit: string;
   profitAmount: string;
   status: 'pending' | 'active' | 'completed' | 'cancelled' | 'abnormal';
   remark?: string | null;
@@ -1269,6 +1288,10 @@ export interface ServiceActivation {
   platformFeeRmb: string;
   refundLoss: string;
   refundLossRmb: string;
+  appleAccountOwnershipType: AppleAccountOwnershipType;
+  appleAccountPurchaseCost: string;
+  appleAccountSalePrice: string;
+  appleAccountSaleProfit: string;
   profitAmount: string;
   sourcePlatformId?: string | null;
   sourcePlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;
@@ -1279,6 +1302,53 @@ export interface ServiceActivation {
   renewalNote?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AppleAccountOwnershipReportGroup {
+  ownershipType: AppleAccountOwnershipType;
+  count: number;
+  currentBalance: string;
+  balanceCostAmount: string;
+  purchaseCost: string;
+  salePrice: string;
+  saleProfit: string;
+}
+
+export interface AppleAccountOwnershipReport {
+  consigned: AppleAccountOwnershipReportGroup;
+  sold: AppleAccountOwnershipReportGroup;
+}
+
+export interface AppleOrderEntryContext {
+  latestOrder: {
+    orderId: string;
+    orderNo: string;
+    serviceId: string;
+    serviceName: string;
+    serviceCategory: string;
+    serviceAccount?: string | null;
+    currentPlan?: string | null;
+    targetPlan?: string | null;
+    startTime?: string | null;
+    expireTime?: string | null;
+    daysUntilExpire?: number | null;
+    expireStatus?: 'active' | 'expired' | null;
+    paidAmount: string;
+    paidCurrency: PaidCurrency;
+    paidAmountRmb: string;
+    platformFeeRmb: string;
+    refundLossRmb: string;
+    appleCostValue: string;
+    appleCostRmb: string;
+    appleAccountOwnershipType: AppleAccountOwnershipType;
+    appleAccountPurchaseCost: string;
+    appleAccountSalePrice: string;
+    profitAmount: string;
+    profitRate?: string | null;
+    status: AppleOrder['status'];
+    createdAt: string;
+  } | null;
+  checkedAt: string;
 }
 
 export interface RenewalTask {

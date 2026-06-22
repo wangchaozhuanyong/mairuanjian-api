@@ -40,6 +40,7 @@ export class AppleAccountsController {
     @Query('status') status?: string,
     @Query('currency') currency?: string,
     @Query('region') region?: string,
+    @Query('ownershipType') ownershipType?: string,
     @Query('locked') locked?: string,
     @Query('sourceChannelId') sourceChannelId?: string,
     @Query('sourcePlatformId') sourcePlatformId?: string,
@@ -53,11 +54,18 @@ export class AppleAccountsController {
       status,
       currency,
       region,
+      ownershipType,
       locked,
       sourceChannelId: sourceChannelId ?? sourcePlatformId,
       sortBy,
       sortOrder
     });
+  }
+
+  @Get('ownership-report')
+  @RequirePermissions('apple.account.view')
+  ownershipReport() {
+    return this.appleAccountsService.ownershipReport();
   }
 
   @Get(':id')

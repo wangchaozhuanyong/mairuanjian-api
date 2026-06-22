@@ -95,7 +95,7 @@
           v-if="isColumnVisible('phone')"
           prop="phoneTail"
           label="手机号"
-          min-width="130"
+          min-width="170"
         >
           <template #header>
             <span class="help-label">
@@ -106,16 +106,18 @@
             </span>
           </template>
           <template #default="{ row }">
-            <span>{{ row.maskedPhone ?? '-' }}</span>
-            <AppButton
-              v-if="row.phoneTail && canRevealPhone"
-              class="inline-action"
-              size="small"
-              variant="ghost"
-              @click="openPhoneDialog(row)"
-            >
-              查看
-            </AppButton>
+            <span class="table-inline-cell customer-phone-cell">
+              <span class="table-inline-cell__text">{{ row.maskedPhone ?? '-' }}</span>
+              <AppButton
+                v-if="row.phoneTail && canRevealPhone"
+                class="table-inline-action customer-phone-cell__action"
+                size="small"
+                variant="ghost"
+                @click="openPhoneDialog(row)"
+              >
+                查看
+              </AppButton>
+            </span>
           </template>
         </el-table-column>
         <el-table-column
