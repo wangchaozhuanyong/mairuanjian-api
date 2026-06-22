@@ -10,6 +10,8 @@ export interface CreateAppleOrderDto {
   startTime?: string | null;
   expireTime?: string | null;
   paidAmount?: string | number;
+  paidCurrency?: string;
+  paidExchangeRateToRmb?: string | number;
   platformFee?: string | number;
   refundLoss?: string | number;
   appleCostValue?: string | number;

@@ -18,6 +18,14 @@
       :tag="selectedAccount ? '已选择 Apple ID' : '等待匹配'"
       :tag-tone="selectedAccount ? 'green' : 'orange'"
     >
+      <el-alert
+        v-if="customerNoticeVisible"
+        class="order-entry-form-alert"
+        title="请选择已有客户，或手动输入新客户资料后再提交订单。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
       <el-form
         ref="formRef"
         class="v3-entry-form"
@@ -26,7 +34,7 @@
         label-position="top"
       >
         <div class="form-grid form-grid--three">
-          <el-form-item prop="customerId" required>
+          <el-form-item required>
             <template #label>
               <FieldHelpLabel
                 label="客户"
@@ -205,6 +213,7 @@
               class="full-input"
               type="datetime"
               value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+              @change="syncExpireTimeFromService"
             />
           </el-form-item>
           <el-form-item>
@@ -212,7 +221,7 @@
               <FieldHelpLabel
                 label="到期时间"
                 purpose="记录服务什么时候结束，后续续费任务和到期提醒会看这个时间。"
-                example="普通月费可留空让系统按业务周期计算；特殊天数订单就手动选择实际到期时间。"
+                example="选择业务后会按业务周期自动填；特殊订单可以手动改成实际到期时间。"
               />
             </template>
             <el-date-picker
@@ -220,7 +229,7 @@
               class="full-input"
               type="datetime"
               value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
-              placeholder="留空按业务周期计算"
+              placeholder="按业务周期自动计算"
             />
           </el-form-item>
 
@@ -229,10 +238,51 @@
               <FieldHelpLabel
                 label="客户实收"
                 purpose="客户这单实际付给你的金额，是计算订单利润的收入部分。"
-                example="客户转了 20 元就填 20，不要填 Apple 官方扣的美元金额。"
+                example="客户转了 20 元就填 20；如果收的是美元、马币或 USDT，就选择对应币种并填写汇率。"
               />
             </template>
-            <el-input v-model.trim="form.paidAmount" @change="syncDerivedOrderAmounts" />
+            <div class="order-entry-money-input">
+              <el-input
+                v-model.trim="form.paidAmount"
+                type="number"
+                inputmode="decimal"
+                min="0"
+                placeholder="0.00"
+                @change="syncDerivedOrderAmounts"
+              />
+              <el-select
+                v-model="form.paidCurrency"
+                class="order-entry-money-input__currency"
+                @change="handlePaidCurrencyChange"
+              >
+                <el-option
+                  v-for="option in paidCurrencyOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </div>
+            <div class="order-entry-money-hint">
+              {{ paidAmountRmbHint }}
+            </div>
+          </el-form-item>
+          <el-form-item v-if="form.paidCurrency !== 'CNY'" prop="paidExchangeRateToRmb">
+            <template #label>
+              <FieldHelpLabel
+                label="折算人民币汇率"
+                purpose="把客户实收币种折成人民币，利润统一按人民币计算。"
+                example="收 20 USD，1 USD = 7.20 元，就填 7.20。"
+              />
+            </template>
+            <el-input
+              v-model.trim="form.paidExchangeRateToRmb"
+              type="number"
+              inputmode="decimal"
+              min="0"
+              placeholder="例如 7.20"
+              @change="syncDerivedOrderAmounts"
+            />
           </el-form-item>
           <el-form-item>
             <template #label>
@@ -243,6 +293,9 @@
               />
             </template>
             <el-input v-model.trim="form.platformFee" disabled placeholder="按来源平台自动计算" />
+            <div class="order-entry-money-hint">
+              折合人民币 {{ formatMoney(platformFeeRmbValue) }}
+            </div>
           </el-form-item>
           <el-form-item>
             <template #label>
@@ -252,7 +305,15 @@
                 example="没有损耗填 0；给客户补了 3 元成本就填 3。"
               />
             </template>
-            <el-input v-model.trim="form.refundLoss" />
+            <el-input
+              v-model.trim="form.refundLoss"
+              type="number"
+              inputmode="decimal"
+              min="0"
+            />
+            <div class="order-entry-money-hint">
+              折合人民币 {{ formatMoney(refundLossRmbValue) }}
+            </div>
           </el-form-item>
 
           <el-form-item prop="appleCostValue">
@@ -546,6 +607,7 @@ import type {
   Customer,
   DataDictionary,
   PageResult,
+  PaidCurrency,
   SourcePlatform
 } from '@/types/system';
 import {
@@ -583,9 +645,17 @@ const availableAccounts = ref<AvailableAppleAccount[]>([]);
 const selectedAccount = ref<AvailableAppleAccount | null>(null);
 const newCustomerDialogVisible = ref(false);
 const newCustomerDraft = ref<SaveCustomerPayload | null>(null);
+const customerNoticeVisible = ref(false);
 const matchKeyword = ref('');
 const customerSearchKeyword = ref('');
 let customerSearchRequestId = 0;
+
+const paidCurrencyOptions: Array<{ label: string; value: PaidCurrency }> = [
+  { label: '人民币 CNY', value: 'CNY' },
+  { label: '马币 MYR', value: 'MYR' },
+  { label: '美元 USD', value: 'USD' },
+  { label: 'USDT', value: 'USDT' }
+];
 
 const form = reactive({
   customerId: '',
@@ -599,6 +669,8 @@ const form = reactive({
   startTime: getCurrentDateTimeValue(),
   expireTime: '',
   paidAmount: '',
+  paidCurrency: 'CNY' as PaidCurrency,
+  paidExchangeRateToRmb: '1',
   platformFee: '0.00',
   refundLoss: '0',
   appleCostValue: '',
@@ -610,6 +682,24 @@ const newCustomerForm = reactive<CustomerProfileFormModel>(createCustomerProfile
 const rules: FormRules<typeof form> = {
   serviceId: [{ required: true, message: '请选择业务', trigger: 'change' }],
   paidAmount: [{ required: true, message: '请输入客户实收', trigger: 'blur' }],
+  paidExchangeRateToRmb: [
+    {
+      validator: (_rule, value, callback) => {
+        if (form.paidCurrency === 'CNY') {
+          callback();
+          return;
+        }
+
+        if (!value || readAmount(value) <= 0) {
+          callback(new Error('请输入大于 0 的折算汇率'));
+          return;
+        }
+
+        callback();
+      },
+      trigger: 'blur'
+    }
+  ],
   appleCostValue: [{ required: true, message: '请输入 Apple 消耗金额', trigger: 'blur' }],
   appleAccountId: [{ required: true, message: '请选择可用 Apple ID', trigger: 'change' }]
 };
@@ -695,42 +785,55 @@ const estimatedProfit = computed(() => {
   }
 
   const value =
-    readAmount(form.paidAmount) -
+    paidAmountRmbValue.value -
     estimatedAppleCostValue.value -
-    readAmount(form.platformFee) -
-    readAmount(form.refundLoss);
+    platformFeeRmbValue.value -
+    refundLossRmbValue.value;
 
   return formatMoney(value);
 });
+const paidExchangeRateValue = computed(() =>
+  form.paidCurrency === 'CNY' ? 1 : readAmount(form.paidExchangeRateToRmb)
+);
+const paidAmountRmbValue = computed(() => convertPaidAmountToRmb(form.paidAmount));
+const platformFeeRmbValue = computed(() => convertPaidAmountToRmb(form.platformFee));
+const refundLossRmbValue = computed(() => convertPaidAmountToRmb(form.refundLoss));
+const paidAmountRmbHint = computed(() => {
+  if (form.paidCurrency === 'CNY') {
+    return `人民币实收 ${formatMoney(paidAmountRmbValue.value)}`;
+  }
+
+  return `折合人民币 ${formatMoney(paidAmountRmbValue.value)}`;
+});
 const orderCostBars = computed(() => {
-  const paidAmount = readAmount(form.paidAmount);
+  const paidAmount = paidAmountRmbValue.value;
   const appleCost = estimatedAppleCostValue.value ?? 0;
-  const platformFee = readAmount(form.platformFee);
-  const refundLoss = readAmount(form.refundLoss);
+  const platformFee = platformFeeRmbValue.value;
+  const refundLoss = refundLossRmbValue.value;
   const base = Math.max(paidAmount, appleCost + platformFee + refundLoss, 1);
 
   return [
     {
       label: '实收',
-      value: formatMoney(paidAmount),
+      value: `${formatMoney(paidAmount)} CNY`,
       percent: getCostPercent(paidAmount, base),
       tone: 'blue'
     },
     {
       label: '余额成本',
-      value: estimatedAppleCostValue.value === null ? '-' : formatMoney(appleCost),
+      value: estimatedAppleCostValue.value === null ? '-' : `${formatMoney(appleCost)} CNY`,
       percent: getCostPercent(appleCost, base),
       tone: 'green'
     },
     {
       label: '手续费',
-      value: formatMoney(platformFee),
+      value: `${formatMoney(platformFee)} CNY`,
       percent: getCostPercent(platformFee, base),
       tone: 'orange'
     },
     {
       label: '损耗',
-      value: formatMoney(refundLoss),
+      value: `${formatMoney(refundLoss)} CNY`,
       percent: getCostPercent(refundLoss, base),
       tone: 'red'
     }
@@ -740,6 +843,11 @@ const orderCostBars = computed(() => {
 function readAmount(value: string | number | null | undefined) {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function convertPaidAmountToRmb(value: string | number | null | undefined) {
+  const result = readAmount(value) * paidExchangeRateValue.value;
+  return Number.isFinite(result) && result >= 0 ? result : 0;
 }
 
 function getCostPercent(value: number, base: number) {
@@ -798,8 +906,41 @@ function syncDerivedOrderAmounts() {
   form.platformFee = calculatePlatformFee();
 }
 
-function getCurrentDateTimeValue() {
-  const date = new Date();
+function handlePaidCurrencyChange() {
+  if (form.paidCurrency === 'CNY') {
+    form.paidExchangeRateToRmb = '1';
+  } else if (!form.paidExchangeRateToRmb || form.paidExchangeRateToRmb === '1') {
+    form.paidExchangeRateToRmb = '';
+  }
+
+  syncDerivedOrderAmounts();
+}
+
+function syncExpireTimeFromService() {
+  form.expireTime = calculateServiceExpireTime(selectedService.value, form.startTime);
+}
+
+function calculateServiceExpireTime(service: AppleService | null, startValue: string) {
+  if (!service || service.expireCalcType === 'manual' || service.defaultPeriodType === 'manual') {
+    return '';
+  }
+
+  const startTime = startValue ? new Date(startValue) : new Date();
+  if (Number.isNaN(startTime.getTime())) {
+    return '';
+  }
+
+  const expireTime = new Date(startTime);
+  if (service.expireCalcType === 'by_day' || service.defaultPeriodType === 'day') {
+    expireTime.setDate(expireTime.getDate() + service.defaultPeriodValue);
+  } else {
+    expireTime.setMonth(expireTime.getMonth() + service.defaultPeriodValue);
+  }
+
+  return formatDateTimeValue(expireTime);
+}
+
+function formatDateTimeValue(date: Date) {
   const offsetMinutes = -date.getTimezoneOffset();
   const sign = offsetMinutes >= 0 ? '+' : '-';
   const absoluteOffset = Math.abs(offsetMinutes);
@@ -814,6 +955,10 @@ function getCurrentDateTimeValue() {
   const millisecond = String(date.getMilliseconds()).padStart(3, '0');
 
   return `${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond}${sign}${offsetHours}:${offsetRestMinutes}`;
+}
+
+function getCurrentDateTimeValue() {
+  return formatDateTimeValue(new Date());
 }
 
 async function loadInitialData(
@@ -920,6 +1065,7 @@ function handleCustomerChange(customerId: string) {
     return;
   }
 
+  customerNoticeVisible.value = false;
   newCustomerDraft.value = null;
   const customer = customers.value.find((item) => item.id === customerId);
   if (!form.sourcePlatformId && customer?.sourcePlatformId) {
@@ -954,12 +1100,14 @@ async function handleServiceChange() {
   availableAccounts.value = [];
 
   if (!service) {
+    form.expireTime = '';
     return;
   }
 
   form.paidAmount = service.defaultPrice;
   form.appleCostValue = service.officialCostValue;
   form.targetPlan = service.name;
+  syncExpireTimeFromService();
   syncDerivedOrderAmounts();
   await loadAvailableAccounts({ autoSelect: service.autoMatchAppleId });
 }
@@ -993,6 +1141,7 @@ async function saveNewCustomerDraft() {
 
   newCustomerDraft.value = buildCustomerProfilePayload(newCustomerForm, { emptyPhone: 'null' });
   form.customerId = '';
+  customerNoticeVisible.value = false;
 
   if (!form.sourcePlatformId && newCustomerDraft.value.sourcePlatformId) {
     form.sourcePlatformId = newCustomerDraft.value.sourcePlatformId;
@@ -1061,7 +1210,7 @@ function getAvailabilityTone(value: AvailableAppleAccount['availability']) {
 
 async function submitOrder() {
   if (!hasOrderCustomer.value) {
-    ElMessage.warning('请选择客户，或手动输入客户资料后再提交订单');
+    customerNoticeVisible.value = true;
     return;
   }
 
@@ -1085,6 +1234,8 @@ async function submitOrder() {
       startTime: form.startTime || null,
       expireTime: form.expireTime || null,
       paidAmount: form.paidAmount,
+      paidCurrency: form.paidCurrency,
+      paidExchangeRateToRmb: form.paidExchangeRateToRmb || '1',
       platformFee: form.platformFee || undefined,
       refundLoss: form.refundLoss || '0',
       appleCostValue: form.appleCostValue,
@@ -1158,12 +1309,15 @@ function resetOrderForm() {
   form.startTime = getCurrentDateTimeValue();
   form.expireTime = '';
   form.paidAmount = '';
+  form.paidCurrency = 'CNY';
+  form.paidExchangeRateToRmb = '1';
   form.platformFee = '0.00';
   form.refundLoss = '0';
   form.appleCostValue = '';
   form.remark = '';
   selectedAccount.value = null;
   newCustomerDraft.value = null;
+  customerNoticeVisible.value = false;
   resetCustomerProfileForm(newCustomerForm);
 }
 
@@ -1179,6 +1333,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.order-entry-form-alert {
+  margin-bottom: 14px;
+  border-radius: 8px;
+}
+
 .order-entry-select-empty {
   display: flex;
   min-width: 260px;
@@ -1245,12 +1404,33 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.order-entry-money-input {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 8px;
+}
+
+.order-entry-money-input__currency {
+  width: 132px;
+}
+
+.order-entry-money-hint {
+  min-height: 18px;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 @media (max-width: 720px) {
-  .order-entry-customer-picker {
+  .order-entry-customer-picker,
+  .order-entry-money-input {
     grid-template-columns: 1fr;
   }
 
-  .order-entry-customer-picker__create {
+  .order-entry-customer-picker__create,
+  .order-entry-money-input__currency {
     width: 100%;
   }
 }

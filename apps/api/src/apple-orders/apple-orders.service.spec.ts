@@ -30,15 +30,28 @@ describe('AppleOrdersService', () => {
 
   it('calculates Apple order cost and profit', () => {
     const snapshot = service.calculateOrderFinancials({
-      paidAmount: '188',
-      platformFee: '3',
-      refundLoss: '0',
+      paidAmountRmb: '188',
+      platformFeeRmb: '3',
+      refundLossRmb: '0',
       appleCostValue: '20',
       averageCost: '5.6'
     });
 
     expect(snapshot.appleCostRmb.toString()).toBe('112');
     expect(snapshot.profitAmount.toString()).toBe('73');
+  });
+
+  it('calculates profit from RMB-converted received amount', () => {
+    const snapshot = service.calculateOrderFinancials({
+      paidAmountRmb: new Prisma.Decimal('20').mul('7.2'),
+      platformFeeRmb: new Prisma.Decimal('1').mul('7.2'),
+      refundLossRmb: '0',
+      appleCostValue: '10',
+      averageCost: '5'
+    });
+
+    expect(snapshot.appleCostRmb.toString()).toBe('50');
+    expect(snapshot.profitAmount.toString()).toBe('86.8');
   });
 
   it('marks account unavailable when balance is insufficient', () => {
@@ -126,18 +139,23 @@ describe('AppleOrdersService', () => {
     } as unknown as PrismaService;
     const serviceWithPrisma = new AppleOrdersService(prisma, {} as AuditLogsService);
 
-    await serviceWithPrisma.list({
-      page: '1',
-      pageSize: '20',
-      sortBy: 'profitAmount',
-      sortOrder: 'asc'
-    });
+    for (const sortBy of ['profitAmount', 'platformFeeRmb', 'refundLossRmb']) {
+      findMany.mockClear();
 
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        orderBy: [{ profitAmount: 'asc' }, { createdAt: 'desc' }]
-      })
-    );
+      await serviceWithPrisma.list({
+        page: '1',
+        pageSize: '20',
+        sortBy,
+        sortOrder: 'asc'
+      });
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ [sortBy]: 'asc' }, { createdAt: 'desc' }]
+        })
+      );
+    }
+
     expect(count).toHaveBeenCalled();
   });
 });

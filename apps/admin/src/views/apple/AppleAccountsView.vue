@@ -36,17 +36,13 @@
       <TableToolbar
         v-model:keyword="query.keyword"
         v-model:status="query.status"
-        v-model:visible-columns="visibleColumns"
-        v-model:saved-view-id="savedViewId"
-        :column-options="accountColumnOptions"
         :status-options="accountStatusOptions"
-        :saved-views="savedViews"
         :filter-chips="filterChips"
         :selected-count="selectedAccounts.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        :show-save-view="false"
         show-filter-chips
-        show-toolbar-meta
         primary-label="新增 Apple ID"
         placeholder="搜索 Apple ID、地区、币种、备注"
         @search="applyFilters"
@@ -54,8 +50,6 @@
         @primary="openCreate"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
-        @save-view="saveTableView"
-        @apply-view="applySavedView"
         @export="exportList"
         @batch-action="handleBatchAction"
       >
@@ -89,15 +83,15 @@
             />
           </el-select>
           <el-select
-            v-model="query.sourcePlatformId"
+            v-model="query.sourceChannelId"
             class="table-toolbar__select"
-            placeholder="渠道"
+            placeholder="来源渠道"
             clearable
             filterable
             @change="applyFilters"
           >
             <el-option
-              v-for="item in sourcePlatforms"
+              v-for="item in sourceChannels"
               :key="item.id"
               :label="item.name"
               :value="item.id"
@@ -137,25 +131,18 @@
           </div>
         </template>
         <el-table-column type="selection" width="46" />
-        <el-table-column
-          v-if="isColumnVisible('appleId')"
-          prop="appleId"
-          label="Apple ID"
-          min-width="190"
-          sortable="custom"
-        >
+        <el-table-column prop="appleId" label="Apple ID" min-width="190" sortable="custom">
           <template #default="{ row }">{{ row.appleIdMasked }}</template>
         </el-table-column>
-        <el-table-column v-if="isColumnVisible('sourcePlatform')" label="渠道" min-width="150">
+        <el-table-column label="来源渠道" min-width="150">
           <template #default="{ row }">
-            <StatusChip v-if="row.sourcePlatform" tone="blue">
-              {{ row.sourcePlatform.name }}
+            <StatusChip v-if="row.sourceChannel" tone="blue">
+              {{ row.sourceChannel.name }}
             </StatusChip>
             <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('region')"
           prop="region"
           label="地区/币种"
           min-width="230"
@@ -174,7 +161,6 @@
           }}</template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('currentBalance')"
           prop="currentBalance"
           label="余额"
           width="120"
@@ -188,7 +174,6 @@
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('averageCost')"
           prop="averageCost"
           label="平均成本"
           width="130"
@@ -207,7 +192,6 @@
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('status')"
           prop="status"
           label="状态"
           width="130"
@@ -227,7 +211,7 @@
             </StatusChip>
           </template>
         </el-table-column>
-        <el-table-column v-if="isColumnVisible('secrets')" label="敏感资料" min-width="180">
+        <el-table-column label="敏感资料" min-width="180">
           <template #header>
             <span class="help-label">
               敏感资料
@@ -252,7 +236,6 @@
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('isManuallyLocked')"
           prop="isManuallyLocked"
           label="锁定"
           width="100"
@@ -273,7 +256,6 @@
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('updatedAt')"
           prop="updatedAt"
           label="更新时间"
           min-width="170"
@@ -328,8 +310,8 @@
 
           <div class="mobile-record-card__meta">
             <div>
-              <span>渠道</span>
-              <strong>{{ account.sourcePlatform?.name ?? '-' }}</strong>
+              <span>来源渠道</span>
+              <strong>{{ account.sourceChannel?.name ?? '-' }}</strong>
             </div>
             <div>
               <span>锁定状态</span>
@@ -420,7 +402,7 @@
           :status-label="getStatusLabel(selectedAccount.status)"
           :status-tone="getStatusTone(selectedAccount.status)"
           :locked="selectedAccount.isManuallyLocked"
-          :source-platform="selectedAccount.sourcePlatform?.name"
+          :source-channel="selectedAccount.sourceChannel?.name"
         />
 
         <div class="drawer-section">
@@ -432,8 +414,8 @@
             <el-descriptions-item label="地区/币种">
               {{ formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency) }}
             </el-descriptions-item>
-            <el-descriptions-item label="渠道">
-              {{ selectedAccount.sourcePlatform?.name ?? '-' }}
+            <el-descriptions-item label="来源渠道">
+              {{ selectedAccount.sourceChannel?.name ?? '-' }}
             </el-descriptions-item>
             <el-descriptions-item label="状态">
               <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
@@ -506,7 +488,7 @@
         :status-label="getStatusLabel(selectedAccount.status)"
         :status-tone="getStatusTone(selectedAccount.status)"
         :locked="selectedAccount.isManuallyLocked"
-        :source-platform="selectedAccount.sourcePlatform?.name"
+        :source-channel="selectedAccount.sourceChannel?.name"
       />
       <el-form
         ref="formRef"
@@ -535,20 +517,20 @@
         <el-form-item>
           <template #label>
             <FieldHelpLabel
-              label="渠道"
-              purpose="记录这个 Apple ID 从哪个渠道获得，方便以后追踪采购来源和成本。"
+              label="来源渠道"
+              purpose="记录这个 Apple ID 从哪个来源渠道获得，方便以后追踪采购来源和成本。"
               example="可以选供应商、闲鱼、淘宝或内部自建的来源渠道。"
             />
           </template>
           <el-select
-            v-model="form.sourcePlatformId"
+            v-model="form.sourceChannelId"
             class="full-input"
             clearable
             filterable
             placeholder="请选择来源渠道"
           >
             <el-option
-              v-for="item in sourcePlatforms"
+              v-for="item in sourceChannels"
               :key="item.id"
               :label="item.name"
               :value="item.id"
@@ -744,20 +726,20 @@
         <el-form-item>
           <template #label>
             <FieldHelpLabel
-              label="默认导入渠道"
-              purpose="批量导入时给没有单独写渠道的账号统一设置来源渠道。"
-              example="这一批都来自同一个供应商就选该供应商；每行已写 sourcePlatform 可留空。"
+              label="默认导入来源渠道"
+              purpose="批量导入时给没有单独写来源渠道的账号统一设置来源渠道。"
+              example="这一批都来自同一个供应商就选该供应商；每行已写来源渠道可留空。"
             />
           </template>
           <el-select
-            v-model="importForm.sourcePlatformId"
+            v-model="importForm.sourceChannelId"
             class="full-input"
             clearable
             filterable
-            placeholder="不选择则导入为未设置渠道"
+            placeholder="不选择则导入为未设置来源渠道"
           >
             <el-option
-              v-for="item in sourcePlatforms"
+              v-for="item in sourceChannels"
               :key="item.id"
               :label="item.name"
               :value="item.id"
@@ -776,7 +758,7 @@
             v-model="importForm.accountsText"
             type="textarea"
             :rows="10"
-            placeholder="支持逗号或制表符分隔，可带表头。字段顺序：appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark,sourcePlatform。sourcePlatform 可选，可填渠道名称或渠道ID；留空时使用上方默认导入渠道。balanceCostAmount 仍填余额的人民币总成本；如果只知道平均成本，请用余额 × 平均成本先算成总成本。"
+            placeholder="支持逗号或制表符分隔，可带表头。字段顺序：appleId,password,region,currency,currentBalance,balanceCostAmount,phone,recoveryEmail,remark,sourceChannel。sourceChannel 可选，可填来源渠道名称或来源渠道ID；留空时使用上方默认导入来源渠道。balanceCostAmount 仍填余额的人民币总成本；如果只知道平均成本，请用余额 × 平均成本先算成总成本。"
           />
         </el-form-item>
       </el-form>
@@ -858,7 +840,7 @@
         :status-label="getStatusLabel(selectedAccount.status)"
         :status-tone="getStatusTone(selectedAccount.status)"
         :locked="selectedAccount.isManuallyLocked"
-        :source-platform="selectedAccount.sourcePlatform?.name"
+        :source-channel="selectedAccount.sourceChannel?.name"
       />
       <div class="drawer-section drawer-section--flush">
         <div class="drawer-section__title">充值信息</div>
@@ -948,7 +930,7 @@
         :status-label="getStatusLabel(selectedAccount.status)"
         :status-tone="getStatusTone(selectedAccount.status)"
         :locked="selectedAccount.isManuallyLocked"
-        :source-platform="selectedAccount.sourcePlatform?.name"
+        :source-channel="selectedAccount.sourceChannel?.name"
       />
       <div class="drawer-section drawer-section--flush">
         <div class="drawer-section__title">消费信息</div>
@@ -1018,7 +1000,7 @@
         :status-label="getStatusLabel(selectedAccount.status)"
         :status-tone="getStatusTone(selectedAccount.status)"
         :locked="selectedAccount.isManuallyLocked"
-        :source-platform="selectedAccount.sourcePlatform?.name"
+        :source-channel="selectedAccount.sourceChannel?.name"
       />
       <div class="drawer-section drawer-section--flush">
         <div class="drawer-section__title">检测结果</div>
@@ -1098,7 +1080,7 @@
         :status-label="getStatusLabel(selectedAccount.status)"
         :status-tone="getStatusTone(selectedAccount.status)"
         :locked="selectedAccount.isManuallyLocked"
-        :source-platform="selectedAccount.sourcePlatform?.name"
+        :source-channel="selectedAccount.sourceChannel?.name"
       />
 
       <div class="drawer-section">
@@ -1259,7 +1241,7 @@
         :status-label="getStatusLabel(selectedAccount.status)"
         :status-tone="getStatusTone(selectedAccount.status)"
         :locked="selectedAccount.isManuallyLocked"
-        :source-platform="selectedAccount.sourcePlatform?.name"
+        :source-channel="selectedAccount.sourceChannel?.name"
       />
       <div class="apple-core-alert apple-core-alert--orange">
         <StatusChip tone="orange">审计</StatusChip>
@@ -1331,14 +1313,13 @@
 
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   appleAccountsApi,
   dataCenterApi,
-  sourcePlatformsApi,
-  userTableViewsApi
+  appleAccountSourceChannelsApi
 } from '@/api/system';
 import type { DataDictionaryQuery } from '@/api/system';
 import AppleAccountDrawerSummary from '@/components/business/AppleAccountDrawerSummary.vue';
@@ -1360,8 +1341,7 @@ import type {
   AppleBalanceConsumption,
   AppleBalanceTopup,
   DataDictionary,
-  SourcePlatform,
-  UserTableView
+  AppleAccountSourceChannel
 } from '@/types/system';
 import {
   buildAppleAccountCurrencyOptions,
@@ -1391,22 +1371,10 @@ const statusOptions: Array<{
   { label: '风险', value: 'risk', type: 'warning' },
   { label: '未知', value: 'unknown', type: 'info' }
 ];
-const tableKey = 'apple_accounts';
 const accountStatusOptions = statusOptions.map((item) => ({
   label: item.label,
   value: item.value
 }));
-const accountColumnOptions = [
-  { label: 'Apple ID', value: 'appleId', required: true },
-  { label: '渠道', value: 'sourcePlatform' },
-  { label: '地区/币种', value: 'region' },
-  { label: '余额', value: 'currentBalance' },
-  { label: '平均成本', value: 'averageCost' },
-  { label: '状态', value: 'status' },
-  { label: '敏感资料', value: 'secrets' },
-  { label: '锁定', value: 'isManuallyLocked' },
-  { label: '更新时间', value: 'updatedAt' }
-];
 const lockedOptions = [
   { label: '已锁定', value: 'true' },
   { label: '未锁定', value: 'false' }
@@ -1437,15 +1405,12 @@ const consumptionFormRef = ref<FormInstance>();
 const statusCheckFormRef = ref<FormInstance>();
 const accountSecretFormRef = ref<FormInstance>();
 const accounts = ref<AppleAccount[]>([]);
-const sourcePlatforms = ref<SourcePlatform[]>([]);
+const sourceChannels = ref<AppleAccountSourceChannel[]>([]);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const topups = ref<AppleBalanceTopup[]>([]);
 const consumptions = ref<AppleBalanceConsumption[]>([]);
 const importResult = ref<AppleAccountImportResult | null>(null);
 const selectedAccounts = ref<AppleAccount[]>([]);
-const visibleColumns = ref<string[]>([]);
-const savedViews = ref<UserTableView[]>([]);
-const savedViewId = ref('');
 const total = ref(0);
 const activeAccountsQueryKey = ref('');
 const activatedOnce = ref(false);
@@ -1463,7 +1428,7 @@ const query = reactive({
   status: '',
   region: '',
   currency: '',
-  sourcePlatformId: '',
+  sourceChannelId: '',
   locked: '',
   sortBy: '',
   sortOrder: '' as '' | 'asc' | 'desc'
@@ -1475,7 +1440,7 @@ const form = reactive({
   currency: 'USD',
   currentBalance: '0',
   balanceCostAmount: '0',
-  sourcePlatformId: '',
+  sourceChannelId: '',
   status: 'normal' as AppleAccount['status'],
   isManuallyLocked: false,
   manualLockReason: '',
@@ -1488,7 +1453,7 @@ const form = reactive({
 });
 
 const importForm = reactive({
-  sourcePlatformId: '',
+  sourceChannelId: '',
   accountsText: ''
 });
 
@@ -1591,11 +1556,11 @@ const filterChips = computed(() => {
     chips.push({ key: 'currency', label: '币种', value: query.currency });
   }
 
-  if (query.sourcePlatformId) {
+  if (query.sourceChannelId) {
     chips.push({
-      key: 'sourcePlatformId',
-      label: '渠道',
-      value: getSourcePlatformName(query.sourcePlatformId)
+      key: 'sourceChannelId',
+      label: '来源渠道',
+      value: getAppleAccountSourceChannelName(query.sourceChannelId)
     });
   }
 
@@ -1761,12 +1726,8 @@ function getStatusTone(status: AppleAccount['status']) {
   return 'neutral';
 }
 
-function getSourcePlatformName(id: string) {
-  return sourcePlatforms.value.find((item) => item.id === id)?.name ?? id;
-}
-
-function isColumnVisible(column: string) {
-  return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
+function getAppleAccountSourceChannelName(id: string) {
+  return sourceChannels.value.find((item) => item.id === id)?.name ?? id;
 }
 
 async function loadAccounts(options: { background?: boolean; force?: boolean } = {}) {
@@ -1802,7 +1763,7 @@ function buildAccountListParams(): AppleAccountListParams {
     status: query.status || undefined,
     region: query.region || undefined,
     currency: query.currency || undefined,
-    sourcePlatformId: query.sourcePlatformId || undefined,
+    sourceChannelId: query.sourceChannelId || undefined,
     locked: query.locked || undefined,
     sortBy: query.sortBy || undefined,
     sortOrder: query.sortOrder || undefined
@@ -1814,15 +1775,15 @@ function applyAccountListResult(data: AppleAccountPage) {
   total.value = data.total;
 }
 
-async function loadSourcePlatforms() {
+async function loadAppleAccountSourceChannels() {
   try {
-    const data = await sourcePlatformsApi.list({
+    const data = await appleAccountSourceChannelsApi.list({
       page: 1,
       pageSize: 200
     });
-    sourcePlatforms.value = data.items.filter((item) => item.status === 'active');
+    sourceChannels.value = data.items.filter((item) => item.status === 'active');
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载渠道失败');
+    ElMessage.error(error instanceof Error ? error.message : '加载来源渠道失败');
   }
 }
 
@@ -1862,11 +1823,10 @@ function clearFilters() {
   query.status = '';
   query.region = '';
   query.currency = '';
-  query.sourcePlatformId = '';
+  query.sourceChannelId = '';
   query.locked = '';
   query.sortBy = '';
   query.sortOrder = '';
-  savedViewId.value = '';
 }
 
 function clearFiltersAndSearch() {
@@ -1881,8 +1841,8 @@ function removeFilter(key: string) {
   if (key === 'currency') {
     query.currency = '';
   }
-  if (key === 'sourcePlatformId') {
-    query.sourcePlatformId = '';
+  if (key === 'sourceChannelId') {
+    query.sourceChannelId = '';
   }
   if (key === 'locked') {
     query.locked = '';
@@ -1916,112 +1876,13 @@ function handleBatchAction(action: string) {
   }
 }
 
-async function loadTableViews(applyDefault = false) {
-  try {
-    const data = await userTableViewsApi.list({
-      page: 1,
-      pageSize: 100,
-      tableKey
-    });
-    savedViews.value = data.items;
-    if (applyDefault) {
-      const defaultView = data.items.find((view) => view.isDefault);
-      if (defaultView) {
-        applyView(defaultView);
-        return true;
-      }
-    }
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载保存视图失败');
-  }
-
-  return false;
-}
-
-async function saveTableView() {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存 Apple ID 列表视图', {
-      inputValue: 'Apple ID 常用视图',
-      inputPattern: /^.{1,60}$/,
-      inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
-      confirmButtonText: '保存',
-      cancelButtonText: '取消'
-    });
-    const created = await userTableViewsApi.create({
-      tableKey,
-      viewName: value.trim(),
-      filters: {
-        keyword: query.keyword,
-        status: query.status,
-        region: query.region,
-        currency: query.currency,
-        sourcePlatformId: query.sourcePlatformId,
-        locked: query.locked
-      },
-      sortConfig: {
-        prop: query.sortBy,
-        order:
-          query.sortOrder === 'asc' ? 'ascending' : query.sortOrder === 'desc' ? 'descending' : null
-      },
-      columns: visibleColumns.value.length
-        ? visibleColumns.value
-        : accountColumnOptions.map((column) => column.value),
-      density: 'default',
-      pageSize: query.pageSize,
-      isDefault: savedViews.value.length === 0
-    });
-    await loadTableViews();
-    savedViewId.value = created.id;
-    ElMessage.success('表格视图已保存');
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    ElMessage.error(error instanceof Error ? error.message : '保存视图失败');
-  }
-}
-
-async function applySavedView(id: string) {
-  const view = savedViews.value.find((item) => item.id === id);
-  if (!view) return;
-  applyView(view);
-  ElMessage.success('已应用保存视图');
-  await loadAccounts();
-}
-
-function applyView(view: UserTableView) {
-  const filters = view.filters;
-  query.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
-  query.status = typeof filters.status === 'string' ? filters.status : '';
-  query.region = typeof filters.region === 'string' ? filters.region : '';
-  query.currency = typeof filters.currency === 'string' ? filters.currency : '';
-  query.sourcePlatformId =
-    typeof filters.sourcePlatformId === 'string' ? filters.sourcePlatformId : '';
-  query.locked = typeof filters.locked === 'string' ? filters.locked : '';
-  query.pageSize = view.pageSize;
-  query.page = 1;
-  visibleColumns.value = view.columns.length
-    ? view.columns.filter((column) =>
-        accountColumnOptions.some((option) => option.value === column)
-      )
-    : accountColumnOptions.map((column) => column.value);
-  applySortConfig(view.sortConfig);
-  savedViewId.value = view.id;
-}
-
-function applySortConfig(value: Record<string, unknown>) {
-  const prop = typeof value.prop === 'string' ? value.prop : '';
-  const order = value.order === 'ascending' ? 'asc' : value.order === 'descending' ? 'desc' : '';
-
-  query.sortBy = accountSortFieldMap[prop] ?? prop;
-  query.sortOrder = order;
-}
-
 function resetForm() {
   form.appleId = '';
   form.region = 'US';
   syncFormCurrency();
   form.currentBalance = '0';
   form.balanceCostAmount = '0';
-  form.sourcePlatformId = '';
+  form.sourceChannelId = '';
   form.status = 'normal';
   form.isManuallyLocked = false;
   form.manualLockReason = '';
@@ -2081,7 +1942,7 @@ function openCreate() {
 }
 
 function openImport() {
-  importForm.sourcePlatformId = '';
+  importForm.sourceChannelId = '';
   importForm.accountsText = '';
   importResult.value = null;
   importDialogVisible.value = true;
@@ -2095,7 +1956,7 @@ function openEdit(account: AppleAccount) {
   syncFormCurrency();
   form.currentBalance = account.currentBalance;
   form.balanceCostAmount = getAccountAverageCost(account);
-  form.sourcePlatformId = account.sourcePlatformId ?? '';
+  form.sourceChannelId = account.sourceChannelId ?? '';
   form.status = account.status;
   form.isManuallyLocked = account.isManuallyLocked;
   form.manualLockReason = account.manualLockReason ?? '';
@@ -2311,7 +2172,7 @@ async function saveAccount() {
       currency: form.currency,
       currentBalance: form.currentBalance,
       balanceCostAmount: getAccountFormTotalCostAmount(),
-      sourcePlatformId: form.sourcePlatformId || null,
+      sourceChannelId: form.sourceChannelId || null,
       status: form.status,
       isManuallyLocked: form.isManuallyLocked,
       manualLockReason: form.manualLockReason || null,
@@ -2388,7 +2249,7 @@ async function submitImport() {
   try {
     const result = await appleAccountsApi.importAccounts({
       accounts,
-      sourcePlatformId: importForm.sourcePlatformId || null
+      sourceChannelId: importForm.sourceChannelId || null
     });
     importResult.value = result;
     ElMessage.success(`成功导入 ${result.successCount} 个 Apple ID`);
@@ -2537,22 +2398,13 @@ async function revealAccountSecret() {
 }
 
 async function loadPageData() {
-  const sourcePlatformsPromise = loadSourcePlatforms();
+  const sourceChannelsPromise = loadAppleAccountSourceChannels();
   const appleRegionsPromise = loadAppleRegions();
-  const tableViewsPromise = loadTableViews(true);
   const accountsPromise = loadAccounts({ force: false });
-  const defaultViewApplied = await tableViewsPromise;
 
-  await sourcePlatformsPromise;
+  await sourceChannelsPromise;
   await appleRegionsPromise;
   await accountsPromise;
-
-  if (defaultViewApplied) {
-    await loadAccounts({
-      background: accounts.value.length > 0,
-      force: false
-    });
-  }
 }
 
 async function initializePage() {

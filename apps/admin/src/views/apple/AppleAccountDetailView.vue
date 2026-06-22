@@ -53,7 +53,7 @@
             <StatusChip tone="green">余额 {{ account.currentBalance }}</StatusChip>
             <StatusChip tone="blue">均价 {{ getAccountAverageCost(account) }}</StatusChip>
             <StatusChip tone="purple"
-              >渠道 {{ account.sourcePlatform?.name ?? '未设置' }}</StatusChip
+              >来源渠道 {{ account.sourceChannel?.name ?? '未设置' }}</StatusChip
             >
             <StatusChip :tone="account.isManuallyLocked ? 'red' : 'purple'">
               关联业务 {{ activationTotal }}
@@ -126,8 +126,8 @@
             <strong>{{ getAccountAverageCost(account) }}</strong>
           </div>
           <div>
-            <span>渠道</span>
-            <strong>{{ account.sourcePlatform?.name ?? '-' }}</strong>
+            <span>来源渠道</span>
+            <strong>{{ account.sourceChannel?.name ?? '-' }}</strong>
           </div>
           <div>
             <span>锁定原因</span>

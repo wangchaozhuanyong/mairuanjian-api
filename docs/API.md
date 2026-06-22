@@ -227,6 +227,8 @@ GET  /api/apple/accounts/:id/balance-adjustments
 
 ```text
 GET    /api/apple/services
+GET    /api/apple/services/balance-price-rule
+PATCH  /api/apple/services/balance-price-rule
 POST   /api/apple/services
 GET    /api/apple/services/:id
 PATCH  /api/apple/services/:id
@@ -237,6 +239,14 @@ POST   /api/apple/services/:id/platform-mappings
 PATCH  /api/apple/service-platform-mappings/:id
 DELETE /api/apple/service-platform-mappings/:id
 ```
+
+业务价格字段：
+
+- `officialBasePrice` 表示官网公开套餐价格，由官方价格巡检或人工确认维护。
+- `officialCostValue` 表示 Apple 余额实际开通/消耗金额，用于 Apple ID 匹配和成本估算。
+- `appleBalancePriceRuleType` 支持 `inherit`、`percent`、`fixed_add`、`manual`。`inherit` 使用全局规则，`manual` 手动填写 `officialCostValue`。
+- `PATCH /api/apple/services/balance-price-rule` 保存全局规则，第一版支持 `percent` 和 `fixed_add`，例如 `{ "ruleType": "percent", "ruleValue": "1.25" }`。
+- 客户实际售价不在业务设置里维护，订单录入时填写客户实收金额。
 
 ### 5.5 Apple ID 自动匹配
 
@@ -314,9 +324,24 @@ GET    /api/apple/orders/:id
 - 生成开通记录
 - 生成 Apple ID 消费记录
 - 扣减 Apple ID 余额和余额成本
+- 保存客户实收币种、折人民币汇率和人民币金额快照
 - 计算 `appleCostRmb` 和 `profitAmount`
 - 生成 Apple ID 锁定记录
 - 写 audit log
+
+`POST /api/apple/orders` 金额补充字段：
+
+```json
+{
+  "paidAmount": "20",
+  "paidCurrency": "USD",
+  "paidExchangeRateToRmb": "7.2"
+}
+```
+
+- `paidCurrency` 支持 `CNY`、`MYR`、`USD`、`USDT`，不传默认为 `CNY`。
+- `paidCurrency=CNY` 时汇率固定为 `1`。
+- 非人民币订单必须传 `paidExchangeRateToRmb`，利润统一按人民币快照计算。
 
 后续待实现：
 
@@ -582,8 +607,10 @@ POST   /api/apple/official-prices/reviews/:id/ignore
 说明：
 
 - 官方价格巡检只属于 Apple ID 业务，不服务兑换码业务。
+- 来源使用 `provider` 区分 `chatgpt`、`gemini`、`claude` 或自定义平台。
+- `official_price` 是官网公开价；`apple_balance_price` 是按当前全局/单项规则预估出的 Apple 余额开通价。
 - 采集结果先进入 `apple_price_change_reviews` 待确认，不会直接改业务价格。
-- 确认后才同步 `apple_services.official_cost_value`、币种和周期；新套餐会创建为暂停状态。
+- 确认后才同步 `apple_services.official_base_price`、币种和周期，并通过业务规则重算 `official_cost_value`；新套餐会创建为暂停状态。
 - `manual` 来源需要人工录入本次价格；`webpage` / `api` 来源会尝试访问 `sourceUrl` 并解析 JSON、结构化网页数据或页面币种价格。
 - 页面需要登录、被官方屏蔽、或没有识别到稳定价格时，巡检任务会转人工确认，避免误采集污染业务数据。
 

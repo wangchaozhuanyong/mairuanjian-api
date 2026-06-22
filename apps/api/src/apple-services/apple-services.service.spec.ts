@@ -58,7 +58,10 @@ describe('AppleServicesService platform mappings', () => {
       name: 'GPT Plus',
       category: 'streaming',
       defaultPrice: new Prisma.Decimal('88'),
+      officialBasePrice: new Prisma.Decimal('20'),
       officialCostValue: new Prisma.Decimal('20'),
+      appleBalancePriceRuleType: 'manual',
+      appleBalancePriceRuleValue: null,
       currency: 'USD',
       defaultPeriodType: 'month',
       defaultPeriodValue: 1,
@@ -99,6 +102,67 @@ describe('AppleServicesService platform mappings', () => {
       })
     );
     expect(count).toHaveBeenCalled();
+  });
+
+  it('calculates Apple balance price from global percent rule when creating service', async () => {
+    const createdAt = new Date('2026-06-18T00:00:00.000Z');
+    const createdService = {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'ChatGPT Plus',
+      category: 'chatgpt',
+      defaultPrice: new Prisma.Decimal('0'),
+      officialBasePrice: new Prisma.Decimal('20'),
+      officialCostValue: new Prisma.Decimal('25'),
+      appleBalancePriceRuleType: 'inherit',
+      appleBalancePriceRuleValue: null,
+      currency: 'USD',
+      defaultPeriodType: 'month',
+      defaultPeriodValue: 1,
+      expireCalcType: 'by_month',
+      requireAppleId: true,
+      requireServiceAccount: false,
+      autoMatchAppleId: true,
+      lockRule: 'by_service',
+      allowedRegions: [],
+      minBalanceRequired: new Prisma.Decimal('0'),
+      status: 'paused',
+      remark: null,
+      createdAt,
+      updatedAt: createdAt
+    };
+    const create = jest.fn().mockResolvedValue(createdService);
+    const { service } = createService({
+      systemParameter: {
+        findUnique: jest.fn().mockResolvedValue({
+          key: 'apple_balance_price_rule',
+          value: { ruleType: 'percent', ruleValue: '1.25' }
+        })
+      },
+      appleService: {
+        create,
+        findFirst: jest.fn().mockResolvedValue(createdService)
+      }
+    } as unknown as Partial<PrismaService>);
+
+    const result = await service.create({
+      name: 'ChatGPT Plus',
+      category: 'chatgpt',
+      officialBasePrice: '20',
+      appleBalancePriceRuleType: 'inherit',
+      currency: 'USD',
+      status: 'paused'
+    });
+
+    expect(result.officialCostValue).toBe('25');
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          officialBasePrice: '20',
+          officialCostValue: '25',
+          appleBalancePriceRuleType: 'inherit'
+        })
+      })
+    );
   });
 
   it('creates an Apple service platform mapping and writes audit log', async () => {

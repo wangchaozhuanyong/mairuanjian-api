@@ -71,6 +71,17 @@ export interface SourcePlatform {
   updatedAt: string;
 }
 
+export type PaidCurrency = 'CNY' | 'MYR' | 'USD' | 'USDT';
+
+export interface AppleAccountSourceChannel {
+  id: string;
+  name: string;
+  status: 'active' | 'disabled';
+  remark?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -857,8 +868,10 @@ export interface AppleAccount {
   currentBalance: string;
   balanceCostAmount: string;
   averageCost: string;
+  sourceChannelId?: string | null;
+  sourceChannel?: Pick<AppleAccountSourceChannel, 'id' | 'name' | 'status'> | null;
   sourcePlatformId?: string | null;
-  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name' | 'status'> | null;
+  sourcePlatform?: Pick<AppleAccountSourceChannel, 'id' | 'name' | 'status'> | null;
   status: 'normal' | 'need_verify' | 'locked' | 'password_error' | 'risk' | 'unknown';
   isManuallyLocked: boolean;
   manualLockReason?: string | null;
@@ -984,7 +997,10 @@ export interface AppleService {
   name: string;
   category: string;
   defaultPrice: string;
+  officialBasePrice: string;
   officialCostValue: string;
+  appleBalancePriceRuleType: AppleBalancePriceRuleType;
+  appleBalancePriceRuleValue?: string | null;
   currency: string;
   defaultPeriodType: 'month' | 'day' | 'manual';
   defaultPeriodValue: number;
@@ -1000,6 +1016,8 @@ export interface AppleService {
   createdAt: string;
   updatedAt: string;
 }
+
+export type AppleBalancePriceRuleType = 'inherit' | 'percent' | 'fixed_add' | 'manual';
 
 export interface AppleServicePlatformMapping {
   id: string;
@@ -1032,6 +1050,8 @@ export type ApplePriceChangeReviewStatus = 'pending' | 'approved' | 'ignored';
 export interface AppleOfficialPriceSource {
   id: string;
   name: string;
+  provider: string;
+  priceSourceType: string;
   region: string;
   currency: string;
   sourceUrl?: string | null;
@@ -1049,14 +1069,20 @@ export interface AppleOfficialPriceSource {
 export interface AppleOfficialPriceSnapshot {
   id: string;
   sourceId: string;
-  source?: Pick<AppleOfficialPriceSource, 'id' | 'name' | 'region' | 'currency'> | null;
+  source?: Pick<
+    AppleOfficialPriceSource,
+    'id' | 'name' | 'provider' | 'region' | 'currency'
+  > | null;
   appleServiceId?: string | null;
   appleService?: Pick<AppleService, 'id' | 'name' | 'category' | 'currency'> | null;
+  provider: string;
+  planCode?: string | null;
   serviceName: string;
   category: string;
   region: string;
   currency: string;
   officialPrice: string;
+  appleBalancePrice?: string | null;
   periodType: AppleService['defaultPeriodType'];
   periodValue: number;
   rawPayload?: Record<string, unknown> | null;
@@ -1066,11 +1092,22 @@ export interface AppleOfficialPriceSnapshot {
 export interface ApplePriceChangeReview {
   id: string;
   sourceId: string;
-  source?: Pick<AppleOfficialPriceSource, 'id' | 'name' | 'region' | 'currency'> | null;
+  source?: Pick<
+    AppleOfficialPriceSource,
+    'id' | 'name' | 'provider' | 'region' | 'currency'
+  > | null;
   snapshotId?: string | null;
   snapshot?: Pick<
     AppleOfficialPriceSnapshot,
-    'id' | 'serviceName' | 'region' | 'currency' | 'officialPrice' | 'collectedAt'
+    | 'id'
+    | 'provider'
+    | 'planCode'
+    | 'serviceName'
+    | 'region'
+    | 'currency'
+    | 'officialPrice'
+    | 'appleBalancePrice'
+    | 'collectedAt'
   > | null;
   appleServiceId?: string | null;
   appleService?: Pick<
@@ -1079,7 +1116,10 @@ export interface ApplePriceChangeReview {
     | 'name'
     | 'category'
     | 'currency'
+    | 'officialBasePrice'
     | 'officialCostValue'
+    | 'appleBalancePriceRuleType'
+    | 'appleBalancePriceRuleValue'
     | 'defaultPeriodType'
     | 'defaultPeriodValue'
     | 'status'
@@ -1134,8 +1174,13 @@ export interface AppleOrder {
   startTime?: string | null;
   expireTime?: string | null;
   paidAmount: string;
+  paidCurrency: PaidCurrency;
+  paidExchangeRateToRmb: string;
+  paidAmountRmb: string;
   platformFee: string;
+  platformFeeRmb: string;
   refundLoss: string;
+  refundLossRmb: string;
   appleCostValue: string;
   appleCostRmb: string;
   profitAmount: string;
@@ -1173,8 +1218,13 @@ export interface ServiceActivation {
   avgUnitCost: string;
   costRmb: string;
   paidAmount: string;
+  paidCurrency: PaidCurrency;
+  paidExchangeRateToRmb: string;
+  paidAmountRmb: string;
   platformFee: string;
+  platformFeeRmb: string;
   refundLoss: string;
+  refundLossRmb: string;
   profitAmount: string;
   sourcePlatformId?: string | null;
   sourcePlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;

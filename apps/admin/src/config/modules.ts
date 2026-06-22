@@ -48,6 +48,7 @@ const modulePermissionByKey: Record<string, string> = {
   'launch-audit': 'maintenance.system_parameter.manage',
   'apple-list': 'apple.account.view',
   'apple-detail': 'apple.account.view',
+  'apple-source-channels': 'apple.account.update',
   'apple-settings': 'apple.service.manage',
   'apple-orders': 'apple.order.view',
   'order-entry': 'apple.order.view',
@@ -218,6 +219,19 @@ const appleModules: AppModuleItem[] = [
     tableColumns: ['类型', '金额', '成本', '操作人', '时间']
   },
   {
+    key: 'apple-source-channels',
+    title: 'Apple ID 来源渠道',
+    route: '/apple/source-channels',
+    mark: 'CH',
+    group: 'Apple ID 业务',
+    phase: 'Phase 3',
+    status: 'ready',
+    description: '单独维护 Apple ID 从哪里获得，不和客户来源平台、订单销售平台混用。',
+    features: ['来源渠道列表', '新增编辑', '启停状态', '备注说明', '账号下拉引用'],
+    primaryAction: '新增来源渠道',
+    tableColumns: ['来源渠道', '状态', '备注', '更新时间']
+  },
+  {
     key: 'apple-settings',
     title: 'Apple ID 业务设置',
     route: '/apple/settings',
@@ -242,7 +256,18 @@ const appleModules: AppModuleItem[] = [
       '这里看 Apple ID 订单。重点看客户付了多少钱、这个单花掉多少余额、最后赚了还是亏了。',
     features: ['订单列表', '订单详情抽屉', '利润预估', '开通记录', '续费任务关联'],
     primaryAction: '新建订单',
-    tableColumns: ['订单号', '客户', '业务', 'Apple ID', '实收', '利润', '状态']
+    tableColumns: [
+      '订单号',
+      '客户',
+      '业务',
+      'Apple ID',
+      '实收',
+      '成本',
+      '平台手续费',
+      '退款/补发损耗',
+      '利润',
+      '状态'
+    ]
   },
   {
     key: 'order-entry',

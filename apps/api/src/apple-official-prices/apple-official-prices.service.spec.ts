@@ -26,6 +26,8 @@ describe('AppleOfficialPricesService', () => {
   const source = {
     id: sourceId,
     name: 'Apple 官方美国价格',
+    provider: 'chatgpt',
+    priceSourceType: 'official_web',
     region: 'US',
     currency: 'USD',
     sourceUrl: 'https://www.apple.com/',
@@ -56,7 +58,10 @@ describe('AppleOfficialPricesService', () => {
     name: 'ChatGPT Plus 月费',
     category: 'AI 会员',
     defaultPrice: new Prisma.Decimal('88'),
+    officialBasePrice: new Prisma.Decimal('20'),
     officialCostValue: new Prisma.Decimal('20'),
+    appleBalancePriceRuleType: 'inherit',
+    appleBalancePriceRuleValue: null,
     currency: 'USD',
     defaultPeriodType: 'month',
     defaultPeriodValue: 1,
@@ -108,10 +113,13 @@ describe('AppleOfficialPricesService', () => {
       source: {
         id: sourceId,
         name: currentSource.name,
+        provider: currentSource.provider,
         region: currentSource.region,
         currency: currentSource.currency
       },
       appleServiceId: serviceId,
+      provider: currentSource.provider,
+      planCode: null,
       appleService: {
         id: serviceId,
         name: currentAppleService.name,
@@ -123,6 +131,7 @@ describe('AppleOfficialPricesService', () => {
       region: 'US',
       currency: 'USD',
       officialPrice: new Prisma.Decimal('22'),
+      appleBalancePrice: new Prisma.Decimal('22'),
       periodType: 'month',
       periodValue: 1,
       rawPayload: null,
@@ -134,6 +143,7 @@ describe('AppleOfficialPricesService', () => {
       source: {
         id: sourceId,
         name: currentSource.name,
+        provider: currentSource.provider,
         region: currentSource.region,
         currency: currentSource.currency
       },
@@ -145,7 +155,10 @@ describe('AppleOfficialPricesService', () => {
         name: currentAppleService.name,
         category: currentAppleService.category,
         currency: currentAppleService.currency,
+        officialBasePrice: currentAppleService.officialBasePrice,
         officialCostValue: currentAppleService.officialCostValue,
+        appleBalancePriceRuleType: currentAppleService.appleBalancePriceRuleType,
+        appleBalancePriceRuleValue: currentAppleService.appleBalancePriceRuleValue,
         defaultPeriodType: currentAppleService.defaultPeriodType,
         defaultPeriodValue: currentAppleService.defaultPeriodValue,
         remark: currentAppleService.remark,
@@ -155,18 +168,23 @@ describe('AppleOfficialPricesService', () => {
       oldValue: {
         serviceId,
         serviceName: currentAppleService.name,
+        officialBasePrice: '20',
         officialPrice: '20',
+        appleBalancePrice: '20',
         currency: 'USD',
         periodType: 'month',
         periodValue: 1
       },
       newValue: {
         appleServiceId: serviceId,
+        provider: currentSource.provider,
         serviceName: currentAppleService.name,
         category: currentAppleService.category,
         region: 'US',
         currency: 'USD',
+        officialBasePrice: '22',
         officialPrice: '22',
+        appleBalancePrice: '22',
         periodType: 'month',
         periodValue: 1
       },
@@ -253,7 +271,8 @@ describe('AppleOfficialPricesService', () => {
 
     const appleServicesService = {
       create: jest.fn(),
-      update: jest.fn().mockResolvedValue({})
+      update: jest.fn().mockResolvedValue({}),
+      getBalancePriceRule: jest.fn().mockResolvedValue({ ruleType: 'percent', ruleValue: '1' })
     } as unknown as AppleServicesService;
 
     const realtimeService = {
@@ -449,7 +468,7 @@ describe('AppleOfficialPricesService', () => {
     expect(appleServicesService.update).toHaveBeenCalledWith(
       serviceId,
       expect.objectContaining({
-        officialCostValue: '22',
+        officialBasePrice: '22',
         currency: 'USD',
         defaultPeriodType: 'month',
         defaultPeriodValue: 1

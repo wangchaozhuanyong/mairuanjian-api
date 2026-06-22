@@ -19,8 +19,11 @@ interface ProfitReportOrder {
   orderNo: string;
   status: AppleOrderStatus;
   paidAmount: PrismaNamespace.Decimal.Value;
+  paidAmountRmb: PrismaNamespace.Decimal.Value;
   platformFee: PrismaNamespace.Decimal.Value;
+  platformFeeRmb: PrismaNamespace.Decimal.Value;
   refundLoss: PrismaNamespace.Decimal.Value;
+  refundLossRmb: PrismaNamespace.Decimal.Value;
   appleCostRmb: PrismaNamespace.Decimal.Value;
   profitAmount: PrismaNamespace.Decimal.Value;
   createdAt: Date;
@@ -61,8 +64,11 @@ const profitOrderSelect = {
   orderNo: true,
   status: true,
   paidAmount: true,
+  paidAmountRmb: true,
   platformFee: true,
+  platformFeeRmb: true,
   refundLoss: true,
+  refundLossRmb: true,
   appleCostRmb: true,
   profitAmount: true,
   createdAt: true,
@@ -158,9 +164,9 @@ export class AppleReportsService {
         id: order.id,
         orderNo: order.orderNo,
         status: order.status,
-        paidAmount: this.toMoney(order.paidAmount),
-        platformFee: this.toMoney(order.platformFee),
-        refundLoss: this.toMoney(order.refundLoss),
+        paidAmount: this.toMoney(order.paidAmountRmb),
+        platformFee: this.toMoney(order.platformFeeRmb),
+        refundLoss: this.toMoney(order.refundLossRmb),
         appleCostRmb: this.toMoney4(order.appleCostRmb),
         profitAmount: this.toMoney4(order.profitAmount),
         serviceName: order.service?.name ?? null,
@@ -258,9 +264,9 @@ export class AppleReportsService {
 
   private addOrder(accumulator: ProfitAccumulator, order: ProfitReportOrder) {
     accumulator.orderCount += 1;
-    accumulator.paidAmount = accumulator.paidAmount.plus(order.paidAmount);
-    accumulator.platformFee = accumulator.platformFee.plus(order.platformFee);
-    accumulator.refundLoss = accumulator.refundLoss.plus(order.refundLoss);
+    accumulator.paidAmount = accumulator.paidAmount.plus(order.paidAmountRmb);
+    accumulator.platformFee = accumulator.platformFee.plus(order.platformFeeRmb);
+    accumulator.refundLoss = accumulator.refundLoss.plus(order.refundLossRmb);
     accumulator.appleCostRmb = accumulator.appleCostRmb.plus(order.appleCostRmb);
     accumulator.profitAmount = accumulator.profitAmount.plus(order.profitAmount);
   }

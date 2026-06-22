@@ -22,6 +22,11 @@ enum SourcePlatformStatus {
   disabled
 }
 
+enum AppleAccountSourceChannelStatus {
+  active
+  disabled
+}
+
 enum MessageTemplateType {
   renewal
   delivery
@@ -71,6 +76,13 @@ enum AppleServiceExpireCalcType {
 enum AppleServiceLockRule {
   by_service
   global
+}
+
+enum AppleBalancePriceRuleType {
+  inherit
+  percent
+  fixed_add
+  manual
 }
 
 enum AppleOrderStatus {
@@ -438,66 +450,68 @@ model User {
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz(6)
 
-  userRoles                UserRole[]
-  auditLogs                AuditLog[]
-  attachments              Attachment[]
-  customersCreated         Customer[]                @relation("CustomerCreatedBy")
-  customersUpdated         Customer[]                @relation("CustomerUpdatedBy")
-  sourcePlatformsCreated   SourcePlatform[]          @relation("SourcePlatformCreatedBy")
-  sourcePlatformsUpdated   SourcePlatform[]          @relation("SourcePlatformUpdatedBy")
-  messageTemplatesCreated  MessageTemplate[]         @relation("MessageTemplateCreatedBy")
-  messageTemplatesUpdated  MessageTemplate[]         @relation("MessageTemplateUpdatedBy")
-  appleAccountsCreated     AppleAccount[]            @relation("AppleAccountCreatedBy")
-  appleAccountsUpdated     AppleAccount[]            @relation("AppleAccountUpdatedBy")
-  appleAccountsLocked      AppleAccount[]            @relation("AppleAccountLockedBy")
-  appleTopupsCreated       AppleBalanceTopup[]       @relation("AppleBalanceTopupCreatedBy")
-  appleConsumptionsCreated AppleBalanceConsumption[] @relation("AppleBalanceConsumptionCreatedBy")
-  appleBalanceAdjustments  AppleBalanceAdjustment[]  @relation("AppleBalanceAdjustmentOperator")
-  appleStatusChecks        AppleAccountStatusCheck[] @relation("AppleAccountStatusCheckOperator")
-  appleServicesCreated     AppleService[]            @relation("AppleServiceCreatedBy")
-  appleServicesUpdated     AppleService[]            @relation("AppleServiceUpdatedBy")
-  appleOfficialPriceSourcesCreated AppleOfficialPriceSource[] @relation("AppleOfficialPriceSourceCreatedBy")
-  appleOfficialPriceSourcesUpdated AppleOfficialPriceSource[] @relation("AppleOfficialPriceSourceUpdatedBy")
-  applePriceChangeReviewsReviewed  ApplePriceChangeReview[]   @relation("ApplePriceChangeReviewReviewedBy")
-  appleOrdersCreated       AppleOrder[]              @relation("AppleOrderCreatedBy")
-  appleOrdersUpdated       AppleOrder[]              @relation("AppleOrderUpdatedBy")
-  appleAccountLocksCreated AppleAccountLock[]        @relation("AppleAccountLockCreatedBy")
-  renewalTasksAssigned     RenewalTask[]             @relation("RenewalTaskAssignedTo")
-  renewalTasksCreated      RenewalTask[]             @relation("RenewalTaskCreatedBy")
-  renewalTasksCompleted    RenewalTask[]             @relation("RenewalTaskCompletedBy")
-  actionPlansCreated       AppleAccountActionPlan[]  @relation("AppleActionPlanCreatedBy")
-  actionPlansCompleted     AppleAccountActionPlan[]  @relation("AppleActionPlanCompletedBy")
-  codeServicesCreated      CodeService[]             @relation("CodeServiceCreatedBy")
-  codeServicesUpdated      CodeService[]             @relation("CodeServiceUpdatedBy")
-  redeemCodeBatches        RedeemCodeBatch[]         @relation("RedeemCodeBatchImportedBy")
-  codeAfterSalesHandled    CodeAfterSale[]           @relation("CodeAfterSaleHandledBy")
-  automationTasksCreated   AutomationTask[]          @relation("AutomationTaskCreatedBy")
-  notificationLogsRead     NotificationLog[]         @relation("NotificationLogReadBy")
-  loginLogs                LoginLog[]                @relation("LoginLogUser")
-  activeSessions           ActiveSession[]           @relation("ActiveSessionUser")
-  securitySettingsUpdated  SecuritySetting[]         @relation("SecuritySettingUpdatedBy")
-  ipWhitelistsCreated      IpWhitelist[]             @relation("IpWhitelistCreatedBy")
-  sensitiveAccessLogs      SensitiveAccessLog[]      @relation("SensitiveAccessLogUser")
-  sensitiveApprovalsAsked  SensitiveAccessApproval[] @relation("SensitiveAccessApprovalRequester")
-  sensitiveApprovalsDone   SensitiveAccessApproval[] @relation("SensitiveAccessApprovalApprover")
-  backupJobsCreated        BackupJob[]               @relation("BackupJobCreatedBy")
-  restoreJobsCreated       RestoreJob[]              @relation("RestoreJobCreatedBy")
-  dataImportJobsCreated    DataImportJob[]           @relation("DataImportJobCreatedBy")
-  dataExportJobsCreated    DataExportJob[]           @relation("DataExportJobCreatedBy")
-  recycleBinRecordsDeleted RecycleBinRecord[]        @relation("RecycleBinRecordDeletedBy")
-  recycleBinRecordsRestored RecycleBinRecord[]       @relation("RecycleBinRecordRestoredBy")
-  systemParametersUpdated  SystemParameter[]         @relation("SystemParameterUpdatedBy")
-  dataDictionariesCreated  DataDictionary[]          @relation("DataDictionaryCreatedBy")
-  dataDictionariesUpdated  DataDictionary[]          @relation("DataDictionaryUpdatedBy")
-  dataCleanupJobsCreated   DataCleanupJob[]          @relation("DataCleanupJobCreatedBy")
-  duplicateMergeJobsCreated DuplicateMergeJob[]      @relation("DuplicateMergeJobCreatedBy")
-  appAnnouncementsCreated  AppAnnouncement[]         @relation("AppAnnouncementCreatedBy")
-  appAnnouncementsUpdated  AppAnnouncement[]         @relation("AppAnnouncementUpdatedBy")
-  maintenanceWindowsCreated MaintenanceWindow[]      @relation("MaintenanceWindowCreatedBy")
-  maintenanceWindowsUpdated MaintenanceWindow[]      @relation("MaintenanceWindowUpdatedBy")
-  featureFlagsUpdated      FeatureFlag[]             @relation("FeatureFlagUpdatedBy")
-  appVersionsCreated       AppVersion[]              @relation("AppVersionCreatedBy")
-  tableViews               UserTableView[]           @relation("UserTableViewUser")
+  userRoles                         UserRole[]
+  auditLogs                         AuditLog[]
+  attachments                       Attachment[]
+  customersCreated                  Customer[]                  @relation("CustomerCreatedBy")
+  customersUpdated                  Customer[]                  @relation("CustomerUpdatedBy")
+  sourcePlatformsCreated            SourcePlatform[]            @relation("SourcePlatformCreatedBy")
+  sourcePlatformsUpdated            SourcePlatform[]            @relation("SourcePlatformUpdatedBy")
+  appleAccountSourceChannelsCreated AppleAccountSourceChannel[] @relation("AppleAccountSourceChannelCreatedBy")
+  appleAccountSourceChannelsUpdated AppleAccountSourceChannel[] @relation("AppleAccountSourceChannelUpdatedBy")
+  messageTemplatesCreated           MessageTemplate[]           @relation("MessageTemplateCreatedBy")
+  messageTemplatesUpdated           MessageTemplate[]           @relation("MessageTemplateUpdatedBy")
+  appleAccountsCreated              AppleAccount[]              @relation("AppleAccountCreatedBy")
+  appleAccountsUpdated              AppleAccount[]              @relation("AppleAccountUpdatedBy")
+  appleAccountsLocked               AppleAccount[]              @relation("AppleAccountLockedBy")
+  appleTopupsCreated                AppleBalanceTopup[]         @relation("AppleBalanceTopupCreatedBy")
+  appleConsumptionsCreated          AppleBalanceConsumption[]   @relation("AppleBalanceConsumptionCreatedBy")
+  appleBalanceAdjustments           AppleBalanceAdjustment[]    @relation("AppleBalanceAdjustmentOperator")
+  appleStatusChecks                 AppleAccountStatusCheck[]   @relation("AppleAccountStatusCheckOperator")
+  appleServicesCreated              AppleService[]              @relation("AppleServiceCreatedBy")
+  appleServicesUpdated              AppleService[]              @relation("AppleServiceUpdatedBy")
+  appleOfficialPriceSourcesCreated  AppleOfficialPriceSource[]  @relation("AppleOfficialPriceSourceCreatedBy")
+  appleOfficialPriceSourcesUpdated  AppleOfficialPriceSource[]  @relation("AppleOfficialPriceSourceUpdatedBy")
+  applePriceChangeReviewsReviewed   ApplePriceChangeReview[]    @relation("ApplePriceChangeReviewReviewedBy")
+  appleOrdersCreated                AppleOrder[]                @relation("AppleOrderCreatedBy")
+  appleOrdersUpdated                AppleOrder[]                @relation("AppleOrderUpdatedBy")
+  appleAccountLocksCreated          AppleAccountLock[]          @relation("AppleAccountLockCreatedBy")
+  renewalTasksAssigned              RenewalTask[]               @relation("RenewalTaskAssignedTo")
+  renewalTasksCreated               RenewalTask[]               @relation("RenewalTaskCreatedBy")
+  renewalTasksCompleted             RenewalTask[]               @relation("RenewalTaskCompletedBy")
+  actionPlansCreated                AppleAccountActionPlan[]    @relation("AppleActionPlanCreatedBy")
+  actionPlansCompleted              AppleAccountActionPlan[]    @relation("AppleActionPlanCompletedBy")
+  codeServicesCreated               CodeService[]               @relation("CodeServiceCreatedBy")
+  codeServicesUpdated               CodeService[]               @relation("CodeServiceUpdatedBy")
+  redeemCodeBatches                 RedeemCodeBatch[]           @relation("RedeemCodeBatchImportedBy")
+  codeAfterSalesHandled             CodeAfterSale[]             @relation("CodeAfterSaleHandledBy")
+  automationTasksCreated            AutomationTask[]            @relation("AutomationTaskCreatedBy")
+  notificationLogsRead              NotificationLog[]           @relation("NotificationLogReadBy")
+  loginLogs                         LoginLog[]                  @relation("LoginLogUser")
+  activeSessions                    ActiveSession[]             @relation("ActiveSessionUser")
+  securitySettingsUpdated           SecuritySetting[]           @relation("SecuritySettingUpdatedBy")
+  ipWhitelistsCreated               IpWhitelist[]               @relation("IpWhitelistCreatedBy")
+  sensitiveAccessLogs               SensitiveAccessLog[]        @relation("SensitiveAccessLogUser")
+  sensitiveApprovalsAsked           SensitiveAccessApproval[]   @relation("SensitiveAccessApprovalRequester")
+  sensitiveApprovalsDone            SensitiveAccessApproval[]   @relation("SensitiveAccessApprovalApprover")
+  backupJobsCreated                 BackupJob[]                 @relation("BackupJobCreatedBy")
+  restoreJobsCreated                RestoreJob[]                @relation("RestoreJobCreatedBy")
+  dataImportJobsCreated             DataImportJob[]             @relation("DataImportJobCreatedBy")
+  dataExportJobsCreated             DataExportJob[]             @relation("DataExportJobCreatedBy")
+  recycleBinRecordsDeleted          RecycleBinRecord[]          @relation("RecycleBinRecordDeletedBy")
+  recycleBinRecordsRestored         RecycleBinRecord[]          @relation("RecycleBinRecordRestoredBy")
+  systemParametersUpdated           SystemParameter[]           @relation("SystemParameterUpdatedBy")
+  dataDictionariesCreated           DataDictionary[]            @relation("DataDictionaryCreatedBy")
+  dataDictionariesUpdated           DataDictionary[]            @relation("DataDictionaryUpdatedBy")
+  dataCleanupJobsCreated            DataCleanupJob[]            @relation("DataCleanupJobCreatedBy")
+  duplicateMergeJobsCreated         DuplicateMergeJob[]         @relation("DuplicateMergeJobCreatedBy")
+  appAnnouncementsCreated           AppAnnouncement[]           @relation("AppAnnouncementCreatedBy")
+  appAnnouncementsUpdated           AppAnnouncement[]           @relation("AppAnnouncementUpdatedBy")
+  maintenanceWindowsCreated         MaintenanceWindow[]         @relation("MaintenanceWindowCreatedBy")
+  maintenanceWindowsUpdated         MaintenanceWindow[]         @relation("MaintenanceWindowUpdatedBy")
+  featureFlagsUpdated               FeatureFlag[]               @relation("FeatureFlagUpdatedBy")
+  appVersionsCreated                AppVersion[]                @relation("AppVersionCreatedBy")
+  tableViews                        UserTableView[]             @relation("UserTableViewUser")
 
   @@index([status])
   @@index([deletedAt])
@@ -559,13 +573,32 @@ model SourcePlatform {
   codePlatformOrders           CodePlatformOrder[]
   codeDeliveryLogs             CodeDeliveryLog[]
   codeRefundRecords            CodeRefundRecord[]
-  appleAccounts                AppleAccount[]
   createdBy                    User?                         @relation("SourcePlatformCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedBy                    User?                         @relation("SourcePlatformUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([deletedAt])
   @@map("source_platforms")
+}
+
+model AppleAccountSourceChannel {
+  id              String                          @id @default(uuid()) @db.Uuid
+  name            String                          @db.VarChar(120)
+  status          AppleAccountSourceChannelStatus @default(active)
+  remark          String?                         @db.Text
+  createdByUserId String?                         @map("created_by_user_id") @db.Uuid
+  updatedByUserId String?                         @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?                       @map("deleted_at") @db.Timestamptz(6)
+
+  appleAccounts AppleAccount[]
+  createdBy     User?          @relation("AppleAccountSourceChannelCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy     User?          @relation("AppleAccountSourceChannelUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("apple_account_source_channels")
 }
 
 model MessageTemplate {
@@ -606,7 +639,7 @@ model AppleAccount {
   status                 AppleAccountStatus @default(normal)
   isManuallyLocked       Boolean            @default(false) @map("is_manually_locked")
   manualLockReason       String?            @map("manual_lock_reason") @db.Text
-  sourcePlatformId       String?            @map("source_platform_id") @db.Uuid
+  sourceChannelId        String?            @map("source_channel_id") @db.Uuid
   lockedAt               DateTime?          @map("locked_at") @db.Timestamptz(6)
   lockedByUserId         String?            @map("locked_by_user_id") @db.Uuid
   passwordEncrypted      String?            @map("password_encrypted") @db.Text
@@ -620,10 +653,10 @@ model AppleAccount {
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt              DateTime?          @map("deleted_at") @db.Timestamptz(6)
 
-  createdBy       User?                     @relation("AppleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy       User?                     @relation("AppleAccountUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  lockedBy        User?                     @relation("AppleAccountLockedBy", fields: [lockedByUserId], references: [id], onDelete: SetNull)
-  sourcePlatform  SourcePlatform?           @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
+  createdBy       User?                      @relation("AppleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy       User?                      @relation("AppleAccountUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  lockedBy        User?                      @relation("AppleAccountLockedBy", fields: [lockedByUserId], references: [id], onDelete: SetNull)
+  sourceChannel   AppleAccountSourceChannel? @relation(fields: [sourceChannelId], references: [id], onDelete: SetNull)
   topups          AppleBalanceTopup[]
   consumptions    AppleBalanceConsumption[]
   adjustments     AppleBalanceAdjustment[]
@@ -638,7 +671,7 @@ model AppleAccount {
   @@index([status])
   @@index([currency])
   @@index([isManuallyLocked])
-  @@index([sourcePlatformId])
+  @@index([sourceChannelId])
   @@index([deletedAt])
   @@map("apple_accounts")
 }
@@ -746,71 +779,78 @@ model AppleAccountStatusCheck {
 }
 
 model AppleService {
-  id                    String                     @id @default(uuid()) @db.Uuid
-  name                  String                     @db.VarChar(120)
-  category              String                     @default("default") @db.VarChar(80)
-  defaultPrice          Decimal                    @default(0) @map("default_price") @db.Decimal(18, 2)
-  officialCostValue     Decimal                    @default(0) @map("official_cost_value") @db.Decimal(18, 4)
-  currency              String                     @default("USD") @db.VarChar(10)
-  defaultPeriodType     AppleServicePeriodType     @default(month) @map("default_period_type")
-  defaultPeriodValue    Int                        @default(1) @map("default_period_value")
-  expireCalcType        AppleServiceExpireCalcType @default(by_month) @map("expire_calc_type")
-  requireAppleId        Boolean                    @default(true) @map("require_apple_id")
-  requireServiceAccount Boolean                    @default(false) @map("require_service_account")
-  autoMatchAppleId      Boolean                    @default(true) @map("auto_match_apple_id")
-  lockRule              AppleServiceLockRule       @default(by_service) @map("lock_rule")
-  allowedRegions        String[]                   @default([]) @map("allowed_regions")
-  minBalanceRequired    Decimal                    @default(0) @map("min_balance_required") @db.Decimal(18, 4)
-  status                AppleServiceStatus         @default(enabled)
-  remark                String?                    @db.Text
-  createdByUserId       String?                    @map("created_by_user_id") @db.Uuid
-  updatedByUserId       String?                    @map("updated_by_user_id") @db.Uuid
-  createdAt             DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt             DateTime?                  @map("deleted_at") @db.Timestamptz(6)
+  id                         String                     @id @default(uuid()) @db.Uuid
+  name                       String                     @db.VarChar(120)
+  category                   String                     @default("default") @db.VarChar(80)
+  defaultPrice               Decimal                    @default(0) @map("default_price") @db.Decimal(18, 2)
+  officialBasePrice          Decimal                    @default(0) @map("official_base_price") @db.Decimal(18, 4)
+  officialCostValue          Decimal                    @default(0) @map("official_cost_value") @db.Decimal(18, 4)
+  appleBalancePriceRuleType  AppleBalancePriceRuleType  @default(inherit) @map("apple_balance_price_rule_type")
+  appleBalancePriceRuleValue Decimal?                   @map("apple_balance_price_rule_value") @db.Decimal(18, 4)
+  currency                   String                     @default("USD") @db.VarChar(10)
+  defaultPeriodType          AppleServicePeriodType     @default(month) @map("default_period_type")
+  defaultPeriodValue         Int                        @default(1) @map("default_period_value")
+  expireCalcType             AppleServiceExpireCalcType @default(by_month) @map("expire_calc_type")
+  requireAppleId             Boolean                    @default(true) @map("require_apple_id")
+  requireServiceAccount      Boolean                    @default(false) @map("require_service_account")
+  autoMatchAppleId           Boolean                    @default(true) @map("auto_match_apple_id")
+  lockRule                   AppleServiceLockRule       @default(by_service) @map("lock_rule")
+  allowedRegions             String[]                   @default([]) @map("allowed_regions")
+  minBalanceRequired         Decimal                    @default(0) @map("min_balance_required") @db.Decimal(18, 4)
+  status                     AppleServiceStatus         @default(enabled)
+  remark                     String?                    @db.Text
+  createdByUserId            String?                    @map("created_by_user_id") @db.Uuid
+  updatedByUserId            String?                    @map("updated_by_user_id") @db.Uuid
+  createdAt                  DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt                  DateTime?                  @map("deleted_at") @db.Timestamptz(6)
 
-  createdBy        User?                         @relation("AppleServiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy        User?                         @relation("AppleServiceUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  orders           AppleOrder[]
-  activations      ServiceActivation[]
-  locks            AppleAccountLock[]
-  renewalTasks     RenewalTask[]
-  actionPlanItems  AppleAccountActionPlanItem[]
-  platformMappings AppleServicePlatformMapping[]
-  automationTasks  AutomationTask[]
+  createdBy              User?                         @relation("AppleServiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy              User?                         @relation("AppleServiceUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  orders                 AppleOrder[]
+  activations            ServiceActivation[]
+  locks                  AppleAccountLock[]
+  renewalTasks           RenewalTask[]
+  actionPlanItems        AppleAccountActionPlanItem[]
+  platformMappings       AppleServicePlatformMapping[]
+  automationTasks        AutomationTask[]
   officialPriceSnapshots AppleOfficialPriceSnapshot[]
   priceChangeReviews     ApplePriceChangeReview[]
 
   @@index([category])
   @@index([currency])
+  @@index([appleBalancePriceRuleType])
   @@index([status])
   @@index([deletedAt])
   @@map("apple_services")
 }
 
 model AppleOfficialPriceSource {
-  id                 String                         @id @default(uuid()) @db.Uuid
-  name               String                         @db.VarChar(120)
-  region             String                         @db.VarChar(20)
-  currency           String                         @db.VarChar(10)
-  sourceUrl          String?                        @map("source_url") @db.Text
+  id                 String                          @id @default(uuid()) @db.Uuid
+  name               String                          @db.VarChar(120)
+  provider           String                          @default("manual") @db.VarChar(40)
+  priceSourceType    String                          @default("official_web") @map("price_source_type") @db.VarChar(40)
+  region             String                          @db.VarChar(20)
+  currency           String                          @db.VarChar(10)
+  sourceUrl          String?                         @map("source_url") @db.Text
   collectMethod      AppleOfficialPriceCollectMethod @default(manual) @map("collect_method")
-  checkIntervalHours Int                            @default(24) @map("check_interval_hours")
-  status             AppleOfficialPriceSourceStatus @default(enabled)
-  lastCheckedAt      DateTime?                      @map("last_checked_at") @db.Timestamptz(6)
-  remark             String?                        @db.Text
-  createdByUserId    String?                        @map("created_by_user_id") @db.Uuid
-  updatedByUserId    String?                        @map("updated_by_user_id") @db.Uuid
-  createdAt          DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                       @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt          DateTime?                      @map("deleted_at") @db.Timestamptz(6)
+  checkIntervalHours Int                             @default(24) @map("check_interval_hours")
+  status             AppleOfficialPriceSourceStatus  @default(enabled)
+  lastCheckedAt      DateTime?                       @map("last_checked_at") @db.Timestamptz(6)
+  remark             String?                         @db.Text
+  createdByUserId    String?                         @map("created_by_user_id") @db.Uuid
+  updatedByUserId    String?                         @map("updated_by_user_id") @db.Uuid
+  createdAt          DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime?                       @map("deleted_at") @db.Timestamptz(6)
 
-  createdBy User? @relation("AppleOfficialPriceSourceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy User? @relation("AppleOfficialPriceSourceUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  snapshots AppleOfficialPriceSnapshot[]
+  createdBy     User?                        @relation("AppleOfficialPriceSourceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy     User?                        @relation("AppleOfficialPriceSourceUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  snapshots     AppleOfficialPriceSnapshot[]
   changeReviews ApplePriceChangeReview[]
 
   @@index([region])
+  @@index([provider])
   @@index([currency])
   @@index([collectMethod])
   @@index([status])
@@ -820,25 +860,29 @@ model AppleOfficialPriceSource {
 }
 
 model AppleOfficialPriceSnapshot {
-  id             String                 @id @default(uuid()) @db.Uuid
-  sourceId       String                 @map("source_id") @db.Uuid
-  appleServiceId String?                @map("apple_service_id") @db.Uuid
-  serviceName    String                 @map("service_name") @db.VarChar(120)
-  category       String                 @default("通用") @db.VarChar(80)
-  region         String                 @db.VarChar(20)
-  currency       String                 @db.VarChar(10)
-  officialPrice  Decimal                @map("official_price") @db.Decimal(18, 4)
-  periodType     AppleServicePeriodType @default(month) @map("period_type")
-  periodValue    Int                    @default(1) @map("period_value")
-  rawPayload     Json?                  @map("raw_payload")
-  collectedAt    DateTime               @default(now()) @map("collected_at") @db.Timestamptz(6)
+  id                String                 @id @default(uuid()) @db.Uuid
+  sourceId          String                 @map("source_id") @db.Uuid
+  appleServiceId    String?                @map("apple_service_id") @db.Uuid
+  provider          String                 @default("manual") @db.VarChar(40)
+  planCode          String?                @map("plan_code") @db.VarChar(120)
+  serviceName       String                 @map("service_name") @db.VarChar(120)
+  category          String                 @default("通用") @db.VarChar(80)
+  region            String                 @db.VarChar(20)
+  currency          String                 @db.VarChar(10)
+  officialPrice     Decimal                @map("official_price") @db.Decimal(18, 4)
+  appleBalancePrice Decimal?               @map("apple_balance_price") @db.Decimal(18, 4)
+  periodType        AppleServicePeriodType @default(month) @map("period_type")
+  periodValue       Int                    @default(1) @map("period_value")
+  rawPayload        Json?                  @map("raw_payload")
+  collectedAt       DateTime               @default(now()) @map("collected_at") @db.Timestamptz(6)
 
-  source       AppleOfficialPriceSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
-  appleService AppleService?            @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
+  source        AppleOfficialPriceSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  appleService  AppleService?            @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
   changeReviews ApplePriceChangeReview[]
 
   @@index([sourceId])
   @@index([appleServiceId])
+  @@index([provider])
   @@index([serviceName])
   @@index([region])
   @@index([currency])
@@ -861,10 +905,10 @@ model ApplePriceChangeReview {
   createdAt        DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  source       AppleOfficialPriceSource  @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  source       AppleOfficialPriceSource    @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   snapshot     AppleOfficialPriceSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: SetNull)
-  appleService AppleService?             @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
-  reviewedBy   User?                     @relation("ApplePriceChangeReviewReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  appleService AppleService?               @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
+  reviewedBy   User?                       @relation("ApplePriceChangeReviewReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
 
   @@index([sourceId])
   @@index([snapshotId])
@@ -1139,30 +1183,35 @@ model RedeemCode {
 }
 
 model AppleOrder {
-  id               String           @id @default(uuid()) @db.Uuid
-  orderNo          String           @unique @map("order_no") @db.VarChar(40)
-  customerId       String           @map("customer_id") @db.Uuid
-  sourcePlatformId String?          @map("source_platform_id") @db.Uuid
-  externalOrderNo  String?          @map("external_order_no") @db.VarChar(120)
-  serviceId        String           @map("service_id") @db.Uuid
-  appleAccountId   String?          @map("apple_account_id") @db.Uuid
-  serviceAccount   String?          @map("service_account") @db.VarChar(255)
-  currentPlan      String?          @map("current_plan") @db.VarChar(120)
-  targetPlan       String?          @map("target_plan") @db.VarChar(120)
-  startTime        DateTime?        @map("start_time") @db.Timestamptz(6)
-  expireTime       DateTime?        @map("expire_time") @db.Timestamptz(6)
-  paidAmount       Decimal          @default(0) @map("paid_amount") @db.Decimal(18, 2)
-  platformFee      Decimal          @default(0) @map("platform_fee") @db.Decimal(18, 2)
-  refundLoss       Decimal          @default(0) @map("refund_loss") @db.Decimal(18, 2)
-  appleCostValue   Decimal          @default(0) @map("apple_cost_value") @db.Decimal(18, 4)
-  appleCostRmb     Decimal          @default(0) @map("apple_cost_rmb") @db.Decimal(18, 4)
-  profitAmount     Decimal          @default(0) @map("profit_amount") @db.Decimal(18, 4)
-  status           AppleOrderStatus @default(active)
-  remark           String?          @db.Text
-  createdByUserId  String?          @map("created_by_user_id") @db.Uuid
-  updatedByUserId  String?          @map("updated_by_user_id") @db.Uuid
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                    String           @id @default(uuid()) @db.Uuid
+  orderNo               String           @unique @map("order_no") @db.VarChar(40)
+  customerId            String           @map("customer_id") @db.Uuid
+  sourcePlatformId      String?          @map("source_platform_id") @db.Uuid
+  externalOrderNo       String?          @map("external_order_no") @db.VarChar(120)
+  serviceId             String           @map("service_id") @db.Uuid
+  appleAccountId        String?          @map("apple_account_id") @db.Uuid
+  serviceAccount        String?          @map("service_account") @db.VarChar(255)
+  currentPlan           String?          @map("current_plan") @db.VarChar(120)
+  targetPlan            String?          @map("target_plan") @db.VarChar(120)
+  startTime             DateTime?        @map("start_time") @db.Timestamptz(6)
+  expireTime            DateTime?        @map("expire_time") @db.Timestamptz(6)
+  paidAmount            Decimal          @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  paidCurrency          String           @default("CNY") @map("paid_currency") @db.VarChar(10)
+  paidExchangeRateToRmb Decimal          @default(1) @map("paid_exchange_rate_to_rmb") @db.Decimal(18, 8)
+  paidAmountRmb         Decimal          @default(0) @map("paid_amount_rmb") @db.Decimal(18, 4)
+  platformFee           Decimal          @default(0) @map("platform_fee") @db.Decimal(18, 2)
+  platformFeeRmb        Decimal          @default(0) @map("platform_fee_rmb") @db.Decimal(18, 4)
+  refundLoss            Decimal          @default(0) @map("refund_loss") @db.Decimal(18, 2)
+  refundLossRmb         Decimal          @default(0) @map("refund_loss_rmb") @db.Decimal(18, 4)
+  appleCostValue        Decimal          @default(0) @map("apple_cost_value") @db.Decimal(18, 4)
+  appleCostRmb          Decimal          @default(0) @map("apple_cost_rmb") @db.Decimal(18, 4)
+  profitAmount          Decimal          @default(0) @map("profit_amount") @db.Decimal(18, 4)
+  status                AppleOrderStatus @default(active)
+  remark                String?          @db.Text
+  createdByUserId       String?          @map("created_by_user_id") @db.Uuid
+  updatedByUserId       String?          @map("updated_by_user_id") @db.Uuid
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   customer       Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
   sourcePlatform SourcePlatform?    @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
@@ -1185,31 +1234,36 @@ model AppleOrder {
 }
 
 model ServiceActivation {
-  id               String                  @id @default(uuid()) @db.Uuid
-  orderId          String                  @unique @map("order_id") @db.Uuid
-  customerId       String                  @map("customer_id") @db.Uuid
-  appleAccountId   String?                 @map("apple_account_id") @db.Uuid
-  serviceId        String                  @map("service_id") @db.Uuid
-  currentPlan      String?                 @map("current_plan") @db.VarChar(120)
-  targetPlan       String?                 @map("target_plan") @db.VarChar(120)
-  startTime        DateTime?               @map("start_time") @db.Timestamptz(6)
-  expireTime       DateTime?               @map("expire_time") @db.Timestamptz(6)
-  consumedValue    Decimal                 @default(0) @map("consumed_value") @db.Decimal(18, 4)
-  currency         String                  @default("USD") @db.VarChar(10)
-  avgUnitCost      Decimal                 @default(0) @map("avg_unit_cost") @db.Decimal(18, 8)
-  costRmb          Decimal                 @default(0) @map("cost_rmb") @db.Decimal(18, 4)
-  paidAmount       Decimal                 @default(0) @map("paid_amount") @db.Decimal(18, 2)
-  platformFee      Decimal                 @default(0) @map("platform_fee") @db.Decimal(18, 2)
-  refundLoss       Decimal                 @default(0) @map("refund_loss") @db.Decimal(18, 2)
-  profitAmount     Decimal                 @default(0) @map("profit_amount") @db.Decimal(18, 4)
-  sourcePlatformId String?                 @map("source_platform_id") @db.Uuid
-  externalOrderNo  String?                 @map("external_order_no") @db.VarChar(120)
-  status           ServiceActivationStatus @default(active)
-  autoRenewStatus  AutoRenewStatus         @default(unknown) @map("auto_renew_status")
-  renewalDecision  RenewalDecision         @default(unconfirmed) @map("renewal_decision")
-  renewalNote      String?                 @map("renewal_note") @db.Text
-  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                    String                  @id @default(uuid()) @db.Uuid
+  orderId               String                  @unique @map("order_id") @db.Uuid
+  customerId            String                  @map("customer_id") @db.Uuid
+  appleAccountId        String?                 @map("apple_account_id") @db.Uuid
+  serviceId             String                  @map("service_id") @db.Uuid
+  currentPlan           String?                 @map("current_plan") @db.VarChar(120)
+  targetPlan            String?                 @map("target_plan") @db.VarChar(120)
+  startTime             DateTime?               @map("start_time") @db.Timestamptz(6)
+  expireTime            DateTime?               @map("expire_time") @db.Timestamptz(6)
+  consumedValue         Decimal                 @default(0) @map("consumed_value") @db.Decimal(18, 4)
+  currency              String                  @default("USD") @db.VarChar(10)
+  avgUnitCost           Decimal                 @default(0) @map("avg_unit_cost") @db.Decimal(18, 8)
+  costRmb               Decimal                 @default(0) @map("cost_rmb") @db.Decimal(18, 4)
+  paidAmount            Decimal                 @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  paidCurrency          String                  @default("CNY") @map("paid_currency") @db.VarChar(10)
+  paidExchangeRateToRmb Decimal                 @default(1) @map("paid_exchange_rate_to_rmb") @db.Decimal(18, 8)
+  paidAmountRmb         Decimal                 @default(0) @map("paid_amount_rmb") @db.Decimal(18, 4)
+  platformFee           Decimal                 @default(0) @map("platform_fee") @db.Decimal(18, 2)
+  platformFeeRmb        Decimal                 @default(0) @map("platform_fee_rmb") @db.Decimal(18, 4)
+  refundLoss            Decimal                 @default(0) @map("refund_loss") @db.Decimal(18, 2)
+  refundLossRmb         Decimal                 @default(0) @map("refund_loss_rmb") @db.Decimal(18, 4)
+  profitAmount          Decimal                 @default(0) @map("profit_amount") @db.Decimal(18, 4)
+  sourcePlatformId      String?                 @map("source_platform_id") @db.Uuid
+  externalOrderNo       String?                 @map("external_order_no") @db.VarChar(120)
+  status                ServiceActivationStatus @default(active)
+  autoRenewStatus       AutoRenewStatus         @default(unknown) @map("auto_renew_status")
+  renewalDecision       RenewalDecision         @default(unconfirmed) @map("renewal_decision")
+  renewalNote           String?                 @map("renewal_note") @db.Text
+  createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   order           AppleOrder                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   customer        Customer                     @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -1657,20 +1711,20 @@ model SensitiveAccessLog {
 }
 
 model SensitiveAccessApproval {
-  id            String                        @id @default(uuid()) @db.Uuid
-  requesterId   String                        @map("requester_id") @db.Uuid
-  approverId    String?                       @map("approver_id") @db.Uuid
-  module        String                        @db.VarChar(100)
-  fieldName     String                        @map("field_name") @db.VarChar(120)
-  objectType    String                        @map("object_type") @db.VarChar(120)
-  objectId      String?                       @map("object_id") @db.Uuid
-  reason        String                        @db.Text
-  status        SensitiveAccessApprovalStatus @default(pending)
-  decisionNote  String?                       @map("decision_note") @db.Text
-  approvedAt    DateTime?                     @map("approved_at") @db.Timestamptz(6)
-  expiresAt     DateTime?                     @map("expires_at") @db.Timestamptz(6)
-  createdAt     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id           String                        @id @default(uuid()) @db.Uuid
+  requesterId  String                        @map("requester_id") @db.Uuid
+  approverId   String?                       @map("approver_id") @db.Uuid
+  module       String                        @db.VarChar(100)
+  fieldName    String                        @map("field_name") @db.VarChar(120)
+  objectType   String                        @map("object_type") @db.VarChar(120)
+  objectId     String?                       @map("object_id") @db.Uuid
+  reason       String                        @db.Text
+  status       SensitiveAccessApprovalStatus @default(pending)
+  decisionNote String?                       @map("decision_note") @db.Text
+  approvedAt   DateTime?                     @map("approved_at") @db.Timestamptz(6)
+  expiresAt    DateTime?                     @map("expires_at") @db.Timestamptz(6)
+  createdAt    DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   requester User  @relation("SensitiveAccessApprovalRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   approver  User? @relation("SensitiveAccessApprovalApprover", fields: [approverId], references: [id], onDelete: SetNull)
@@ -1753,18 +1807,18 @@ model DataImportJob {
 }
 
 model DataExportJob {
-  id                  String        @id @default(uuid()) @db.Uuid
-  module              String        @db.VarChar(100)
-  exportScope         Json?         @map("export_scope")
-  fields              String[]      @default([])
-  containsSensitive   Boolean       @default(false) @map("contains_sensitive")
-  status              DataJobStatus @default(pending)
-  filePath            String?       @map("file_path") @db.VarChar(500)
-  downloadExpiresAt   DateTime?     @map("download_expires_at") @db.Timestamptz(6)
-  errorMessage        String?       @map("error_message") @db.Text
-  createdById         String?       @map("created_by") @db.Uuid
-  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  finishedAt          DateTime?     @map("finished_at") @db.Timestamptz(6)
+  id                String        @id @default(uuid()) @db.Uuid
+  module            String        @db.VarChar(100)
+  exportScope       Json?         @map("export_scope")
+  fields            String[]      @default([])
+  containsSensitive Boolean       @default(false) @map("contains_sensitive")
+  status            DataJobStatus @default(pending)
+  filePath          String?       @map("file_path") @db.VarChar(500)
+  downloadExpiresAt DateTime?     @map("download_expires_at") @db.Timestamptz(6)
+  errorMessage      String?       @map("error_message") @db.Text
+  createdById       String?       @map("created_by") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt        DateTime?     @map("finished_at") @db.Timestamptz(6)
 
   createdBy User? @relation("DataExportJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -1863,16 +1917,16 @@ model DataDictionary {
 }
 
 model DataCleanupJob {
-  id           String        @id @default(uuid()) @db.Uuid
-  module       String        @db.VarChar(100)
-  cleanupScope Json?         @map("cleanup_scope")
-  status       DataJobStatus @default(pending)
-  affectedCount Int          @default(0) @map("affected_count")
-  approvalNote String?       @map("approval_note") @db.Text
-  errorMessage String?       @map("error_message") @db.Text
-  createdById  String?       @map("created_by") @db.Uuid
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  finishedAt   DateTime?     @map("finished_at") @db.Timestamptz(6)
+  id            String        @id @default(uuid()) @db.Uuid
+  module        String        @db.VarChar(100)
+  cleanupScope  Json?         @map("cleanup_scope")
+  status        DataJobStatus @default(pending)
+  affectedCount Int           @default(0) @map("affected_count")
+  approvalNote  String?       @map("approval_note") @db.Text
+  errorMessage  String?       @map("error_message") @db.Text
+  createdById   String?       @map("created_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt    DateTime?     @map("finished_at") @db.Timestamptz(6)
 
   createdBy User? @relation("DataCleanupJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -1884,18 +1938,18 @@ model DataCleanupJob {
 }
 
 model DuplicateMergeJob {
-  id           String        @id @default(uuid()) @db.Uuid
-  module       String        @db.VarChar(100)
-  matchRule    Json?         @map("match_rule")
-  primaryObjectId String?    @map("primary_object_id") @db.Uuid
-  duplicateObjectIds String[] @default([]) @map("duplicate_object_ids")
-  status       DataJobStatus @default(pending)
-  affectedCount Int          @default(0) @map("affected_count")
-  approvalNote String?       @map("approval_note") @db.Text
-  errorMessage String?       @map("error_message") @db.Text
-  createdById  String?       @map("created_by") @db.Uuid
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  finishedAt   DateTime?     @map("finished_at") @db.Timestamptz(6)
+  id                 String        @id @default(uuid()) @db.Uuid
+  module             String        @db.VarChar(100)
+  matchRule          Json?         @map("match_rule")
+  primaryObjectId    String?       @map("primary_object_id") @db.Uuid
+  duplicateObjectIds String[]      @default([]) @map("duplicate_object_ids")
+  status             DataJobStatus @default(pending)
+  affectedCount      Int           @default(0) @map("affected_count")
+  approvalNote       String?       @map("approval_note") @db.Text
+  errorMessage       String?       @map("error_message") @db.Text
+  createdById        String?       @map("created_by") @db.Uuid
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt         DateTime?     @map("finished_at") @db.Timestamptz(6)
 
   createdBy User? @relation("DuplicateMergeJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 

@@ -2,6 +2,7 @@ import type { AppleServicePeriodType } from '@prisma/client';
 
 export interface OfficialPriceCollectedItemDto {
   appleServiceId?: string | null;
+  planCode?: string | null;
   serviceName?: string;
   category?: string | null;
   region?: string | null;

@@ -2633,6 +2633,27 @@ h1 {
   white-space: nowrap;
 }
 
+.order-amount-cell {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.order-amount-cell strong {
+  color: var(--v3-text);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.order-amount-cell span {
+  color: var(--v3-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .order-selected-account {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

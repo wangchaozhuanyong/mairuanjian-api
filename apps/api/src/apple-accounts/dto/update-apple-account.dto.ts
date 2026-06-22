@@ -6,6 +6,7 @@ export interface UpdateAppleAccountDto {
   currency?: string;
   currentBalance?: string | number;
   balanceCostAmount?: string | number;
+  sourceChannelId?: string | null;
   sourcePlatformId?: string | null;
   status?: AppleAccountStatus;
   isManuallyLocked?: boolean;

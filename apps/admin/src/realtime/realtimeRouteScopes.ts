@@ -14,10 +14,12 @@ const fallbackScopesByModuleKey: Record<string, string[]> = {
   'renewal-waiting-auto': ['apple-renewal-tasks'],
   'action-plans': ['apple-action-plans'],
   'launch-audit': ['launch-audit', 'maintenance-parameters'],
-  'apple-list': ['apple-accounts', 'data-dictionaries'],
+  'apple-list': ['apple-accounts', 'apple-account-source-channels', 'data-dictionaries'],
   'apple-detail': ['apple-accounts', 'apple-orders', 'apple-activations', 'apple-renewal-tasks'],
+  'apple-source-channels': ['apple-account-source-channels', 'apple-accounts'],
   'apple-settings': [
     'apple-accounts',
+    'apple-account-source-channels',
     'apple-services',
     'apple-official-prices',
     'apple-automation-tasks',

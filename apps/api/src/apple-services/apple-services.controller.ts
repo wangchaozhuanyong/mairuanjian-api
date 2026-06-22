@@ -2,7 +2,10 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { AppleServicesService } from './apple-services.service';
-import type { CreateAppleServiceDto } from './dto/create-apple-service.dto';
+import type {
+  CreateAppleServiceDto,
+  SaveAppleBalancePriceRuleDto
+} from './dto/create-apple-service.dto';
 import type { CreateAppleServicePlatformMappingDto } from './dto/create-apple-service-platform-mapping.dto';
 import type { UpdateAppleServiceDto } from './dto/update-apple-service.dto';
 import type { UpdateAppleServicePlatformMappingDto } from './dto/update-apple-service-platform-mapping.dto';
@@ -35,6 +38,12 @@ export class AppleServicesController {
     });
   }
 
+  @Get('balance-price-rule')
+  @RequirePermissions('apple.service.manage')
+  getBalancePriceRule() {
+    return this.appleServicesService.getBalancePriceRule();
+  }
+
   @Get(':id')
   @RequirePermissions('apple.service.manage')
   get(@Param('id') id: string) {
@@ -51,6 +60,15 @@ export class AppleServicesController {
   @RequirePermissions('apple.service.manage')
   create(@Body() dto: CreateAppleServiceDto, @CurrentUser() operator?: AuthenticatedUser) {
     return this.appleServicesService.create(dto, operator);
+  }
+
+  @Patch('balance-price-rule')
+  @RequirePermissions('apple.service.manage')
+  updateBalancePriceRule(
+    @Body() dto: SaveAppleBalancePriceRuleDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.appleServicesService.updateBalancePriceRule(dto, operator);
   }
 
   @Post(':id/platform-mappings')

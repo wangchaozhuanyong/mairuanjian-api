@@ -30,6 +30,7 @@ function getRealtimeSmartQueryScopes(event: RealtimeEvent) {
 
   if (event.module === 'apple') {
     scopes.add('dashboard-overview');
+    scopes.add('apple-account-source-channels');
     scopes.add('apple-accounts');
     scopes.add('apple-orders');
     scopes.add('apple-services');

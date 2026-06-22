@@ -131,7 +131,7 @@
       >
         导出
       </AppButton>
-      <el-dropdown trigger="click" :hide-on-click="false">
+      <el-dropdown v-if="hasColumnOptions" trigger="click" :hide-on-click="false">
         <AppButton class="table-toolbar__op" :icon="Setting" title="配置表格列">列显示</AppButton>
         <template #dropdown>
           <el-dropdown-menu class="table-toolbar__columns-menu">

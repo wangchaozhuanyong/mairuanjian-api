@@ -37,7 +37,7 @@ interface ListAppleAccountsQuery extends PaginationQuery {
   currency?: string;
   region?: string;
   locked?: string;
-  sourcePlatformId?: string;
+  sourceChannelId?: string;
   sortBy?: string;
   sortOrder?: string;
 }
@@ -67,7 +67,7 @@ interface AppleAccountImportPlanItem {
   currentBalance: string;
   balanceCostAmount: string;
   averageCost: string;
-  sourcePlatformId: string | null;
+  sourceChannelId: string | null;
   status: AppleAccountStatus;
   isManuallyLocked: boolean;
   manualLockReason: string | null;
@@ -78,8 +78,8 @@ interface AppleAccountImportPlanItem {
   remark: string | null;
 }
 
-type AppleAccountWithSourcePlatform = AppleAccount & {
-  sourcePlatform?: {
+type AppleAccountWithSourceChannel = AppleAccount & {
+  sourceChannel?: {
     id: string;
     name: string;
     status: string;
@@ -87,7 +87,7 @@ type AppleAccountWithSourcePlatform = AppleAccount & {
 };
 
 const appleAccountInclude = {
-  sourcePlatform: {
+  sourceChannel: {
     select: {
       id: true,
       name: true,
@@ -170,7 +170,7 @@ export class AppleAccountsService {
           currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
           region: query.region ? query.region.trim().toUpperCase() : undefined,
           isManuallyLocked: locked,
-          sourcePlatformId: this.normalizeNullableString(query.sourcePlatformId) ?? undefined,
+          sourceChannelId: this.normalizeNullableString(query.sourceChannelId) ?? undefined,
           OR: keyword
             ? [
                 { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
@@ -235,7 +235,9 @@ export class AppleAccountsService {
     const region = normalizeAppleAccountRegion(dto.region);
     const currency = normalizeAppleAccountCurrency(region, dto.currency);
     const phone = normalizeAppleAccountPhone(dto.phone, region);
-    const sourcePlatformId = await this.resolveSourcePlatformId(dto.sourcePlatformId);
+    const sourceChannelId = await this.resolveSourceChannelId(
+      dto.sourceChannelId ?? dto.sourcePlatformId
+    );
 
     const account = await this.prisma.appleAccount.create({
       data: {
@@ -246,7 +248,7 @@ export class AppleAccountsService {
         currentBalance,
         balanceCostAmount,
         averageCost,
-        sourcePlatformId,
+        sourceChannelId,
         status: this.parseStatus(dto.status, true) ?? 'normal',
         isManuallyLocked,
         manualLockReason: this.normalizeNullableString(dto.manualLockReason),
@@ -296,11 +298,13 @@ export class AppleAccountsService {
     const existingAppleIdSet = new Set(
       existingAccounts.map((account) => account.appleIdNormalized)
     );
-    const defaultSourcePlatformId = await this.resolveSourcePlatformId(dto.sourcePlatformId);
+    const defaultSourceChannelId = await this.resolveSourceChannelId(
+      dto.sourceChannelId ?? dto.sourcePlatformId
+    );
     const importPlan = await this.buildImportPlan(
       parsedItems,
       existingAppleIdSet,
-      defaultSourcePlatformId
+      defaultSourceChannelId
     );
     const createdAccounts = await this.prisma.$transaction(async (tx) => {
       const created: AppleAccount[] = [];
@@ -316,7 +320,7 @@ export class AppleAccountsService {
               currentBalance: item.currentBalance,
               balanceCostAmount: item.balanceCostAmount,
               averageCost: item.averageCost,
-              sourcePlatformId: item.sourcePlatformId,
+              sourceChannelId: item.sourceChannelId,
               status: item.status,
               isManuallyLocked: item.isManuallyLocked,
               manualLockReason: item.manualLockReason,
@@ -451,15 +455,16 @@ export class AppleAccountsService {
       data.manualLockReason = this.normalizeNullableString(dto.manualLockReason);
     }
 
-    if (dto.sourcePlatformId !== undefined) {
-      if (dto.sourcePlatformId === null || dto.sourcePlatformId === '') {
-        data.sourcePlatform = { disconnect: true };
+    if (dto.sourceChannelId !== undefined || dto.sourcePlatformId !== undefined) {
+      const sourceChannelReference = dto.sourceChannelId ?? dto.sourcePlatformId;
+      if (sourceChannelReference === null || sourceChannelReference === '') {
+        data.sourceChannel = { disconnect: true };
       } else {
-        const sourcePlatformId = await this.resolveSourcePlatformId(dto.sourcePlatformId);
-        if (!sourcePlatformId) {
-          throw new BadRequestException('Source platform does not exist');
+        const sourceChannelId = await this.resolveSourceChannelId(sourceChannelReference);
+        if (!sourceChannelId) {
+          throw new BadRequestException('Apple ID source channel does not exist');
         }
-        data.sourcePlatform = { connect: { id: sourcePlatformId } };
+        data.sourceChannel = { connect: { id: sourceChannelId } };
       }
     }
 
@@ -692,7 +697,7 @@ export class AppleAccountsService {
       phone: values[6] || null,
       recoveryEmail: values[7] || null,
       remark: values[8] || null,
-      sourcePlatform: values.slice(9).filter(Boolean).join(' ') || null
+      sourceChannel: values.slice(9).filter(Boolean).join(' ') || null
     };
   }
 
@@ -745,12 +750,12 @@ export class AppleAccountsService {
   private async buildImportPlan(
     items: ParsedAppleAccountImportItem[],
     existingAppleIdSet: Set<string>,
-    defaultSourcePlatformId: string | null
+    defaultSourceChannelId: string | null
   ) {
     const planItems: AppleAccountImportPlanItem[] = [];
     const errors: AppleAccountImportError[] = [];
     const seenAppleIds = new Set<string>();
-    const sourcePlatformCache = new Map<string, string>();
+    const sourceChannelCache = new Map<string, string>();
 
     for (const item of items) {
       try {
@@ -785,10 +790,10 @@ export class AppleAccountsService {
         const region = normalizeAppleAccountRegion(item.data.region);
         const currency = normalizeAppleAccountCurrency(region, item.data.currency);
         const phone = normalizeAppleAccountPhone(item.data.phone, region);
-        const sourcePlatformId = await this.resolveImportSourcePlatformId(
+        const sourceChannelId = await this.resolveImportSourceChannelId(
           item.data,
-          defaultSourcePlatformId,
-          sourcePlatformCache
+          defaultSourceChannelId,
+          sourceChannelCache
         );
 
         planItems.push({
@@ -800,7 +805,7 @@ export class AppleAccountsService {
           currentBalance,
           balanceCostAmount,
           averageCost: this.calculateAverageCost(currentBalance, balanceCostAmount),
-          sourcePlatformId,
+          sourceChannelId,
           status: this.parseStatus(item.data.status, true) ?? 'normal',
           isManuallyLocked: this.parseImportBoolean(item.data.isManuallyLocked),
           manualLockReason: this.normalizeNullableString(item.data.manualLockReason),
@@ -840,44 +845,50 @@ export class AppleAccountsService {
     }
   }
 
-  private async resolveSourcePlatformId(sourcePlatformId?: string | null) {
-    const normalized = this.normalizeNullableString(sourcePlatformId);
+  private async resolveSourceChannelId(sourceChannelId?: string | null) {
+    const normalized = this.normalizeNullableString(sourceChannelId);
     if (!normalized) {
       return null;
     }
 
     if (!this.isUuid(normalized)) {
-      throw new BadRequestException('Source platform does not exist');
+      throw new BadRequestException('Apple ID source channel does not exist');
     }
 
-    const sourcePlatform = await this.prisma.sourcePlatform.findFirst({
+    const sourceChannel = await this.prisma.appleAccountSourceChannel.findFirst({
       where: {
         id: normalized,
-        deletedAt: null
+        deletedAt: null,
+        status: 'active'
       },
       select: {
         id: true
       }
     });
 
-    if (!sourcePlatform) {
-      throw new BadRequestException('Source platform does not exist');
+    if (!sourceChannel) {
+      throw new BadRequestException('Apple ID source channel does not exist');
     }
 
-    return sourcePlatform.id;
+    return sourceChannel.id;
   }
 
-  private async resolveImportSourcePlatformId(
+  private async resolveImportSourceChannelId(
     item: ImportAppleAccountItemDto,
-    defaultSourcePlatformId: string | null,
+    defaultSourceChannelId: string | null,
     cache: Map<string, string>
   ) {
     const reference = this.normalizeNullableString(
-      item.sourcePlatformId ?? item.sourcePlatformName ?? item.sourcePlatform
+      item.sourceChannelId ??
+        item.sourceChannelName ??
+        item.sourceChannel ??
+        item.sourcePlatformId ??
+        item.sourcePlatformName ??
+        item.sourcePlatform
     );
 
     if (!reference) {
-      return defaultSourcePlatformId;
+      return defaultSourceChannelId;
     }
 
     const cached = cache.get(reference);
@@ -885,9 +896,10 @@ export class AppleAccountsService {
       return cached;
     }
 
-    const sourcePlatform = await this.prisma.sourcePlatform.findFirst({
+    const sourceChannel = await this.prisma.appleAccountSourceChannel.findFirst({
       where: {
         deletedAt: null,
+        status: 'active',
         OR: this.isUuid(reference)
           ? [{ id: reference }, { name: { equals: reference, mode: 'insensitive' } }]
           : [{ name: { equals: reference, mode: 'insensitive' } }]
@@ -897,12 +909,12 @@ export class AppleAccountsService {
       }
     });
 
-    if (!sourcePlatform) {
-      throw new BadRequestException('Source platform does not exist');
+    if (!sourceChannel) {
+      throw new BadRequestException('Apple ID source channel does not exist');
     }
 
-    cache.set(reference, sourcePlatform.id);
-    return sourcePlatform.id;
+    cache.set(reference, sourceChannel.id);
+    return sourceChannel.id;
   }
 
   private isUuid(value: string) {
@@ -1114,7 +1126,15 @@ export class AppleAccountsService {
     return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
   }
 
-  private toResponse(account: AppleAccountWithSourcePlatform) {
+  private toResponse(account: AppleAccountWithSourceChannel) {
+    const sourceChannel = account.sourceChannel
+      ? {
+          id: account.sourceChannel.id,
+          name: account.sourceChannel.name,
+          status: account.sourceChannel.status
+        }
+      : null;
+
     return {
       id: account.id,
       appleIdMasked: this.maskAppleId(account.appleId),
@@ -1124,14 +1144,10 @@ export class AppleAccountsService {
       currentBalance: account.currentBalance.toString(),
       balanceCostAmount: account.balanceCostAmount.toString(),
       averageCost: account.averageCost.toString(),
-      sourcePlatformId: account.sourcePlatformId,
-      sourcePlatform: account.sourcePlatform
-        ? {
-            id: account.sourcePlatform.id,
-            name: account.sourcePlatform.name,
-            status: account.sourcePlatform.status
-          }
-        : null,
+      sourceChannelId: account.sourceChannelId,
+      sourceChannel,
+      sourcePlatformId: account.sourceChannelId,
+      sourcePlatform: sourceChannel,
       status: account.status,
       isManuallyLocked: account.isManuallyLocked,
       manualLockReason: account.manualLockReason,

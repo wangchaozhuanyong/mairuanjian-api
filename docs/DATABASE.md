@@ -370,28 +370,30 @@
 
 ### 3.8 apple_services
 
-| 字段                    | 类型          | 说明                    |
-| ----------------------- | ------------- | ----------------------- |
-| id                      | uuid          | 主键                    |
-| name                    | varchar       | 业务名称                |
-| category                | varchar       | 分类                    |
-| default_price           | decimal(18,2) | 默认售价                |
-| official_cost_value     | decimal(18,4) | 官方消耗金额            |
-| currency                | varchar       | 消耗币种                |
-| default_period_type     | varchar       | month/day/manual        |
-| default_period_value    | int           | 周期值                  |
-| expire_calc_type        | varchar       | by_month/by_day/manual  |
-| require_apple_id        | boolean       | 是否需要 Apple ID       |
-| require_service_account | boolean       | 是否需要客户网站账号    |
-| auto_match_apple_id     | boolean       | 是否自动匹配            |
-| lock_rule               | varchar       | by_service/global       |
-| allowed_regions         | text[]        | 允许地区                |
-| min_balance_required    | decimal(18,4) | 最低余额                |
-| remind_days_before      | int           | 提前提醒天数            |
-| status                  | varchar       | enabled/paused/disabled |
-| remark                  | text          | 备注                    |
-| created_at              | timestamptz   | 创建时间                |
-| updated_at              | timestamptz   | 更新时间                |
+| 字段                           | 类型          | 说明                                   |
+| ------------------------------ | ------------- | -------------------------------------- |
+| id                             | uuid          | 主键                                   |
+| name                           | varchar       | 业务名称                               |
+| category                       | varchar       | 分类，例如 chatgpt/gemini/claude       |
+| default_price                  | decimal(18,2) | 兼容旧字段；客户实际售价在订单录入填写 |
+| official_base_price            | decimal(18,4) | 官网公开套餐价格                       |
+| official_cost_value            | decimal(18,4) | Apple 余额实际开通/消耗金额            |
+| apple_balance_price_rule_type  | enum          | inherit/percent/fixed_add/manual       |
+| apple_balance_price_rule_value | decimal(18,4) | 单项规则数值，百分比倍数或固定加价     |
+| currency                       | varchar       | 官网价和 Apple 余额价币种              |
+| default_period_type            | varchar       | month/day/manual                       |
+| default_period_value           | int           | 周期值                                 |
+| expire_calc_type               | varchar       | by_month/by_day/manual                 |
+| require_apple_id               | boolean       | 是否需要 Apple ID                      |
+| require_service_account        | boolean       | 是否需要客户网站账号                   |
+| auto_match_apple_id            | boolean       | 是否自动匹配                           |
+| lock_rule                      | varchar       | by_service/global                      |
+| allowed_regions                | text[]        | 允许地区                               |
+| min_balance_required           | decimal(18,4) | 最低余额                               |
+| status                         | varchar       | enabled/paused/disabled                |
+| remark                         | text          | 备注                                   |
+| created_at                     | timestamptz   | 创建时间                               |
+| updated_at                     | timestamptz   | 更新时间                               |
 
 ### 3.9 apple_service_platform_mappings
 
@@ -414,31 +416,36 @@
 
 ### 3.10 apple_orders
 
-| 字段               | 类型          | 说明                                        |
-| ------------------ | ------------- | ------------------------------------------- |
-| id                 | uuid          | 主键                                        |
-| order_no           | varchar       | 系统订单号，唯一                            |
-| customer_id        | uuid          | 客户                                        |
-| source_platform_id | uuid          | 来源平台                                    |
-| external_order_no  | varchar       | 平台订单号                                  |
-| service_id         | uuid          | 业务                                        |
-| apple_account_id   | uuid          | Apple ID                                    |
-| service_account    | varchar       | 客户网站账号                                |
-| current_plan       | varchar       | 当前套餐                                    |
-| target_plan        | varchar       | 目标套餐                                    |
-| start_time         | timestamptz   | 开通时间                                    |
-| expire_time        | timestamptz   | 到期时间                                    |
-| paid_amount        | decimal(18,2) | 客户实收                                    |
-| platform_fee       | decimal(18,2) | 平台手续费                                  |
-| refund_loss        | decimal(18,2) | 退款/补发损耗                               |
-| apple_cost_value   | decimal(18,4) | 消耗外币                                    |
-| apple_cost_rmb     | decimal(18,4) | Apple 成本                                  |
-| profit_amount      | decimal(18,4) | 利润                                        |
-| status             | varchar       | pending/active/completed/cancelled/abnormal |
-| remark             | text          | 备注                                        |
-| created_by         | uuid          | 创建人                                      |
-| created_at         | timestamptz   | 创建时间                                    |
-| updated_at         | timestamptz   | 更新时间                                    |
+| 字段                      | 类型          | 说明                                        |
+| ------------------------- | ------------- | ------------------------------------------- |
+| id                        | uuid          | 主键                                        |
+| order_no                  | varchar       | 系统订单号，唯一                            |
+| customer_id               | uuid          | 客户                                        |
+| source_platform_id        | uuid          | 来源平台                                    |
+| external_order_no         | varchar       | 平台订单号                                  |
+| service_id                | uuid          | 业务                                        |
+| apple_account_id          | uuid          | Apple ID                                    |
+| service_account           | varchar       | 客户网站账号                                |
+| current_plan              | varchar       | 当前套餐                                    |
+| target_plan               | varchar       | 目标套餐                                    |
+| start_time                | timestamptz   | 开通时间                                    |
+| expire_time               | timestamptz   | 到期时间                                    |
+| paid_amount               | decimal(18,2) | 客户实收原币种金额                          |
+| paid_currency             | varchar       | 客户实收币种，CNY/MYR/USD/USDT              |
+| paid_exchange_rate_to_rmb | decimal(18,8) | 客户实收币种折人民币汇率                    |
+| paid_amount_rmb           | decimal(18,4) | 客户实收折人民币金额                        |
+| platform_fee              | decimal(18,2) | 平台手续费                                  |
+| platform_fee_rmb          | decimal(18,4) | 平台手续费折人民币金额                      |
+| refund_loss               | decimal(18,2) | 退款/补发损耗                               |
+| refund_loss_rmb           | decimal(18,4) | 退款/补发损耗折人民币金额                   |
+| apple_cost_value          | decimal(18,4) | 消耗外币                                    |
+| apple_cost_rmb            | decimal(18,4) | Apple 成本                                  |
+| profit_amount             | decimal(18,4) | 利润                                        |
+| status                    | varchar       | pending/active/completed/cancelled/abnormal |
+| remark                    | text          | 备注                                        |
+| created_by                | uuid          | 创建人                                      |
+| created_at                | timestamptz   | 创建时间                                    |
+| updated_at                | timestamptz   | 更新时间                                    |
 
 索引：
 
@@ -453,37 +460,43 @@
 - `apple_orders` 创建后立即生成一条 `service_activations`。
 - 需要 Apple ID 的业务会生成 `apple_balance_consumptions`，扣减 Apple ID 余额和余额成本。
 - 需要 Apple ID 的业务会生成 `apple_account_locks`，锁定范围由业务 `lock_rule` 决定。
+- `profit_amount = paid_amount_rmb - platform_fee_rmb - refund_loss_rmb - apple_cost_rmb`。
 - 第一版暂不实现订单取消后的余额回滚，取消流程后续必须单独设计反向流水。
 
 ### 3.11 service_activations
 
-| 字段               | 类型          | 说明                                   |
-| ------------------ | ------------- | -------------------------------------- |
-| id                 | uuid          | 主键                                   |
-| order_id           | uuid          | 订单                                   |
-| customer_id        | uuid          | 客户                                   |
-| apple_account_id   | uuid          | Apple ID                               |
-| service_id         | uuid          | 业务                                   |
-| current_plan       | varchar       | 当前套餐                               |
-| target_plan        | varchar       | 目标套餐                               |
-| start_time         | timestamptz   | 开通时间                               |
-| expire_time        | timestamptz   | 到期时间                               |
-| consumed_value     | decimal(18,4) | 消耗金额                               |
-| currency           | varchar       | 币种                                   |
-| avg_unit_cost      | decimal(18,6) | 消费时平均成本                         |
-| cost_rmb           | decimal(18,2) | 成本                                   |
-| paid_amount        | decimal(18,2) | 实收                                   |
-| platform_fee       | decimal(18,2) | 平台手续费                             |
-| refund_loss        | decimal(18,2) | 损耗                                   |
-| profit_amount      | decimal(18,2) | 利润                                   |
-| source_platform_id | uuid          | 来源平台                               |
-| external_order_no  | varchar       | 平台订单号                             |
-| status             | varchar       | active/expired/cancelled/abnormal      |
-| auto_renew_status  | varchar       | enabled/disabled/unknown               |
-| renewal_decision   | varchar       | unconfirmed/renew/no_renew/change_plan |
-| renewal_note       | text          | 续费备注                               |
-| created_at         | timestamptz   | 创建时间                               |
-| updated_at         | timestamptz   | 更新时间                               |
+| 字段                      | 类型          | 说明                                   |
+| ------------------------- | ------------- | -------------------------------------- |
+| id                        | uuid          | 主键                                   |
+| order_id                  | uuid          | 订单                                   |
+| customer_id               | uuid          | 客户                                   |
+| apple_account_id          | uuid          | Apple ID                               |
+| service_id                | uuid          | 业务                                   |
+| current_plan              | varchar       | 当前套餐                               |
+| target_plan               | varchar       | 目标套餐                               |
+| start_time                | timestamptz   | 开通时间                               |
+| expire_time               | timestamptz   | 到期时间                               |
+| consumed_value            | decimal(18,4) | 消耗金额                               |
+| currency                  | varchar       | 币种                                   |
+| avg_unit_cost             | decimal(18,6) | 消费时平均成本                         |
+| cost_rmb                  | decimal(18,2) | 成本                                   |
+| paid_amount               | decimal(18,2) | 实收原币种金额                         |
+| paid_currency             | varchar       | 实收币种                               |
+| paid_exchange_rate_to_rmb | decimal(18,8) | 实收币种折人民币汇率                   |
+| paid_amount_rmb           | decimal(18,4) | 实收折人民币金额                       |
+| platform_fee              | decimal(18,2) | 平台手续费                             |
+| platform_fee_rmb          | decimal(18,4) | 平台手续费折人民币金额                 |
+| refund_loss               | decimal(18,2) | 损耗                                   |
+| refund_loss_rmb           | decimal(18,4) | 损耗折人民币金额                       |
+| profit_amount             | decimal(18,2) | 利润                                   |
+| source_platform_id        | uuid          | 来源平台                               |
+| external_order_no         | varchar       | 平台订单号                             |
+| status                    | varchar       | active/expired/cancelled/abnormal      |
+| auto_renew_status         | varchar       | enabled/disabled/unknown               |
+| renewal_decision          | varchar       | unconfirmed/renew/no_renew/change_plan |
+| renewal_note              | text          | 续费备注                               |
+| created_at                | timestamptz   | 创建时间                               |
+| updated_at                | timestamptz   | 更新时间                               |
 
 索引：
 
@@ -690,38 +703,43 @@
 
 ### 3.18 apple_official_price_sources
 
-| 字段                 | 类型        | 说明                   |
-| -------------------- | ----------- | ---------------------- |
-| id                   | uuid        | 主键                   |
-| name                 | varchar     | 官方价格来源名称       |
-| region               | varchar     | 地区，例如 US          |
-| currency             | varchar     | 币种，例如 USD         |
-| source_url           | text        | 官方价格页面或接口地址 |
-| collect_method       | varchar     | manual/webpage/api     |
-| check_interval_hours | int         | 检查间隔小时数         |
-| status               | varchar     | enabled/disabled       |
-| last_checked_at      | timestamptz | 最近检查时间           |
-| remark               | text        | 备注                   |
-| created_at           | timestamptz | 创建时间               |
-| updated_at           | timestamptz | 更新时间               |
-| deleted_at           | timestamptz | 软删除时间             |
+| 字段                 | 类型        | 说明                         |
+| -------------------- | ----------- | ---------------------------- |
+| id                   | uuid        | 主键                         |
+| name                 | varchar     | 官方价格来源名称             |
+| provider             | varchar     | chatgpt/gemini/claude/custom |
+| price_source_type    | varchar     | official_web                 |
+| region               | varchar     | 地区，例如 US                |
+| currency             | varchar     | 币种，例如 USD               |
+| source_url           | text        | 官方价格页面或接口地址       |
+| collect_method       | varchar     | manual/webpage/api           |
+| check_interval_hours | int         | 检查间隔小时数               |
+| status               | varchar     | enabled/disabled             |
+| last_checked_at      | timestamptz | 最近检查时间                 |
+| remark               | text        | 备注                         |
+| created_at           | timestamptz | 创建时间                     |
+| updated_at           | timestamptz | 更新时间                     |
+| deleted_at           | timestamptz | 软删除时间                   |
 
 ### 3.19 apple_official_price_snapshots
 
-| 字段             | 类型          | 说明                   |
-| ---------------- | ------------- | ---------------------- |
-| id               | uuid          | 主键                   |
-| source_id        | uuid          | 官方价格来源           |
-| apple_service_id | uuid          | 匹配到的 Apple ID 业务 |
-| service_name     | varchar       | 官方套餐名称           |
-| category         | varchar       | 分类                   |
-| region           | varchar       | 地区                   |
-| currency         | varchar       | 币种                   |
-| official_price   | decimal(18,4) | 官方价格/官方消耗金额  |
-| period_type      | varchar       | month/day/manual       |
-| period_value     | int           | 周期值                 |
-| raw_payload      | jsonb         | 原始采集内容           |
-| collected_at     | timestamptz   | 采集时间               |
+| 字段                | 类型          | 说明                          |
+| ------------------- | ------------- | ----------------------------- |
+| id                  | uuid          | 主键                          |
+| source_id           | uuid          | 官方价格来源                  |
+| apple_service_id    | uuid          | 匹配到的 Apple ID 业务        |
+| provider            | varchar       | chatgpt/gemini/claude/custom  |
+| plan_code           | varchar       | 官方套餐编码，可为空          |
+| service_name        | varchar       | 官方套餐名称                  |
+| category            | varchar       | 分类                          |
+| region              | varchar       | 地区                          |
+| currency            | varchar       | 币种                          |
+| official_price      | decimal(18,4) | 官网公开价格                  |
+| apple_balance_price | decimal(18,4) | 按当前规则预估的 Apple 余额价 |
+| period_type         | varchar       | month/day/manual              |
+| period_value        | int           | 周期值                        |
+| raw_payload         | jsonb         | 原始采集内容                  |
+| collected_at        | timestamptz   | 采集时间                      |
 
 ### 3.20 apple_price_change_reviews
 
@@ -940,6 +958,13 @@
 
 - by_service
 - global
+
+### AppleBalancePriceRuleType
+
+- inherit：继承全局 Apple 余额价规则
+- percent：官网价乘以倍数，例如 1.25
+- fixed_add：官网价固定加价，例如 +2
+- manual：手动填写 Apple 余额消耗金额
 
 ### RenewalTaskStatus
 

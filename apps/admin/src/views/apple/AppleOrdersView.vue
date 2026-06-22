@@ -27,8 +27,10 @@
           <StatusChip :tone="abnormalOrderCount > 0 ? 'red' : 'green'" dot>
             {{ abnormalOrderCount > 0 ? `异常 ${abnormalOrderCount}` : '无异常' }}
           </StatusChip>
-          <StatusChip tone="cyan">实收 {{ sumField('paidAmount') }}</StatusChip>
+          <StatusChip tone="cyan">实收 {{ sumField('paidAmountRmb') }} CNY</StatusChip>
           <StatusChip tone="orange">成本 {{ sumField('appleCostRmb') }}</StatusChip>
+          <StatusChip tone="blue">手续费 {{ sumField('platformFeeRmb') }}</StatusChip>
+          <StatusChip tone="purple">损耗 {{ sumField('refundLossRmb') }}</StatusChip>
           <StatusChip :tone="Number(sumField('profitAmount')) >= 0 ? 'green' : 'red'">
             利润 {{ sumField('profitAmount') }}
           </StatusChip>
@@ -97,34 +99,84 @@
           <template #default="{ row }">{{ row.appleAccount?.appleIdMasked ?? '-' }}</template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('amounts')"
-          prop="paidAmount"
-          label="实收/成本/利润"
-          min-width="170"
+          v-if="isColumnVisible('paidAmountRmb')"
+          prop="paidAmountRmb"
+          label="实收"
+          min-width="145"
           sortable="custom"
         >
           <template #header>
             <span class="help-label">
-              实收/成本/利润
-              <FeatureHelp
-                text="实收是客户给的钱；成本是这单消耗掉的 Apple 余额折成人民币；利润就是扣掉成本后的结果。"
-              />
+              实收
+              <FeatureHelp text="客户这单实际付给你的金额，利润统一按折合人民币计算。" />
             </span>
           </template>
           <template #default="{ row }">
-            <div class="order-money-stack">
-              <div>
-                <span>实收</span>
-                <strong>{{ row.paidAmount }}</strong>
-              </div>
-              <div>
-                <span>成本</span>
-                <strong>{{ row.appleCostRmb }}</strong>
-              </div>
-              <StatusChip :tone="getProfitTone(row.profitAmount)">
-                利润 {{ row.profitAmount }}
-              </StatusChip>
+            <div class="order-amount-cell">
+              <strong>{{ formatPaidAmount(row) }}</strong>
+              <span v-if="row.paidCurrency !== 'CNY'">折合 {{ row.paidAmountRmb }} CNY</span>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-if="isColumnVisible('appleCostRmb')"
+          prop="appleCostRmb"
+          label="成本"
+          min-width="110"
+          sortable="custom"
+        >
+          <template #header>
+            <span class="help-label">
+              成本
+              <FeatureHelp text="这单消耗掉的 Apple 余额折算成人民币后的成本。" />
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-if="isColumnVisible('platformFeeRmb')"
+          prop="platformFeeRmb"
+          label="平台手续费"
+          min-width="130"
+          sortable="custom"
+        >
+          <template #header>
+            <span class="help-label">
+              平台手续费
+              <FeatureHelp text="平台按订单扣掉的手续费，已按订单实收币种折合成人民币。" />
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-if="isColumnVisible('refundLossRmb')"
+          prop="refundLossRmb"
+          label="退款/补发损耗"
+          min-width="150"
+          sortable="custom"
+        >
+          <template #header>
+            <span class="help-label">
+              退款/补发损耗
+              <FeatureHelp text="这单额外亏掉的钱，例如退款差额、补发成本或人工承担的损失。" />
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-if="isColumnVisible('profitAmount')"
+          prop="profitAmount"
+          label="利润"
+          min-width="110"
+          sortable="custom"
+        >
+          <template #header>
+            <span class="help-label">
+              利润
+              <FeatureHelp text="利润 = 实收 - Apple 余额成本 - 平台手续费 - 退款/补发损耗。" />
+            </span>
+          </template>
+          <template #default="{ row }">
+            <StatusChip :tone="getProfitTone(row.profitAmount)">
+              {{ row.profitAmount }}
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column
@@ -210,12 +262,21 @@
 
           <div class="mobile-record-card__stats">
             <div>
-              <span>客户实收</span>
-              <strong>{{ order.paidAmount }}</strong>
+              <span>实收</span>
+              <strong>{{ formatPaidAmount(order) }}</strong>
+              <span v-if="order.paidCurrency !== 'CNY'">折合 {{ order.paidAmountRmb }} CNY</span>
             </div>
             <div>
-              <span>Apple 成本</span>
+              <span>成本</span>
               <strong>{{ order.appleCostRmb }}</strong>
+            </div>
+            <div>
+              <span>平台手续费</span>
+              <strong>{{ order.platformFeeRmb }}</strong>
+            </div>
+            <div>
+              <span>退款/补发损耗</span>
+              <strong>{{ order.refundLossRmb }}</strong>
             </div>
             <div>
               <span>利润</span>
@@ -280,12 +341,24 @@
           <strong>{{ selectedOrder?.appleAccount?.appleIdMasked ?? '-' }}</strong>
         </div>
         <div>
-          <span>客户实收</span>
-          <strong>{{ selectedOrder?.paidAmount ?? '-' }}</strong>
+          <span>实收</span>
+          <strong>{{ selectedOrder ? formatPaidAmount(selectedOrder) : '-' }}</strong>
         </div>
         <div>
-          <span>Apple 成本</span>
+          <span>实收折合人民币</span>
+          <strong>{{ selectedOrder?.paidAmountRmb ?? '-' }}</strong>
+        </div>
+        <div>
+          <span>成本</span>
           <strong>{{ selectedOrder?.appleCostRmb ?? '-' }}</strong>
+        </div>
+        <div>
+          <span>平台手续费</span>
+          <strong>{{ selectedOrder?.platformFeeRmb ?? '-' }}</strong>
+        </div>
+        <div>
+          <span>退款/补发损耗</span>
+          <strong>{{ selectedOrder?.refundLossRmb ?? '-' }}</strong>
         </div>
         <div>
           <span>利润</span>
@@ -365,7 +438,11 @@ const orderColumnOptions = [
   { label: '客户', value: 'customer' },
   { label: '业务', value: 'service' },
   { label: 'Apple ID', value: 'appleAccount' },
-  { label: '实收/成本/利润', value: 'amounts' },
+  { label: '实收', value: 'paidAmountRmb' },
+  { label: '成本', value: 'appleCostRmb' },
+  { label: '平台手续费', value: 'platformFeeRmb' },
+  { label: '退款/补发损耗', value: 'refundLossRmb' },
+  { label: '利润', value: 'profitAmount' },
   { label: '消耗', value: 'consumed' },
   { label: '到期时间', value: 'expireTime' },
   { label: '状态', value: 'status' },
@@ -410,8 +487,14 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
 }
 
-function sumField(field: 'paidAmount' | 'appleCostRmb' | 'profitAmount') {
+function sumField(
+  field: 'paidAmountRmb' | 'appleCostRmb' | 'platformFeeRmb' | 'refundLossRmb' | 'profitAmount'
+) {
   return orders.value.reduce((sum, order) => sum + Number(order[field]), 0).toFixed(2);
+}
+
+function formatPaidAmount(order: AppleOrder) {
+  return `${order.paidAmount} ${order.paidCurrency}`;
 }
 
 function getStatusLabel(status: AppleOrder['status']) {
@@ -593,11 +676,27 @@ function applyView(view: UserTableView) {
   query.pageSize = view.pageSize;
   query.page = 1;
   density.value = 'default';
-  visibleColumns.value = view.columns.length
-    ? view.columns.filter((column) => orderColumnOptions.some((option) => option.value === column))
-    : orderColumnOptions.map((column) => column.value);
+  visibleColumns.value = normalizeVisibleColumns(view.columns);
   sortConfig.value = parseSortConfig(view.sortConfig);
   savedViewId.value = view.id;
+}
+
+function normalizeVisibleColumns(columns: string[]) {
+  const defaultColumns = orderColumnOptions.map((column) => column.value);
+
+  if (!columns.length) {
+    return defaultColumns;
+  }
+
+  const expandedColumns = columns.flatMap((column) =>
+    column === 'amounts'
+      ? ['paidAmountRmb', 'appleCostRmb', 'platformFeeRmb', 'refundLossRmb', 'profitAmount']
+      : [column]
+  );
+  const allowedColumns = new Set(defaultColumns);
+  const nextColumns = expandedColumns.filter((column) => allowedColumns.has(column));
+
+  return nextColumns.length ? nextColumns : defaultColumns;
 }
 
 function parseSortConfig(value: Record<string, unknown>): {
@@ -613,7 +712,7 @@ function parseSortConfig(value: Record<string, unknown>): {
 }
 
 function mapSortProp(prop?: string) {
-  if (prop === 'paidAmount') return 'paidAmount';
+  if (prop === 'paidAmount' || prop === 'paidAmountRmb') return 'paidAmountRmb';
   if (prop === 'appleCostValue') return 'appleCostValue';
   return prop;
 }

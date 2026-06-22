@@ -4,6 +4,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppleAccountsModule } from './apple-accounts/apple-accounts.module';
 import { AppleAccountStatusChecksModule } from './apple-account-status-checks/apple-account-status-checks.module';
+import { AppleAccountSourceChannelsModule } from './apple-account-source-channels/apple-account-source-channels.module';
 import { AppleActionPlansModule } from './apple-action-plans/apple-action-plans.module';
 import { AppleActivationsModule } from './apple-activations/apple-activations.module';
 import { AppleAutomationTasksModule } from './apple-automation-tasks/apple-automation-tasks.module';
@@ -46,6 +47,7 @@ import { UsersModule } from './users/users.module';
       validate: validateEnv
     }),
     AuthModule,
+    AppleAccountSourceChannelsModule,
     AppleAccountsModule,
     AppleAccountStatusChecksModule,
     AppleActionPlansModule,

@@ -1,4 +1,5 @@
 import {
+  appleAccountSourceChannelsApi,
   appleAccountsApi,
   appleServicesApi,
   codeServicesApi,
@@ -10,6 +11,7 @@ import {
 } from '@/api/system';
 import type {
   AppleAccountQuery,
+  AppleAccountSourceChannelQuery,
   AppleServiceQuery,
   CodeServiceQuery,
   CustomerQuery,
@@ -19,6 +21,7 @@ import type {
 } from '@/api/system';
 import type {
   AppleAccount,
+  AppleAccountSourceChannel,
   AppleService,
   CodeService,
   Customer,
@@ -57,6 +60,18 @@ export function loadSmartSourcePlatforms(
     'source-platforms',
     params,
     () => sourcePlatformsApi.list(params),
+    options
+  );
+}
+
+export function loadSmartAppleAccountSourceChannels(
+  params: AppleAccountSourceChannelQuery,
+  options: SmartSystemQueryOptions = {}
+) {
+  return loadSmartSystemQuery<PageResult<AppleAccountSourceChannel>>(
+    'apple-account-source-channels',
+    params,
+    () => appleAccountSourceChannelsApi.list(params),
     options
   );
 }

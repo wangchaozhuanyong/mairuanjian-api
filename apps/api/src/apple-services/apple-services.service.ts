@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
+import { Prisma as PrismaNamespace } from '@prisma/client';
 import type {
+  AppleBalancePriceRuleType,
   AppleService,
   AppleServiceExpireCalcType,
   AppleServiceLockRule,
@@ -20,7 +22,10 @@ import { getListCacheKey } from '../common/cache/list-cache-key';
 import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
-import type { CreateAppleServiceDto } from './dto/create-apple-service.dto';
+import type {
+  CreateAppleServiceDto,
+  SaveAppleBalancePriceRuleDto
+} from './dto/create-apple-service.dto';
 import type { CreateAppleServicePlatformMappingDto } from './dto/create-apple-service-platform-mapping.dto';
 import type { UpdateAppleServiceDto } from './dto/update-apple-service.dto';
 import type { UpdateAppleServicePlatformMappingDto } from './dto/update-apple-service-platform-mapping.dto';
@@ -59,6 +64,11 @@ const APPLE_SERVICE_SORT_FIELDS: Record<string, keyof Prisma.AppleServiceOrderBy
   };
 const APPLE_SERVICE_LIST_CACHE_TTL_MS = 120_000;
 const APPLE_SERVICE_PLATFORM_MAPPING_CACHE_TTL_MS = 120_000;
+const APPLE_BALANCE_PRICE_RULE_PARAMETER_KEY = 'apple_balance_price_rule';
+const DEFAULT_BALANCE_PRICE_RULE = {
+  ruleType: 'percent' as AppleBalancePriceRuleType,
+  ruleValue: '1'
+};
 
 @Injectable()
 export class AppleServicesService {
@@ -130,7 +140,7 @@ export class AppleServicesService {
 
   async create(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
     this.assertRequiredString(dto.name, 'name');
-    const data = this.buildCreateData(dto, operator);
+    const data = await this.buildCreateData(dto, operator);
     const service = await this.prisma.appleService.create({ data });
 
     await this.auditLogsService.create({
@@ -157,7 +167,7 @@ export class AppleServicesService {
       throw new NotFoundException('Apple service not found');
     }
 
-    const data = this.buildUpdateData(dto, operator);
+    const data = await this.buildUpdateData(dto, existingService, operator);
     await this.prisma.appleService.update({
       where: { id },
       data
@@ -209,6 +219,47 @@ export class AppleServicesService {
     this.clearListCaches();
 
     return { deleted: true };
+  }
+
+  async getBalancePriceRule() {
+    return this.getGlobalBalancePriceRule();
+  }
+
+  async updateBalancePriceRule(dto: SaveAppleBalancePriceRuleDto, operator?: AuthenticatedUser) {
+    const rule = this.normalizeGlobalBalancePriceRule(dto);
+    const previous = await this.prisma.systemParameter.findUnique({
+      where: { key: APPLE_BALANCE_PRICE_RULE_PARAMETER_KEY }
+    });
+    const parameter = await this.prisma.systemParameter.upsert({
+      where: { key: APPLE_BALANCE_PRICE_RULE_PARAMETER_KEY },
+      update: {
+        value: this.toAuditJson(rule),
+        group: 'apple',
+        remark: 'Apple 余额开通价全局计算规则',
+        updatedByUserId: operator?.id
+      },
+      create: {
+        key: APPLE_BALANCE_PRICE_RULE_PARAMETER_KEY,
+        value: this.toAuditJson(rule),
+        group: 'apple',
+        remark: 'Apple 余额开通价全局计算规则',
+        updatedByUserId: operator?.id
+      }
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.balance_price_rule.update',
+      objectType: 'system_parameter',
+      objectId: parameter.id,
+      beforeData: previous ? this.toAuditJson(previous.value) : undefined,
+      afterData: this.toAuditJson(rule),
+      remark: 'Updated Apple balance price global rule'
+    });
+
+    this.clearListCaches();
+    return rule;
   }
 
   async listPlatformMappings(serviceId: string) {
@@ -439,6 +490,150 @@ export class AppleServicesService {
     return data;
   }
 
+  private async buildCreatePriceData(dto: CreateAppleServiceDto) {
+    const officialBasePrice = this.normalizeDecimal(
+      dto.officialBasePrice ?? dto.officialCostValue,
+      'officialBasePrice',
+      '0'
+    );
+    const ruleType =
+      this.parseBalancePriceRuleType(dto.appleBalancePriceRuleType, true) ??
+      (dto.officialBasePrice !== undefined ? 'inherit' : 'manual');
+    const ruleValue = this.normalizeBalancePriceRuleValue(dto.appleBalancePriceRuleValue, ruleType);
+    const officialCostValue = await this.calculateAppleBalancePrice({
+      officialBasePrice,
+      ruleType,
+      ruleValue,
+      manualPrice: dto.officialCostValue
+    });
+
+    return {
+      officialBasePrice,
+      officialCostValue,
+      appleBalancePriceRuleType: ruleType,
+      appleBalancePriceRuleValue: ruleValue
+    };
+  }
+
+  private async buildUpdatePriceData(dto: UpdateAppleServiceDto, existingService: AppleService) {
+    const ruleType =
+      this.parseBalancePriceRuleType(dto.appleBalancePriceRuleType, true) ??
+      existingService.appleBalancePriceRuleType;
+    const officialBasePrice =
+      dto.officialBasePrice !== undefined
+        ? this.normalizeDecimal(dto.officialBasePrice, 'officialBasePrice', '0')
+        : existingService.officialBasePrice.toString();
+    const ruleValue =
+      dto.appleBalancePriceRuleValue !== undefined
+        ? this.normalizeBalancePriceRuleValue(dto.appleBalancePriceRuleValue, ruleType)
+        : (existingService.appleBalancePriceRuleValue?.toString() ?? null);
+    const officialCostValue = await this.calculateAppleBalancePrice({
+      officialBasePrice,
+      ruleType,
+      ruleValue,
+      manualPrice: dto.officialCostValue ?? existingService.officialCostValue.toString()
+    });
+
+    return {
+      officialBasePrice,
+      officialCostValue,
+      appleBalancePriceRuleType: ruleType,
+      appleBalancePriceRuleValue: ruleValue
+    };
+  }
+
+  private async calculateAppleBalancePrice(input: {
+    officialBasePrice: string;
+    ruleType: AppleBalancePriceRuleType;
+    ruleValue: string | null;
+    manualPrice?: string | number | null;
+  }) {
+    const officialBasePrice = new PrismaNamespace.Decimal(input.officialBasePrice);
+
+    if (input.ruleType === 'manual') {
+      return this.normalizeDecimal(
+        input.manualPrice ?? input.officialBasePrice,
+        'officialCostValue',
+        '0'
+      );
+    }
+
+    const effectiveRule =
+      input.ruleType === 'inherit'
+        ? await this.getGlobalBalancePriceRule()
+        : { ruleType: input.ruleType, ruleValue: input.ruleValue };
+
+    if (effectiveRule.ruleType === 'fixed_add') {
+      return officialBasePrice.plus(effectiveRule.ruleValue ?? '0').toFixed();
+    }
+
+    if (effectiveRule.ruleType === 'percent') {
+      return officialBasePrice.mul(effectiveRule.ruleValue ?? '1').toFixed();
+    }
+
+    return officialBasePrice.toFixed();
+  }
+
+  private normalizeGlobalBalancePriceRule(dto: SaveAppleBalancePriceRuleDto) {
+    const ruleType = this.parseBalancePriceRuleType(dto.ruleType, true) ?? 'percent';
+    if (ruleType !== 'percent' && ruleType !== 'fixed_add') {
+      throw new BadRequestException('Global balance price rule must be percent or fixed_add');
+    }
+
+    return {
+      ruleType,
+      ruleValue:
+        this.normalizeBalancePriceRuleValue(
+          dto.ruleValue ?? (ruleType === 'percent' ? '1' : '0'),
+          ruleType
+        ) ?? '1'
+    };
+  }
+
+  private async getGlobalBalancePriceRule(): Promise<{
+    ruleType: AppleBalancePriceRuleType;
+    ruleValue: string;
+  }> {
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: APPLE_BALANCE_PRICE_RULE_PARAMETER_KEY }
+    });
+    const value = this.isJsonRecord(parameter?.value) ? parameter.value : {};
+    const ruleType =
+      this.parseBalancePriceRuleType(value.ruleType, false) ?? DEFAULT_BALANCE_PRICE_RULE.ruleType;
+    const normalizedRuleType =
+      ruleType === 'percent' || ruleType === 'fixed_add'
+        ? ruleType
+        : DEFAULT_BALANCE_PRICE_RULE.ruleType;
+
+    const rawRuleValue = value.ruleValue as string | number | null | undefined;
+
+    return {
+      ruleType: normalizedRuleType,
+      ruleValue:
+        rawRuleValue === undefined || rawRuleValue === null || rawRuleValue === ''
+          ? normalizedRuleType === 'fixed_add'
+            ? '0'
+            : DEFAULT_BALANCE_PRICE_RULE.ruleValue
+          : (this.normalizeBalancePriceRuleValue(rawRuleValue, normalizedRuleType) ??
+            DEFAULT_BALANCE_PRICE_RULE.ruleValue)
+    };
+  }
+
+  private normalizeBalancePriceRuleValue(
+    value: string | number | null | undefined,
+    ruleType: AppleBalancePriceRuleType
+  ) {
+    if (ruleType === 'inherit' || ruleType === 'manual') {
+      return null;
+    }
+
+    if (value === null || value === undefined || value === '') {
+      throw new BadRequestException('appleBalancePriceRuleValue is required');
+    }
+
+    return this.normalizeDecimal(value, 'appleBalancePriceRuleValue', '0');
+  }
+
   private async assertServiceExists(id: string) {
     const service = await this.prisma.appleService.findFirst({
       where: { id, deletedAt: null },
@@ -513,12 +708,16 @@ export class AppleServicesService {
     } satisfies Prisma.AppleServicePlatformMappingInclude;
   }
 
-  private buildCreateData(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
+  private async buildCreateData(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
+    const priceData = await this.buildCreatePriceData(dto);
     return {
       name: dto.name.trim(),
       category: this.normalizeCategory(dto.category),
       defaultPrice: this.normalizeDecimal(dto.defaultPrice, 'defaultPrice', '0'),
-      officialCostValue: this.normalizeDecimal(dto.officialCostValue, 'officialCostValue', '0'),
+      officialBasePrice: priceData.officialBasePrice,
+      officialCostValue: priceData.officialCostValue,
+      appleBalancePriceRuleType: priceData.appleBalancePriceRuleType,
+      appleBalancePriceRuleValue: priceData.appleBalancePriceRuleValue,
       currency: this.normalizeCode(dto.currency, 'USD', true),
       defaultPeriodType: this.parsePeriodType(dto.defaultPeriodType, true) ?? 'month',
       defaultPeriodValue: this.normalizePositiveInteger(
@@ -540,7 +739,11 @@ export class AppleServicesService {
     } satisfies Prisma.AppleServiceUncheckedCreateInput;
   }
 
-  private buildUpdateData(dto: UpdateAppleServiceDto, operator?: AuthenticatedUser) {
+  private async buildUpdateData(
+    dto: UpdateAppleServiceDto,
+    existingService: AppleService,
+    operator?: AuthenticatedUser
+  ) {
     const data: Prisma.AppleServiceUpdateInput = {
       updatedBy: operator?.id ? { connect: { id: operator.id } } : undefined
     };
@@ -558,12 +761,17 @@ export class AppleServicesService {
       data.defaultPrice = this.normalizeDecimal(dto.defaultPrice, 'defaultPrice', '0');
     }
 
-    if (dto.officialCostValue !== undefined) {
-      data.officialCostValue = this.normalizeDecimal(
-        dto.officialCostValue,
-        'officialCostValue',
-        '0'
-      );
+    const shouldUpdatePrice =
+      dto.officialBasePrice !== undefined ||
+      dto.officialCostValue !== undefined ||
+      dto.appleBalancePriceRuleType !== undefined ||
+      dto.appleBalancePriceRuleValue !== undefined;
+    if (shouldUpdatePrice) {
+      const priceData = await this.buildUpdatePriceData(dto, existingService);
+      data.officialBasePrice = priceData.officialBasePrice;
+      data.officialCostValue = priceData.officialCostValue;
+      data.appleBalancePriceRuleType = priceData.appleBalancePriceRuleType;
+      data.appleBalancePriceRuleValue = priceData.appleBalancePriceRuleValue;
     }
 
     if (dto.currency !== undefined) {
@@ -806,6 +1014,31 @@ export class AppleServicesService {
     return undefined;
   }
 
+  private parseBalancePriceRuleType(value: unknown, strict: true): AppleBalancePriceRuleType;
+  private parseBalancePriceRuleType(
+    value: unknown,
+    strict?: false
+  ): AppleBalancePriceRuleType | undefined;
+  private parseBalancePriceRuleType(value: unknown, strict = true) {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    if (value === 'inherit' || value === 'percent' || value === 'fixed_add' || value === 'manual') {
+      return value;
+    }
+
+    if (strict) {
+      throw new BadRequestException('Invalid Apple balance price rule type');
+    }
+
+    return undefined;
+  }
+
+  private isJsonRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+  }
+
   private toAuditJson(data: unknown) {
     return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
   }
@@ -816,7 +1049,10 @@ export class AppleServicesService {
       name: service.name,
       category: service.category,
       defaultPrice: service.defaultPrice.toString(),
+      officialBasePrice: service.officialBasePrice.toString(),
       officialCostValue: service.officialCostValue.toString(),
+      appleBalancePriceRuleType: service.appleBalancePriceRuleType,
+      appleBalancePriceRuleValue: service.appleBalancePriceRuleValue?.toString() ?? null,
       currency: service.currency,
       defaultPeriodType: service.defaultPeriodType,
       defaultPeriodValue: service.defaultPeriodValue,

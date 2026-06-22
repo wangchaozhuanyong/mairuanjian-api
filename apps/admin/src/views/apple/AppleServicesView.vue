@@ -3,13 +3,13 @@
     title="Apple ID 业务设置"
     group="Apple ID 业务"
     phase="Phase 4"
-    description="维护业务售价、官方消耗金额、币种、周期、允许地区和 Apple ID 锁定规则。"
+    description="维护官网官方价格、Apple 余额开通价规则、币种、周期、允许地区和 Apple ID 锁定规则。"
   >
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
           title="业务与锁定规则"
-          help="这里维护代充业务的售价、官方消耗、周期、自动匹配和 Apple ID 锁定策略。它只管 Apple ID 代充，不和兑换码业务混用。"
+          help="这里维护代充业务的官网价、Apple 余额开通价、周期、自动匹配和 Apple ID 锁定策略。客户实际卖价在订单录入时填写。"
         />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 个业务</StatusChip>
@@ -22,7 +22,6 @@
             暂停/停用 {{ inactiveServiceCount }}
           </StatusChip>
           <StatusChip tone="purple">按业务锁定 {{ byServiceLockCount }}</StatusChip>
-          <StatusChip tone="cyan">映射 {{ mappingCountLabel }}</StatusChip>
         </div>
       </div>
 
@@ -134,22 +133,25 @@
           <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('defaultPrice')"
-          prop="defaultPrice"
-          label="售价"
-          width="110"
+          v-if="isColumnVisible('officialBasePrice')"
+          prop="officialBasePrice"
+          label="官网价"
+          width="130"
           sortable="custom"
         >
-          <template #default="{ row }">{{ row.defaultPrice }}</template>
+          <template #default="{ row }">{{ row.officialBasePrice }} {{ row.currency }}</template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('officialCostValue')"
           prop="officialCostValue"
-          label="消耗"
-          width="130"
+          label="Apple余额价"
+          width="150"
           sortable="custom"
         >
-          <template #default="{ row }">{{ row.officialCostValue }} {{ row.currency }}</template>
+          <template #default="{ row }">
+            {{ row.officialCostValue }} {{ row.currency }}
+            <div class="muted-block">{{ getBalanceRuleLabel(row) }}</div>
+          </template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('period')"
@@ -206,11 +208,10 @@
         >
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton variant="ghost" @click="openEdit(row)">编辑</AppButton>
-              <AppButton variant="ghost" @click="openMappings(row)">平台映射</AppButton>
             </div>
           </template>
         </el-table-column>
@@ -230,11 +231,11 @@
 
           <div class="mobile-record-card__stats">
             <div>
-              <span>售价</span>
-              <strong>{{ service.defaultPrice }}</strong>
+              <span>官网价</span>
+              <strong>{{ service.officialBasePrice }} {{ service.currency }}</strong>
             </div>
             <div>
-              <span>官方消耗</span>
+              <span>Apple余额价</span>
               <strong>{{ service.officialCostValue }} {{ service.currency }}</strong>
             </div>
             <div>
@@ -267,9 +268,6 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openEdit(service)">编辑</AppButton>
-            <AppButton size="small" variant="ghost" @click="openMappings(service)">
-              平台映射
-            </AppButton>
           </div>
         </article>
       </div>
@@ -310,6 +308,27 @@
         </div>
       </div>
 
+      <div class="apple-balance-rule-bar">
+        <div>
+          <strong>Apple 余额开通价全局规则</strong>
+          <span>未单独设置的业务，会按这条规则从官网价自动算出 Apple 余额价。</span>
+        </div>
+        <div class="apple-balance-rule-bar__controls">
+          <el-select v-model="globalBalanceRuleForm.ruleType" class="apple-rule-select">
+            <el-option label="按百分比" value="percent" />
+            <el-option label="固定加价" value="fixed_add" />
+          </el-select>
+          <el-input
+            v-model.trim="globalBalanceRuleForm.ruleValue"
+            class="apple-rule-input"
+            :placeholder="globalBalanceRuleForm.ruleType === 'percent' ? '例如 1.25' : '例如 2'"
+          />
+          <AppButton variant="primary" :loading="savingBalanceRule" @click="saveGlobalBalanceRule">
+            保存规则
+          </AppButton>
+        </div>
+      </div>
+
       <el-tabs v-model="officialPriceTab" class="apple-official-price-tabs">
         <el-tab-pane label="待确认变化" name="reviews">
           <el-table
@@ -330,6 +349,7 @@
               <template #default="{ row }">
                 <strong>{{ row.appleService?.name || getReviewValue(row, 'serviceName') }}</strong>
                 <div class="muted-block">
+                  {{ getProviderLabel(row.source?.provider || getReviewValue(row, 'provider')) }} ·
                   {{ row.source?.name || '-' }} · {{ getReviewValue(row, 'region') }}
                 </div>
               </template>
@@ -337,12 +357,14 @@
             <el-table-column label="系统当前" min-width="170">
               <template #default="{ row }">
                 {{ getReviewOldOfficialPrice(row) }}
+                <div class="muted-block">Apple余额价 {{ getReviewOldAppleBalancePrice(row) }}</div>
                 <div class="muted-block">{{ getReviewOldPeriod(row) }}</div>
               </template>
             </el-table-column>
             <el-table-column label="官方最新" min-width="170">
               <template #default="{ row }">
                 {{ getReviewNewOfficialPrice(row) }}
+                <div class="muted-block">Apple余额价 {{ getReviewNewAppleBalancePrice(row) }}</div>
                 <div class="muted-block">{{ getReviewNewPeriod(row) }}</div>
               </template>
             </el-table-column>
@@ -400,7 +422,9 @@
             <el-table-column label="来源" min-width="220">
               <template #default="{ row }">
                 <strong>{{ row.name }}</strong>
-                <div class="muted-block">{{ row.sourceUrl || '未填写官方地址' }}</div>
+                <div class="muted-block">
+                  {{ getProviderLabel(row.provider) }} · {{ row.sourceUrl || '未填写官方地址' }}
+                </div>
               </template>
             </el-table-column>
             <el-table-column label="地区/币种" min-width="120">
@@ -444,14 +468,19 @@
             <el-table-column label="套餐" min-width="220">
               <template #default="{ row }">
                 <strong>{{ row.serviceName }}</strong>
-                <div class="muted-block">{{ row.source?.name || '-' }}</div>
+                <div class="muted-block">
+                  {{ getProviderLabel(row.provider) }} · {{ row.source?.name || '-' }}
+                </div>
               </template>
             </el-table-column>
             <el-table-column label="地区/币种" width="130">
               <template #default="{ row }">{{ row.region }} / {{ row.currency }}</template>
             </el-table-column>
-            <el-table-column label="官方价格" width="130">
+            <el-table-column label="官网价" width="130">
               <template #default="{ row }">{{ row.officialPrice }}</template>
+            </el-table-column>
+            <el-table-column label="Apple余额价" width="140">
+              <template #default="{ row }">{{ row.appleBalancePrice || '-' }}</template>
             </el-table-column>
             <el-table-column label="周期" width="120">
               <template #default="{ row }">{{
@@ -510,31 +539,21 @@
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item prop="defaultPrice">
+          <el-form-item prop="officialBasePrice">
             <template #label>
               <FieldHelpLabel
-                label="客户售价"
-                purpose="这个业务默认卖给客户多少钱，录订单时会优先带出。"
-                example="平时卖 20 元就填 20；单个订单有优惠时录单页再单独改。"
+                label="官网官方价格"
+                purpose="官网公开显示的套餐价格，官方价格巡检确认后会自动更新这里。"
+                example="官网 Plus 月费 20 美元就填 20；不同国家套餐按对应币种填写。"
               />
             </template>
-            <el-input v-model.trim="form.defaultPrice" />
-          </el-form-item>
-          <el-form-item prop="officialCostValue">
-            <template #label>
-              <FieldHelpLabel
-                label="Apple 官方消耗金额"
-                purpose="开通这个业务通常会扣掉多少 Apple ID 外币余额，用来匹配账号和计算成本。"
-                example="官方扣 9.99 美元就填 9.99；官方扣 20 港币就填 20。"
-              />
-            </template>
-            <el-input v-model.trim="form.officialCostValue" />
+            <el-input v-model.trim="form.officialBasePrice" />
           </el-form-item>
           <el-form-item prop="currency">
             <template #label>
               <FieldHelpLabel
                 label="币种"
-                purpose="说明官方消耗金额使用哪种外币，系统会优先匹配同币种 Apple ID。"
+                purpose="说明官网价格和 Apple 余额开通价使用哪种币种，系统会优先匹配同币种 Apple ID。"
                 example="美国区业务填 USD，港区业务填 HKD，日区业务填 JPY。"
               />
             </template>
@@ -552,6 +571,47 @@
               />
             </el-select>
           </el-form-item>
+          <el-form-item>
+            <template #label>
+              <FieldHelpLabel
+                label="Apple余额价规则"
+                purpose="不用采集 Apple 余额开通价时，按这里从官网价自动算出实际扣 Apple ID 余额的金额。"
+                example="继承全局规则；单项按 1.25 倍；或固定加 2 美元；特殊套餐也可以手动填。"
+              />
+            </template>
+            <el-select v-model="form.appleBalancePriceRuleType" class="full-input">
+              <el-option
+                v-for="option in balanceRuleOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="isBalanceRuleValueVisible" prop="appleBalancePriceRuleValue">
+            <template #label>
+              <FieldHelpLabel
+                :label="form.appleBalancePriceRuleType === 'percent' ? '百分比倍数' : '固定加价'"
+                purpose="单独覆盖全局规则，只影响这个业务。"
+                example="百分比填 1.25 表示官网价的 125%；固定加价填 2 表示官网价加 2。"
+              />
+            </template>
+            <el-input v-model.trim="form.appleBalancePriceRuleValue" />
+          </el-form-item>
+          <el-form-item prop="officialCostValue">
+            <template #label>
+              <FieldHelpLabel
+                label="Apple余额消耗金额"
+                purpose="订单匹配 Apple ID 和利润计算会使用这个金额。非手动规则时由系统按官网价自动算出。"
+                example="规则算出来是 25 USD，订单就按消耗 25 USD 去匹配和估成本。"
+              />
+            </template>
+            <el-input
+              v-if="form.appleBalancePriceRuleType === 'manual'"
+              v-model.trim="form.officialCostValue"
+            />
+            <el-input v-else :model-value="computedFormAppleBalancePrice" disabled />
+          </el-form-item>
         </div>
 
         <div class="apple-service-form-section">默认规则</div>
@@ -560,7 +620,7 @@
             <template #label>
               <FieldHelpLabel
                 label="业务周期"
-                purpose="定义默认开通多久，用来辅助生成订单到期时间。"
+                purpose="订单录入会按这个周期自动填到期时间。"
                 example="月费业务选按月并填 1；7 天试用就选按天并填 7。"
               />
             </template>
@@ -580,7 +640,7 @@
             <template #label>
               <FieldHelpLabel
                 label="到期计算"
-                purpose="告诉系统提交订单后怎么自动计算到期时间。"
+                purpose="决定订单录入按月、按天，还是不自动计算到期时间。"
                 example="自然月订阅选按月，固定天数商品选按天，特殊订单选手工。"
               />
             </template>
@@ -694,271 +754,6 @@
       </template>
     </el-dialog>
 
-    <AppDrawer
-      v-model="mappingDrawerVisible"
-      :title="`平台映射 · ${selectedService?.name ?? ''}`"
-      confirm-text="新增映射"
-      size="860px"
-      @confirm="openCreateMapping"
-    >
-      <div class="drawer-section drawer-section--flush">
-        <div class="drawer-section__title">
-          <span>来源平台商品/SKU 映射</span>
-          <AppButton @click="loadMappings">刷新</AppButton>
-        </div>
-
-        <p class="drawer-section__description">
-          用于后续平台订单同步时识别 Apple ID 业务，不和兑换码平台映射混用。
-        </p>
-
-        <el-table
-          v-loading="mappingLoading"
-          class="desktop-data-table"
-          :data="mappings"
-          row-key="id"
-        >
-          <el-table-column label="平台/店铺" min-width="170">
-            <template #default="{ row }">
-              {{ row.sourcePlatform.name }}
-              <div class="muted-block">{{ row.shopName || row.sourcePlatform.name }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="商品/SKU" min-width="190">
-            <template #default="{ row }">
-              {{ row.platformItemId }}
-              <div class="muted-block">SKU {{ row.platformSkuId || '-' }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="关键词" min-width="160">
-            <template #default="{ row }">{{ row.skuKeyword || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="售价/手续费" min-width="160">
-            <template #default="{ row }">
-              {{ row.platformPrice }}
-              <div class="muted-block">
-                {{ getFeeTypeLabel(row.platformFeeType) }} {{ row.platformFeeValue }}
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="自动订单" width="100">
-            <template #default="{ row }">
-              <StatusChip :tone="row.allowAutoOrder ? 'green' : 'neutral'" dot>
-                {{ row.allowAutoOrder ? '允许' : '关闭' }}
-              </StatusChip>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="90">
-            <template #default="{ row }">
-              <StatusChip :tone="row.enabled ? 'green' : 'neutral'" dot>
-                {{ row.enabled ? '启用' : '停用' }}
-              </StatusChip>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="130" fixed="right">
-            <template #default="{ row }">
-              <div class="table-action-group">
-                <AppButton variant="ghost" @click="openEditMapping(row)">编辑</AppButton>
-                <AppButton variant="danger" @click="removeMapping(row)">删除</AppButton>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-        <div v-if="mappings.length" class="mobile-record-list" aria-label="Apple 平台映射移动列表">
-          <article v-for="mapping in mappings" :key="mapping.id" class="mobile-record-card">
-            <div class="mobile-record-card__head">
-              <div class="mobile-record-card__title">
-                <strong>{{ mapping.sourcePlatform.name }}</strong>
-                <span>{{ mapping.shopName || mapping.sourcePlatform.name }}</span>
-              </div>
-              <StatusChip :tone="mapping.enabled ? 'green' : 'neutral'" dot>
-                {{ mapping.enabled ? '启用' : '停用' }}
-              </StatusChip>
-            </div>
-            <div class="mobile-record-card__meta">
-              <div>
-                <span>商品/SKU</span>
-                <strong
-                  >{{ mapping.platformItemId }} · SKU {{ mapping.platformSkuId || '-' }}</strong
-                >
-              </div>
-              <div>
-                <span>关键词</span>
-                <strong>{{ mapping.skuKeyword || '-' }}</strong>
-              </div>
-            </div>
-            <div class="mobile-record-card__stats">
-              <div>
-                <span>售价</span>
-                <strong>{{ mapping.platformPrice }}</strong>
-              </div>
-              <div>
-                <span>手续费</span>
-                <strong>
-                  {{ getFeeTypeLabel(mapping.platformFeeType) }} {{ mapping.platformFeeValue }}
-                </strong>
-              </div>
-              <div>
-                <span>自动订单</span>
-                <strong>{{ mapping.allowAutoOrder ? '允许' : '关闭' }}</strong>
-              </div>
-            </div>
-            <div class="mobile-record-card__actions">
-              <AppButton size="small" variant="ghost" @click="openEditMapping(mapping)">
-                编辑
-              </AppButton>
-              <AppButton size="small" variant="danger" @click="removeMapping(mapping)">
-                删除
-              </AppButton>
-            </div>
-          </article>
-        </div>
-        <div
-          v-else-if="!mappingLoading"
-          class="mobile-record-list"
-          aria-label="Apple 平台映射空状态"
-        >
-          <div class="apple-core-empty-state">
-            <strong>暂无平台映射</strong>
-            <span>新增映射后，平台订单可自动识别 Apple ID 业务。</span>
-          </div>
-        </div>
-      </div>
-    </AppDrawer>
-
-    <el-dialog
-      v-model="mappingDialogVisible"
-      :title="editingMapping ? '编辑平台映射' : '新增平台映射'"
-      width="min(720px, calc(100vw - 24px))"
-    >
-      <el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top">
-        <div class="form-grid">
-          <el-form-item prop="sourcePlatformId">
-            <template #label>
-              <FieldHelpLabel
-                label="来源平台"
-                purpose="这条映射属于哪个销售平台，用来识别平台订单对应哪项 Apple ID 业务。"
-                example="淘宝商品映射选淘宝，闲鱼商品映射选闲鱼。"
-              />
-            </template>
-            <el-select
-              v-model="mappingForm.sourcePlatformId"
-              class="full-input"
-              filterable
-              placeholder="选择来源平台"
-            >
-              <el-option
-                v-for="platform in sourcePlatforms"
-                :key="platform.id"
-                :label="platform.name"
-                :value="platform.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="店铺/账号名称"
-                purpose="记录平台店铺、账号或渠道名称，方便多个店铺时区分来源。"
-                example="可以填主店、闲鱼 1 号店、淘宝企业店。"
-              />
-            </template>
-            <el-input v-model.trim="mappingForm.shopName" />
-          </el-form-item>
-        </div>
-        <div class="form-grid">
-          <el-form-item prop="platformItemId">
-            <template #label>
-              <FieldHelpLabel
-                label="平台商品 ID"
-                purpose="平台商品的唯一编号，系统用它把外部订单匹配到这个业务。"
-                example="淘宝填 itemId，闲鱼填商品 ID；从订单详情或平台后台复制。"
-              />
-            </template>
-            <el-input v-model.trim="mappingForm.platformItemId" />
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="平台 SKU ID"
-                purpose="同一个商品下不同规格的编号，用来区分月卡、季卡、不同套餐。"
-                example="商品只有一个规格可留空；多个规格就填平台给的 SKU ID。"
-              />
-            </template>
-            <el-input v-model.trim="mappingForm.platformSkuId" placeholder="没有 SKU 可留空" />
-          </el-form-item>
-        </div>
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="SKU 关键词"
-              purpose="当平台没有稳定 SKU ID 时，用规格文字关键词辅助匹配。"
-              example="可以填 GPT Plus 月卡、Claude Pro、1 个月；多个关键词尽量用订单里会出现的词。"
-            />
-          </template>
-          <el-input
-            v-model.trim="mappingForm.skuKeyword"
-            placeholder="例如 GPT Plus 月卡 / Claude Pro"
-          />
-        </el-form-item>
-        <div class="form-grid">
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="平台售价"
-                purpose="记录这个平台商品的标价，用于对账和判断订单金额是否异常。"
-                example="平台标价 25 元就填 25；如果经常活动价，可按常用售价填写。"
-              />
-            </template>
-            <el-input v-model.trim="mappingForm.platformPrice" />
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="手续费类型"
-                purpose="说明平台手续费怎么计算，后续录单会用于利润估算。"
-                example="只按比例抽成选比例；每单固定扣钱选固定；两种都有选比例 + 固定。"
-              />
-            </template>
-            <el-select v-model="mappingForm.platformFeeType" class="full-input">
-              <el-option
-                v-for="option in platformFeeTypeOptions"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="手续费值"
-                purpose="填写平台手续费对应的比例或固定金额。"
-                example="比例 1% 填 0.01；固定每单 0.5 元填 0.5；混合规则按系统约定填写。"
-              />
-            </template>
-            <el-input v-model.trim="mappingForm.platformFeeValue" />
-          </el-form-item>
-        </div>
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="开关"
-              purpose="控制这条平台映射是否启用，以及是否允许平台订单自动生成 Apple ID 订单。"
-              example="确认商品映射准确后再勾允许自动生成；暂时不用就取消启用映射。"
-            />
-          </template>
-          <el-checkbox v-model="mappingForm.allowAutoOrder">允许自动生成 Apple ID 订单</el-checkbox>
-          <el-checkbox v-model="mappingForm.enabled">启用映射</el-checkbox>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <AppButton @click="mappingDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="savingMapping" @click="saveMapping">
-          保存映射
-        </AppButton>
-      </template>
-    </el-dialog>
-
     <el-dialog
       v-model="officialSourceDialogVisible"
       :title="editingOfficialSource ? '编辑官方来源' : '新增官方来源'"
@@ -969,11 +764,28 @@
           <el-input v-model.trim="officialSourceForm.name" placeholder="例如 Apple 美国价格页" />
         </el-form-item>
         <div class="form-grid">
+          <el-form-item required label="业务平台">
+            <el-select v-model="officialSourceForm.provider" class="full-input" filterable>
+              <el-option
+                v-for="option in officialProviderOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item required label="地区">
             <el-input v-model.trim="officialSourceForm.region" placeholder="US" />
           </el-form-item>
+        </div>
+        <div class="form-grid">
           <el-form-item required label="币种">
             <el-input v-model.trim="officialSourceForm.currency" placeholder="USD" />
+          </el-form-item>
+          <el-form-item label="价格类型">
+            <el-select v-model="officialSourceForm.priceSourceType" class="full-input">
+              <el-option label="官网公开价" value="official_web" />
+            </el-select>
           </el-form-item>
         </div>
         <el-form-item label="官方地址">
@@ -1045,16 +857,24 @@
           <el-form-item required label="官方套餐名">
             <el-input v-model.trim="officialCheckForm.serviceName" />
           </el-form-item>
-          <el-form-item label="分类">
-            <el-input v-model.trim="officialCheckForm.category" />
+          <el-form-item label="套餐编码">
+            <el-input v-model.trim="officialCheckForm.planCode" placeholder="可留空" />
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item required label="官方价格">
-            <el-input v-model.trim="officialCheckForm.officialPrice" placeholder="例如 9.99" />
+          <el-form-item label="分类">
+            <el-input v-model.trim="officialCheckForm.category" />
           </el-form-item>
           <el-form-item required label="币种">
             <el-input v-model.trim="officialCheckForm.currency" />
+          </el-form-item>
+        </div>
+        <div class="form-grid">
+          <el-form-item required label="官网官方价格">
+            <el-input v-model.trim="officialCheckForm.officialPrice" placeholder="例如 9.99" />
+          </el-form-item>
+          <el-form-item required label="地区">
+            <el-input v-model.trim="officialCheckForm.region" />
           </el-form-item>
         </div>
         <div class="form-grid">
@@ -1098,7 +918,6 @@ import {
 } from '@/api/system';
 import type { DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
-import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -1111,7 +930,6 @@ import {
   APPLE_SERVICE_EXPIRE_CALC_TYPE_DICTIONARY_GROUP,
   APPLE_SERVICE_LOCK_RULE_DICTIONARY_GROUP,
   APPLE_SERVICE_PERIOD_TYPE_DICTIONARY_GROUP,
-  APPLE_SERVICE_PLATFORM_FEE_TYPE_DICTIONARY_GROUP,
   buildQuickSettingCode
 } from '@/config/quickSettings';
 import {
@@ -1120,12 +938,11 @@ import {
 } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleService,
-  AppleServicePlatformMapping,
+  AppleBalancePriceRuleType,
   AppleOfficialPriceSource,
   AppleOfficialPriceSnapshot,
   ApplePriceChangeReview,
   DataDictionary,
-  SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
@@ -1138,13 +955,10 @@ import {
   buildAppleServiceExpireCalcTypeOptions,
   buildAppleServiceLockRuleOptions,
   buildAppleServicePeriodTypeOptions,
-  buildAppleServicePlatformFeeTypeOptions,
   getAppleServiceLockRuleLabel as getConfiguredLockRuleLabel,
-  getAppleServicePeriodTypeLabel,
-  getAppleServicePlatformFeeTypeLabel as getConfiguredPlatformFeeTypeLabel
+  getAppleServicePeriodTypeLabel
 } from '@/utils/appleServiceOptions';
 import { createSmartQueryKey, invalidateSmartQueries, refreshSmartQuery } from '@/utils/smartQuery';
-import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
 const tableKey = 'apple_services';
 const APPLE_SERVICES_SCOPE = 'apple-services';
@@ -1159,8 +973,8 @@ const statusOptions = [
 const serviceColumnOptions = [
   { label: '业务', value: 'name', required: true },
   { label: '分类', value: 'category' },
-  { label: '售价', value: 'defaultPrice' },
-  { label: '消耗', value: 'officialCostValue' },
+  { label: '官网价', value: 'officialBasePrice' },
+  { label: 'Apple余额价', value: 'officialCostValue' },
   { label: '周期', value: 'period' },
   { label: '锁定规则', value: 'lockRule' },
   { label: '允许地区', value: 'allowedRegions' },
@@ -1168,39 +982,43 @@ const serviceColumnOptions = [
   { label: '更新时间', value: 'updatedAt' }
 ];
 const batchActions = [{ label: '批量导出', value: 'export' }];
+const officialProviderOptions = [
+  { label: 'ChatGPT / OpenAI', value: 'chatgpt' },
+  { label: 'Gemini / Google', value: 'gemini' },
+  { label: 'Claude / Anthropic', value: 'claude' },
+  { label: '自定义', value: 'custom' }
+];
+const balanceRuleOptions: Array<{ label: string; value: AppleBalancePriceRuleType }> = [
+  { label: '继承全局规则', value: 'inherit' },
+  { label: '按百分比', value: 'percent' },
+  { label: '固定加价', value: 'fixed_add' },
+  { label: '手动填写', value: 'manual' }
+];
 
 const loading = ref(false);
 const saving = ref(false);
-const mappingLoading = ref(false);
-const savingMapping = ref(false);
 const officialPriceLoading = ref(false);
 const savingOfficialSource = ref(false);
 const checkingOfficialPrice = ref(false);
+const savingBalanceRule = ref(false);
 const officialSourceCheckId = ref('');
 const dialogVisible = ref(false);
-const mappingDrawerVisible = ref(false);
-const mappingDialogVisible = ref(false);
 const officialSourceDialogVisible = ref(false);
 const officialCheckDialogVisible = ref(false);
 const editingService = ref<AppleService | null>(null);
 const selectedService = ref<AppleService | null>(null);
-const editingMapping = ref<AppleServicePlatformMapping | null>(null);
 const editingOfficialSource = ref<AppleOfficialPriceSource | null>(null);
 const formRef = ref<FormInstance>();
-const mappingFormRef = ref<FormInstance>();
 const services = ref<AppleService[]>([]);
 const selectedServices = ref<AppleService[]>([]);
-const mappings = ref<AppleServicePlatformMapping[]>([]);
 const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
 const officialPriceReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
-const sourcePlatforms = ref<SourcePlatform[]>([]);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const serviceCategoryDictionaries = ref<DataDictionary[]>([]);
 const periodTypeDictionaries = ref<DataDictionary[]>([]);
 const expireCalcTypeDictionaries = ref<DataDictionary[]>([]);
 const lockRuleDictionaries = ref<DataDictionary[]>([]);
-const platformFeeTypeDictionaries = ref<DataDictionary[]>([]);
 const knownServiceCategories = ref<string[]>([]);
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
@@ -1211,6 +1029,11 @@ const total = ref(0);
 const serviceAdvancedPanels = ref<string[]>([]);
 const officialPriceTab = ref('reviews');
 const officialReviewActionId = ref('');
+
+const globalBalanceRuleForm = reactive({
+  ruleType: 'percent' as Extract<AppleBalancePriceRuleType, 'percent' | 'fixed_add'>,
+  ruleValue: '1'
+});
 
 const query = reactive({
   page: 1,
@@ -1225,7 +1048,10 @@ const form = reactive({
   name: '',
   category: '通用',
   defaultPrice: '0',
+  officialBasePrice: '0',
   officialCostValue: '0',
+  appleBalancePriceRuleType: 'inherit' as AppleBalancePriceRuleType,
+  appleBalancePriceRuleValue: '',
   currency: 'USD',
   defaultPeriodType: 'month' as AppleService['defaultPeriodType'],
   defaultPeriodValue: 1,
@@ -1240,21 +1066,10 @@ const form = reactive({
   remark: ''
 });
 
-const mappingForm = reactive({
-  sourcePlatformId: '',
-  shopName: '',
-  platformItemId: '',
-  platformSkuId: '',
-  skuKeyword: '',
-  platformPrice: '0',
-  platformFeeType: 'none' as AppleServicePlatformMapping['platformFeeType'],
-  platformFeeValue: '0',
-  allowAutoOrder: false,
-  enabled: true
-});
-
 const officialSourceForm = reactive({
   name: '',
+  provider: 'chatgpt',
+  priceSourceType: 'official_web',
   region: 'US',
   currency: 'USD',
   sourceUrl: '',
@@ -1267,6 +1082,7 @@ const officialSourceForm = reactive({
 const officialCheckForm = reactive({
   sourceId: '',
   appleServiceId: '',
+  planCode: '',
   serviceName: '',
   category: '通用',
   region: 'US',
@@ -1280,14 +1096,8 @@ const officialCheckForm = reactive({
 const rules: FormRules<typeof form> = {
   category: [{ required: true, message: '请选择或输入业务分类', trigger: 'change' }],
   name: [{ required: true, message: '请输入业务名称', trigger: 'blur' }],
-  defaultPrice: [{ required: true, message: '请输入默认售价', trigger: 'blur' }],
-  officialCostValue: [{ required: true, message: '请输入官方消耗金额', trigger: 'blur' }],
+  officialBasePrice: [{ required: true, message: '请输入官网官方价格', trigger: 'blur' }],
   currency: [{ required: true, message: '请输入币种', trigger: 'blur' }]
-};
-
-const mappingRules: FormRules<typeof mappingForm> = {
-  sourcePlatformId: [{ required: true, message: '请选择来源平台', trigger: 'change' }],
-  platformItemId: [{ required: true, message: '请输入平台商品 ID', trigger: 'blur' }]
 };
 
 const enabledCount = computed(
@@ -1335,12 +1145,6 @@ const expireCalcTypeOptions = computed(() =>
 const lockRuleOptions = computed(() =>
   buildAppleServiceLockRuleOptions(lockRuleDictionaries.value)
 );
-const platformFeeTypeOptions = computed(() =>
-  buildAppleServicePlatformFeeTypeOptions(platformFeeTypeDictionaries.value)
-);
-const mappingCountLabel = computed(() =>
-  selectedService.value ? String(mappings.value.length) : '-'
-);
 const pendingOfficialReviews = computed(() =>
   officialPriceReviews.value.filter((review) => review.status === 'pending')
 );
@@ -1357,9 +1161,79 @@ const filterChips = computed(() => {
   }
   return chips;
 });
+const isBalanceRuleValueVisible = computed(
+  () =>
+    form.appleBalancePriceRuleType === 'percent' || form.appleBalancePriceRuleType === 'fixed_add'
+);
+const computedFormAppleBalancePrice = computed(() => {
+  if (form.appleBalancePriceRuleType === 'manual') {
+    return form.officialCostValue || '0';
+  }
+
+  return calculateAppleBalancePrice(
+    form.officialBasePrice,
+    form.appleBalancePriceRuleType,
+    form.appleBalancePriceRuleValue
+  );
+});
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
+}
+
+function formatDecimalText(value: number) {
+  if (!Number.isFinite(value)) return '0';
+  return value
+    .toFixed(4)
+    .replace(/\.?0+$/, '')
+    .replace(/\.$/, '');
+}
+
+function parseDecimalText(value?: string | null) {
+  const normalized = Number(String(value || '0').trim());
+  return Number.isFinite(normalized) && normalized >= 0 ? normalized : 0;
+}
+
+function calculateAppleBalancePrice(
+  basePrice: string,
+  ruleType: AppleBalancePriceRuleType,
+  ruleValue?: string | null
+) {
+  const base = parseDecimalText(basePrice);
+  const effectiveRuleType = ruleType === 'inherit' ? globalBalanceRuleForm.ruleType : ruleType;
+  const effectiveRuleValue =
+    ruleType === 'inherit' ? globalBalanceRuleForm.ruleValue : ruleValue || '0';
+
+  if (effectiveRuleType === 'manual') {
+    return formatDecimalText(base);
+  }
+
+  if (effectiveRuleType === 'fixed_add') {
+    return formatDecimalText(base + parseDecimalText(effectiveRuleValue));
+  }
+
+  return formatDecimalText(base * parseDecimalText(effectiveRuleValue || '1'));
+}
+
+function getProviderLabel(provider?: string | null) {
+  return (
+    officialProviderOptions.find((option) => option.value === provider)?.label ||
+    provider ||
+    '自定义'
+  );
+}
+
+function getBalanceRuleLabel(service: AppleService) {
+  if (service.appleBalancePriceRuleType === 'manual') return '手动填写';
+  if (service.appleBalancePriceRuleType === 'inherit') {
+    return globalBalanceRuleForm.ruleType === 'percent'
+      ? `继承全局 ${globalBalanceRuleForm.ruleValue} 倍`
+      : `继承全局 +${globalBalanceRuleForm.ruleValue}`;
+  }
+  if (service.appleBalancePriceRuleType === 'fixed_add') {
+    return `官网价 +${service.appleBalancePriceRuleValue || '0'}`;
+  }
+  return `官网价 x ${service.appleBalancePriceRuleValue || '1'}`;
 }
 
 function getStatusLabel(status: AppleService['status']) {
@@ -1404,10 +1278,6 @@ function syncKnownServiceCategories(items: AppleService[]) {
     ...items.map((service) => normalizeCategoryValue(service.category))
   ].filter(Boolean);
   knownServiceCategories.value = [...new Set(categories)];
-}
-
-function getFeeTypeLabel(type: AppleServicePlatformMapping['platformFeeType']) {
-  return getConfiguredPlatformFeeTypeLabel(type, platformFeeTypeDictionaries.value);
 }
 
 function invalidateAppleServiceConsumers() {
@@ -1619,6 +1489,7 @@ async function initializePage() {
     loadAppleServiceCategories(),
     loadAppleRegions(),
     loadAppleServiceQuickOptions(),
+    loadGlobalBalanceRule(),
     loadServices({ force: false }),
     loadOfficialPricePanel()
   ]);
@@ -1629,6 +1500,7 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   () => {
     void loadServices({ silent: true, dedupeMs: 0 });
     void loadOfficialPricePanel();
+    void loadGlobalBalanceRule();
     void loadAppleServiceCategories();
     void loadAppleRegions();
     void loadAppleServiceQuickOptions();
@@ -1687,7 +1559,7 @@ function buildAppleServiceQuickOptionParams(group: string): DataDictionaryQuery 
 
 async function loadAppleServiceQuickOptions() {
   try {
-    const [periodTypes, expireCalcTypes, lockRules, platformFeeTypes] = await Promise.all([
+    const [periodTypes, expireCalcTypes, lockRules] = await Promise.all([
       dataCenterApi.listDictionaries(
         buildAppleServiceQuickOptionParams(APPLE_SERVICE_PERIOD_TYPE_DICTIONARY_GROUP)
       ),
@@ -1696,15 +1568,11 @@ async function loadAppleServiceQuickOptions() {
       ),
       dataCenterApi.listDictionaries(
         buildAppleServiceQuickOptionParams(APPLE_SERVICE_LOCK_RULE_DICTIONARY_GROUP)
-      ),
-      dataCenterApi.listDictionaries(
-        buildAppleServiceQuickOptionParams(APPLE_SERVICE_PLATFORM_FEE_TYPE_DICTIONARY_GROUP)
       )
     ]);
     periodTypeDictionaries.value = periodTypes.items;
     expireCalcTypeDictionaries.value = expireCalcTypes.items;
     lockRuleDictionaries.value = lockRules.items;
-    platformFeeTypeDictionaries.value = platformFeeTypes.items;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务选项失败');
   }
@@ -1744,19 +1612,6 @@ async function ensureAppleServiceCategory(category: string) {
     remark: '在 Apple ID 业务设置里手动输入后自动加入快捷设置'
   });
   await loadAppleServiceCategories();
-}
-
-async function loadSourcePlatforms() {
-  try {
-    const data = await loadSmartSourcePlatforms({
-      page: 1,
-      pageSize: 100,
-      status: 'active'
-    });
-    sourcePlatforms.value = data.items;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载来源平台失败');
-  }
 }
 
 function getCollectMethodLabel(method: AppleOfficialPriceSource['collectMethod']) {
@@ -1803,13 +1658,29 @@ function getReviewValue(review: ApplePriceChangeReview, key: string) {
 }
 
 function getReviewOldOfficialPrice(review: ApplePriceChangeReview) {
-  const value = getReviewRecordValue(review.oldValue, 'officialPrice');
+  const value =
+    getReviewRecordValue(review.oldValue, 'officialBasePrice') ||
+    getReviewRecordValue(review.oldValue, 'officialPrice');
   const currency = getReviewRecordValue(review.oldValue, 'currency');
   return value ? `${value} ${currency}` : '-';
 }
 
 function getReviewNewOfficialPrice(review: ApplePriceChangeReview) {
-  const value = getReviewRecordValue(review.newValue, 'officialPrice');
+  const value =
+    getReviewRecordValue(review.newValue, 'officialBasePrice') ||
+    getReviewRecordValue(review.newValue, 'officialPrice');
+  const currency = getReviewRecordValue(review.newValue, 'currency');
+  return value ? `${value} ${currency}` : '-';
+}
+
+function getReviewOldAppleBalancePrice(review: ApplePriceChangeReview) {
+  const value = getReviewRecordValue(review.oldValue, 'appleBalancePrice');
+  const currency = getReviewRecordValue(review.oldValue, 'currency');
+  return value ? `${value} ${currency}` : '-';
+}
+
+function getReviewNewAppleBalancePrice(review: ApplePriceChangeReview) {
+  const value = getReviewRecordValue(review.newValue, 'appleBalancePrice');
   const currency = getReviewRecordValue(review.newValue, 'currency');
   return value ? `${value} ${currency}` : '-';
 }
@@ -1836,6 +1707,40 @@ function formatOfficialPeriod(type: string, value: string) {
 
 function isApplePeriodType(value: string): value is AppleService['defaultPeriodType'] {
   return value === 'month' || value === 'day' || value === 'manual';
+}
+
+async function loadGlobalBalanceRule() {
+  try {
+    const rule = await appleServicesApi.getBalancePriceRule();
+    globalBalanceRuleForm.ruleType = rule.ruleType;
+    globalBalanceRuleForm.ruleValue = rule.ruleValue;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载 Apple 余额价规则失败');
+  }
+}
+
+async function saveGlobalBalanceRule() {
+  if (!/^\d+(\.\d{1,8})?$/.test(globalBalanceRuleForm.ruleValue.trim())) {
+    ElMessage.warning('请填写正确的规则数值');
+    return;
+  }
+
+  savingBalanceRule.value = true;
+  try {
+    const rule = await appleServicesApi.updateBalancePriceRule({
+      ruleType: globalBalanceRuleForm.ruleType,
+      ruleValue: globalBalanceRuleForm.ruleValue
+    });
+    globalBalanceRuleForm.ruleType = rule.ruleType;
+    globalBalanceRuleForm.ruleValue = rule.ruleValue;
+    ElMessage.success('Apple 余额价全局规则已保存');
+    invalidateAppleServiceConsumers();
+    await loadServices({ force: true, dedupeMs: 0 });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存 Apple 余额价规则失败');
+  } finally {
+    savingBalanceRule.value = false;
+  }
 }
 
 async function loadOfficialPricePanel() {
@@ -1876,6 +1781,8 @@ async function loadOfficialPricePanel() {
 
 function resetOfficialSourceForm() {
   officialSourceForm.name = '';
+  officialSourceForm.provider = 'chatgpt';
+  officialSourceForm.priceSourceType = 'official_web';
   officialSourceForm.region = 'US';
   officialSourceForm.currency = 'USD';
   officialSourceForm.sourceUrl = '';
@@ -1894,6 +1801,8 @@ function openCreateOfficialSource() {
 function openEditOfficialSource(source: AppleOfficialPriceSource) {
   editingOfficialSource.value = source;
   officialSourceForm.name = source.name;
+  officialSourceForm.provider = source.provider || 'custom';
+  officialSourceForm.priceSourceType = source.priceSourceType || 'official_web';
   officialSourceForm.region = source.region;
   officialSourceForm.currency = source.currency;
   officialSourceForm.sourceUrl = source.sourceUrl ?? '';
@@ -1918,6 +1827,8 @@ async function saveOfficialSource() {
   try {
     const payload = {
       name: officialSourceForm.name,
+      provider: officialSourceForm.provider,
+      priceSourceType: officialSourceForm.priceSourceType,
       region: officialSourceForm.region,
       currency: officialSourceForm.currency,
       sourceUrl: officialSourceForm.sourceUrl || null,
@@ -1964,8 +1875,9 @@ function openOfficialCheckDialog(source?: AppleOfficialPriceSource) {
   const selectedSource = source ?? officialPriceSources.value[0];
   officialCheckForm.sourceId = selectedSource?.id ?? '';
   officialCheckForm.appleServiceId = '';
+  officialCheckForm.planCode = '';
   officialCheckForm.serviceName = '';
-  officialCheckForm.category = '通用';
+  officialCheckForm.category = selectedSource?.provider ?? '通用';
   officialCheckForm.region = selectedSource?.region ?? 'US';
   officialCheckForm.currency = selectedSource?.currency ?? 'USD';
   officialCheckForm.officialPrice = '0';
@@ -2009,7 +1921,7 @@ function syncOfficialCheckService() {
   officialCheckForm.serviceName = service.name;
   officialCheckForm.category = service.category;
   officialCheckForm.currency = service.currency;
-  officialCheckForm.officialPrice = service.officialCostValue;
+  officialCheckForm.officialPrice = service.officialBasePrice;
   officialCheckForm.periodType = service.defaultPeriodType;
   officialCheckForm.periodValue = service.defaultPeriodValue;
 }
@@ -2036,6 +1948,7 @@ async function checkOfficialPrice() {
       items: [
         {
           appleServiceId: officialCheckForm.appleServiceId || null,
+          planCode: officialCheckForm.planCode || null,
           serviceName: officialCheckForm.serviceName,
           category: officialCheckForm.category || '通用',
           region: officialCheckForm.region,
@@ -2060,7 +1973,7 @@ async function checkOfficialPrice() {
 async function approveOfficialReview(review: ApplePriceChangeReview) {
   try {
     await ElMessageBox.confirm(
-      '确认后会同步 Apple ID 业务设置里的官方消耗、币种和周期，新套餐会先创建为暂停状态。',
+      '确认后会同步 Apple ID 业务设置里的官网价、币种和周期，并按规则重算 Apple 余额价。新套餐会先创建为暂停状态。',
       '确认官方价格变化',
       {
         type: 'warning',
@@ -2106,7 +2019,10 @@ function resetForm() {
   form.name = '';
   form.category = getDefaultCategory();
   form.defaultPrice = '0';
+  form.officialBasePrice = '0';
   form.officialCostValue = '0';
+  form.appleBalancePriceRuleType = 'inherit';
+  form.appleBalancePriceRuleValue = '';
   form.currency = 'USD';
   form.defaultPeriodType = periodTypeOptions.value[0]?.value ?? 'month';
   form.defaultPeriodValue = 1;
@@ -2133,7 +2049,10 @@ function openEdit(service: AppleService) {
   form.name = service.name;
   form.category = normalizeCategoryValue(service.category);
   form.defaultPrice = service.defaultPrice;
+  form.officialBasePrice = service.officialBasePrice;
   form.officialCostValue = service.officialCostValue;
+  form.appleBalancePriceRuleType = service.appleBalancePriceRuleType;
+  form.appleBalancePriceRuleValue = service.appleBalancePriceRuleValue ?? '';
   form.currency = service.currency;
   form.defaultPeriodType = service.defaultPeriodType;
   form.defaultPeriodValue = service.defaultPeriodValue;
@@ -2150,73 +2069,17 @@ function openEdit(service: AppleService) {
   dialogVisible.value = true;
 }
 
-async function openMappings(service: AppleService) {
-  selectedService.value = service;
-  mappingDrawerVisible.value = true;
-  await Promise.all([loadSourcePlatforms(), loadMappings()]);
-}
-
-async function loadMappings() {
-  if (!selectedService.value) {
-    return;
-  }
-
-  mappingLoading.value = true;
-  try {
-    const data = await appleServicesApi.listPlatformMappings(selectedService.value.id);
-    mappings.value = data.items;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载平台映射失败');
-  } finally {
-    mappingLoading.value = false;
-  }
-}
-
-function resetMappingForm() {
-  mappingForm.sourcePlatformId = sourcePlatforms.value[0]?.id ?? '';
-  mappingForm.shopName = '';
-  mappingForm.platformItemId = '';
-  mappingForm.platformSkuId = '';
-  mappingForm.skuKeyword = '';
-  mappingForm.platformPrice = selectedService.value?.defaultPrice ?? '0';
-  mappingForm.platformFeeType = platformFeeTypeOptions.value[0]?.value ?? 'none';
-  mappingForm.platformFeeValue = '0';
-  mappingForm.allowAutoOrder = false;
-  mappingForm.enabled = true;
-}
-
-async function openCreateMapping() {
-  if (!selectedService.value) {
-    return;
-  }
-
-  if (!sourcePlatforms.value.length) {
-    await loadSourcePlatforms();
-  }
-
-  editingMapping.value = null;
-  resetMappingForm();
-  mappingDialogVisible.value = true;
-}
-
-function openEditMapping(mapping: AppleServicePlatformMapping) {
-  editingMapping.value = mapping;
-  mappingForm.sourcePlatformId = mapping.sourcePlatformId;
-  mappingForm.shopName = mapping.shopName ?? '';
-  mappingForm.platformItemId = mapping.platformItemId;
-  mappingForm.platformSkuId = mapping.platformSkuId;
-  mappingForm.skuKeyword = mapping.skuKeyword ?? '';
-  mappingForm.platformPrice = mapping.platformPrice;
-  mappingForm.platformFeeType = mapping.platformFeeType;
-  mappingForm.platformFeeValue = mapping.platformFeeValue;
-  mappingForm.allowAutoOrder = mapping.allowAutoOrder;
-  mappingForm.enabled = mapping.enabled;
-  mappingDialogVisible.value = true;
-}
-
 async function saveService() {
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) {
+    return;
+  }
+  if (isBalanceRuleValueVisible.value && !form.appleBalancePriceRuleValue.trim()) {
+    ElMessage.warning('请填写 Apple余额价规则数值');
+    return;
+  }
+  if (form.appleBalancePriceRuleType === 'manual' && !form.officialCostValue.trim()) {
+    ElMessage.warning('请填写 Apple余额消耗金额');
     return;
   }
 
@@ -2227,8 +2090,16 @@ async function saveService() {
     const payload = {
       name: form.name,
       category,
-      defaultPrice: form.defaultPrice,
-      officialCostValue: form.officialCostValue,
+      defaultPrice: '0',
+      officialBasePrice: form.officialBasePrice,
+      officialCostValue:
+        form.appleBalancePriceRuleType === 'manual'
+          ? form.officialCostValue
+          : computedFormAppleBalancePrice.value,
+      appleBalancePriceRuleType: form.appleBalancePriceRuleType,
+      appleBalancePriceRuleValue: isBalanceRuleValueVisible.value
+        ? form.appleBalancePriceRuleValue
+        : null,
       currency: form.currency,
       defaultPeriodType: form.defaultPeriodType,
       defaultPeriodValue: form.defaultPeriodValue,
@@ -2257,64 +2128,6 @@ async function saveService() {
     ElMessage.error(error instanceof Error ? error.message : '保存 Apple ID 业务失败');
   } finally {
     saving.value = false;
-  }
-}
-
-async function saveMapping() {
-  const valid = await mappingFormRef.value?.validate().catch(() => false);
-  if (!valid || !selectedService.value) {
-    return;
-  }
-
-  savingMapping.value = true;
-  try {
-    const payload = {
-      sourcePlatformId: mappingForm.sourcePlatformId,
-      shopName: mappingForm.shopName || null,
-      platformItemId: mappingForm.platformItemId,
-      platformSkuId: mappingForm.platformSkuId || null,
-      skuKeyword: mappingForm.skuKeyword || null,
-      platformPrice: mappingForm.platformPrice,
-      platformFeeType: mappingForm.platformFeeType,
-      platformFeeValue: mappingForm.platformFeeValue,
-      allowAutoOrder: mappingForm.allowAutoOrder,
-      enabled: mappingForm.enabled
-    };
-
-    if (editingMapping.value) {
-      await appleServicesApi.updatePlatformMapping(editingMapping.value.id, payload);
-    } else {
-      await appleServicesApi.createPlatformMapping(selectedService.value.id, payload);
-    }
-
-    ElMessage.success('平台映射已保存');
-    mappingDialogVisible.value = false;
-    await loadMappings();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '保存平台映射失败');
-  } finally {
-    savingMapping.value = false;
-  }
-}
-
-async function removeMapping(mapping: AppleServicePlatformMapping) {
-  try {
-    await ElMessageBox.confirm(
-      `确认删除 ${mapping.sourcePlatform.name} / ${mapping.platformItemId} 的映射？`,
-      '删除平台映射',
-      {
-        type: 'warning',
-        confirmButtonText: '删除',
-        cancelButtonText: '取消'
-      }
-    );
-    await appleServicesApi.removePlatformMapping(mapping.id);
-    ElMessage.success('平台映射已删除');
-    await loadMappings();
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error instanceof Error ? error.message : '删除平台映射失败');
-    }
   }
 }
 
@@ -2356,6 +2169,40 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 
+.apple-balance-rule-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0 6px;
+}
+
+.apple-balance-rule-bar strong,
+.apple-balance-rule-bar span {
+  display: block;
+}
+
+.apple-balance-rule-bar span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.apple-balance-rule-bar__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.apple-rule-select {
+  width: 132px;
+}
+
+.apple-rule-input {
+  width: 140px;
+}
+
 .apple-official-price-tabs {
   margin-top: 10px;
 }
@@ -2370,6 +2217,17 @@ onBeforeUnmount(() => {
 @media (max-width: 720px) {
   .apple-service-period-row {
     grid-template-columns: 1fr;
+  }
+
+  .apple-balance-rule-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .apple-balance-rule-bar__controls,
+  .apple-rule-select,
+  .apple-rule-input {
+    width: 100%;
   }
 }
 </style>

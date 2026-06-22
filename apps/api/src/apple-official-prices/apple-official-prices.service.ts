@@ -32,6 +32,7 @@ import type { UpdateOfficialPriceSourceDto } from './dto/update-official-price-s
 
 interface ListSourcesQuery extends PaginationQuery {
   keyword?: string;
+  provider?: string;
   region?: string;
   currency?: string;
   collectMethod?: string;
@@ -64,15 +65,29 @@ type OfficialPriceSourceWithUsers = AppleOfficialPriceSource & {
 };
 
 type OfficialPriceSnapshotWithRelations = AppleOfficialPriceSnapshot & {
-  source?: Pick<AppleOfficialPriceSource, 'id' | 'name' | 'region' | 'currency'> | null;
+  source?: Pick<
+    AppleOfficialPriceSource,
+    'id' | 'name' | 'provider' | 'region' | 'currency'
+  > | null;
   appleService?: Pick<AppleService, 'id' | 'name' | 'category' | 'currency'> | null;
 };
 
 type PriceChangeReviewWithRelations = ApplePriceChangeReview & {
-  source?: Pick<AppleOfficialPriceSource, 'id' | 'name' | 'region' | 'currency'> | null;
+  source?: Pick<
+    AppleOfficialPriceSource,
+    'id' | 'name' | 'provider' | 'region' | 'currency'
+  > | null;
   snapshot?: Pick<
     AppleOfficialPriceSnapshot,
-    'id' | 'serviceName' | 'region' | 'currency' | 'officialPrice' | 'collectedAt'
+    | 'id'
+    | 'provider'
+    | 'planCode'
+    | 'serviceName'
+    | 'region'
+    | 'currency'
+    | 'officialPrice'
+    | 'appleBalancePrice'
+    | 'collectedAt'
   > | null;
   appleService?: Pick<
     AppleService,
@@ -80,7 +95,10 @@ type PriceChangeReviewWithRelations = ApplePriceChangeReview & {
     | 'name'
     | 'category'
     | 'currency'
+    | 'officialBasePrice'
     | 'officialCostValue'
+    | 'appleBalancePriceRuleType'
+    | 'appleBalancePriceRuleValue'
     | 'defaultPeriodType'
     | 'defaultPeriodValue'
     | 'remark'
@@ -97,6 +115,8 @@ export interface UserSnapshot {
 
 interface NormalizedCollectedItem {
   appleServiceId?: string | null;
+  provider: string;
+  planCode?: string | null;
   serviceName: string;
   category: string;
   region: string;
@@ -117,6 +137,7 @@ const SOURCE_SORT_FIELDS: Record<
   keyof Prisma.AppleOfficialPriceSourceOrderByWithRelationInput
 > = {
   name: 'name',
+  provider: 'provider',
   region: 'region',
   currency: 'currency',
   collectMethod: 'collectMethod',
@@ -164,6 +185,7 @@ export class AppleOfficialPricesService {
     const status = this.parseSourceStatus(query.status, false);
     const where: Prisma.AppleOfficialPriceSourceWhereInput = {
       deletedAt: null,
+      provider: query.provider ? this.normalizeCode(query.provider, 'manual', false) : undefined,
       region: query.region ? query.region.trim().toUpperCase() : undefined,
       currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
       collectMethod,
@@ -171,6 +193,7 @@ export class AppleOfficialPricesService {
       OR: keyword
         ? [
             { name: { contains: keyword, mode: 'insensitive' } },
+            { provider: { contains: keyword, mode: 'insensitive' } },
             { region: { contains: keyword, mode: 'insensitive' } },
             { currency: { contains: keyword, mode: 'insensitive' } },
             { sourceUrl: { contains: keyword, mode: 'insensitive' } },
@@ -563,7 +586,8 @@ export class AppleOfficialPricesService {
           name: newValue.serviceName,
           category: newValue.category,
           defaultPrice: '0',
-          officialCostValue: newValue.officialPrice,
+          officialBasePrice: newValue.officialPrice,
+          appleBalancePriceRuleType: 'inherit',
           currency: newValue.currency,
           defaultPeriodType: newValue.periodType,
           defaultPeriodValue: newValue.periodValue,
@@ -578,7 +602,7 @@ export class AppleOfficialPricesService {
         review.appleServiceId,
         {
           category: newValue.category,
-          officialCostValue: newValue.officialPrice,
+          officialBasePrice: newValue.officialPrice,
           currency: newValue.currency,
           defaultPeriodType: newValue.periodType,
           defaultPeriodValue: newValue.periodValue,
@@ -829,6 +853,7 @@ export class AppleOfficialPricesService {
 
     return {
       serviceName,
+      planCode: this.readPlanCode(record),
       category: this.readStringField(record, ['category', 'group', 'type']) ?? '通用',
       region: this.readStringField(record, ['region', 'country', 'storefront']) ?? source.region,
       currency: this.readCurrency(record, source.currency),
@@ -936,6 +961,19 @@ export class AppleOfficialPricesService {
     );
 
     return nestedRecord ? this.readOfficialPrice(nestedRecord) : null;
+  }
+
+  private readPlanCode(record: JsonRecord) {
+    return this.readStringField(record, [
+      'planCode',
+      'plan_code',
+      'productId',
+      'product_id',
+      'sku',
+      'skuId',
+      'sku_id',
+      'id'
+    ]);
   }
 
   private readCurrency(record: JsonRecord, fallback: string): string {
@@ -1182,19 +1220,28 @@ export class AppleOfficialPricesService {
     const finishedAt = new Date();
     const snapshots: OfficialPriceSnapshotWithRelations[] = [];
     const reviews: PriceChangeReviewWithRelations[] = [];
+    const globalBalanceRule = await this.appleServicesService.getBalancePriceRule();
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of input.items) {
         const matchedService = await this.findMatchedService(tx, item);
+        const appleBalancePrice = this.buildAppleBalancePricePreview(
+          item,
+          matchedService,
+          globalBalanceRule
+        );
         const snapshot = await tx.appleOfficialPriceSnapshot.create({
           data: {
             sourceId: input.source.id,
             appleServiceId: matchedService?.id ?? null,
+            provider: item.provider,
+            planCode: item.planCode ?? null,
             serviceName: item.serviceName,
             category: item.category,
             region: item.region,
             currency: item.currency,
             officialPrice: item.officialPrice,
+            appleBalancePrice,
             periodType: item.periodType,
             periodValue: item.periodValue,
             rawPayload: this.toJson(item.rawPayload ?? item)
@@ -1214,7 +1261,7 @@ export class AppleOfficialPricesService {
               oldValue: matchedService
                 ? this.toJson(this.buildServiceValue(matchedService))
                 : PrismaNamespace.JsonNull,
-              newValue: this.toJson(item),
+              newValue: this.toJson(this.buildCollectedValue(item, appleBalancePrice)),
               status: 'pending'
             },
             include: this.getReviewInclude()
@@ -1244,6 +1291,7 @@ export class AppleOfficialPricesService {
               changeType: 'removed_plan',
               oldValue: this.toJson(this.buildServiceValue(service)),
               newValue: this.toJson({
+                provider: input.source.provider,
                 serviceName: service.name,
                 region: input.source.region,
                 currency: input.source.currency,
@@ -1340,7 +1388,7 @@ export class AppleOfficialPricesService {
       return 'new_plan' satisfies ApplePriceChangeType;
     }
 
-    if (!service.officialCostValue.equals(item.officialPrice)) {
+    if (!service.officialBasePrice.equals(item.officialPrice)) {
       return 'price_changed' satisfies ApplePriceChangeType;
     }
 
@@ -1358,10 +1406,50 @@ export class AppleOfficialPricesService {
     return null;
   }
 
+  private buildAppleBalancePricePreview(
+    item: NormalizedCollectedItem,
+    service: AppleService | null,
+    globalRule: { ruleType: string; ruleValue: string }
+  ) {
+    if (service?.appleBalancePriceRuleType === 'manual') {
+      return service.officialCostValue.toString();
+    }
+
+    const ruleType =
+      service && service.appleBalancePriceRuleType !== 'inherit'
+        ? service.appleBalancePriceRuleType
+        : globalRule.ruleType;
+    const ruleValue =
+      service && service.appleBalancePriceRuleType !== 'inherit'
+        ? service.appleBalancePriceRuleValue?.toString()
+        : globalRule.ruleValue;
+    const officialPrice = new PrismaNamespace.Decimal(item.officialPrice);
+
+    if (ruleType === 'fixed_add') {
+      return officialPrice.plus(ruleValue ?? '0').toFixed();
+    }
+
+    if (ruleType === 'percent') {
+      return officialPrice.mul(ruleValue ?? '1').toFixed();
+    }
+
+    return officialPrice.toFixed();
+  }
+
+  private buildCollectedValue(item: NormalizedCollectedItem, appleBalancePrice: string) {
+    return {
+      ...item,
+      officialBasePrice: item.officialPrice,
+      appleBalancePrice
+    };
+  }
+
   private buildSourceCreateData(dto: CreateOfficialPriceSourceDto, operator?: AuthenticatedUser) {
     const name = this.normalizeRequiredString(dto.name, 'name');
     return {
       name,
+      provider: this.normalizeCode(dto.provider, this.inferProviderFromName(name), false),
+      priceSourceType: this.normalizeCode(dto.priceSourceType, 'official_web', false),
       region: this.normalizeCode(dto.region, 'US'),
       currency: this.normalizeCode(dto.currency, 'USD'),
       sourceUrl: this.normalizeNullableUrl(dto.sourceUrl),
@@ -1381,6 +1469,12 @@ export class AppleOfficialPricesService {
 
     if (dto.name !== undefined) {
       data.name = this.normalizeRequiredString(dto.name, 'name');
+    }
+    if (dto.provider !== undefined) {
+      data.provider = this.normalizeCode(dto.provider, 'manual', false);
+    }
+    if (dto.priceSourceType !== undefined) {
+      data.priceSourceType = this.normalizeCode(dto.priceSourceType, 'official_web', false);
     }
     if (dto.region !== undefined) {
       data.region = this.normalizeCode(dto.region, 'US');
@@ -1428,6 +1522,8 @@ export class AppleOfficialPricesService {
         appleServiceId: item.appleServiceId
           ? this.normalizeRequiredUuid(item.appleServiceId, `items[${index}].appleServiceId`)
           : null,
+        provider: source.provider,
+        planCode: this.normalizeNullableString(item.planCode),
         serviceName,
         category: this.normalizeCategory(item.category ?? '通用'),
         region: this.normalizeCode(item.region ?? source.region, source.region),
@@ -1494,7 +1590,11 @@ export class AppleOfficialPricesService {
       serviceName: service.name,
       category: service.category,
       currency: service.currency,
-      officialPrice: service.officialCostValue.toString(),
+      officialPrice: service.officialBasePrice.toString(),
+      officialBasePrice: service.officialBasePrice.toString(),
+      appleBalancePrice: service.officialCostValue.toString(),
+      appleBalancePriceRuleType: service.appleBalancePriceRuleType,
+      appleBalancePriceRuleValue: service.appleBalancePriceRuleValue?.toString() ?? null,
       periodType: service.defaultPeriodType,
       periodValue: service.defaultPeriodValue,
       status: service.status
@@ -1546,21 +1646,24 @@ export class AppleOfficialPricesService {
 
   private getSnapshotInclude() {
     return {
-      source: { select: { id: true, name: true, region: true, currency: true } },
+      source: { select: { id: true, name: true, provider: true, region: true, currency: true } },
       appleService: { select: { id: true, name: true, category: true, currency: true } }
     } satisfies Prisma.AppleOfficialPriceSnapshotInclude;
   }
 
   private getReviewInclude() {
     return {
-      source: { select: { id: true, name: true, region: true, currency: true } },
+      source: { select: { id: true, name: true, provider: true, region: true, currency: true } },
       snapshot: {
         select: {
           id: true,
+          provider: true,
+          planCode: true,
           serviceName: true,
           region: true,
           currency: true,
           officialPrice: true,
+          appleBalancePrice: true,
           collectedAt: true
         }
       },
@@ -1570,7 +1673,10 @@ export class AppleOfficialPricesService {
           name: true,
           category: true,
           currency: true,
+          officialBasePrice: true,
           officialCostValue: true,
+          appleBalancePriceRuleType: true,
+          appleBalancePriceRuleValue: true,
           defaultPeriodType: true,
           defaultPeriodValue: true,
           remark: true,
@@ -1721,9 +1827,10 @@ export class AppleOfficialPricesService {
     return normalized;
   }
 
-  private normalizeCode(value: string | undefined, fallback: string) {
-    const normalized = (value || fallback).trim().toUpperCase();
-    if (!/^[A-Z0-9_-]{2,20}$/.test(normalized)) {
+  private normalizeCode(value: string | undefined, fallback: string, upperCase = true) {
+    const rawValue = (value || fallback).trim();
+    const normalized = upperCase ? rawValue.toUpperCase() : rawValue.toLowerCase();
+    if (!/^[a-zA-Z0-9_-]{2,40}$/.test(normalized)) {
       throw new BadRequestException('code format is invalid');
     }
     return normalized;
@@ -1732,6 +1839,14 @@ export class AppleOfficialPricesService {
   private normalizeCategory(value: string | null | undefined) {
     const normalized = (value || '通用').trim();
     return normalized === 'default' ? '通用' : normalized;
+  }
+
+  private inferProviderFromName(value: string) {
+    const normalized = value.toLowerCase();
+    if (normalized.includes('chatgpt') || normalized.includes('openai')) return 'chatgpt';
+    if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
+    if (normalized.includes('claude') || normalized.includes('anthropic')) return 'claude';
+    return 'custom';
   }
 
   private normalizeDecimal(value: string | number | undefined, field: string, fallback: string) {
@@ -1795,6 +1910,8 @@ export class AppleOfficialPricesService {
     return {
       id: source.id,
       name: source.name,
+      provider: source.provider,
+      priceSourceType: source.priceSourceType,
       region: source.region,
       currency: source.currency,
       sourceUrl: source.sourceUrl,
@@ -1817,11 +1934,14 @@ export class AppleOfficialPricesService {
       source: snapshot.source,
       appleServiceId: snapshot.appleServiceId,
       appleService: snapshot.appleService,
+      provider: snapshot.provider,
+      planCode: snapshot.planCode,
       serviceName: snapshot.serviceName,
       category: snapshot.category,
       region: snapshot.region,
       currency: snapshot.currency,
       officialPrice: snapshot.officialPrice.toString(),
+      appleBalancePrice: snapshot.appleBalancePrice?.toString() ?? null,
       periodType: snapshot.periodType,
       periodValue: snapshot.periodValue,
       rawPayload: snapshot.rawPayload,
@@ -1838,14 +1958,18 @@ export class AppleOfficialPricesService {
       snapshot: review.snapshot
         ? {
             ...review.snapshot,
-            officialPrice: review.snapshot.officialPrice.toString()
+            officialPrice: review.snapshot.officialPrice.toString(),
+            appleBalancePrice: review.snapshot.appleBalancePrice?.toString() ?? null
           }
         : null,
       appleServiceId: review.appleServiceId,
       appleService: review.appleService
         ? {
             ...review.appleService,
-            officialCostValue: review.appleService.officialCostValue.toString()
+            officialBasePrice: review.appleService.officialBasePrice.toString(),
+            officialCostValue: review.appleService.officialCostValue.toString(),
+            appleBalancePriceRuleValue:
+              review.appleService.appleBalancePriceRuleValue?.toString() ?? null
           }
         : null,
       changeType: review.changeType,

@@ -8,6 +8,7 @@ import type {
   AppleAccount,
   AppleAccountImportResult,
   AppleAccountSecretField,
+  AppleAccountSourceChannel,
   AppleAccountStatusCheck,
   AppleAutomationTask,
   AutomationTaskLog,
@@ -19,6 +20,7 @@ import type {
   CodeAfterSale,
   CodeDeliveryLog,
   AppleService,
+  AppleBalancePriceRuleType,
   AppleServicePlatformMapping,
   AppleWebGatewayNodeStatus,
   AppleWebGatewayStatus,
@@ -90,6 +92,7 @@ import type {
   PlatformSyncLog,
   PlatformSyncLogStatus,
   PageResult,
+  PaidCurrency,
   Permission,
   QueueStatusLog,
   RedeemCodeBatch,
@@ -286,6 +289,8 @@ export interface CustomerQuery extends CommonPageQuery {
 }
 
 export type SourcePlatformQuery = CommonPageQuery;
+
+export type AppleAccountSourceChannelQuery = CommonPageQuery;
 
 export interface MessageTemplateQuery extends CommonPageQuery {
   type?: string;
@@ -555,7 +560,7 @@ export interface AppleAccountQuery extends CommonPageQuery {
   currency?: string;
   region?: string;
   locked?: string;
-  sourcePlatformId?: string;
+  sourceChannelId?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc' | '';
 }
@@ -568,6 +573,7 @@ export interface AppleServiceQuery extends CommonPageQuery {
 }
 
 export interface AppleOfficialPriceSourceQuery extends CommonPageQuery {
+  provider?: string;
   region?: string;
   currency?: string;
   collectMethod?: AppleOfficialPriceCollectMethod | '';
@@ -732,6 +738,12 @@ export interface SaveSourcePlatformPayload {
   feeRate?: string;
   feeFixed?: string;
   status?: 'active' | 'disabled';
+  remark?: string | null;
+}
+
+export interface SaveAppleAccountSourceChannelPayload {
+  name: string;
+  status?: AppleAccountSourceChannel['status'];
   remark?: string | null;
 }
 
@@ -969,7 +981,7 @@ export interface SaveAppleAccountPayload {
   currency?: string;
   currentBalance?: string;
   balanceCostAmount?: string;
-  sourcePlatformId?: string | null;
+  sourceChannelId?: string | null;
   status?: AppleAccount['status'];
   isManuallyLocked?: boolean;
   manualLockReason?: string | null;
@@ -982,7 +994,7 @@ export interface SaveAppleAccountPayload {
 
 export interface ImportAppleAccountsPayload {
   accounts: string[];
-  sourcePlatformId?: string | null;
+  sourceChannelId?: string | null;
 }
 
 export interface CreateAppleBalanceTopupPayload {
@@ -1029,7 +1041,10 @@ export interface SaveAppleServicePayload {
   name: string;
   category?: string;
   defaultPrice?: string;
+  officialBasePrice?: string;
   officialCostValue?: string;
+  appleBalancePriceRuleType?: AppleBalancePriceRuleType;
+  appleBalancePriceRuleValue?: string | null;
   currency?: string;
   defaultPeriodType?: AppleService['defaultPeriodType'];
   defaultPeriodValue?: number;
@@ -1042,6 +1057,11 @@ export interface SaveAppleServicePayload {
   minBalanceRequired?: string;
   status?: AppleService['status'];
   remark?: string | null;
+}
+
+export interface AppleBalancePriceRule {
+  ruleType: Extract<AppleBalancePriceRuleType, 'percent' | 'fixed_add'>;
+  ruleValue: string;
 }
 
 export interface SaveAppleServicePlatformMappingPayload {
@@ -1059,6 +1079,8 @@ export interface SaveAppleServicePlatformMappingPayload {
 
 export interface SaveAppleOfficialPriceSourcePayload {
   name: string;
+  provider?: string;
+  priceSourceType?: string;
   region: string;
   currency: string;
   sourceUrl?: string | null;
@@ -1070,6 +1092,7 @@ export interface SaveAppleOfficialPriceSourcePayload {
 
 export interface OfficialPriceCollectedItemPayload {
   appleServiceId?: string | null;
+  planCode?: string | null;
   serviceName: string;
   category?: string | null;
   region?: string | null;
@@ -1205,6 +1228,8 @@ export interface CreateAppleOrderPayload {
   startTime?: string | null;
   expireTime?: string | null;
   paidAmount?: string;
+  paidCurrency?: PaidCurrency;
+  paidExchangeRateToRmb?: string;
   platformFee?: string;
   refundLoss?: string;
   appleCostValue?: string;
@@ -1476,6 +1501,25 @@ export const sourcePlatformsApi = {
   },
   remove(id: string) {
     return request<{ deleted: boolean }>(http.delete(`/source-platforms/${id}`));
+  }
+};
+
+export const appleAccountSourceChannelsApi = {
+  list(params: AppleAccountSourceChannelQuery) {
+    return request<PageResult<AppleAccountSourceChannel>>(
+      http.get('/apple/account-source-channels', { params })
+    );
+  },
+  create(payload: SaveAppleAccountSourceChannelPayload) {
+    return request<AppleAccountSourceChannel>(http.post('/apple/account-source-channels', payload));
+  },
+  update(id: string, payload: SaveAppleAccountSourceChannelPayload) {
+    return request<AppleAccountSourceChannel>(
+      http.patch(`/apple/account-source-channels/${id}`, payload)
+    );
+  },
+  remove(id: string) {
+    return request<{ deleted: boolean }>(http.delete(`/apple/account-source-channels/${id}`));
   }
 };
 
@@ -2061,6 +2105,14 @@ export const appleAccountsApi = {
 export const appleServicesApi = {
   list(params: AppleServiceQuery) {
     return request<PageResult<AppleService>>(http.get('/apple/services', { params }));
+  },
+  getBalancePriceRule() {
+    return request<AppleBalancePriceRule>(http.get('/apple/services/balance-price-rule'));
+  },
+  updateBalancePriceRule(payload: AppleBalancePriceRule) {
+    return request<AppleBalancePriceRule>(
+      http.patch('/apple/services/balance-price-rule', payload)
+    );
   },
   create(payload: SaveAppleServicePayload) {
     return request<AppleService>(http.post('/apple/services', payload));

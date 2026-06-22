@@ -6,6 +6,9 @@ export interface ImportAppleAccountItemDto {
   currency?: string;
   currentBalance?: string | number;
   balanceCostAmount?: string | number;
+  sourceChannelId?: string | null;
+  sourceChannelName?: string | null;
+  sourceChannel?: string | null;
   sourcePlatformId?: string | null;
   sourcePlatformName?: string | null;
   sourcePlatform?: string | null;
@@ -21,5 +24,6 @@ export interface ImportAppleAccountItemDto {
 
 export interface ImportAppleAccountsDto {
   accounts: Array<string | ImportAppleAccountItemDto>;
+  sourceChannelId?: string | null;
   sourcePlatformId?: string | null;
 }

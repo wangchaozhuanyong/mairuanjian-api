@@ -45,9 +45,9 @@ interface MatchEvaluation {
 }
 
 interface OrderFinancialInput {
-  paidAmount: PrismaNamespace.Decimal.Value;
-  platformFee: PrismaNamespace.Decimal.Value;
-  refundLoss: PrismaNamespace.Decimal.Value;
+  paidAmountRmb: PrismaNamespace.Decimal.Value;
+  platformFeeRmb: PrismaNamespace.Decimal.Value;
+  refundLossRmb: PrismaNamespace.Decimal.Value;
   appleCostValue: PrismaNamespace.Decimal.Value;
   averageCost: PrismaNamespace.Decimal.Value;
 }
@@ -104,6 +104,9 @@ const orderInclude = {
 const APPLE_ORDER_SORT_FIELDS: Record<string, keyof Prisma.AppleOrderOrderByWithRelationInput> = {
   orderNo: 'orderNo',
   paidAmount: 'paidAmount',
+  paidAmountRmb: 'paidAmountRmb',
+  platformFeeRmb: 'platformFeeRmb',
+  refundLossRmb: 'refundLossRmb',
   appleCostValue: 'appleCostValue',
   appleCostRmb: 'appleCostRmb',
   profitAmount: 'profitAmount',
@@ -112,6 +115,9 @@ const APPLE_ORDER_SORT_FIELDS: Record<string, keyof Prisma.AppleOrderOrderByWith
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
+
+const SUPPORTED_PAID_CURRENCIES = ['CNY', 'MYR', 'USD', 'USDT'] as const;
+type PaidCurrency = (typeof SUPPORTED_PAID_CURRENCIES)[number];
 
 @Injectable()
 export class AppleOrdersService {
@@ -268,6 +274,11 @@ export class AppleOrdersService {
       }
 
       const paidAmount = this.normalizeDecimal(dto.paidAmount, 'paidAmount', service.defaultPrice);
+      const paidCurrency = this.normalizePaidCurrency(dto.paidCurrency);
+      const paidExchangeRateToRmb = this.resolvePaidExchangeRateToRmb(
+        dto.paidExchangeRateToRmb,
+        paidCurrency
+      );
       const refundLoss = this.normalizeDecimal(dto.refundLoss, 'refundLoss', '0');
       const appleCostValue = this.normalizeDecimal(
         dto.appleCostValue,
@@ -278,6 +289,9 @@ export class AppleOrdersService {
         dto.platformFee === undefined
           ? this.calculatePlatformFee(paidAmount, sourcePlatform)
           : this.normalizeDecimal(dto.platformFee, 'platformFee', '0');
+      const paidAmountRmb = this.convertPaidAmountToRmb(paidAmount, paidExchangeRateToRmb);
+      const platformFeeRmb = this.convertPaidAmountToRmb(platformFee, paidExchangeRateToRmb);
+      const refundLossRmb = this.convertPaidAmountToRmb(refundLoss, paidExchangeRateToRmb);
       const startTime = this.parseDate(dto.startTime, 'startTime') ?? new Date();
       const expireTime =
         this.parseDate(dto.expireTime, 'expireTime') ??
@@ -296,9 +310,9 @@ export class AppleOrdersService {
 
       const averageCost = appleAccount?.averageCost ?? new PrismaNamespace.Decimal(0);
       const financials = this.calculateOrderFinancials({
-        paidAmount,
-        platformFee,
-        refundLoss,
+        paidAmountRmb,
+        platformFeeRmb,
+        refundLossRmb,
         appleCostValue,
         averageCost
       });
@@ -318,8 +332,13 @@ export class AppleOrdersService {
           startTime,
           expireTime,
           paidAmount,
+          paidCurrency,
+          paidExchangeRateToRmb,
+          paidAmountRmb,
           platformFee,
+          platformFeeRmb,
           refundLoss,
+          refundLossRmb,
           appleCostValue,
           appleCostRmb: financials.appleCostRmb,
           profitAmount: financials.profitAmount,
@@ -373,8 +392,13 @@ export class AppleOrdersService {
           avgUnitCost: appleAccount?.averageCost ?? new PrismaNamespace.Decimal(0),
           costRmb: financials.appleCostRmb,
           paidAmount,
+          paidCurrency,
+          paidExchangeRateToRmb,
+          paidAmountRmb,
           platformFee,
+          platformFeeRmb,
           refundLoss,
+          refundLossRmb,
           profitAmount: financials.profitAmount,
           sourcePlatformId: sourcePlatform?.id,
           externalOrderNo,
@@ -411,6 +435,9 @@ export class AppleOrdersService {
         serviceId: createdOrder.serviceId,
         appleAccountId: createdOrder.appleAccountId,
         paidAmount: createdOrder.paidAmount.toString(),
+        paidCurrency: createdOrder.paidCurrency,
+        paidExchangeRateToRmb: createdOrder.paidExchangeRateToRmb.toString(),
+        paidAmountRmb: createdOrder.paidAmountRmb.toString(),
         appleCostValue: createdOrder.appleCostValue.toString(),
         appleCostRmb: createdOrder.appleCostRmb.toString(),
         profitAmount: createdOrder.profitAmount.toString()
@@ -422,16 +449,16 @@ export class AppleOrdersService {
   }
 
   calculateOrderFinancials(input: OrderFinancialInput): OrderFinancialSnapshot {
-    const paidAmount = new PrismaNamespace.Decimal(input.paidAmount);
-    const platformFee = new PrismaNamespace.Decimal(input.platformFee);
-    const refundLoss = new PrismaNamespace.Decimal(input.refundLoss);
+    const paidAmountRmb = new PrismaNamespace.Decimal(input.paidAmountRmb);
+    const platformFeeRmb = new PrismaNamespace.Decimal(input.platformFeeRmb);
+    const refundLossRmb = new PrismaNamespace.Decimal(input.refundLossRmb);
     const appleCostValue = new PrismaNamespace.Decimal(input.appleCostValue);
     const averageCost = new PrismaNamespace.Decimal(input.averageCost);
 
     if (
-      paidAmount.lessThan(0) ||
-      platformFee.lessThan(0) ||
-      refundLoss.lessThan(0) ||
+      paidAmountRmb.lessThan(0) ||
+      platformFeeRmb.lessThan(0) ||
+      refundLossRmb.lessThan(0) ||
       appleCostValue.lessThan(0) ||
       averageCost.lessThan(0)
     ) {
@@ -439,9 +466,9 @@ export class AppleOrdersService {
     }
 
     const appleCostRmb = appleCostValue.mul(averageCost).toDecimalPlaces(4);
-    const profitAmount = paidAmount
-      .minus(platformFee)
-      .minus(refundLoss)
+    const profitAmount = paidAmountRmb
+      .minus(platformFeeRmb)
+      .minus(refundLossRmb)
       .minus(appleCostRmb)
       .toDecimalPlaces(4);
 
@@ -685,6 +712,42 @@ export class AppleOrdersService {
       .toDecimalPlaces(2);
   }
 
+  private normalizePaidCurrency(value: string | undefined): PaidCurrency {
+    const normalized = (value || 'CNY').trim().toUpperCase();
+    if (SUPPORTED_PAID_CURRENCIES.includes(normalized as PaidCurrency)) {
+      return normalized as PaidCurrency;
+    }
+
+    throw new BadRequestException('paidCurrency must be one of CNY, MYR, USD, USDT');
+  }
+
+  private resolvePaidExchangeRateToRmb(
+    value: string | number | undefined,
+    paidCurrency: PaidCurrency
+  ) {
+    if (paidCurrency === 'CNY') {
+      return new PrismaNamespace.Decimal(1);
+    }
+
+    if (value === undefined || value === '') {
+      throw new BadRequestException('paidExchangeRateToRmb is required for non-CNY orders');
+    }
+
+    const rate = this.normalizeDecimal(value, 'paidExchangeRateToRmb', '1');
+    if (rate.lessThanOrEqualTo(0)) {
+      throw new BadRequestException('paidExchangeRateToRmb must be greater than 0');
+    }
+
+    return rate;
+  }
+
+  private convertPaidAmountToRmb(
+    amount: PrismaNamespace.Decimal,
+    paidExchangeRateToRmb: PrismaNamespace.Decimal
+  ) {
+    return amount.mul(paidExchangeRateToRmb).toDecimalPlaces(4);
+  }
+
   private calculateExpireTime(service: AppleService, startTime: Date) {
     if (service.expireCalcType === 'manual' || service.defaultPeriodType === 'manual') {
       return null;
@@ -895,8 +958,13 @@ export class AppleOrdersService {
       startTime: order.startTime,
       expireTime: order.expireTime,
       paidAmount: order.paidAmount.toString(),
+      paidCurrency: order.paidCurrency,
+      paidExchangeRateToRmb: order.paidExchangeRateToRmb.toString(),
+      paidAmountRmb: order.paidAmountRmb.toString(),
       platformFee: order.platformFee.toString(),
+      platformFeeRmb: order.platformFeeRmb.toString(),
       refundLoss: order.refundLoss.toString(),
+      refundLossRmb: order.refundLossRmb.toString(),
       appleCostValue: order.appleCostValue.toString(),
       appleCostRmb: order.appleCostRmb.toString(),
       profitAmount: order.profitAmount.toString(),

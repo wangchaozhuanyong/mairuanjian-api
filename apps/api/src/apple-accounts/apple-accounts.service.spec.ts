@@ -530,13 +530,13 @@ describe('AppleAccountsService', () => {
     );
   });
 
-  it('imports Apple ID accounts with source platform channel by row', async () => {
+  it('imports Apple ID accounts with source channel by row', async () => {
     const now = new Date('2026-06-20T00:00:00.000Z');
-    const sourcePlatformId = '11111111-1111-4111-8111-111111111111';
+    const sourceChannelId = '11111111-1111-4111-8111-111111111111';
     const createdAccounts: unknown[] = [];
     const prisma = {
-      sourcePlatform: {
-        findFirst: jest.fn().mockResolvedValue({ id: sourcePlatformId })
+      appleAccountSourceChannel: {
+        findFirst: jest.fn().mockResolvedValue({ id: sourceChannelId })
       },
       appleAccount: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -544,8 +544,8 @@ describe('AppleAccountsService', () => {
           const account = {
             id: `${createdAccounts.length + 1}`,
             ...data,
-            sourcePlatform: {
-              id: data.sourcePlatformId,
+            sourceChannel: {
+              id: data.sourceChannelId,
               name: '平台A',
               status: 'active'
             },
@@ -590,11 +590,12 @@ describe('AppleAccountsService', () => {
     });
 
     expect(result.successCount).toBe(1);
-    expect(result.accounts[0]?.sourcePlatformId).toBe(sourcePlatformId);
-    expect(result.accounts[0]?.sourcePlatform?.name).toBe('平台A');
-    expect(prisma.sourcePlatform.findFirst).toHaveBeenCalledWith(
+    expect(result.accounts[0]?.sourceChannelId).toBe(sourceChannelId);
+    expect(result.accounts[0]?.sourceChannel?.name).toBe('平台A');
+    expect(prisma.appleAccountSourceChannel.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          status: 'active',
           OR: [{ name: { equals: '平台A', mode: 'insensitive' } }]
         })
       })
@@ -603,7 +604,7 @@ describe('AppleAccountsService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           appleId: 'channel@example.com',
-          sourcePlatformId
+          sourceChannelId
         })
       })
     );

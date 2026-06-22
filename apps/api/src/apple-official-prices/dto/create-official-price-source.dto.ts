@@ -5,6 +5,8 @@ import type {
 
 export interface CreateOfficialPriceSourceDto {
   name?: string;
+  provider?: string;
+  priceSourceType?: string;
   region?: string;
   currency?: string;
   sourceUrl?: string | null;

@@ -23,6 +23,7 @@ const DeliveryTemplatesView = () => import('@/views/common/MessageTemplatesView.
 const AttachmentsView = () => import('@/views/common/AttachmentsView.vue');
 const AppleAccountsView = () => import('@/views/apple/AppleAccountsView.vue');
 const AppleAccountDetailView = () => import('@/views/apple/AppleAccountDetailView.vue');
+const AppleSourceChannelsView = () => import('@/views/apple/AppleSourceChannelsView.vue');
 const AppleServicesView = () => import('@/views/apple/AppleServicesView.vue');
 const AppleOrdersView = () => import('@/views/apple/AppleOrdersView.vue');
 const AppleOrderEntryView = () => import('@/views/apple/AppleOrderEntryView.vue');
@@ -64,6 +65,7 @@ const readyPageComponents = {
   attachments: AttachmentsView,
   'apple-list': AppleAccountsView,
   'apple-detail': AppleAccountDetailView,
+  'apple-source-channels': AppleSourceChannelsView,
   'apple-settings': AppleServicesView,
   'apple-orders': AppleOrdersView,
   'order-entry': AppleOrderEntryView,

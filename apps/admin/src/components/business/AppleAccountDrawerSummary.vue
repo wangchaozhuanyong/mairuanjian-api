@@ -5,7 +5,7 @@
       <strong>{{ appleId }}</strong>
       <p>
         {{ regionCurrency }}
-        <template v-if="sourcePlatform"> / {{ sourcePlatform }}</template>
+        <template v-if="sourceChannel"> / {{ sourceChannel }}</template>
       </p>
     </div>
 
@@ -42,11 +42,11 @@ withDefaults(
     statusLabel: string;
     statusTone: 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
     locked: boolean;
-    sourcePlatform?: string | null;
+    sourceChannel?: string | null;
   }>(),
   {
     label: '当前账号',
-    sourcePlatform: ''
+    sourceChannel: ''
   }
 );
 </script>
