@@ -541,16 +541,29 @@
             </el-select>
             <AppButton variant="soft" @click="() => loadTasks()">刷新</AppButton>
             <AppButton variant="ghost" @click="exportList">导出</AppButton>
+            <AppButton
+              variant="danger"
+              :disabled="!selectedHistoryTaskIds.length"
+              :loading="bulkDeleting"
+              @click="bulkDeleteSelectedTasks"
+            >
+              批量删除<span v-if="selectedHistoryTaskIds.length">
+                {{ selectedHistoryTaskIds.length }}
+              </span>
+            </AppButton>
           </div>
 
           <el-table
+            ref="historyTableRef"
             v-loading="loading"
             class="desktop-data-table"
             :data="tasks"
             row-key="id"
             empty-text="暂无执行记录"
+            @selection-change="handleHistorySelectionChange"
             @sort-change="handleSortChange"
           >
+            <el-table-column type="selection" width="46" fixed="left" />
             <el-table-column label="任务" min-width="150" sortable="custom" prop="taskType">
               <template #default="{ row }">
                 <strong>{{ getTaskTypeLabel(row.taskType) }}</strong>
@@ -929,13 +942,16 @@ const officialProviderOptions = ref<AppleOfficialPriceProviderCatalogProvider[]>
 const officialReviewActionId = ref('');
 const detailDrawerVisible = ref(false);
 const selectedTask = ref<AppleAutomationTask | null>(null);
+const selectedHistoryTasks = ref<AppleAutomationTask[]>([]);
 const actionLoadingId = ref('');
+const bulkDeleting = ref(false);
 const advancedDialogVisible = ref(false);
 const savingAdvanced = ref(false);
 const gatewaySubscriptionDialogVisible = ref(false);
 const gatewaySubscriptionSaving = ref(false);
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const activeTasksQueryKey = ref('');
+const historyTableRef = ref<{ clearSelection: () => void } | null>(null);
 let taskBatchPollTimer: ReturnType<typeof setTimeout> | null = null;
 let officialPollTimer: ReturnType<typeof setTimeout> | null = null;
 let accountOptionsSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1108,6 +1124,7 @@ const selectedTaskTechnicalRows = computed(() =>
       })
     : []
 );
+const selectedHistoryTaskIds = computed(() => selectedHistoryTasks.value.map((task) => task.id));
 const needsGatewaySubscription = computed(() => {
   const capability = workbenchStatus.value?.statusCheck;
   return Boolean(capability && !capability.gatewayConfigured);
@@ -1141,6 +1158,9 @@ function applyTaskResult(data: PageResult<AppleAutomationTask>) {
   tasks.value = Array.isArray(data.items) ? data.items : [];
   total.value = Number.isFinite(Number(data.total)) ? data.total : tasks.value.length;
   tasksLoaded.value = true;
+  selectedHistoryTasks.value = selectedHistoryTasks.value.filter((selected) =>
+    tasks.value.some((task) => task.id === selected.id)
+  );
 }
 
 async function loadTasks(options: { background?: boolean; force?: boolean } = {}) {
@@ -1320,6 +1340,45 @@ async function handleSortChange(payload: {
   sortConfig.value = payload.prop ? { prop: payload.prop, order: payload.order } : {};
   query.page = 1;
   await loadTasks();
+}
+
+function handleHistorySelectionChange(rows: AppleAutomationTask[]) {
+  selectedHistoryTasks.value = rows;
+}
+
+async function bulkDeleteSelectedTasks() {
+  const ids = selectedHistoryTaskIds.value;
+  if (!ids.length) {
+    ElMessage.warning('请先勾选要删除的执行记录');
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认删除选中的 ${ids.length} 条执行记录吗？这个操作只删除自动化执行记录，不会删除 Apple ID、订单或价格数据。`,
+      '批量删除执行记录',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '返回'
+      }
+    );
+
+    bulkDeleting.value = true;
+    await appleAutomationTasksApi.bulkDelete({ ids });
+    selectedHistoryTasks.value = [];
+    historyTableRef.value?.clearSelection?.();
+    invalidateSmartQueries('apple-automation-tasks');
+    await loadTasks({ force: true });
+    void loadWorkbenchStatus({ background: true });
+    ElMessage.success(`已删除 ${ids.length} 条执行记录`);
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '批量删除失败');
+    }
+  } finally {
+    bulkDeleting.value = false;
+  }
 }
 
 async function startStatusCheck() {

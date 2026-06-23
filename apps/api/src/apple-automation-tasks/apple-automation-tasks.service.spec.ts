@@ -8,6 +8,8 @@ import { AppleAutomationTasksService } from './apple-automation-tasks.service';
 describe('AppleAutomationTasksService', () => {
   const now = new Date('2026-06-18T00:00:00.000Z');
   const taskId = '11111111-1111-4111-8111-111111111111';
+  const secondTaskId = '44444444-4444-4444-8444-444444444444';
+  const batchId = '55555555-5555-4555-8555-555555555555';
   const appleAccountId = '22222222-2222-4222-8222-222222222222';
   const userId = '33333333-3333-4333-8333-333333333333';
 
@@ -39,6 +41,7 @@ describe('AppleAutomationTasksService', () => {
 
   const taskBase = {
     id: taskId,
+    batchId: null,
     taskType: 'check_balance',
     appleAccountId,
     customerId: null,
@@ -93,7 +96,14 @@ describe('AppleAutomationTasksService', () => {
       },
       automationTask: {
         create: jest.fn().mockResolvedValue(task),
-        update: jest.fn().mockResolvedValue(task)
+        update: jest.fn().mockResolvedValue(task),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
+      },
+      appleOfficialPriceSnapshot: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 })
+      },
+      applePriceChangeReview: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 })
       },
       automationTaskLog: {
         create: jest.fn().mockResolvedValue({
@@ -128,7 +138,12 @@ describe('AppleAutomationTasksService', () => {
           { taskType: 'check_status', status: 'queued', _count: { _all: 1 } },
           { taskType: 'check_balance', status: 'failed', _count: { _all: 1 } }
         ]),
-        update: jest.fn().mockResolvedValue(task)
+        update: jest.fn().mockResolvedValue(task),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
+      },
+      automationTaskBatch: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({})
       },
       automationTaskLog: {
         create: jest.fn().mockResolvedValue({
@@ -810,5 +825,66 @@ describe('AppleAutomationTasksService', () => {
     const { service } = createService({ status: 'running' });
 
     await expect(service.retry(taskId, operator)).rejects.toThrow(ConflictException);
+  });
+
+  it('bulk deletes selected automation task records and writes an audit log', async () => {
+    const { service, prisma, tx, auditLogsService } = createService({
+      batchId,
+      status: 'success'
+    });
+    const secondTask = {
+      ...taskBase,
+      id: secondTaskId,
+      batchId,
+      status: 'failed',
+      createdAt: new Date('2026-06-18T00:01:00.000Z')
+    };
+    (prisma.automationTask.findMany as jest.Mock)
+      .mockResolvedValueOnce([
+        {
+          id: taskId,
+          batchId,
+          taskType: 'check_balance',
+          status: 'success',
+          appleAccountId,
+          createdAt: now
+        },
+        {
+          id: secondTaskId,
+          batchId,
+          taskType: 'check_status',
+          status: 'failed',
+          appleAccountId,
+          createdAt: secondTask.createdAt
+        }
+      ])
+      .mockResolvedValueOnce([]);
+
+    const result = await service.bulkDelete({ ids: [taskId, secondTaskId] }, operator);
+
+    expect(result).toEqual({ deleted: true, count: 2, ids: [taskId, secondTaskId] });
+    expect(tx.appleOfficialPriceSnapshot.updateMany).toHaveBeenCalledWith({
+      where: { automationTaskId: { in: [taskId, secondTaskId] } },
+      data: { automationTaskId: null }
+    });
+    expect(tx.applePriceChangeReview.updateMany).toHaveBeenCalledWith({
+      where: { automationTaskId: { in: [taskId, secondTaskId] } },
+      data: { automationTaskId: null }
+    });
+    expect(tx.automationTask.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: [taskId, secondTaskId] } }
+    });
+    expect(prisma.automationTaskBatch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: batchId },
+        data: expect.objectContaining({ totalCount: 0 })
+      })
+    );
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_automation_task.bulk_delete',
+        objectId: taskId
+      })
+    );
   });
 });

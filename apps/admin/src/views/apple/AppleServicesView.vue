@@ -722,7 +722,7 @@
             </el-table-column>
             <el-table-column label="业务套餐" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">
-                <strong>{{ row.serviceName || row.service.name }}</strong>
+                <strong>{{ getRegionPriceServiceName(row) }}</strong>
                 <div class="muted-block">{{ getPeriodLabel(row.periodType, row.periodValue) }}</div>
               </template>
             </el-table-column>
@@ -1583,6 +1583,10 @@ const rules: FormRules<typeof form> = {
   currency: [{ required: true, message: '请输入币种', trigger: 'blur' }]
 };
 
+function safeArray<TItem>(value: TItem[] | null | undefined): TItem[] {
+  return Array.isArray(value) ? value : [];
+}
+
 const enabledCount = computed(
   () => services.value.filter((service) => service.status === 'enabled').length
 );
@@ -1621,7 +1625,7 @@ const officialCollectedServiceOptions = computed(() => {
   });
 });
 const activeServiceCategoryDictionaries = computed(() =>
-  serviceCategoryDictionaries.value
+  safeArray(serviceCategoryDictionaries.value)
     .filter((category) => category.status === 'active')
     .slice()
     .sort(
@@ -1632,7 +1636,9 @@ const activeServiceCategoryDictionaries = computed(() =>
 );
 const formServiceCategoryOptions = computed(() => {
   const categories = [
-    ...activeServiceCategoryDictionaries.value.map((category) => getCategoryOptionValue(category)),
+    ...safeArray(activeServiceCategoryDictionaries.value).map((category) =>
+      getCategoryOptionValue(category)
+    ),
     query.category,
     form.category
   ]
@@ -1644,13 +1650,16 @@ const formServiceCategoryOptions = computed(() => {
   );
 });
 const appleRegionOptions = computed(() =>
-  mergeAppleAccountRegionOptions(appleRegionDictionaries.value)
+  mergeAppleAccountRegionOptions(safeArray(appleRegionDictionaries.value))
 );
 const appleCurrencyOptions = computed(() => {
-  const options = buildAppleAccountCurrencyOptions(appleRegionOptions.value);
+  const options = buildAppleAccountCurrencyOptions(safeArray(appleRegionOptions.value));
   const existing = new Set(options.map((option) => option.value));
 
-  for (const item of [...officialCountryOptions.value, ...officialCollectedServiceOptions.value]) {
+  for (const item of [
+    ...safeArray(officialCountryOptions.value),
+    ...safeArray(officialCollectedServiceOptions.value)
+  ]) {
     if (!item.currency || existing.has(item.currency)) continue;
     existing.add(item.currency);
     options.push({
@@ -1663,23 +1672,25 @@ const appleCurrencyOptions = computed(() => {
   return options.sort((left, right) => left.value.localeCompare(right.value));
 });
 const periodTypeOptions = computed(() =>
-  buildAppleServicePeriodTypeOptions(periodTypeDictionaries.value)
+  buildAppleServicePeriodTypeOptions(safeArray(periodTypeDictionaries.value))
 );
 const expireCalcTypeOptions = computed(() =>
-  buildAppleServiceExpireCalcTypeOptions(expireCalcTypeDictionaries.value)
+  buildAppleServiceExpireCalcTypeOptions(safeArray(expireCalcTypeDictionaries.value))
 );
 const lockRuleOptions = computed(() =>
-  buildAppleServiceLockRuleOptions(lockRuleDictionaries.value)
+  buildAppleServiceLockRuleOptions(safeArray(lockRuleDictionaries.value))
 );
 const pendingOfficialReviews = computed(() =>
-  officialPriceOptionReviews.value.filter((review) => review.status === 'pending')
+  safeArray(officialPriceOptionReviews.value).filter((review) => review.status === 'pending')
 );
-const officialAutoProviderOptions = computed(() => officialProviderCatalogProviders.value);
-const officialAutoRegionOptions = computed(() => officialProviderCatalogRegions.value);
+const officialAutoProviderOptions = computed(() =>
+  safeArray(officialProviderCatalogProviders.value)
+);
+const officialAutoRegionOptions = computed(() => safeArray(officialProviderCatalogRegions.value));
 const officialCountryOptions = computed(() => {
   const optionMap = new Map<string, { currency: string; label: string; value: string }>();
 
-  for (const source of officialPriceSources.value) {
+  for (const source of safeArray(officialPriceSources.value)) {
     const region = normalizeOfficialReviewCode(source.region);
     const currency = normalizeOfficialReviewCode(source.currency);
     if (!region || !currency) continue;
@@ -1690,7 +1701,7 @@ const officialCountryOptions = computed(() => {
     });
   }
 
-  for (const option of officialCollectedServiceOptions.value) {
+  for (const option of safeArray(officialCollectedServiceOptions.value)) {
     if (!option.region || !option.currency) continue;
     optionMap.set(option.region, {
       currency: option.currency,
@@ -1699,7 +1710,7 @@ const officialCountryOptions = computed(() => {
     });
   }
 
-  for (const region of officialAutoRegionOptions.value) {
+  for (const region of safeArray(officialAutoRegionOptions.value)) {
     if (optionMap.has(region.region)) continue;
     optionMap.set(region.region, {
       currency: region.currency,
@@ -1711,7 +1722,7 @@ const officialCountryOptions = computed(() => {
   return [...optionMap.values()].sort((left, right) => left.label.localeCompare(right.label));
 });
 const formOfficialCountryOptions = computed(() => {
-  const options = [...officialCountryOptions.value];
+  const options = [...safeArray(officialCountryOptions.value)];
   const primaryRegion = normalizeAppleRegionCode(form.primaryRegion, form.currency);
 
   if (primaryRegion && !options.some((option) => option.value === primaryRegion)) {
@@ -2291,6 +2302,10 @@ function getRegionPriceStatusTone(status: AppleServiceRegionPrice['status']) {
   return 'neutral';
 }
 
+function getRegionPriceServiceName(row: AppleServiceRegionPrice) {
+  return row.serviceName || row.service?.name || '-';
+}
+
 function getOfficialBatchItemRegionLabel(item: AppleOfficialPriceCheckBatch['items'][number]) {
   return formatOfficialRegionCurrency(item.region, item.currency);
 }
@@ -2581,9 +2596,10 @@ async function loadTableViews(applyDefault = false) {
       pageSize: 100,
       tableKey
     });
-    savedViews.value = data.items;
+    const items = safeArray(data.items);
+    savedViews.value = items;
     if (applyDefault) {
-      const defaultView = data.items.find((view) => view.isDefault);
+      const defaultView = items.find((view) => view.isDefault);
       if (defaultView) {
         applyView(defaultView);
       }
@@ -2738,7 +2754,7 @@ function buildAppleServiceCategoryParams(): DataDictionaryQuery {
 async function loadAppleServiceCategories() {
   try {
     const data = await dataCenterApi.listDictionaries(buildAppleServiceCategoryParams());
-    serviceCategoryDictionaries.value = data.items;
+    serviceCategoryDictionaries.value = safeArray(data.items);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务分类失败');
   }
@@ -2758,7 +2774,7 @@ function buildAppleRegionParams(): DataDictionaryQuery {
 async function loadAppleRegions() {
   try {
     const data = await dataCenterApi.listDictionaries(buildAppleRegionParams());
-    appleRegionDictionaries.value = data.items;
+    appleRegionDictionaries.value = safeArray(data.items);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 地区失败');
   }
@@ -2787,9 +2803,9 @@ async function loadAppleServiceQuickOptions() {
         buildAppleServiceQuickOptionParams(APPLE_SERVICE_LOCK_RULE_DICTIONARY_GROUP)
       )
     ]);
-    periodTypeDictionaries.value = periodTypes.items;
-    expireCalcTypeDictionaries.value = expireCalcTypes.items;
-    lockRuleDictionaries.value = lockRules.items;
+    periodTypeDictionaries.value = safeArray(periodTypes.items);
+    expireCalcTypeDictionaries.value = safeArray(expireCalcTypes.items);
+    lockRuleDictionaries.value = safeArray(lockRules.items);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务选项失败');
   }
@@ -2966,10 +2982,10 @@ function normalizeAppleRegionCode(value?: string | null, currency?: string | nul
 function getKnownAppleRegionCodes() {
   return new Set(
     [
-      ...officialCountryOptions.value.map((item) => item.value),
-      ...officialAutoRegionOptions.value.map((item) => item.region),
+      ...safeArray(officialCountryOptions.value).map((item) => item.value),
+      ...safeArray(officialAutoRegionOptions.value).map((item) => item.region),
       ...fallbackOfficialAutoRegionOptions.map((item) => item.region),
-      ...appleRegionOptions.value.map((item) => item.code)
+      ...safeArray(appleRegionOptions.value).map((item) => item.code)
     ]
       .map((item) => normalizeOfficialReviewCode(item))
       .filter(Boolean)

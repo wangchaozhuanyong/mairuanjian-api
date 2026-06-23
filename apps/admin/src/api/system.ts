@@ -288,6 +288,78 @@ function normalizeOfficialProviderCatalog(
   };
 }
 
+function createEmptyOfficialPriceCheckBatch(): AppleOfficialPriceCheckBatch {
+  return {
+    id: '',
+    provider: '',
+    trigger: 'manual',
+    scanRemovedPlans: false,
+    status: 'pending',
+    totalCount: 0,
+    completedCount: 0,
+    successCount: 0,
+    failedCount: 0,
+    manualRequiredCount: 0,
+    snapshotCount: 0,
+    reviewCount: 0,
+    pendingReviewCount: 0,
+    message: null,
+    errorMessage: null,
+    startedAt: null,
+    finishedAt: null,
+    createdAt: '',
+    updatedAt: '',
+    items: []
+  };
+}
+
+type AppleOfficialPriceCheckBatchSummary = AppleOfficialPriceCheckBatchResults['summary'];
+
+function createEmptyOfficialPriceCheckBatchSummary(): AppleOfficialPriceCheckBatchSummary {
+  return {
+    totalCount: 0,
+    unchangedCount: 0,
+    changedCount: 0,
+    newPlanCount: 0,
+    removedPlanCount: 0,
+    failedCount: 0,
+    manualRequiredCount: 0
+  };
+}
+
+function normalizeRequiredOfficialPriceCheckBatch<TBatch extends AppleOfficialPriceCheckBatch>(
+  batch: TBatch
+): TBatch {
+  return {
+    ...batch,
+    items: normalizeArray(batch.items)
+  };
+}
+
+function normalizeNullableOfficialPriceCheckBatch(
+  batch: AppleOfficialPriceCheckBatch | null | undefined
+): AppleOfficialPriceCheckBatch | null {
+  return batch ? normalizeRequiredOfficialPriceCheckBatch(batch) : null;
+}
+
+function normalizeOfficialPriceCheckBatchResults(
+  results: AppleOfficialPriceCheckBatchResults
+): AppleOfficialPriceCheckBatchResults {
+  const partial = results as Partial<AppleOfficialPriceCheckBatchResults> | null | undefined;
+  const summary = partial?.summary ?? createEmptyOfficialPriceCheckBatchSummary();
+
+  return {
+    batch:
+      normalizeNullableOfficialPriceCheckBatch(partial?.batch as AppleOfficialPriceCheckBatch) ??
+      createEmptyOfficialPriceCheckBatch(),
+    summary: {
+      ...createEmptyOfficialPriceCheckBatchSummary(),
+      ...summary
+    },
+    items: normalizeArray(partial?.items)
+  };
+}
+
 function normalizeAutomationCapability(
   capability: AppleAutomationWorkbenchStatus['balanceCheck'] | null | undefined
 ): AppleAutomationWorkbenchStatus['balanceCheck'] {
@@ -1584,6 +1656,10 @@ export interface MarkAppleAutomationTaskManualPayload {
   reason: string;
 }
 
+export interface BulkDeleteAppleAutomationTasksPayload {
+  ids: string[];
+}
+
 export const authApi = {
   login(username: string, password: string, mfaCode?: string) {
     return request<LoginResponse>(http.post('/auth/login', { username, password, mfaCode }));
@@ -1626,7 +1702,7 @@ export const userTableViewsApi = {
       key: createSmartQueryKey('user-table-views', params),
       fetcher: () => request<PageResult<UserTableView>>(http.get('/user-table-views', { params })),
       force: false
-    }).then((result) => result.data);
+    }).then((result) => normalizePageResult(result.data));
   },
   create(payload: SaveUserTableViewPayload) {
     return request<UserTableView>(http.post('/user-table-views', payload));
@@ -2024,7 +2100,7 @@ export const dataCenterApi = {
   listDictionaries(params: DataDictionaryQuery, options: ApiRequestOptions = {}) {
     return request<PageResult<DataDictionary>>(
       http.get('/data/dictionaries', { params, signal: options.signal })
-    );
+    ).then((result) => normalizePageResult(result));
   },
   createDictionary(payload: CreateDataDictionaryPayload) {
     return request<DataDictionary>(http.post('/data/dictionaries', payload));
@@ -2431,27 +2507,27 @@ export const appleOfficialPricesApi = {
   startProviderCheckBatch(provider: string, payload: CheckOfficialPriceProviderPayload = {}) {
     return request<StartOfficialPriceCheckBatchResult>(
       http.post(`/apple/official-prices/providers/${provider}/check-batch`, payload)
-    );
+    ).then(normalizeRequiredOfficialPriceCheckBatch);
   },
   startAllProvidersCheckBatch(payload: CheckOfficialPriceProviderPayload = {}) {
     return request<StartOfficialPriceCheckBatchResult>(
       http.post('/apple/official-prices/providers/check-all-batch', payload)
-    );
+    ).then(normalizeRequiredOfficialPriceCheckBatch);
   },
   getLatestCheckBatch() {
     return request<AppleOfficialPriceCheckBatch | null>(
       http.get('/apple/official-prices/check-batches/latest')
-    );
+    ).then(normalizeNullableOfficialPriceCheckBatch);
   },
   getCheckBatch(id: string) {
     return request<AppleOfficialPriceCheckBatch>(
       http.get(`/apple/official-prices/check-batches/${id}`)
-    );
+    ).then(normalizeRequiredOfficialPriceCheckBatch);
   },
   getCheckBatchResults(id: string) {
     return request<AppleOfficialPriceCheckBatchResults>(
       http.get(`/apple/official-prices/check-batches/${id}/results`)
-    );
+    ).then(normalizeOfficialPriceCheckBatchResults);
   },
   listSnapshots(params: AppleOfficialPriceSnapshotQuery) {
     return request<PageResult<AppleOfficialPriceSnapshot>>(
@@ -2780,6 +2856,11 @@ export const appleAutomationTasksApi = {
     return request<AppleAutomationTask>(
       http.post(`/apple/automation-tasks/${id}/result`, payload)
     ).then(normalizeAutomationTask);
+  },
+  bulkDelete(payload: BulkDeleteAppleAutomationTasksPayload) {
+    return request<{ deleted: boolean; count: number; ids: string[] }>(
+      http.post('/apple/automation-tasks/bulk-delete', payload)
+    );
   }
 };
 

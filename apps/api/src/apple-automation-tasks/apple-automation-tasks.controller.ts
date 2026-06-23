@@ -6,6 +6,7 @@ import { AppleAutomationTasksService } from './apple-automation-tasks.service';
 import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
 import type { BatchBalanceCheckDto } from './dto/batch-balance-check.dto';
 import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
+import type { BulkDeleteAutomationTasksDto } from './dto/bulk-delete-automation-tasks.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
 import type { WebCheckGatewayAttemptDto } from './dto/web-check-gateway-attempt.dto';
@@ -116,6 +117,22 @@ export class AppleAutomationTasksController {
   @RequirePermissions('apple.automation_task.manage')
   workbenchStatus() {
     return this.automationTasksService.workbenchStatus();
+  }
+
+  @Post('bulk-delete')
+  @RequirePermissions('apple.automation_task.manage')
+  async bulkDelete(
+    @Body() dto: BulkDeleteAutomationTasksDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.automationTasksService.bulkDelete(dto, operator);
+    this.publishAutomationTaskEvent(
+      'apple.automation_task.bulk_deleted',
+      'bulk_deleted',
+      result.ids[0] ?? 'bulk',
+      { deletedCount: result.count }
+    );
+    return result;
   }
 
   @Get(':id')
@@ -231,7 +248,7 @@ export class AppleAutomationTasksController {
     type: string,
     action: string,
     taskId: string,
-    scope?: { appleAccountId?: string | null }
+    scope?: { appleAccountId?: string | null; deletedCount?: number }
   ) {
     this.realtimeService.publish({
       type,

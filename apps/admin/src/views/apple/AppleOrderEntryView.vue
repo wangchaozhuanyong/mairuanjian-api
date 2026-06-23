@@ -435,35 +435,21 @@
                 <el-input v-model.trim="form.currentPlan" />
                 <div v-if="selectedServicePrice" class="order-entry-selected-plan-card">
                   <div>
-                    <span>本次开通套餐</span>
+                    <span>套餐</span>
                     <strong>{{
                       selectedServicePrice.serviceName || selectedServicePrice.service.name
                     }}</strong>
                   </div>
                   <div>
-                    <span>国家/分类</span>
-                    <strong>
-                      {{ formatAppleRegionLabel(selectedServicePrice.region) }} /
-                      {{ selectedServicePrice.category }}
-                    </strong>
+                    <span>国家</span>
+                    <strong>{{ formatAppleRegionLabel(selectedServicePrice.region) }}</strong>
                   </div>
                   <div>
-                    <span>采集价格</span>
+                    <span>价格</span>
                     <strong
                       >{{ selectedServicePrice.officialPrice }}
                       {{ selectedServicePrice.currency }}</strong
                     >
-                  </div>
-                  <div>
-                    <span>Apple 消耗</span>
-                    <strong
-                      >{{ selectedServicePrice.appleBalancePrice }}
-                      {{ selectedServicePrice.currency }}</strong
-                    >
-                  </div>
-                  <div>
-                    <span>周期</span>
-                    <strong>{{ formatServicePeriod(selectedServicePrice) }}</strong>
                   </div>
                 </div>
                 <div v-if="orderContextLoading || orderContext" class="order-entry-history-card">
@@ -1292,13 +1278,6 @@ function getServiceCategoryLabel(category?: string | null) {
   return normalized;
 }
 
-function formatServicePeriod(price: Pick<AppleServiceRegionPrice, 'periodType' | 'periodValue'>) {
-  if (price.periodType === 'manual') {
-    return '手动周期';
-  }
-  return `${price.periodValue}${price.periodType === 'day' ? '天' : '个月'}`;
-}
-
 function formatServicePriceOptionLabel(price: AppleServiceRegionPrice) {
   return `${price.serviceName || price.service.name} · ${price.appleBalancePrice} ${price.currency}`;
 }
@@ -1307,9 +1286,7 @@ function buildSelectedServicePlanSummary(price: AppleServiceRegionPrice) {
   return [
     price.serviceName || price.service.name,
     formatAppleRegionLabel(price.region),
-    price.category,
-    `${price.appleBalancePrice} ${price.currency}`,
-    formatServicePeriod(price)
+    `${price.officialPrice} ${price.currency}`
   ].join(' / ');
 }
 

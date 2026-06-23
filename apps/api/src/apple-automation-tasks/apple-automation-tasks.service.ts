@@ -24,6 +24,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
 import type { BatchBalanceCheckDto } from './dto/batch-balance-check.dto';
 import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
+import type { BulkDeleteAutomationTasksDto } from './dto/bulk-delete-automation-tasks.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
 import type { WebCheckGatewayAttemptDto } from './dto/web-check-gateway-attempt.dto';
@@ -265,6 +266,71 @@ export class AppleAutomationTasksService {
   async get(id: string) {
     const task = await this.findTaskOrThrow(id, true);
     return this.toResponse(task);
+  }
+
+  async bulkDelete(dto: BulkDeleteAutomationTasksDto, operator?: AuthenticatedUser) {
+    const ids = this.normalizeTaskIds(dto.ids);
+    const tasks = await this.prisma.automationTask.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        batchId: true,
+        taskType: true,
+        status: true,
+        appleAccountId: true,
+        createdAt: true
+      }
+    });
+
+    if (tasks.length !== ids.length) {
+      const foundIds = new Set(tasks.map((task) => task.id));
+      const missingId = ids.find((id) => !foundIds.has(id));
+      throw new NotFoundException(`Automation task not found: ${missingId}`);
+    }
+
+    const batchIds = Array.from(
+      new Set(tasks.map((task) => task.batchId).filter((id): id is string => Boolean(id)))
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.appleOfficialPriceSnapshot.updateMany({
+        where: { automationTaskId: { in: ids } },
+        data: { automationTaskId: null }
+      });
+      await tx.applePriceChangeReview.updateMany({
+        where: { automationTaskId: { in: ids } },
+        data: { automationTaskId: null }
+      });
+      await tx.automationTask.deleteMany({
+        where: { id: { in: ids } }
+      });
+    });
+
+    for (const batchId of batchIds) {
+      await this.refreshBatchStats(batchId);
+    }
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.bulk_delete',
+      objectType: 'automation_task',
+      objectId: ids[0],
+      beforeData: this.toAuditJson({
+        ids,
+        tasks: tasks.map((task) => ({
+          id: task.id,
+          taskType: task.taskType,
+          status: task.status,
+          appleAccountId: task.appleAccountId,
+          createdAt: task.createdAt.toISOString()
+        }))
+      }),
+      remark: `Bulk deleted ${ids.length} Apple automation tasks`
+    });
+
+    this.invalidateWorkbenchStatusCache();
+    return { deleted: true, count: ids.length, ids };
   }
 
   async create(dto: CreateAutomationTaskDto, operator?: AuthenticatedUser) {
@@ -1359,6 +1425,26 @@ export class AppleAutomationTasksService {
     if (!task) {
       throw new NotFoundException('Automation task not found');
     }
+  }
+
+  private normalizeTaskIds(value: unknown) {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('ids must be an array');
+    }
+
+    const ids = Array.from(
+      new Set(value.map((id) => this.normalizeRequiredUuid(id, 'ids')).filter(Boolean))
+    );
+
+    if (!ids.length) {
+      throw new BadRequestException('ids is required');
+    }
+
+    if (ids.length > 200) {
+      throw new BadRequestException('Cannot delete more than 200 automation tasks at once');
+    }
+
+    return ids;
   }
 
   private async createLog(

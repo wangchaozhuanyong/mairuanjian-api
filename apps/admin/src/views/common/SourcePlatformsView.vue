@@ -525,7 +525,8 @@
           title="Apple ID 业务分类"
           :help="[
             '这里统一维护 Apple ID 业务设置里的分类，比如 AI 会员、流媒体、工具订阅。',
-            '停用后不会再出现在新增业务的分类下拉里，历史业务已经用到的分类会继续保留。'
+            '停用后不会再出现在新增业务的分类下拉里，历史业务已经用到的分类会继续保留。',
+            '订单录入能不能选到这个分类，还要看分类下面有没有启用的具体业务，以及可用的地区套餐价格。'
           ]"
         />
         <div class="inline-actions">
@@ -583,11 +584,18 @@
           </div>
         </template>
         <el-table-column prop="label" label="分类名称" min-width="180" sortable="custom" />
-        <el-table-column label="使用中业务" width="120">
+        <el-table-column label="关联业务" width="120">
           <template #default="{ row }">
             <AppButton size="small" variant="soft" @click="openCategoryServices(row)">
               {{ getCategoryUsageCount(row) }} 个
             </AppButton>
+          </template>
+        </el-table-column>
+        <el-table-column label="订单可选套餐" width="130">
+          <template #default="{ row }">
+            <StatusChip :tone="getCategoryOrderOptionCount(row) > 0 ? 'green' : 'orange'">
+              {{ getCategoryOrderOptionCount(row) }} 个
+            </StatusChip>
           </template>
         </el-table-column>
         <el-table-column prop="sortOrder" label="排序" width="100" sortable="custom" />
@@ -648,10 +656,14 @@
               <strong>{{ category.sortOrder }}</strong>
             </div>
             <div>
-              <span>使用中业务</span>
+              <span>关联业务</span>
               <AppButton size="small" variant="soft" @click="openCategoryServices(category)">
                 {{ getCategoryUsageCount(category) }} 个
               </AppButton>
+            </div>
+            <div>
+              <span>订单可选套餐</span>
+              <strong>{{ getCategoryOrderOptionCount(category) }}</strong>
             </div>
             <div>
               <span>更新时间</span>
@@ -2310,6 +2322,7 @@ import {
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
+  AppleServiceRegionPrice,
   DataDictionary,
   DataDictionaryStatus,
   PageResult,
@@ -2546,6 +2559,7 @@ const total = ref(0);
 const tagTotal = ref(0);
 const categoryTotal = ref(0);
 const categoryUsageCounts = ref<Record<string, number>>({});
+const categoryOrderOptionCounts = ref<Record<string, number>>({});
 const categoryServicesDialogVisible = ref(false);
 const categoryServiceDialogVisible = ref(false);
 const categoryServicesLoading = ref(false);
@@ -3050,34 +3064,67 @@ function getCategoryUsageCount(category: DataDictionary) {
   return categoryUsageCounts.value[category.id] ?? 0;
 }
 
+function getCategoryOrderOptionCount(category: DataDictionary) {
+  return categoryOrderOptionCounts.value[category.id] ?? 0;
+}
+
 async function loadAppleServiceCategoryUsageCounts(categories: DataDictionary[]) {
   const requestId = ++categoryUsageRequestId;
   if (!categories.length) {
     categoryUsageCounts.value = {};
+    categoryOrderOptionCounts.value = {};
     return;
   }
 
   try {
-    const entries = await Promise.all(
-      categories.map(async (category) => {
-        const result = await appleServicesApi.list({
-          page: 1,
-          pageSize: 1,
-          category: getAppleServiceCategoryValue(category)
-        });
-        return [category.id, result.total] as const;
-      })
-    );
+    const [usageEntries, orderOptionData] = await Promise.all([
+      Promise.all(
+        categories.map(async (category) => {
+          const result = await appleServicesApi.list({
+            page: 1,
+            pageSize: 1,
+            category: getAppleServiceCategoryValue(category)
+          });
+          return [category.id, result.total] as const;
+        })
+      ),
+      appleServicesApi.listOrderOptions()
+    ]);
+
+    const orderOptionCounts = buildCategoryOrderOptionCounts(categories, orderOptionData.items);
 
     if (requestId === categoryUsageRequestId) {
-      categoryUsageCounts.value = Object.fromEntries(entries);
+      categoryUsageCounts.value = Object.fromEntries(usageEntries);
+      categoryOrderOptionCounts.value = orderOptionCounts;
     }
   } catch (error) {
     if (requestId === categoryUsageRequestId) {
       categoryUsageCounts.value = {};
+      categoryOrderOptionCounts.value = {};
     }
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务分类使用数失败');
   }
+}
+
+function buildCategoryOrderOptionCounts(
+  categories: DataDictionary[],
+  prices: AppleServiceRegionPrice[]
+) {
+  const categoryIdByValue = new Map(
+    categories.map((category) => [getAppleServiceCategoryValue(category), category.id])
+  );
+  const counts: Record<string, number> = {};
+
+  for (const price of prices) {
+    const categoryValue = normalizeAppleServiceCategoryValue(
+      price.category || price.service?.category
+    );
+    const categoryId = categoryIdByValue.get(categoryValue);
+    if (!categoryId) continue;
+    counts[categoryId] = (counts[categoryId] ?? 0) + 1;
+  }
+
+  return counts;
 }
 
 function invalidateAppleServiceConsumers() {
