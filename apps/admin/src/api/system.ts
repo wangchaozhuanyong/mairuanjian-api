@@ -1067,6 +1067,8 @@ export interface SaveAppleServicePayload {
   remark?: string | null;
 }
 
+export type UpdateAppleServicePayload = Partial<SaveAppleServicePayload>;
+
 export interface AppleBalancePriceRule {
   ruleType: Extract<AppleBalancePriceRuleType, 'percent' | 'fixed_add'>;
   ruleValue: string;
@@ -1287,6 +1289,22 @@ export interface CreateAppleOrderPayload {
   refundLoss?: string;
   appleCostValue?: string;
   appleAccountOwnershipType?: AppleAccountOwnershipType;
+  remark?: string | null;
+}
+
+export interface UpdateAppleOrderPayload {
+  externalOrderNo?: string | null;
+  serviceAccount?: string | null;
+  currentPlan?: string | null;
+  targetPlan?: string | null;
+  startTime?: string | null;
+  expireTime?: string | null;
+  paidAmount?: string;
+  paidCurrency?: PaidCurrency;
+  paidExchangeRateToRmb?: string;
+  platformFee?: string;
+  refundLoss?: string;
+  status?: AppleOrder['status'];
   remark?: string | null;
 }
 
@@ -2190,7 +2208,7 @@ export const appleServicesApi = {
   create(payload: SaveAppleServicePayload) {
     return request<AppleService>(http.post('/apple/services', payload));
   },
-  update(id: string, payload: SaveAppleServicePayload) {
+  update(id: string, payload: UpdateAppleServicePayload) {
     return request<AppleService>(http.patch(`/apple/services/${id}`, payload));
   },
   remove(id: string) {
@@ -2455,6 +2473,12 @@ export const appleOrdersApi = {
   },
   create(payload: CreateAppleOrderPayload) {
     return request<AppleOrder>(http.post('/apple/orders', payload));
+  },
+  update(id: string, payload: UpdateAppleOrderPayload) {
+    return request<AppleOrder>(http.patch(`/apple/orders/${id}`, payload));
+  },
+  remove(id: string) {
+    return request<{ deleted: boolean }>(http.delete(`/apple/orders/${id}`));
   }
 };
 

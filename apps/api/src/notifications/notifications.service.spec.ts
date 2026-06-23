@@ -622,7 +622,7 @@ describe('NotificationsService', () => {
       ])
     );
     expect(prisma.appleOrder.count).toHaveBeenCalledWith({
-      where: { status: { in: ['pending', 'abnormal'] } }
+      where: { deletedAt: null, status: { in: ['pending', 'abnormal'] } }
     });
     expect(result.totalCount).toBe(result.items.reduce((sum, item) => sum + item.count, 0));
   });

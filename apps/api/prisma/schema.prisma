@@ -1294,6 +1294,7 @@ model AppleOrder {
   updatedByUserId           String?                   @map("updated_by_user_id") @db.Uuid
   createdAt                 DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt                 DateTime?                 @map("deleted_at") @db.Timestamptz(6)
 
   customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
   sourcePlatform   SourcePlatform?    @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
@@ -1313,6 +1314,7 @@ model AppleOrder {
   @@index([appleAccountId])
   @@index([status])
   @@index([createdAt])
+  @@index([deletedAt])
   @@map("apple_orders")
 }
 

@@ -583,6 +583,13 @@
           </div>
         </template>
         <el-table-column prop="label" label="分类名称" min-width="180" sortable="custom" />
+        <el-table-column label="使用中业务" width="120">
+          <template #default="{ row }">
+            <StatusChip :tone="getCategoryUsageCount(row) > 0 ? 'blue' : 'neutral'">
+              {{ getCategoryUsageCount(row) }} 个
+            </StatusChip>
+          </template>
+        </el-table-column>
         <el-table-column prop="sortOrder" label="排序" width="100" sortable="custom" />
         <el-table-column prop="status" label="状态" width="90" sortable="custom">
           <template #default="{ row }">
@@ -612,10 +619,15 @@
               <AppButton
                 size="small"
                 variant="danger"
-                :loading="deletingDictionaryId === row.id"
+                :disabled="getCategoryUsageCount(row) > 0 && row.status !== 'active'"
+                :loading="
+                  getCategoryUsageCount(row) > 0
+                    ? updatingCategoryId === row.id
+                    : deletingDictionaryId === row.id
+                "
                 @click="deleteAppleServiceCategory(row)"
               >
-                删除
+                {{ getCategoryDeleteActionLabel(row) }}
               </AppButton>
             </div>
           </template>
@@ -641,6 +653,10 @@
               <strong>{{ category.sortOrder }}</strong>
             </div>
             <div>
+              <span>使用中业务</span>
+              <strong>{{ getCategoryUsageCount(category) }} 个</strong>
+            </div>
+            <div>
               <span>更新时间</span>
               <strong>{{ formatDate(category.updatedAt) }}</strong>
             </div>
@@ -660,10 +676,15 @@
             <AppButton
               size="small"
               variant="danger"
-              :loading="deletingDictionaryId === category.id"
+              :disabled="getCategoryUsageCount(category) > 0 && category.status !== 'active'"
+              :loading="
+                getCategoryUsageCount(category) > 0
+                  ? updatingCategoryId === category.id
+                  : deletingDictionaryId === category.id
+              "
               @click="deleteAppleServiceCategory(category)"
             >
-              删除
+              {{ getCategoryDeleteActionLabel(category) }}
             </AppButton>
           </div>
         </article>
@@ -2073,7 +2094,12 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { dataCenterApi, sourcePlatformsApi, userTableViewsApi } from '@/api/system';
+import {
+  appleServicesApi,
+  dataCenterApi,
+  sourcePlatformsApi,
+  userTableViewsApi
+} from '@/api/system';
 import type { DataDictionaryQuery, SourcePlatformQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
@@ -2316,6 +2342,7 @@ const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | nul
 const total = ref(0);
 const tagTotal = ref(0);
 const categoryTotal = ref(0);
+const categoryUsageCounts = ref<Record<string, number>>({});
 const regionTotal = ref(0);
 const methodTotal = ref(0);
 const deliveryModeTotal = ref(0);
@@ -2352,6 +2379,7 @@ const activeSystemOptionQueryKeys = reactive<Record<SystemQuickOptionGroupKey, s
 const activeAppleRegionsQueryKey = ref('');
 const activeCodeDeliveryMethodsQueryKey = ref('');
 const activeCodeServiceDeliveryModesQueryKey = ref('');
+let categoryUsageRequestId = 0;
 
 const query = reactive({
   page: 1,
@@ -2742,6 +2770,61 @@ function applyCustomerTagResult(data: PageResult<DataDictionary>) {
 function applyAppleServiceCategoryResult(data: PageResult<DataDictionary>) {
   appleServiceCategories.value = data.items;
   categoryTotal.value = data.total;
+  void loadAppleServiceCategoryUsageCounts(data.items);
+}
+
+function normalizeAppleServiceCategoryValue(value?: string | null) {
+  const normalized = value?.trim();
+  if (!normalized || normalized === 'default') {
+    return '通用';
+  }
+  return normalized;
+}
+
+function getAppleServiceCategoryValue(category: DataDictionary) {
+  return normalizeAppleServiceCategoryValue(category.value || category.label);
+}
+
+function getCategoryUsageCount(category: DataDictionary) {
+  return categoryUsageCounts.value[category.id] ?? 0;
+}
+
+function getCategoryDeleteActionLabel(category: DataDictionary) {
+  const usageCount = getCategoryUsageCount(category);
+  if (usageCount > 0) {
+    return category.status === 'active' ? '停用' : '已停用';
+  }
+  return '删除';
+}
+
+async function loadAppleServiceCategoryUsageCounts(categories: DataDictionary[]) {
+  const requestId = ++categoryUsageRequestId;
+  if (!categories.length) {
+    categoryUsageCounts.value = {};
+    return;
+  }
+
+  try {
+    const entries = await Promise.all(
+      categories.map(async (category) => {
+        const result = await appleServicesApi.list({
+          page: 1,
+          pageSize: 1,
+          category: getAppleServiceCategoryValue(category)
+        });
+        return [category.id, result.total] as const;
+      })
+    );
+
+    if (requestId === categoryUsageRequestId) {
+      categoryUsageCounts.value = Object.fromEntries(entries);
+    }
+  } catch (error) {
+    if (requestId === categoryUsageRequestId) {
+      categoryUsageCounts.value = {};
+    }
+    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务分类使用数失败');
+  }
 }
 
 function applyAppleServiceOptionResult(
@@ -3750,9 +3833,20 @@ async function deleteCustomerTag(tag: DataDictionary) {
 }
 
 async function deleteAppleServiceCategory(category: DataDictionary) {
+  const usageCount = getCategoryUsageCount(category);
+  if (usageCount > 0) {
+    if (category.status !== 'active') {
+      ElMessage.info('这个分类已经停用；因为还有业务在使用，不能物理删除');
+      return;
+    }
+
+    await toggleAppleServiceCategoryStatus(category);
+    return;
+  }
+
   await deleteDictionaryOption(category, {
     entityLabel: 'Apple ID 业务分类',
-    confirmDetail: '删除后不会再出现在 Apple ID 业务分类下拉里，历史业务记录会保留原分类文字。',
+    confirmDetail: '确认前已检测到没有业务使用；删除后不会再出现在 Apple ID 业务分类下拉里。',
     beforeReload: () => {
       if (appleServiceCategories.value.length === 1 && categoryQuery.page > 1) {
         categoryQuery.page -= 1;
@@ -3760,6 +3854,34 @@ async function deleteAppleServiceCategory(category: DataDictionary) {
     },
     reload: () => loadAppleServiceCategories({ force: true })
   });
+}
+
+async function syncAppleServicesCategoryLabel(oldCategory: string, newCategory: string) {
+  if (oldCategory === newCategory) return 0;
+
+  let syncedCount = 0;
+  for (let index = 0; index < 100; index += 1) {
+    const result = await appleServicesApi.list({
+      page: 1,
+      pageSize: 100,
+      category: oldCategory
+    });
+
+    if (!result.items.length) {
+      return syncedCount;
+    }
+
+    await Promise.all(
+      result.items.map((service) =>
+        appleServicesApi.update(service.id, {
+          category: newCategory
+        })
+      )
+    );
+    syncedCount += result.items.length;
+  }
+
+  throw new Error('分类同步数量异常，请稍后重试');
 }
 
 async function deleteAppleServiceOption(option: DataDictionary) {
@@ -3919,6 +4041,9 @@ async function saveAppleServiceCategory() {
 
   categorySaving.value = true;
   try {
+    const oldCategory = editingCategory.value
+      ? getAppleServiceCategoryValue(editingCategory.value)
+      : '';
     if (editingCategory.value) {
       await dataCenterApi.updateDictionary(editingCategory.value.id, {
         label: normalizedLabel,
@@ -3939,7 +4064,16 @@ async function saveAppleServiceCategory() {
       });
     }
 
-    ElMessage.success('Apple ID 业务分类已保存');
+    const syncedCount =
+      editingCategory.value && oldCategory !== normalizedLabel
+        ? await syncAppleServicesCategoryLabel(oldCategory, normalizedLabel)
+        : 0;
+
+    ElMessage.success(
+      syncedCount > 0
+        ? `Apple ID 业务分类已保存，并同步 ${syncedCount} 个业务`
+        : 'Apple ID 业务分类已保存'
+    );
     categoryDialogVisible.value = false;
     await loadAppleServiceCategories({ force: true });
   } catch (error) {

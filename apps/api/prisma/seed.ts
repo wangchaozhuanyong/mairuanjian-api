@@ -73,6 +73,7 @@ const permissionDefinitions = [
   ['查看 Apple ID 订单', 'apple.order.view', 'apple.order', 'view'],
   ['创建 Apple ID 订单', 'apple.order.create', 'apple.order', 'create'],
   ['编辑 Apple ID 订单', 'apple.order.update', 'apple.order', 'update'],
+  ['删除 Apple ID 订单', 'apple.order.delete', 'apple.order', 'delete'],
   ['查看开通记录', 'apple.activation.view', 'apple.activation', 'view'],
   ['查看续费任务', 'apple.renewal_task.view', 'apple.renewal_task', 'view'],
   ['处理续费任务', 'apple.renewal_task.update', 'apple.renewal_task', 'update'],

@@ -1,7 +1,7 @@
 <template>
   <PageScaffold
-    title="Apple ID 开通记录"
-    group="Apple ID 业务"
+    title="ID 开通记录"
+    group="客户与来源"
     phase="Phase 4"
     description="查看每笔 Apple ID 业务开通后的服务记录、到期时间、成本利润和续费状态。"
   >
@@ -107,10 +107,14 @@
           </div>
         </template>
         <el-table-column type="selection" width="46" />
-        <el-table-column v-if="isColumnVisible('order')" label="订单/客户" min-width="190">
+        <el-table-column v-if="isColumnVisible('order')" label="订单" min-width="170">
           <template #default="{ row }">
             <strong>{{ row.order.orderNo }}</strong>
-            <div class="muted-block">{{ row.customer.name }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isColumnVisible('customer')" label="客户" min-width="120">
+          <template #default="{ row }">
+            {{ row.customer.name }}
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('service')" label="业务" min-width="150">
@@ -422,7 +426,8 @@ const quickDateOptions = [
 ];
 
 const activationColumnOptions = [
-  { label: '订单/客户', value: 'order', required: true },
+  { label: '订单', value: 'order', required: true },
+  { label: '客户', value: 'customer', required: true },
   { label: '业务', value: 'service' },
   { label: 'Apple ID', value: 'appleAccount' },
   { label: '套餐', value: 'plan' },
@@ -804,13 +809,25 @@ function applyView(view: UserTableView) {
   query.pageSize = view.pageSize;
   query.page = 1;
   density.value = 'default';
-  visibleColumns.value = view.columns.length
-    ? view.columns.filter((column) =>
-        activationColumnOptions.some((option) => option.value === column)
-      )
-    : activationColumnOptions.map((column) => column.value);
+  visibleColumns.value = normalizeVisibleColumns(view.columns);
   sortConfig.value = parseSortConfig(view.sortConfig);
   savedViewId.value = view.id;
+}
+
+function normalizeVisibleColumns(columns: string[]) {
+  const defaultColumns = activationColumnOptions.map((column) => column.value);
+
+  if (!columns.length) {
+    return defaultColumns;
+  }
+
+  const expandedColumns = columns.flatMap((column) =>
+    column === 'order' ? ['order', 'customer'] : [column]
+  );
+  const allowedColumns = new Set(defaultColumns);
+  const nextColumns = [...new Set(expandedColumns)].filter((column) => allowedColumns.has(column));
+
+  return nextColumns.length ? nextColumns : defaultColumns;
 }
 
 function parseSortConfig(value: Record<string, unknown>): {

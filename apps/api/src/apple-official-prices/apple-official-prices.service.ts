@@ -18,6 +18,7 @@ import type {
   AppleService,
   AppleServicePeriodType,
   AutomationTaskStatus,
+  DataDictionary,
   Prisma
 } from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
@@ -169,6 +170,17 @@ const FINAL_OFFICIAL_PRICE_BATCH_ITEM_STATUSES: AutomationTaskStatus[] = [
   'skipped',
   'cancelled'
 ];
+const APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP = 'apple.service.categories';
+const OFFICIAL_CATEGORY_REMARK = '官方价格采集自动生成';
+const OFFICIAL_DISABLED_CATEGORY_REMARK = '官方价格采集发现但当前停用';
+
+type DataDictionaryClient = {
+  dataDictionary: {
+    findFirst(args: Prisma.DataDictionaryFindFirstArgs): Promise<DataDictionary | null>;
+    create(args: Prisma.DataDictionaryCreateArgs): Promise<DataDictionary>;
+    update(args: Prisma.DataDictionaryUpdateArgs): Promise<DataDictionary>;
+  };
+};
 
 const SOURCE_SORT_FIELDS: Record<
   string,
@@ -618,6 +630,7 @@ export class AppleOfficialPricesService {
     }
 
     const newValue = this.parseReviewNewValue(review.newValue);
+    await this.assertOfficialCategoryActive(newValue.category);
     let serviceId = review.appleServiceId;
 
     if (review.changeType === 'new_plan' || !review.appleServiceId) {
@@ -2139,6 +2152,7 @@ export class AppleOfficialPricesService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of input.items) {
+        await this.ensureOfficialCollectedCategory(tx, item.category);
         const matchedService = await this.findMatchedService(tx, item);
         const appleBalancePrice = this.buildAppleBalancePricePreview(
           item,
@@ -2754,6 +2768,65 @@ export class AppleOfficialPricesService {
   private normalizeCategory(value: string | null | undefined) {
     const normalized = (value || '通用').trim();
     return normalized === 'default' ? '通用' : normalized;
+  }
+
+  private async ensureOfficialCollectedCategory(client: DataDictionaryClient, rawCategory: string) {
+    const category = this.normalizeCategory(rawCategory);
+    const existing = await client.dataDictionary.findFirst({
+      where: {
+        group: APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
+        OR: [{ label: category }, { value: category }]
+      }
+    });
+
+    if (!existing) {
+      await client.dataDictionary.create({
+        data: {
+          group: APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
+          code: this.buildOfficialCategoryDictionaryCode(category),
+          label: category,
+          value: category,
+          status: 'active',
+          remark: OFFICIAL_CATEGORY_REMARK
+        }
+      });
+      return;
+    }
+
+    if (existing.status !== 'disabled') {
+      return;
+    }
+
+    const nextRemark = existing.remark?.includes(OFFICIAL_DISABLED_CATEGORY_REMARK)
+      ? existing.remark
+      : [existing.remark, OFFICIAL_DISABLED_CATEGORY_REMARK].filter(Boolean).join('；');
+
+    await client.dataDictionary.update({
+      where: { id: existing.id },
+      data: { remark: nextRemark }
+    });
+  }
+
+  private async assertOfficialCategoryActive(category: string) {
+    await this.ensureOfficialCollectedCategory(this.prisma, category);
+    const normalizedCategory = this.normalizeCategory(category);
+    const dictionary = await this.prisma.dataDictionary.findFirst({
+      where: {
+        group: APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
+        OR: [{ label: normalizedCategory }, { value: normalizedCategory }]
+      }
+    });
+
+    if (dictionary?.status !== 'active') {
+      throw new ConflictException(
+        `Apple ID 业务分类“${normalizedCategory}”已停用，请先到分类设置中启用后再审批`
+      );
+    }
+  }
+
+  private buildOfficialCategoryDictionaryCode(category: string) {
+    const hash = createHash('sha1').update(category).digest('hex').slice(0, 12);
+    return `official-${hash}`;
   }
 
   private inferProviderFromName(value: string) {

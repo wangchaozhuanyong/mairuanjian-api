@@ -212,8 +212,27 @@ describe('AppleOfficialPricesService', () => {
       reviewedAt: now,
       remark: '已确认同步到 Apple ID 业务设置'
     };
+    const categoryDictionary = {
+      id: '88888888-8888-4888-8888-888888888888',
+      group: 'apple.service.categories',
+      code: 'chatgpt',
+      label: currentAppleService.category,
+      value: currentAppleService.category,
+      sortOrder: 0,
+      status: 'active',
+      remark: null,
+      createdByUserId: userId,
+      updatedByUserId: userId,
+      createdAt: now,
+      updatedAt: now
+    };
 
     const tx = {
+      dataDictionary: {
+        findFirst: jest.fn().mockResolvedValue(categoryDictionary),
+        create: jest.fn().mockResolvedValue(categoryDictionary),
+        update: jest.fn().mockResolvedValue(categoryDictionary)
+      },
       appleService: {
         findFirst: jest.fn().mockResolvedValue(currentAppleService),
         findMany: jest.fn().mockResolvedValue([currentAppleService])
@@ -267,6 +286,11 @@ describe('AppleOfficialPricesService', () => {
         findUnique: jest.fn().mockResolvedValue(pendingReview),
         update: jest.fn().mockResolvedValue(approvedReview),
         count: jest.fn().mockResolvedValue(1)
+      },
+      dataDictionary: {
+        findFirst: jest.fn().mockResolvedValue(categoryDictionary),
+        create: jest.fn().mockResolvedValue(categoryDictionary),
+        update: jest.fn().mockResolvedValue(categoryDictionary)
       }
     } as unknown as PrismaService;
 
@@ -875,5 +899,37 @@ describe('AppleOfficialPricesService', () => {
         action: 'approved'
       })
     );
+  });
+
+  it('blocks approving a collected plan when its category is disabled', async () => {
+    const { service, prisma, appleServicesService } = createService();
+    const dictionaryModel = prisma.dataDictionary as unknown as {
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
+    dictionaryModel.findFirst.mockResolvedValue({
+      id: '88888888-8888-4888-8888-888888888888',
+      group: 'apple.service.categories',
+      code: 'chatgpt',
+      label: 'ChatGPT',
+      value: 'ChatGPT',
+      sortOrder: 0,
+      status: 'disabled',
+      remark: null,
+      createdByUserId: userId,
+      updatedByUserId: userId,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    await expect(service.approveReview(reviewId, operator)).rejects.toThrow('已停用');
+    expect(dictionaryModel.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          remark: expect.stringContaining('官方价格采集发现但当前停用')
+        })
+      })
+    );
+    expect(appleServicesService.update).not.toHaveBeenCalled();
   });
 });

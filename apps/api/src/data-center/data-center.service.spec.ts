@@ -277,6 +277,9 @@ describe('DataCenterService', () => {
       appleOrder: {
         findMany: jest.fn().mockResolvedValue([])
       },
+      appleService: {
+        count: jest.fn().mockResolvedValue(0)
+      },
       redeemCode: {
         findMany: jest.fn().mockResolvedValue([])
       },
@@ -902,6 +905,24 @@ describe('DataCenterService', () => {
         afterData: undefined
       })
     );
+  });
+
+  it('blocks deleting an Apple service category while services still use it', async () => {
+    const { service, prisma } = createService();
+    const categoryDictionary = {
+      ...dictionary,
+      group: 'apple.service.categories',
+      code: 'chatgpt',
+      label: 'ChatGPT',
+      value: 'ChatGPT'
+    };
+    prisma.dataDictionary.findUnique = jest.fn().mockResolvedValue(categoryDictionary);
+    prisma.appleService.count = jest.fn().mockResolvedValue(2);
+
+    await expect(service.deleteDictionary(categoryDictionary.id, user)).rejects.toThrow(
+      'Apple ID 业务分类已被业务使用'
+    );
+    expect(prisma.dataDictionary.delete).not.toHaveBeenCalled();
   });
 
   it('applies whitelisted system parameter sorting', async () => {

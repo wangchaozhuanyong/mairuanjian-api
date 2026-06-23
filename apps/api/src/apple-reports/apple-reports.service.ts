@@ -185,6 +185,7 @@ export class AppleReportsService {
     const createdAt = this.parseDateRange(query.dateFrom, query.dateTo);
 
     return {
+      deletedAt: null,
       createdAt,
       status: status ?? { not: 'cancelled' },
       customerId: query.customerId || undefined,

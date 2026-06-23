@@ -249,10 +249,10 @@ const appleModules: AppModuleItem[] = [
   },
   {
     key: 'apple-orders',
-    title: 'Apple ID 订单管理',
+    title: '订单管理',
     route: '/apple/orders',
-    mark: 'AO',
-    group: 'Apple ID 业务',
+    mark: 'OM',
+    group: '客户与来源',
     phase: 'Phase 4',
     status: 'ready',
     description:
@@ -290,7 +290,7 @@ const appleModules: AppModuleItem[] = [
     title: 'Apple ID 开通记录',
     route: '/apple/activations',
     mark: 'AC',
-    group: 'Apple ID 业务',
+    group: '客户与来源',
     phase: 'Phase 4',
     status: 'ready',
     description: '查看 Apple ID 业务开通记录、到期时间、成本利润和续费状态。',
@@ -956,7 +956,10 @@ export const menuSections: MenuSection[] = [
     key: 'common',
     title: '客户与来源',
     icon: 'common',
-    items: selectModules(systemModules, ['customers'])
+    items: selectModules(
+      [...systemModules, ...appleModules],
+      ['customers', 'apple-orders', 'apple-activations']
+    )
   },
   {
     key: 'id-business',
@@ -966,8 +969,6 @@ export const menuSections: MenuSection[] = [
       'order-entry',
       'apple-list',
       'apple-settings',
-      'apple-orders',
-      'apple-activations',
       'balance-reconciliation',
       'finance-center',
       'apple-automation',

@@ -46,7 +46,7 @@
         :show-save-view="false"
         show-filter-chips
         primary-label="新增 Apple ID"
-        placeholder="搜索 Apple ID、地区、币种、备注"
+        placeholder="搜索 Apple ID、地区、币种、寄存/售出、备注"
         @search="applyFilters"
         @refresh="loadAccounts"
         @primary="openCreate"
@@ -622,32 +622,11 @@
           </el-form-item>
         </div>
         <div class="form-grid">
-          <el-form-item prop="ownershipType">
-            <template #label>
-              <FieldHelpLabel
-                label="ID类型"
-                purpose="寄存表示 ID 留在你这边继续接单；售出表示这个 ID 会卖给客户并单独计入订单成本。"
-                example="常规代开选寄存；把完整账号卖给客户选售出。"
-              />
-            </template>
-            <el-select
-              v-model="form.ownershipType"
-              class="full-input"
-              :disabled="editingAccount?.ownershipType === 'sold'"
-            >
-              <el-option
-                v-for="item in ownershipOptions"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-          </el-form-item>
           <el-form-item prop="purchaseCost">
             <template #label>
               <FieldHelpLabel
                 label="ID购入成本"
-                purpose="这个 Apple ID 本身的人民币采购成本，售出订单会把它计入实际利润。"
+                purpose="这个 Apple ID 本身的人民币采购成本，只用于订单录入选择售出时计算实际利润。"
                 example="买这个 ID 花了 30 元，就填 30。"
               />
             </template>
@@ -657,8 +636,8 @@
             <template #label>
               <FieldHelpLabel
                 label="ID参考售价"
-                purpose="卖给客户时的参考价格，用于售出报表统计，不替代订单客户实收。"
-                example="准备按 50 元卖出，就填 50。"
+                purpose="卖给客户时的参考价格，用于订单录入和售出统计参考，不替代订单里的客户实收。"
+                example="准备按 50 元卖出就填 50，实际收多少钱仍然在订单录入里填客户实收。"
               />
             </template>
             <el-input v-model.trim="form.salePrice" type="number" inputmode="decimal" min="0" />
@@ -1528,7 +1507,6 @@ const form = reactive({
   currency: 'USD',
   currentBalance: '0',
   balanceCostAmount: '0',
-  ownershipType: 'consigned' as AppleAccountOwnershipType,
   purchaseCost: '0',
   salePrice: '0',
   sourceChannelId: '',
@@ -1578,8 +1556,7 @@ const rules: FormRules<typeof form> = {
   region: [{ required: true, message: '请选择地区', trigger: 'change' }],
   currency: [{ required: true, message: '请选择币种', trigger: 'change' }],
   currentBalance: [{ required: true, message: '请输入余额', trigger: 'blur' }],
-  balanceCostAmount: [{ required: true, message: '请输入平均成本', trigger: 'blur' }],
-  ownershipType: [{ required: true, message: '请选择 ID 类型', trigger: 'change' }]
+  balanceCostAmount: [{ required: true, message: '请输入平均成本', trigger: 'blur' }]
 };
 
 const importRules: FormRules<typeof importForm> = {
@@ -2047,7 +2024,6 @@ function resetForm() {
   syncFormCurrency();
   form.currentBalance = '0';
   form.balanceCostAmount = '0';
-  form.ownershipType = 'consigned';
   form.purchaseCost = '0';
   form.salePrice = '0';
   form.sourceChannelId = '';
@@ -2129,7 +2105,6 @@ function openEdit(account: AppleAccount) {
   syncFormCurrency();
   form.currentBalance = account.currentBalance;
   form.balanceCostAmount = getAccountAverageCost(account);
-  form.ownershipType = account.ownershipType;
   form.purchaseCost = account.purchaseCost;
   form.salePrice = account.salePrice;
   form.sourceChannelId = account.sourceChannelId ?? '';
@@ -2348,7 +2323,6 @@ async function saveAccount() {
       currency: form.currency,
       currentBalance: form.currentBalance,
       balanceCostAmount: getAccountFormTotalCostAmount(),
-      ownershipType: form.ownershipType,
       purchaseCost: form.purchaseCost || '0',
       salePrice: form.salePrice || '0',
       sourceChannelId: form.sourceChannelId || null,

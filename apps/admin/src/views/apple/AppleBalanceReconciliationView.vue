@@ -396,56 +396,143 @@
       @confirm="openSelectedDetailPage"
     >
       <div v-if="selectedAccount" class="account-detail-drawer">
-        <div class="drawer-detail-grid">
-          <div>
-            <span>Apple ID</span>
-            <strong>{{ selectedAccount.appleIdMasked }}</strong>
-          </div>
-          <div>
-            <span>系统余额</span>
-            <strong>{{ selectedAccount.currentBalance }}</strong>
-          </div>
-          <div>
-            <span>人民币总成本</span>
-            <strong>{{ getAccountTotalCostAmount(selectedAccount) }}</strong>
-          </div>
-          <div>
-            <span>平均成本</span>
-            <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
-          </div>
-          <div>
-            <span>锁定状态</span>
-            <strong>{{ selectedAccount.isManuallyLocked ? '已锁定' : '正常' }}</strong>
-          </div>
-          <div>
-            <span>更新时间</span>
-            <strong>{{ formatDate(selectedAccount.updatedAt) }}</strong>
-          </div>
-        </div>
-
-        <div class="drawer-section">
-          <div class="drawer-section__title">账号信息</div>
-          <el-descriptions class="detail-descriptions" :column="1" border>
-            <el-descriptions-item label="地区/币种">
-              {{ selectedAccount.region }} / {{ selectedAccount.currency }}
-            </el-descriptions-item>
-            <el-descriptions-item label="状态">
+        <section class="account-detail-summary">
+          <div class="account-detail-summary__main">
+            <div class="account-detail-summary__top">
+              <span class="account-action-eyebrow">对账账号</span>
               <StatusChip :tone="getStatusTone(selectedAccount.status)" dot>
                 {{ getStatusLabel(selectedAccount.status) }}
               </StatusChip>
-            </el-descriptions-item>
-            <el-descriptions-item label="备注">
-              {{ selectedAccount.remark || '-' }}
-            </el-descriptions-item>
-          </el-descriptions>
-        </div>
+            </div>
+            <strong>{{ selectedAccount.appleIdMasked }}</strong>
+            <div class="account-action-tags">
+              <span>{{ selectedAccount.region }}</span>
+              <span>{{ selectedAccount.currency }}</span>
+              <span>{{ getOwnershipTypeLabel(selectedAccount.ownershipType) }}</span>
+              <span :class="{ 'account-action-tag--warning': selectedAccount.isManuallyLocked }">
+                {{ selectedAccount.isManuallyLocked ? '手动锁定' : '未锁定' }}
+              </span>
+            </div>
+          </div>
+          <div class="account-detail-summary__balance">
+            <span>系统余额</span>
+            <strong>{{ selectedAccount.currentBalance }}</strong>
+            <small>{{ selectedAccount.currency }}</small>
+          </div>
+        </section>
 
-        <div class="account-detail-actions">
-          <AppButton variant="soft" @click="openAdjustDialog(selectedAccount)">修正余额</AppButton>
-          <AppButton variant="ghost" @click="openAdjustmentRecords(selectedAccount)">
-            修正记录
-          </AppButton>
-        </div>
+        <section class="account-action-metrics" aria-label="账号资产指标">
+          <div class="account-action-metric account-action-metric--balance">
+            <div>
+              <span>系统余额</span>
+              <strong>{{ selectedAccount.currentBalance }}</strong>
+            </div>
+            <em>{{ selectedAccount.currency }}</em>
+          </div>
+          <div class="account-action-metric">
+            <div>
+              <span>人民币总成本</span>
+              <strong>{{ getAccountTotalCostAmount(selectedAccount) }}</strong>
+            </div>
+            <em>CNY</em>
+          </div>
+          <div class="account-action-metric">
+            <div>
+              <span>平均成本</span>
+              <strong>{{ getAccountAverageCost(selectedAccount) }}</strong>
+            </div>
+            <em>CNY / {{ selectedAccount.currency }}</em>
+          </div>
+        </section>
+
+        <section class="account-detail-section">
+          <div class="account-detail-section__head">
+            <strong>账号资料</strong>
+            <span>{{ formatDate(selectedAccount.updatedAt) }}</span>
+          </div>
+          <div class="account-detail-info-grid">
+            <div>
+              <span>地区/币种</span>
+              <strong>{{ selectedAccount.region }} / {{ selectedAccount.currency }}</strong>
+            </div>
+            <div>
+              <span>来源</span>
+              <strong>{{ getAccountSourceText(selectedAccount) }}</strong>
+            </div>
+            <div>
+              <span>账号类型</span>
+              <strong>{{ getOwnershipTypeLabel(selectedAccount.ownershipType) }}</strong>
+            </div>
+            <div>
+              <span>锁定原因</span>
+              <strong>{{ selectedAccount.manualLockReason || '-' }}</strong>
+            </div>
+          </div>
+          <div class="account-detail-profile">
+            <span>资料完整度</span>
+            <strong>{{ getAccountProfileSummary(selectedAccount) }}</strong>
+            <div class="account-detail-profile__chips">
+              <span :class="{ active: selectedAccount.hasPassword }">密码</span>
+              <span :class="{ active: selectedAccount.hasSecurityInfo }">密保</span>
+              <span :class="{ active: selectedAccount.hasPhone }">手机号</span>
+              <span :class="{ active: selectedAccount.hasRecoveryEmail }">备用邮箱</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="account-detail-section">
+          <div class="account-detail-section__head">
+            <strong>资产口径</strong>
+            <span>移动平均成本</span>
+          </div>
+          <div class="account-detail-info-grid">
+            <div>
+              <span>ID 购入成本</span>
+              <strong>{{ selectedAccount.purchaseCost }} CNY</strong>
+            </div>
+            <div>
+              <span>ID 售卖价格</span>
+              <strong>{{ selectedAccount.salePrice }} CNY</strong>
+            </div>
+            <div>
+              <span>售出时间</span>
+              <strong>{{ formatDate(selectedAccount.soldAt) }}</strong>
+            </div>
+            <div>
+              <span>备注</span>
+              <strong>{{ selectedAccount.remark || '-' }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="account-detail-quick-actions" aria-label="账号详情快捷操作">
+          <button
+            type="button"
+            class="account-action-card"
+            @click="openAdjustDialog(selectedAccount)"
+          >
+            <span class="account-action-icon">
+              <el-icon><EditPen /></el-icon>
+            </span>
+            <span>
+              <strong>修正余额</strong>
+              <small>按实际余额更新系统余额和人民币成本。</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="account-action-card"
+            @click="openAdjustmentRecords(selectedAccount)"
+          >
+            <span class="account-action-icon">
+              <el-icon><Tickets /></el-icon>
+            </span>
+            <span>
+              <strong>修正记录</strong>
+              <small>查看历史修正和每次成本变化。</small>
+            </span>
+          </button>
+        </section>
       </div>
     </AppDrawer>
 
@@ -892,6 +979,25 @@ function getAccountTotalCostNumber(account: AppleAccount) {
 
 function getAccountTotalCostAmount(account: AppleAccount) {
   return getAccountTotalCostNumber(account).toFixed(4);
+}
+
+function getOwnershipTypeLabel(value: AppleAccount['ownershipType']) {
+  return value === 'sold' ? '售出' : '寄存';
+}
+
+function getAccountSourceText(account: AppleAccount) {
+  return account.sourceChannel?.name ?? account.sourcePlatform?.name ?? '-';
+}
+
+function getAccountProfileSummary(account: AppleAccount) {
+  const completed = [
+    account.hasPassword,
+    account.hasSecurityInfo,
+    account.hasPhone,
+    account.hasRecoveryEmail
+  ].filter(Boolean).length;
+
+  return `已保存 ${completed}/4 项`;
 }
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated([ACCOUNT_SCOPE], () => {
@@ -1507,6 +1613,211 @@ async function initializePage() {
   .account-action-hero__id {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+}
+
+.account-detail-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+  gap: 14px;
+  align-items: stretch;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(234, 241, 255, 0.98), rgba(248, 253, 255, 0.96)), var(--v3-surface);
+}
+
+.account-detail-summary__main,
+.account-detail-summary__balance,
+.account-detail-section,
+.account-detail-profile,
+.account-detail-quick-actions {
+  min-width: 0;
+}
+
+.account-detail-summary__main {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.account-detail-summary__top,
+.account-detail-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.account-detail-summary__main > strong {
+  overflow: hidden;
+  color: var(--v3-text);
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1.16;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-detail-summary__balance {
+  display: grid;
+  justify-items: end;
+  align-content: center;
+  gap: 5px;
+  text-align: right;
+}
+
+.account-detail-summary__balance span,
+.account-detail-summary__balance small,
+.account-detail-section__head span,
+.account-detail-info-grid span,
+.account-detail-profile > span {
+  color: var(--v3-text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.account-detail-summary__balance strong {
+  color: var(--v3-text);
+  font-size: 28px;
+  font-weight: 950;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-detail-section {
+  overflow: hidden;
+  border: 1px solid var(--v3-border);
+  border-radius: 16px;
+  background: var(--v3-surface);
+}
+
+.account-detail-section__head {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--v3-line);
+  background: #fbfcff;
+}
+
+.account-detail-section__head strong {
+  color: var(--v3-text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.account-detail-section__head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-detail-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.account-detail-info-grid > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-right: 1px solid var(--v3-line);
+  border-bottom: 1px solid var(--v3-line);
+}
+
+.account-detail-info-grid > div:nth-child(2n) {
+  border-right: 0;
+}
+
+.account-detail-info-grid > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.account-detail-info-grid strong {
+  min-width: 0;
+  color: var(--v3-text);
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.36;
+  overflow-wrap: anywhere;
+}
+
+.account-detail-profile {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--v3-line);
+}
+
+.account-detail-profile > strong {
+  color: var(--v3-text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.account-detail-profile__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.account-detail-profile__chips span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--v3-border);
+  border-radius: 8px;
+  background: var(--v3-surface-2);
+  color: var(--v3-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-detail-profile__chips span.active {
+  border-color: rgba(22, 163, 74, 0.18);
+  background: var(--v3-green-soft);
+  color: #15803d;
+}
+
+.account-detail-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-detail-quick-actions .account-action-card {
+  min-height: 96px;
+}
+
+@media (max-width: 640px) {
+  .account-detail-summary,
+  .account-detail-info-grid,
+  .account-detail-quick-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .account-detail-summary__main > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .account-detail-summary__balance {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .account-detail-info-grid > div,
+  .account-detail-info-grid > div:nth-child(2n),
+  .account-detail-info-grid > div:nth-last-child(-n + 2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--v3-line);
+  }
+
+  .account-detail-info-grid > div:last-child {
+    border-bottom: 0;
   }
 }
 </style>

@@ -84,30 +84,15 @@
         >
           全部分类
         </AppButton>
-        <div
+        <AppButton
           v-for="category in activeServiceCategoryDictionaries"
           :key="category.id"
-          class="apple-service-category-manage"
+          size="small"
+          :variant="query.category === getCategoryOptionValue(category) ? 'primary' : 'soft'"
+          @click="selectCategory(getCategoryOptionValue(category))"
         >
-          <AppButton
-            size="small"
-            :variant="query.category === getCategoryOptionValue(category) ? 'primary' : 'soft'"
-            @click="selectCategory(getCategoryOptionValue(category))"
-          >
-            {{ getCategoryLabel(category.label) }}
-          </AppButton>
-          <AppButton size="small" variant="ghost" @click.stop="openEditManagedCategory(category)">
-            编辑
-          </AppButton>
-          <AppButton
-            size="small"
-            variant="danger"
-            :loading="deletingCategoryId === category.id"
-            @click.stop="deleteManagedCategory(category)"
-          >
-            删除
-          </AppButton>
-        </div>
+          {{ getCategoryLabel(category.label) }}
+        </AppButton>
       </div>
 
       <el-table
@@ -131,6 +116,16 @@
           </div>
         </template>
         <el-table-column type="selection" width="46" />
+        <el-table-column
+          v-if="isColumnVisible('primaryRegion')"
+          label="国家"
+          min-width="140"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span class="apple-service-country-cell">{{ getServiceCountryLabel(row) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="isColumnVisible('name')"
           prop="name"
@@ -238,7 +233,10 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ service.name }}</strong>
-              <span>{{ getCategoryLabel(service.category) }} · {{ service.currency }}</span>
+              <span>
+                {{ getServiceCountryLabel(service) }} · {{ getCategoryLabel(service.category) }} ·
+                {{ service.currency }}
+              </span>
             </div>
             <StatusChip :tone="getStatusTone(service.status)" dot>
               {{ getStatusLabel(service.status) }}
@@ -757,17 +755,15 @@
             <template #label>
               <FieldHelpLabel
                 label="业务分类"
-                purpose="把业务分组，订单录入时会按分类展示；官方价格采集到的分类会自动出现在这里。"
-                example="先选国家，再选 ChatGPT、Claude、Gemini 这类官方采集分类。"
+                purpose="把业务分组，订单录入时会按分类展示；分类统一到选项设置里的 Apple ID 业务分类维护。"
+                example="先到 Apple ID 业务分类启用 ChatGPT、Claude、Gemini，再在这里选择。"
               />
             </template>
             <el-select
               v-model="form.category"
               class="full-input"
               filterable
-              allow-create
-              default-first-option
-              placeholder="选择或输入分类"
+              placeholder="请选择分类"
               @change="handleCategoryChange"
             >
               <el-option
@@ -1036,55 +1032,6 @@
     </el-dialog>
 
     <el-dialog
-      v-model="categoryDialogVisible"
-      title="编辑业务分类"
-      width="min(560px, calc(100vw - 24px))"
-    >
-      <el-form
-        ref="categoryFormRef"
-        :model="categoryForm"
-        :rules="categoryRules"
-        label-position="top"
-      >
-        <el-form-item prop="label">
-          <template #label>
-            <FieldHelpLabel
-              label="分类名称"
-              purpose="控制 Apple ID 业务设置顶部分类按钮和新增业务分类下拉的显示名称。"
-              example="例如 ChatGPT、Claude、Gemini、通用。"
-            />
-          </template>
-          <el-input v-model.trim="categoryForm.label" maxlength="40" show-word-limit />
-        </el-form-item>
-        <div class="form-grid">
-          <el-form-item label="排序">
-            <el-input-number
-              v-model="categoryForm.sortOrder"
-              class="full-input"
-              :min="0"
-              :step="1"
-            />
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-radio-group v-model="categoryForm.status">
-              <el-radio-button label="active">启用</el-radio-button>
-              <el-radio-button label="disabled">停用</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-        </div>
-        <el-form-item label="备注">
-          <el-input v-model="categoryForm.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <AppButton @click="categoryDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="categorySaving" @click="saveManagedCategory">
-          保存
-        </AppButton>
-      </template>
-    </el-dialog>
-
-    <el-dialog
       v-model="officialSourceDialogVisible"
       :title="editingOfficialSource ? '编辑官方来源' : '新增官方来源'"
       width="min(640px, calc(100vw - 24px))"
@@ -1259,8 +1206,7 @@ import {
   APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
   APPLE_SERVICE_EXPIRE_CALC_TYPE_DICTIONARY_GROUP,
   APPLE_SERVICE_LOCK_RULE_DICTIONARY_GROUP,
-  APPLE_SERVICE_PERIOD_TYPE_DICTIONARY_GROUP,
-  buildQuickSettingCode
+  APPLE_SERVICE_PERIOD_TYPE_DICTIONARY_GROUP
 } from '@/config/quickSettings';
 import {
   notifyRealtimeScopesInvalidated,
@@ -1303,6 +1249,7 @@ const statusOptions = [
   { label: '停用', value: 'disabled' }
 ];
 const serviceColumnOptions = [
+  { label: '国家', value: 'primaryRegion', required: true },
   { label: '业务', value: 'name', required: true },
   { label: '分类', value: 'category' },
   { label: '官网价', value: 'officialBasePrice' },
@@ -1417,14 +1364,11 @@ const officialSourceCheckId = ref('');
 const officialProviderCheckKey = ref('');
 let officialPriceTabScrollRestoreTimer: ReturnType<typeof setTimeout> | undefined;
 const dialogVisible = ref(false);
-const categoryDialogVisible = ref(false);
 const officialSourceDialogVisible = ref(false);
 const officialCheckDialogVisible = ref(false);
 const editingService = ref<AppleService | null>(null);
-const editingCategory = ref<DataDictionary | null>(null);
 const editingOfficialSource = ref<AppleOfficialPriceSource | null>(null);
 const formRef = ref<FormInstance>();
-const categoryFormRef = ref<FormInstance>();
 const services = ref<AppleService[]>([]);
 const selectedServices = ref<AppleService[]>([]);
 const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
@@ -1458,8 +1402,6 @@ const selectedOfficialAutoRegions = ref<string[]>(
     .map((region) => region.value)
 );
 const officialBatchPollingTimer = ref<ReturnType<typeof setInterval> | null>(null);
-const categorySaving = ref(false);
-const deletingCategoryId = ref('');
 
 const globalBalanceRuleForm = reactive({
   ruleType: 'percent' as Extract<AppleBalancePriceRuleType, 'percent' | 'fixed_add'>,
@@ -1541,22 +1483,12 @@ const officialCheckForm = reactive({
   scanRemovedPlans: false
 });
 
-const categoryForm = reactive({
-  label: '',
-  sortOrder: 0,
-  status: 'active' as DataDictionary['status'],
-  remark: ''
-});
-
 const rules: FormRules<typeof form> = {
-  category: [{ required: true, message: '请选择或输入业务分类', trigger: 'change' }],
+  category: [{ required: true, message: '请选择业务分类', trigger: 'change' }],
   name: [{ required: true, message: '请输入业务名称', trigger: 'blur' }],
   primaryRegion: [{ required: true, message: '请选择国家/地区', trigger: 'change' }],
   officialBasePrice: [{ required: true, message: '请输入官网官方价格', trigger: 'blur' }],
   currency: [{ required: true, message: '请输入币种', trigger: 'blur' }]
-};
-const categoryRules: FormRules<typeof categoryForm> = {
-  label: [{ required: true, message: '请输入分类名称', trigger: 'blur' }]
 };
 
 const enabledCount = computed(
@@ -1606,21 +1538,9 @@ const activeServiceCategoryDictionaries = computed(() =>
         getCategoryLabel(left.label).localeCompare(getCategoryLabel(right.label), 'zh-CN')
     )
 );
-const disabledServiceCategoryValues = computed(() => {
-  const values = new Set<string>();
-  for (const category of serviceCategoryDictionaries.value) {
-    if (category.status !== 'disabled') continue;
-    values.add(getCategoryOptionValue(category));
-  }
-  return values;
-});
 const formServiceCategoryOptions = computed(() => {
-  const disabledValues = disabledServiceCategoryValues.value;
   const categories = [
     ...activeServiceCategoryDictionaries.value.map((category) => getCategoryOptionValue(category)),
-    ...officialCollectedServiceOptions.value
-      .map((option) => normalizeOptionalCategoryValue(option.category))
-      .filter((category) => category && !disabledValues.has(category)),
     query.category,
     form.category
   ]
@@ -1951,6 +1871,86 @@ function getOfficialRegionSelectLabel(region: string, currency: string) {
   return `${countryName} · ${region}/${currency}`;
 }
 
+function getServiceCountryLabel(service: Pick<AppleService, 'allowedRegions' | 'currency'>) {
+  const region = getServicePrimaryRegion(service);
+
+  if (!region) {
+    return '未记录';
+  }
+
+  return formatCountryCodeLabel(region, service.currency);
+}
+
+function getServicePrimaryRegion(service: Pick<AppleService, 'allowedRegions' | 'currency'>) {
+  const savedRegion = normalizeOfficialReviewCode(service.allowedRegions[0]);
+
+  if (savedRegion) {
+    return savedRegion;
+  }
+
+  const currency = normalizeOfficialReviewCode(service.currency);
+
+  return (
+    officialCountryOptions.value.find((item) => item.currency === currency)?.value ||
+    officialAutoRegionOptions.value.find((item) => item.currency === currency)?.region ||
+    fallbackOfficialAutoRegionOptions.find((item) => item.currency === currency)?.region ||
+    appleRegionOptions.value.find((item) => item.currency === currency)?.code ||
+    ''
+  );
+}
+
+function formatCountryCodeLabel(region: string, currency?: string | null) {
+  const normalizedRegion = normalizeOfficialReviewCode(region);
+  const normalizedCurrency = normalizeOfficialReviewCode(currency);
+  const dictionaryOption = appleRegionOptions.value.find((item) => item.code === normalizedRegion);
+  const officialOption = officialCountryOptions.value.find(
+    (item) => item.value === normalizedRegion
+  );
+  const autoOption =
+    officialAutoRegionOptions.value.find(
+      (item) =>
+        item.region === normalizedRegion &&
+        (!normalizedCurrency || item.currency === normalizedCurrency)
+    ) || officialAutoRegionOptions.value.find((item) => item.region === normalizedRegion);
+  const fallbackOption =
+    fallbackOfficialAutoRegionOptions.find(
+      (item) =>
+        item.region === normalizedRegion &&
+        (!normalizedCurrency || item.currency === normalizedCurrency)
+    ) || fallbackOfficialAutoRegionOptions.find((item) => item.region === normalizedRegion);
+  const rawLabel =
+    dictionaryOption?.labelZh ||
+    officialOption?.label ||
+    autoOption?.label ||
+    fallbackOption?.label ||
+    normalizedRegion;
+  const countryName = simplifyCountryLabel(
+    rawLabel,
+    normalizedRegion,
+    normalizedCurrency ||
+      autoOption?.currency ||
+      fallbackOption?.currency ||
+      dictionaryOption?.currency
+  );
+
+  return countryName === normalizedRegion ? normalizedRegion : `${countryName} ${normalizedRegion}`;
+}
+
+function simplifyCountryLabel(label: string, region: string, currency?: string) {
+  let countryName = label.split('·')[0]?.split('/')[0]?.trim() || region;
+
+  for (const code of [currency, region]) {
+    if (!code) continue;
+    countryName = countryName.replace(new RegExp(`\\s+${escapeRegExp(code)}$`, 'i'), '').trim();
+  }
+
+  return countryName || region;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function getOfficialServiceNameOptionLabel(option: OfficialCollectedServiceOption) {
   return `${option.serviceName} · ${option.officialPrice} ${option.currency} · ${option.sourceLabel}`;
 }
@@ -2253,9 +2253,23 @@ function getCategoryLabel(category?: string | null) {
   return normalizeCategoryValue(category) || '通用';
 }
 
+function isActiveAppleServiceCategoryValue(value?: string | null) {
+  const normalizedCategory = normalizeOptionalCategoryValue(value);
+  if (!normalizedCategory) return false;
+
+  return activeServiceCategoryDictionaries.value.some(
+    (category) => getCategoryOptionValue(category) === normalizedCategory
+  );
+}
+
 function getDefaultCategory() {
+  const queryCategory = normalizeOptionalCategoryValue(query.category);
+  if (queryCategory && isActiveAppleServiceCategoryValue(queryCategory)) {
+    return queryCategory;
+  }
+
   const firstCategory = activeServiceCategoryDictionaries.value[0];
-  return query.category || (firstCategory ? getCategoryOptionValue(firstCategory) : '通用');
+  return firstCategory ? getCategoryOptionValue(firstCategory) : '通用';
 }
 
 function invalidateAppleServiceConsumers() {
@@ -2267,6 +2281,28 @@ function invalidateAppleServiceConsumers() {
 
 function isColumnVisible(column: string) {
   return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
+}
+
+function getDefaultServiceColumns() {
+  return serviceColumnOptions.map((column) => column.value);
+}
+
+function normalizeServiceVisibleColumns(columns: string[]) {
+  const defaultColumns = getDefaultServiceColumns();
+
+  if (!columns.length) {
+    return defaultColumns;
+  }
+
+  const selectedColumns = new Set(columns.filter((column) => defaultColumns.includes(column)));
+
+  for (const column of serviceColumnOptions) {
+    if (column.required) {
+      selectedColumns.add(column.value);
+    }
+  }
+
+  return defaultColumns.filter((column) => selectedColumns.has(column));
 }
 
 async function loadServices(
@@ -2398,8 +2434,8 @@ async function saveTableView() {
       },
       sortConfig: sortConfig.value,
       columns: visibleColumns.value.length
-        ? visibleColumns.value
-        : serviceColumnOptions.map((column) => column.value),
+        ? normalizeServiceVisibleColumns(visibleColumns.value)
+        : getDefaultServiceColumns(),
       density: density.value,
       pageSize: query.pageSize,
       isDefault: savedViews.value.length === 0
@@ -2429,11 +2465,7 @@ function applyView(view: UserTableView) {
   query.currency = typeof filters.currency === 'string' ? filters.currency : '';
   query.pageSize = view.pageSize;
   density.value = 'default';
-  visibleColumns.value = view.columns.length
-    ? view.columns.filter((column) =>
-        serviceColumnOptions.some((option) => option.value === column)
-      )
-    : serviceColumnOptions.map((column) => column.value);
+  visibleColumns.value = normalizeServiceVisibleColumns(view.columns);
   sortConfig.value = parseSortConfig(view.sortConfig);
   savedViewId.value = view.id;
 }
@@ -2556,7 +2588,7 @@ async function loadAppleServiceQuickOptions() {
   }
 }
 
-async function ensureAppleServiceCategory(category: string) {
+async function assertAppleServiceCategoryActive(category: string) {
   const normalizedCategory = normalizeCategoryValue(category);
   const existing = serviceCategoryDictionaries.value.find(
     (item) =>
@@ -2564,15 +2596,7 @@ async function ensureAppleServiceCategory(category: string) {
       normalizeOptionalCategoryValue(item.value) === normalizedCategory
   );
 
-  if (existing) {
-    if (existing.status !== 'active' || getCategoryOptionValue(existing) !== normalizedCategory) {
-      await dataCenterApi.updateDictionary(existing.id, {
-        label: normalizedCategory,
-        value: normalizedCategory,
-        status: 'active'
-      });
-      await loadAppleServiceCategories();
-    }
+  if (existing?.status === 'active') {
     return;
   }
 
@@ -2588,31 +2612,15 @@ async function ensureAppleServiceCategory(category: string) {
       normalizeOptionalCategoryValue(item.value) === normalizedCategory
   );
 
-  if (alreadyExists) {
-    if (
-      alreadyExists.status !== 'active' ||
-      getCategoryOptionValue(alreadyExists) !== normalizedCategory
-    ) {
-      await dataCenterApi.updateDictionary(alreadyExists.id, {
-        label: normalizedCategory,
-        value: normalizedCategory,
-        status: 'active'
-      });
-    }
-    await loadAppleServiceCategories();
+  if (alreadyExists?.status === 'active') {
     return;
   }
 
-  await dataCenterApi.createDictionary({
-    group: APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
-    code: buildQuickSettingCode(normalizedCategory, 'apple-service-category'),
-    label: normalizedCategory,
-    value: normalizedCategory,
-    sortOrder: serviceCategoryDictionaries.value.length,
-    status: 'active',
-    remark: '在 Apple ID 业务设置里手动输入后自动加入快捷设置'
-  });
-  await loadAppleServiceCategories();
+  throw new Error(
+    alreadyExists
+      ? `业务分类“${normalizedCategory}”已停用，请先到 Apple ID 业务分类启用后再使用`
+      : `业务分类“${normalizedCategory}”不存在，请先到 Apple ID 业务分类新增后再使用`
+  );
 }
 
 function getCollectMethodLabel(method: AppleOfficialPriceSource['collectMethod']) {
@@ -3460,151 +3468,15 @@ async function ignoreOfficialReview(review: ApplePriceChangeReview) {
   }
 }
 
-function openEditManagedCategory(category: DataDictionary) {
-  editingCategory.value = category;
-  categoryForm.label = getCategoryOptionValue(category);
-  categoryForm.sortOrder = category.sortOrder;
-  categoryForm.status = category.status;
-  categoryForm.remark = category.remark ?? '';
-  categoryDialogVisible.value = true;
-}
-
-async function syncServicesCategoryLabel(oldCategory: string, newCategory: string) {
-  if (oldCategory === newCategory) return 0;
-
-  let syncedCount = 0;
-  for (let index = 0; index < 100; index += 1) {
-    const result = await appleServicesApi.list({
-      page: 1,
-      pageSize: 100,
-      category: oldCategory
-    });
-    if (!result.items.length) return syncedCount;
-
-    await Promise.all(
-      result.items.map((service) =>
-        appleServicesApi.update(service.id, {
-          name: service.name,
-          category: newCategory
-        })
-      )
-    );
-    syncedCount += result.items.length;
-  }
-
-  throw new Error('分类同步数量异常，请稍后重试');
-}
-
-async function saveManagedCategory() {
-  const valid = await categoryFormRef.value?.validate().catch(() => false);
-  if (!valid || !editingCategory.value) {
-    return;
-  }
-
-  const normalizedLabel = normalizeCategoryValue(categoryForm.label);
-  const duplicated = serviceCategoryDictionaries.value.some(
-    (category) =>
-      category.id !== editingCategory.value?.id &&
-      (normalizeCategoryValue(category.label) === normalizedLabel ||
-        normalizeOptionalCategoryValue(category.value) === normalizedLabel)
-  );
-
-  if (duplicated) {
-    ElMessage.error('这个业务分类已经存在');
-    return;
-  }
-
-  const oldCategory = getCategoryOptionValue(editingCategory.value);
-  categorySaving.value = true;
-  try {
-    await dataCenterApi.updateDictionary(editingCategory.value.id, {
-      label: normalizedLabel,
-      value: normalizedLabel,
-      sortOrder: categoryForm.sortOrder,
-      status: categoryForm.status,
-      remark: categoryForm.remark.trim() || null
-    });
-
-    const syncedCount =
-      oldCategory !== normalizedLabel
-        ? await syncServicesCategoryLabel(oldCategory, normalizedLabel)
-        : 0;
-
-    await loadAppleServiceCategories();
-
-    const nextQueryCategory = normalizeOptionalCategoryValue(query.category);
-    if (nextQueryCategory === oldCategory || nextQueryCategory === normalizedLabel) {
-      query.category = categoryForm.status === 'active' ? normalizedLabel : '';
-      query.page = 1;
-    }
-
-    const nextFormCategory = normalizeOptionalCategoryValue(form.category);
-    if (nextFormCategory === oldCategory || nextFormCategory === normalizedLabel) {
-      form.category = categoryForm.status === 'active' ? normalizedLabel : getDefaultCategory();
-    }
-
-    invalidateSmartQueries('data-dictionaries');
-    invalidateAppleServiceConsumers();
-    categoryDialogVisible.value = false;
-    await loadServices({ force: true, dedupeMs: 0 });
-    ElMessage.success(
-      syncedCount > 0 ? `业务分类已保存，并同步 ${syncedCount} 个业务` : '业务分类已保存'
-    );
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '保存业务分类失败');
-  } finally {
-    categorySaving.value = false;
-  }
-}
-
-async function deleteManagedCategory(category: DataDictionary) {
-  const categoryValue = getCategoryOptionValue(category);
-  try {
-    await ElMessageBox.confirm(
-      `确认删除“${categoryValue}”？删除后它不会再出现在分类按钮和新增业务下拉里，已有业务记录会保留原分类。`,
-      '删除业务分类',
-      {
-        type: 'warning',
-        confirmButtonText: '删除',
-        cancelButtonText: '取消'
-      }
-    );
-
-    deletingCategoryId.value = category.id;
-    await dataCenterApi.updateDictionary(category.id, {
-      status: 'disabled'
-    });
-    await loadAppleServiceCategories();
-
-    if (normalizeOptionalCategoryValue(query.category) === categoryValue) {
-      query.category = '';
-      query.page = 1;
-    }
-    if (normalizeOptionalCategoryValue(form.category) === categoryValue) {
-      form.category = getDefaultCategory();
-    }
-
-    invalidateSmartQueries('data-dictionaries');
-    invalidateAppleServiceConsumers();
-    await loadServices({ force: true, dedupeMs: 0 });
-    ElMessage.success('业务分类已删除');
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error instanceof Error ? error.message : '删除业务分类失败');
-    }
-  } finally {
-    deletingCategoryId.value = '';
-  }
-}
-
 function resetForm() {
   const defaultOfficialOption = officialCollectedServiceOptions.value.find((option) => {
-    const category = normalizeOptionalCategoryValue(option.category);
-    return !category || !disabledServiceCategoryValues.value.has(category);
+    return isActiveAppleServiceCategoryValue(option.category);
   });
   const defaultPrimaryRegion = defaultOfficialOption?.region || getDefaultPrimaryRegion();
   form.name = '';
-  form.category = defaultOfficialOption?.category || getDefaultCategory();
+  form.category = defaultOfficialOption
+    ? normalizeCategoryValue(defaultOfficialOption.category)
+    : getDefaultCategory();
   form.primaryRegion = defaultPrimaryRegion;
   form.defaultPrice = '0';
   form.officialBasePrice = '0';
@@ -3677,7 +3549,7 @@ async function saveService() {
   try {
     const category = normalizeCategoryValue(form.category);
     syncPrimaryRegionToAllowedRegions();
-    await ensureAppleServiceCategory(category);
+    await assertAppleServiceCategoryActive(category);
     const payload = {
       name: form.name,
       category,
@@ -3765,17 +3637,6 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 0 16px;
-}
-
-.apple-service-category-manage {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.apple-service-category-manage :deep(.app-button--ghost),
-.apple-service-category-manage :deep(.app-button--danger) {
-  padding-inline: 8px;
 }
 
 .apple-service-form-section {

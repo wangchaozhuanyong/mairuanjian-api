@@ -322,6 +322,7 @@ const DEFAULT_DATA_IMPORT_DIR = 'uploads/data-imports';
 const DEFAULT_DATA_IMPORT_ERROR_DIR = 'uploads/data-import-errors';
 const RESTORE_DRILL_CONFIRM_PREFIX = 'CONFIRM_RESTORE_DRILL';
 const DATA_CENTER_OVERVIEW_CACHE_TTL_MS = 120_000;
+const APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP = 'apple.service.categories';
 
 interface ExportDataSet {
   fields: string[];
@@ -1630,6 +1631,8 @@ export class DataCenterService {
 
   async deleteDictionary(id: string, operator?: AuthenticatedUser) {
     const dictionary = await this.findDictionaryOrThrow(id);
+    await this.assertDictionaryCanBeDeleted(dictionary);
+
     await this.prisma.dataDictionary.delete({
       where: { id: dictionary.id }
     });
@@ -1643,6 +1646,32 @@ export class DataCenterService {
       undefined
     );
     return { deleted: true };
+  }
+
+  private async assertDictionaryCanBeDeleted(dictionary: DataDictionary) {
+    if (dictionary.group !== APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP) {
+      return;
+    }
+
+    const category = this.normalizeAppleServiceCategoryValue(dictionary.value || dictionary.label);
+    const usageCount = await this.prisma.appleService.count({
+      where: {
+        deletedAt: null,
+        category
+      }
+    });
+
+    if (usageCount > 0) {
+      throw new ConflictException('Apple ID 业务分类已被业务使用，请先停用，不允许物理删除');
+    }
+  }
+
+  private normalizeAppleServiceCategoryValue(value?: string | null) {
+    const normalized = value?.trim();
+    if (!normalized || normalized === 'default') {
+      return '通用';
+    }
+    return normalized;
   }
 
   async listSystemParameters(query: ListSystemParametersQuery) {
@@ -2388,6 +2417,7 @@ export class DataCenterService {
 
   private async loadAppleOrderExport(): Promise<ExportDataSet> {
     const items = await this.prisma.appleOrder.findMany({
+      where: { deletedAt: null },
       take: DATA_EXPORT_MAX_ROWS,
       orderBy: { createdAt: 'desc' },
       select: {

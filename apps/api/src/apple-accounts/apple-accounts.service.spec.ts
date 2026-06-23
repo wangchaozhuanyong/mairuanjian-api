@@ -72,7 +72,7 @@ describe('AppleAccountsService', () => {
     const result = await listService.list({
       page: '2',
       pageSize: '10',
-      keyword: 'sorted',
+      keyword: '售出',
       status: 'normal',
       currency: 'usd',
       region: 'us',
@@ -94,7 +94,8 @@ describe('AppleAccountsService', () => {
           status: 'normal',
           currency: 'USD',
           region: 'US',
-          isManuallyLocked: false
+          isManuallyLocked: false,
+          OR: expect.arrayContaining([{ ownershipType: { in: ['sold'] } }])
         })
       })
     );

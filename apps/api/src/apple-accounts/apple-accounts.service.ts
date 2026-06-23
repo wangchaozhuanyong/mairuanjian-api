@@ -176,6 +176,7 @@ export class AppleAccountsService {
         const keyword = query.keyword?.trim().toLowerCase();
         const status = this.parseStatus(query.status, false);
         const ownershipType = this.parseOwnershipType(query.ownershipType, false);
+        const keywordOwnershipTypes = this.getOwnershipTypesFromKeyword(keyword);
         const locked = this.parseBoolean(query.locked);
         const where: Prisma.AppleAccountWhereInput = {
           deletedAt: null,
@@ -190,7 +191,10 @@ export class AppleAccountsService {
                 { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
                 { region: { contains: keyword, mode: 'insensitive' } },
                 { currency: { contains: keyword, mode: 'insensitive' } },
-                { remark: { contains: keyword, mode: 'insensitive' } }
+                { remark: { contains: keyword, mode: 'insensitive' } },
+                ...(keywordOwnershipTypes.length
+                  ? [{ ownershipType: { in: keywordOwnershipTypes } }]
+                  : [])
               ]
             : undefined
         };
@@ -260,7 +264,9 @@ export class AppleAccountsService {
         ownershipType: group.ownershipType,
         count: group._count._all,
         currentBalance: new PrismaNamespace.Decimal(group._sum.currentBalance ?? 0).toFixed(4),
-        balanceCostAmount: new PrismaNamespace.Decimal(group._sum.balanceCostAmount ?? 0).toFixed(4),
+        balanceCostAmount: new PrismaNamespace.Decimal(group._sum.balanceCostAmount ?? 0).toFixed(
+          4
+        ),
         purchaseCost: purchaseCost.toFixed(4),
         salePrice: salePrice.toFixed(4),
         saleProfit: salePrice.minus(purchaseCost).toDecimalPlaces(4).toFixed(4)
@@ -1039,6 +1045,29 @@ export class AppleAccountsService {
     }
 
     throw new BadRequestException('ownershipType must be consigned or sold');
+  }
+
+  private getOwnershipTypesFromKeyword(keyword?: string) {
+    if (!keyword) {
+      return [];
+    }
+
+    const types: AppleAccountOwnershipType[] = [];
+
+    if (keyword.includes('寄存') || keyword.includes('consigned') || keyword.includes('deposit')) {
+      types.push('consigned');
+    }
+
+    if (
+      keyword.includes('售出') ||
+      keyword.includes('卖出') ||
+      keyword.includes('已售') ||
+      keyword.includes('sold')
+    ) {
+      types.push('sold');
+    }
+
+    return types;
   }
 
   private parseBoolean(value: unknown) {

@@ -74,55 +74,23 @@
               prop="label"
               label="日期"
               min-width="190"
-            />
-            <el-table-column
-              v-if="isColumnVisible('orderCount')"
-              prop="orderCount"
-              label="订单数"
-              width="90"
-            />
-            <el-table-column
-              v-if="isColumnVisible('paidAmount')"
-              prop="paidAmount"
-              label="销售额"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('platformFee')"
-              prop="platformFee"
-              label="手续费"
-              width="100"
-            />
-            <el-table-column
-              v-if="isColumnVisible('refundLoss')"
-              prop="refundLoss"
-              label="退款损耗"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('appleCostRmb')"
-              prop="appleCostRmb"
-              label="成本"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('profitAmount')"
-              prop="profitAmount"
-              label="利润"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('grossMarginRate')"
-              prop="grossMarginRate"
-              label="毛利率%"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('averageOrderProfit')"
-              prop="averageOrderProfit"
-              label="单均利润"
-              width="110"
-            />
+            >
+              <template #header>
+                <TableHeaderHelp label="日期" :text="reportColumnHelpText.dailyLabel" />
+              </template>
+            </el-table-column>
+            <template v-for="column in reportMetricColumns" :key="column.value">
+              <el-table-column
+                v-if="isColumnVisible(column.value)"
+                :prop="column.value"
+                :label="column.label"
+                :width="column.width"
+              >
+                <template #header>
+                  <TableHeaderHelp :label="column.label" :text="column.help" />
+                </template>
+              </el-table-column>
+            </template>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="按业务" name="service">
@@ -140,55 +108,23 @@
               prop="label"
               label="业务"
               min-width="190"
-            />
-            <el-table-column
-              v-if="isColumnVisible('orderCount')"
-              prop="orderCount"
-              label="订单数"
-              width="90"
-            />
-            <el-table-column
-              v-if="isColumnVisible('paidAmount')"
-              prop="paidAmount"
-              label="销售额"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('platformFee')"
-              prop="platformFee"
-              label="手续费"
-              width="100"
-            />
-            <el-table-column
-              v-if="isColumnVisible('refundLoss')"
-              prop="refundLoss"
-              label="退款损耗"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('appleCostRmb')"
-              prop="appleCostRmb"
-              label="成本"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('profitAmount')"
-              prop="profitAmount"
-              label="利润"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('grossMarginRate')"
-              prop="grossMarginRate"
-              label="毛利率%"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('averageOrderProfit')"
-              prop="averageOrderProfit"
-              label="单均利润"
-              width="110"
-            />
+            >
+              <template #header>
+                <TableHeaderHelp label="业务" :text="reportColumnHelpText.serviceLabel" />
+              </template>
+            </el-table-column>
+            <template v-for="column in reportMetricColumns" :key="column.value">
+              <el-table-column
+                v-if="isColumnVisible(column.value)"
+                :prop="column.value"
+                :label="column.label"
+                :width="column.width"
+              >
+                <template #header>
+                  <TableHeaderHelp :label="column.label" :text="column.help" />
+                </template>
+              </el-table-column>
+            </template>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="按来源平台" name="source">
@@ -206,55 +142,23 @@
               prop="label"
               label="来源平台"
               min-width="190"
-            />
-            <el-table-column
-              v-if="isColumnVisible('orderCount')"
-              prop="orderCount"
-              label="订单数"
-              width="90"
-            />
-            <el-table-column
-              v-if="isColumnVisible('paidAmount')"
-              prop="paidAmount"
-              label="销售额"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('platformFee')"
-              prop="platformFee"
-              label="手续费"
-              width="100"
-            />
-            <el-table-column
-              v-if="isColumnVisible('refundLoss')"
-              prop="refundLoss"
-              label="退款损耗"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('appleCostRmb')"
-              prop="appleCostRmb"
-              label="成本"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('profitAmount')"
-              prop="profitAmount"
-              label="利润"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('grossMarginRate')"
-              prop="grossMarginRate"
-              label="毛利率%"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('averageOrderProfit')"
-              prop="averageOrderProfit"
-              label="单均利润"
-              width="110"
-            />
+            >
+              <template #header>
+                <TableHeaderHelp label="来源平台" :text="reportColumnHelpText.sourceLabel" />
+              </template>
+            </el-table-column>
+            <template v-for="column in reportMetricColumns" :key="column.value">
+              <el-table-column
+                v-if="isColumnVisible(column.value)"
+                :prop="column.value"
+                :label="column.label"
+                :width="column.width"
+              >
+                <template #header>
+                  <TableHeaderHelp :label="column.label" :text="column.help" />
+                </template>
+              </el-table-column>
+            </template>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="按 Apple ID" name="account">
@@ -272,55 +176,23 @@
               prop="label"
               label="Apple ID"
               min-width="190"
-            />
-            <el-table-column
-              v-if="isColumnVisible('orderCount')"
-              prop="orderCount"
-              label="订单数"
-              width="90"
-            />
-            <el-table-column
-              v-if="isColumnVisible('paidAmount')"
-              prop="paidAmount"
-              label="销售额"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('platformFee')"
-              prop="platformFee"
-              label="手续费"
-              width="100"
-            />
-            <el-table-column
-              v-if="isColumnVisible('refundLoss')"
-              prop="refundLoss"
-              label="退款损耗"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('appleCostRmb')"
-              prop="appleCostRmb"
-              label="成本"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('profitAmount')"
-              prop="profitAmount"
-              label="利润"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('grossMarginRate')"
-              prop="grossMarginRate"
-              label="毛利率%"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('averageOrderProfit')"
-              prop="averageOrderProfit"
-              label="单均利润"
-              width="110"
-            />
+            >
+              <template #header>
+                <TableHeaderHelp label="Apple ID" :text="reportColumnHelpText.appleIdLabel" />
+              </template>
+            </el-table-column>
+            <template v-for="column in reportMetricColumns" :key="column.value">
+              <el-table-column
+                v-if="isColumnVisible(column.value)"
+                :prop="column.value"
+                :label="column.label"
+                :width="column.width"
+              >
+                <template #header>
+                  <TableHeaderHelp :label="column.label" :text="column.help" />
+                </template>
+              </el-table-column>
+            </template>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="最近订单" name="recent">
@@ -334,6 +206,9 @@
             empty-text="暂无最近订单"
           >
             <el-table-column v-if="isColumnVisible('recentOrder')" label="订单" min-width="150">
+              <template #header>
+                <TableHeaderHelp label="订单" :text="reportColumnHelpText.recentOrder" />
+              </template>
               <template #default="{ row }">
                 <strong>{{ row.orderNo }}</strong>
                 <div class="muted-block">{{ formatDate(row.createdAt) }}</div>
@@ -344,6 +219,9 @@
               label="业务/平台"
               min-width="180"
             >
+              <template #header>
+                <TableHeaderHelp label="业务/平台" :text="reportColumnHelpText.recentService" />
+              </template>
               <template #default="{ row }">
                 {{ row.serviceName ?? '-' }}
                 <div class="muted-block">{{ row.sourcePlatformName ?? '-' }}</div>
@@ -354,39 +232,27 @@
               label="Apple ID"
               min-width="170"
             >
+              <template #header>
+                <TableHeaderHelp label="Apple ID" :text="reportColumnHelpText.recentAppleAccount" />
+              </template>
               <template #default="{ row }">{{ row.appleAccountMasked ?? '-' }}</template>
             </el-table-column>
-            <el-table-column
-              v-if="isColumnVisible('paidAmount')"
-              prop="paidAmount"
-              label="销售额"
-              width="100"
-            />
-            <el-table-column
-              v-if="isColumnVisible('platformFee')"
-              prop="platformFee"
-              label="手续费"
-              width="100"
-            />
-            <el-table-column
-              v-if="isColumnVisible('refundLoss')"
-              prop="refundLoss"
-              label="退款损耗"
-              width="110"
-            />
-            <el-table-column
-              v-if="isColumnVisible('appleCostRmb')"
-              prop="appleCostRmb"
-              label="成本"
-              width="100"
-            />
-            <el-table-column
-              v-if="isColumnVisible('profitAmount')"
-              prop="profitAmount"
-              label="利润"
-              width="100"
-            />
+            <template v-for="column in recentMetricColumns" :key="column.value">
+              <el-table-column
+                v-if="isColumnVisible(column.value)"
+                :prop="column.value"
+                :label="column.label"
+                :width="column.width"
+              >
+                <template #header>
+                  <TableHeaderHelp :label="column.label" :text="column.help" />
+                </template>
+              </el-table-column>
+            </template>
             <el-table-column v-if="isColumnVisible('recentStatus')" label="状态" width="110">
+              <template #header>
+                <TableHeaderHelp label="状态" :text="reportColumnHelpText.recentStatus" />
+              </template>
               <template #default="{ row }">
                 <StatusChip :tone="getOrderStatusTone(row.status)" dot>
                   {{ getOrderStatusLabel(row.status) }}
@@ -515,6 +381,7 @@ import { appleReportsApi, userTableViewsApi, type AppleProfitReportQuery } from 
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import TableHeaderHelp from '@/components/ui/TableHeaderHelp.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
@@ -572,6 +439,75 @@ const reportColumnOptions = [
   { label: '最近订单 Apple ID', value: 'recentAppleAccount' },
   { label: '最近订单状态', value: 'recentStatus' }
 ];
+const reportColumnHelpText = {
+  dailyLabel: [
+    '按订单创建日期汇总。',
+    '只统计当前日期、状态和关键词筛选范围内的订单；未选择状态时默认不计入已取消订单。'
+  ],
+  serviceLabel: ['按订单绑定的 Apple ID 业务分组。', '没有绑定业务的订单会归到“未绑定业务”。'],
+  sourceLabel: ['按订单来源平台分组。', '没有来源平台的订单会归到“手工/未绑定平台”。'],
+  appleIdLabel: [
+    '按订单消耗的 Apple ID 分组。',
+    '这里显示脱敏后的 Apple ID；没有绑定 Apple ID 的订单会归到“未绑定 Apple ID”。'
+  ],
+  orderCount: ['当前分组内的订单数量。', '统计口径跟页面顶部筛选条件一致。'],
+  paidAmount: [
+    '客户实收金额折合人民币后的合计。',
+    '接口读取订单里的 paidAmountRmb 字段后按分组相加。'
+  ],
+  platformFee: [
+    '平台手续费折合人民币后的合计。',
+    '接口读取订单里的 platformFeeRmb 字段后按分组相加。'
+  ],
+  refundLoss: [
+    '退款、补发、售后等额外损耗折合人民币后的合计。',
+    '接口读取订单里的 refundLossRmb 字段后按分组相加。'
+  ],
+  appleCostRmb: [
+    '这里的成本指 Apple 余额消耗成本。',
+    '单笔订单成本 = Apple 消耗金额 × 订单当时 Apple ID 的平均成本；报表里按分组相加。'
+  ],
+  profitAmount: [
+    '利润直接汇总订单里已经计算好的 profitAmount。',
+    '单笔订单利润 = 客户实收人民币 - 平台手续费 - 退款/补发损耗 - Apple 余额成本 - ID 购入成本。'
+  ],
+  grossMarginRate: ['毛利率 = 利润 ÷ 销售额 × 100%。', '销售额为 0 时按 0% 显示。'],
+  averageOrderProfit: ['单均利润 = 利润 ÷ 订单数。', '订单数为 0 时按 0 显示。'],
+  recentOrder: ['最近订单按创建时间倒序展示。', '这里只显示当前筛选条件下最近 10 笔订单。'],
+  recentService: ['显示订单绑定的业务和来源平台。', '没有绑定时显示“-”。'],
+  recentAppleAccount: ['显示订单绑定的脱敏 Apple ID。', '没有绑定 Apple ID 时显示“-”。'],
+  recentStatus: ['显示订单当前状态。', '状态来自订单表，例如待处理、已开通、已完成、已取消或异常。']
+};
+const reportMetricColumns = [
+  { label: '订单数', value: 'orderCount', width: 90, help: reportColumnHelpText.orderCount },
+  { label: '销售额', value: 'paidAmount', width: 110, help: reportColumnHelpText.paidAmount },
+  { label: '手续费', value: 'platformFee', width: 100, help: reportColumnHelpText.platformFee },
+  { label: '退款损耗', value: 'refundLoss', width: 110, help: reportColumnHelpText.refundLoss },
+  { label: '成本', value: 'appleCostRmb', width: 110, help: reportColumnHelpText.appleCostRmb },
+  { label: '利润', value: 'profitAmount', width: 110, help: reportColumnHelpText.profitAmount },
+  {
+    label: '毛利率%',
+    value: 'grossMarginRate',
+    width: 110,
+    help: reportColumnHelpText.grossMarginRate
+  },
+  {
+    label: '单均利润',
+    value: 'averageOrderProfit',
+    width: 110,
+    help: reportColumnHelpText.averageOrderProfit
+  }
+];
+const recentMetricColumns = reportMetricColumns
+  .filter((column) =>
+    ['paidAmount', 'platformFee', 'refundLoss', 'appleCostRmb', 'profitAmount'].includes(
+      column.value
+    )
+  )
+  .map((column) => ({
+    ...column,
+    width: column.value === 'refundLoss' ? 110 : 100
+  }));
 
 const loading = ref(false);
 const activeTab = ref(props.defaultTab);

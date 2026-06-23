@@ -1,9 +1,9 @@
 <template>
   <PageScaffold
-    title="Apple ID 订单管理"
-    group="Apple ID 业务"
+    title="订单管理"
+    group="客户与来源"
     phase="Phase 4"
-    description="查看 Apple ID 订单、开通记录、余额消耗和利润。订单创建后会自动生成消费流水和开通记录。"
+    description="查看 ID 订单、开通记录、余额消耗和利润。订单创建后会自动生成消费流水和开通记录。"
   >
     <template #actions>
       <AppButton variant="primary" @click="router.push('/apple/order-entry')">新建订单</AppButton>
@@ -12,7 +12,7 @@
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
-          title="Apple ID 订单队列"
+          title="订单队列"
           :help="[
             '这里看每一单有没有开通、用了哪个 ID、客户付了多少、系统算出来赚了多少。',
             '订单、开通记录和余额消费会分开记账，不会和兑换码发货混在一起。'
@@ -239,10 +239,22 @@
         >
           <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" :width="canManageOrders ? 190 : 90" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+              <AppButton v-if="canManageOrders" size="small" variant="ghost" @click="openEdit(row)">
+                编辑
+              </AppButton>
+              <AppButton
+                v-if="canManageOrders"
+                size="small"
+                variant="danger"
+                :loading="deletingOrderId === row.id"
+                @click="removeOrder(row)"
+              >
+                删除
+              </AppButton>
             </div>
           </template>
         </el-table-column>
@@ -301,6 +313,18 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(order)">详情</AppButton>
+            <AppButton v-if="canManageOrders" size="small" variant="ghost" @click="openEdit(order)">
+              编辑
+            </AppButton>
+            <AppButton
+              v-if="canManageOrders"
+              size="small"
+              variant="danger"
+              :loading="deletingOrderId === order.id"
+              @click="removeOrder(order)"
+            >
+              删除
+            </AppButton>
           </div>
         </article>
       </div>
@@ -326,80 +350,249 @@
       />
     </section>
 
-    <AppDrawer v-model="detailDrawerVisible" :title="selectedOrder?.orderNo ?? '订单详情'">
-      <div class="drawer-detail-grid">
-        <div>
-          <span>客户</span>
-          <strong>{{ selectedOrder?.customer.name ?? '-' }}</strong>
+    <el-dialog
+      v-model="editDialogVisible"
+      title="管理员编辑订单"
+      width="min(760px, calc(100vw - 24px))"
+    >
+      <el-form
+        ref="editFormRef"
+        class="v3-entry-form"
+        :model="editForm"
+        :rules="editRules"
+        label-position="top"
+      >
+        <div class="form-grid">
+          <el-form-item label="平台订单号">
+            <el-input v-model.trim="editForm.externalOrderNo" clearable />
+          </el-form-item>
+          <el-form-item label="客户网站账号">
+            <el-input v-model.trim="editForm.serviceAccount" clearable />
+          </el-form-item>
+          <el-form-item label="当前套餐">
+            <el-input v-model.trim="editForm.currentPlan" clearable />
+          </el-form-item>
+          <el-form-item label="开通套餐">
+            <el-input v-model.trim="editForm.targetPlan" clearable />
+          </el-form-item>
+          <el-form-item label="开通时间">
+            <el-date-picker
+              v-model="editForm.startTime"
+              class="full-input"
+              type="datetime"
+              value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="到期时间">
+            <el-date-picker
+              v-model="editForm.expireTime"
+              class="full-input"
+              type="datetime"
+              value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="客户实收" prop="paidAmount">
+            <el-input
+              v-model.trim="editForm.paidAmount"
+              type="number"
+              inputmode="decimal"
+              min="0"
+              placeholder="0.00"
+            />
+          </el-form-item>
+          <el-form-item label="实收币种" prop="paidCurrency">
+            <el-select v-model="editForm.paidCurrency" class="full-input">
+              <el-option label="人民币 CNY" value="CNY" />
+              <el-option label="马币 MYR" value="MYR" />
+              <el-option label="美元 USD" value="USD" />
+              <el-option label="USDT" value="USDT" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="折合人民币汇率" prop="paidExchangeRateToRmb">
+            <el-input
+              v-model.trim="editForm.paidExchangeRateToRmb"
+              type="number"
+              inputmode="decimal"
+              min="0"
+              :disabled="editForm.paidCurrency === 'CNY'"
+              placeholder="1.00000000"
+            />
+          </el-form-item>
+          <el-form-item label="平台手续费" prop="platformFee">
+            <el-input
+              v-model.trim="editForm.platformFee"
+              type="number"
+              inputmode="decimal"
+              min="0"
+              placeholder="0.00"
+            />
+          </el-form-item>
+          <el-form-item label="退款/补发损耗" prop="refundLoss">
+            <el-input
+              v-model.trim="editForm.refundLoss"
+              type="number"
+              inputmode="decimal"
+              min="0"
+              placeholder="0.00"
+            />
+          </el-form-item>
+          <el-form-item label="订单状态" prop="status">
+            <el-select v-model="editForm.status" class="full-input">
+              <el-option
+                v-for="status in statusOptions"
+                :key="status.value"
+                :label="status.label"
+                :value="status.value"
+              />
+            </el-select>
+          </el-form-item>
         </div>
-        <div>
-          <span>业务</span>
-          <strong>{{ selectedOrder?.service.name ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>Apple ID</span>
-          <strong>{{ selectedOrder?.appleAccount?.appleIdMasked ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>实收</span>
-          <strong>{{ selectedOrder ? formatPaidAmount(selectedOrder) : '-' }}</strong>
-        </div>
-        <div>
-          <span>实收折合人民币</span>
-          <strong>{{ selectedOrder?.paidAmountRmb ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>成本</span>
-          <strong>{{ selectedOrder?.appleCostRmb ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>平台手续费</span>
-          <strong>{{ selectedOrder?.platformFeeRmb ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>退款/补发损耗</span>
-          <strong>{{ selectedOrder?.refundLossRmb ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>利润</span>
-          <strong>{{ selectedOrder?.profitAmount ?? '-' }}</strong>
-        </div>
-      </div>
+        <el-form-item label="备注">
+          <el-input v-model.trim="editForm.remark" type="textarea" :rows="3" clearable />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <AppButton @click="editDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingEdit" @click="saveOrderEdit"> 保存 </AppButton>
+      </template>
+    </el-dialog>
 
-      <div class="drawer-section">
-        <div class="drawer-section__title">订单信息</div>
-        <el-descriptions class="detail-descriptions" :column="1" border>
-          <el-descriptions-item label="平台">
-            {{ selectedOrder?.sourcePlatform?.name ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="平台订单号">
-            {{ selectedOrder?.externalOrderNo ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="服务账号">
-            {{ selectedOrder?.serviceAccount ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="套餐">
-            {{ selectedOrder?.currentPlan ?? '-' }} -> {{ selectedOrder?.targetPlan ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="开通/到期">
-            {{ formatDate(selectedOrder?.startTime) }} ->
-            {{ formatDate(selectedOrder?.expireTime) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="开通记录 ID">
-            <AppButton
-              v-if="selectedOrder?.activationId"
-              size="small"
-              variant="soft"
-              @click="router.push('/apple/activations')"
-            >
-              {{ selectedOrder.activationId }}
-            </AppButton>
-            <span v-else>-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="备注">
-            {{ selectedOrder?.remark ?? '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
+    <AppDrawer
+      v-model="detailDrawerVisible"
+      :title="selectedOrder?.orderNo ?? '订单详情'"
+      eyebrow="Apple ID 订单"
+      :description="
+        selectedOrder ? `${selectedOrder.customer.name} · ${selectedOrder.service.name}` : ''
+      "
+      size="640px"
+    >
+      <div v-if="selectedOrder" class="order-detail-layout">
+        <section class="order-detail-hero">
+          <div class="order-detail-hero__main">
+            <StatusChip :tone="getStatusTone(selectedOrder.status)" dot>
+              {{ getStatusLabel(selectedOrder.status) }}
+            </StatusChip>
+            <strong>{{ selectedOrder.customer.name }}</strong>
+            <span>{{ selectedOrder.service.name }}</span>
+            <div class="order-detail-hero__meta">
+              <span>{{ selectedOrder.appleAccount?.appleIdMasked ?? '未绑定 Apple ID' }}</span>
+              <span>{{ selectedOrder.sourcePlatform?.name ?? '无来源平台' }}</span>
+            </div>
+          </div>
+          <div class="order-detail-hero__amount">
+            <span>客户实收</span>
+            <strong>{{ formatPaidAmount(selectedOrder) }}</strong>
+            <small>折合 {{ selectedOrder.paidAmountRmb }} CNY</small>
+          </div>
+        </section>
+
+        <section class="order-detail-finance">
+          <div
+            class="order-detail-profit"
+            :class="{ 'order-detail-profit--negative': Number(selectedOrder.profitAmount) < 0 }"
+          >
+            <span>预计利润</span>
+            <strong>{{ selectedOrder.profitAmount }}</strong>
+            <small>利润率 {{ formatProfitRate(selectedOrder) }}</small>
+          </div>
+          <div class="order-detail-breakdown" aria-label="订单成本拆解">
+            <div>
+              <span>实收折合</span>
+              <strong>{{ selectedOrder.paidAmountRmb }} CNY</strong>
+            </div>
+            <div>
+              <span>Apple 余额成本</span>
+              <strong>{{ selectedOrder.appleCostRmb }} CNY</strong>
+            </div>
+            <div>
+              <span>平台手续费</span>
+              <strong>{{ selectedOrder.platformFeeRmb }} CNY</strong>
+            </div>
+            <div>
+              <span>退款/补发损耗</span>
+              <strong>{{ selectedOrder.refundLossRmb }} CNY</strong>
+            </div>
+            <div v-if="Number(selectedOrder.appleAccountPurchaseCost) > 0">
+              <span>ID 购入成本</span>
+              <strong>{{ selectedOrder.appleAccountPurchaseCost }} CNY</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="order-detail-section">
+          <div class="order-detail-section__head">
+            <strong>订单资料</strong>
+            <span>{{ selectedOrder.service.category }}</span>
+          </div>
+          <div class="order-detail-info-grid">
+            <div>
+              <span>平台订单号</span>
+              <strong>{{ selectedOrder.externalOrderNo ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>客户网站账号</span>
+              <strong>{{ selectedOrder.serviceAccount ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>套餐</span>
+              <strong>{{ formatPlanChange(selectedOrder) }}</strong>
+            </div>
+            <div>
+              <span>Apple 消耗</span>
+              <strong
+                >{{ selectedOrder.appleCostValue }} {{ selectedOrder.service.currency }}</strong
+              >
+            </div>
+            <div>
+              <span>ID 处理方式</span>
+              <strong>{{ formatOwnershipType(selectedOrder.appleAccountOwnershipType) }}</strong>
+            </div>
+            <div>
+              <span>开通记录</span>
+              <AppButton
+                v-if="selectedOrder.activationId"
+                size="small"
+                variant="soft"
+                @click="router.push('/apple/activations')"
+              >
+                查看开通记录
+              </AppButton>
+              <strong v-else>-</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="order-detail-section">
+          <div class="order-detail-section__head">
+            <strong>开通周期</strong>
+            <span>{{ formatDate(selectedOrder.createdAt) }}</span>
+          </div>
+          <div class="order-detail-timeline">
+            <div>
+              <span class="order-detail-timeline__dot" />
+              <div>
+                <span>开通时间</span>
+                <strong>{{ formatDate(selectedOrder.startTime) }}</strong>
+              </div>
+            </div>
+            <div>
+              <span class="order-detail-timeline__dot" />
+              <div>
+                <span>到期时间</span>
+                <strong>{{ formatDate(selectedOrder.expireTime) }}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="order-detail-section">
+          <div class="order-detail-section__head">
+            <strong>备注</strong>
+          </div>
+          <p class="order-detail-note">{{ selectedOrder.remark || '暂无备注' }}</p>
+        </section>
       </div>
     </AppDrawer>
   </PageScaffold>
@@ -407,10 +600,11 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
+import type { FormInstance, FormRules } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { appleOrdersApi, userTableViewsApi } from '@/api/system';
-import type { AppleOrderQuery } from '@/api/system';
+import type { AppleOrderQuery, UpdateAppleOrderPayload } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
@@ -421,10 +615,12 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type { AppleOrder, PageResult, TableDensity, UserTableView } from '@/types/system';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const router = useRouter();
+const authStore = useAuthStore();
 const tableKey = 'apple_orders';
 const statusOptions = [
   { label: '待处理', value: 'pending' },
@@ -450,11 +646,32 @@ const orderColumnOptions = [
 ];
 const batchActions = [{ label: '批量导出', value: 'export' }];
 
+interface EditOrderForm {
+  externalOrderNo: string;
+  serviceAccount: string;
+  currentPlan: string;
+  targetPlan: string;
+  startTime: string;
+  expireTime: string;
+  paidAmount: string;
+  paidCurrency: AppleOrder['paidCurrency'];
+  paidExchangeRateToRmb: string;
+  platformFee: string;
+  refundLoss: string;
+  status: AppleOrder['status'];
+  remark: string;
+}
+
 const loading = ref(false);
+const savingEdit = ref(false);
 const detailDrawerVisible = ref(false);
+const editDialogVisible = ref(false);
 const orders = ref<AppleOrder[]>([]);
 const selectedOrders = ref<AppleOrder[]>([]);
 const selectedOrder = ref<AppleOrder | null>(null);
+const editingOrder = ref<AppleOrder | null>(null);
+const editFormRef = ref<FormInstance>();
+const deletingOrderId = ref('');
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
 const savedViews = ref<UserTableView[]>([]);
@@ -470,6 +687,56 @@ const query = reactive({
   status: ''
 });
 
+const editForm = reactive<EditOrderForm>({
+  externalOrderNo: '',
+  serviceAccount: '',
+  currentPlan: '',
+  targetPlan: '',
+  startTime: '',
+  expireTime: '',
+  paidAmount: '0',
+  paidCurrency: 'CNY',
+  paidExchangeRateToRmb: '1',
+  platformFee: '0',
+  refundLoss: '0',
+  status: 'active',
+  remark: ''
+});
+
+const nonNegativeMoneyRule = {
+  pattern: /^\d+(\.\d{1,8})?$/,
+  message: '请输入不小于 0 的数字',
+  trigger: 'blur'
+};
+
+const editRules: FormRules<EditOrderForm> = {
+  paidAmount: [
+    { required: true, message: '请输入客户实收', trigger: 'blur' },
+    nonNegativeMoneyRule
+  ],
+  paidCurrency: [{ required: true, message: '请选择实收币种', trigger: 'change' }],
+  paidExchangeRateToRmb: [
+    {
+      validator: (_rule, value, callback) => {
+        if (editForm.paidCurrency === 'CNY') {
+          callback();
+          return;
+        }
+        if (!/^\d+(\.\d{1,8})?$/.test(String(value)) || Number(value) <= 0) {
+          callback(new Error('请输入大于 0 的汇率'));
+          return;
+        }
+        callback();
+      },
+      trigger: 'blur'
+    }
+  ],
+  platformFee: [nonNegativeMoneyRule],
+  refundLoss: [nonNegativeMoneyRule],
+  status: [{ required: true, message: '请选择订单状态', trigger: 'change' }]
+};
+
+const canManageOrders = computed(() => authStore.user?.roles.includes('admin') ?? false);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -516,6 +783,23 @@ function getStatusTone(status: AppleOrder['status']) {
 
 function getProfitTone(value: string) {
   return Number(value) >= 0 ? 'green' : 'red';
+}
+
+function formatProfitRate(order: AppleOrder) {
+  const paidAmountRmb = Number(order.paidAmountRmb);
+  if (!paidAmountRmb) return '-';
+  return `${((Number(order.profitAmount) / paidAmountRmb) * 100).toFixed(2)}%`;
+}
+
+function formatPlanChange(order: AppleOrder) {
+  if (order.currentPlan && order.targetPlan) {
+    return `${order.currentPlan} 至 ${order.targetPlan}`;
+  }
+  return order.targetPlan ?? order.currentPlan ?? '-';
+}
+
+function formatOwnershipType(value: AppleOrder['appleAccountOwnershipType']) {
+  return value === 'sold' ? '售出' : '寄存';
 }
 
 function isColumnVisible(column: string) {
@@ -585,6 +869,110 @@ function handleSelectionChange(rows: AppleOrder[]) {
 function openDetail(order: AppleOrder) {
   selectedOrder.value = order;
   detailDrawerVisible.value = true;
+}
+
+function openEdit(order: AppleOrder) {
+  if (!canManageOrders.value) {
+    ElMessage.error('只有管理员可以编辑订单');
+    return;
+  }
+
+  editingOrder.value = order;
+  resetEditForm(order);
+  editDialogVisible.value = true;
+}
+
+function resetEditForm(order: AppleOrder) {
+  editForm.externalOrderNo = order.externalOrderNo ?? '';
+  editForm.serviceAccount = order.serviceAccount ?? '';
+  editForm.currentPlan = order.currentPlan ?? '';
+  editForm.targetPlan = order.targetPlan ?? '';
+  editForm.startTime = order.startTime ?? '';
+  editForm.expireTime = order.expireTime ?? '';
+  editForm.paidAmount = order.paidAmount;
+  editForm.paidCurrency = order.paidCurrency;
+  editForm.paidExchangeRateToRmb = order.paidCurrency === 'CNY' ? '1' : order.paidExchangeRateToRmb;
+  editForm.platformFee = order.platformFee;
+  editForm.refundLoss = order.refundLoss;
+  editForm.status = order.status;
+  editForm.remark = order.remark ?? '';
+}
+
+function emptyToNull(value: string) {
+  const normalized = value.trim();
+  return normalized ? normalized : null;
+}
+
+function buildUpdatePayload(): UpdateAppleOrderPayload {
+  return {
+    externalOrderNo: emptyToNull(editForm.externalOrderNo),
+    serviceAccount: emptyToNull(editForm.serviceAccount),
+    currentPlan: emptyToNull(editForm.currentPlan),
+    targetPlan: emptyToNull(editForm.targetPlan),
+    startTime: editForm.startTime || null,
+    expireTime: editForm.expireTime || null,
+    paidAmount: editForm.paidAmount,
+    paidCurrency: editForm.paidCurrency,
+    paidExchangeRateToRmb: editForm.paidCurrency === 'CNY' ? '1' : editForm.paidExchangeRateToRmb,
+    platformFee: editForm.platformFee || '0',
+    refundLoss: editForm.refundLoss || '0',
+    status: editForm.status,
+    remark: emptyToNull(editForm.remark)
+  };
+}
+
+async function saveOrderEdit() {
+  if (!editingOrder.value) return;
+
+  try {
+    await editFormRef.value?.validate();
+    savingEdit.value = true;
+    const updated = await appleOrdersApi.update(editingOrder.value.id, buildUpdatePayload());
+    ElMessage.success('订单已更新');
+    editDialogVisible.value = false;
+    if (selectedOrder.value?.id === updated.id) {
+      selectedOrder.value = updated;
+    }
+    await loadOrders({ background: true, force: true });
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    ElMessage.error(error instanceof Error ? error.message : '更新订单失败');
+  } finally {
+    savingEdit.value = false;
+  }
+}
+
+async function removeOrder(order: AppleOrder) {
+  if (!canManageOrders.value) {
+    ElMessage.error('只有管理员可以删除订单');
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认删除订单 ${order.orderNo}？删除后订单会从列表、报表和导出里隐藏，不会自动回滚 Apple ID 余额流水。`,
+      '删除订单',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger'
+      }
+    );
+    deletingOrderId.value = order.id;
+    await appleOrdersApi.remove(order.id);
+    if (selectedOrder.value?.id === order.id) {
+      selectedOrder.value = null;
+      detailDrawerVisible.value = false;
+    }
+    ElMessage.success('订单已删除');
+    await loadOrders({ force: true });
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    ElMessage.error(error instanceof Error ? error.message : '删除订单失败');
+  } finally {
+    deletingOrderId.value = '';
+  }
 }
 
 function clearFilters() {

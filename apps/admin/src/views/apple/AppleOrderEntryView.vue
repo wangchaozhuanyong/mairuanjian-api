@@ -317,22 +317,37 @@
                 />
               </el-select>
             </div>
-            <div class="order-entry-money-hint">
-              {{ paidAmountRmbHint }}
-            </div>
-            <div class="order-entry-margin-calculator">
-              <el-input
-                v-model.trim="form.targetGrossMargin"
-                type="number"
-                inputmode="decimal"
-                min="0"
-                max="99"
-                placeholder="毛利率 %"
-              />
-              <AppButton size="small" variant="soft" @click="fillPaidAmountByMargin">
-                反算实收
-              </AppButton>
-              <span>{{ suggestedPaidAmountHint }}</span>
+            <div class="order-entry-money-meta">
+              <div class="order-entry-money-hint">
+                {{ paidAmountRmbHint }}
+              </div>
+              <div class="order-entry-margin-calculator">
+                <span class="order-entry-margin-calculator__label">毛利率</span>
+                <el-input
+                  v-model.trim="form.targetGrossMargin"
+                  class="order-entry-margin-calculator__input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  max="99"
+                  placeholder="0"
+                >
+                  <template #suffix>
+                    <span class="order-entry-margin-calculator__suffix">%</span>
+                  </template>
+                </el-input>
+                <AppButton
+                  class="order-entry-margin-calculator__action"
+                  size="small"
+                  variant="soft"
+                  @click="fillPaidAmountByMargin"
+                >
+                  反算实收
+                </AppButton>
+                <span class="order-entry-margin-calculator__hint">
+                  {{ suggestedPaidAmountHint }}
+                </span>
+              </div>
             </div>
           </el-form-item>
           <el-form-item v-if="form.paidCurrency !== 'CNY'" prop="paidExchangeRateToRmb">
@@ -406,8 +421,8 @@
               class="full-input"
               @change="handleAppleAccountOwnershipTypeChange"
             >
-              <el-option label="寄存使用" value="consigned" />
-              <el-option label="售出给客户" value="sold" />
+              <el-option label="寄存" value="consigned" />
+              <el-option label="售出" value="sold" />
             </el-select>
           </el-form-item>
           <el-form-item prop="appleAccountId">
@@ -703,6 +718,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import {
   APPLE_ACCOUNT_REGION_DICTIONARY_GROUP,
+  APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
   buildQuickSettingCode,
   CUSTOMER_TAG_DICTIONARY_GROUP
 } from '@/config/quickSettings';
@@ -755,6 +771,7 @@ const customers = ref<Customer[]>([]);
 const sourcePlatforms = ref<SourcePlatform[]>([]);
 const customerTagDictionaries = ref<DataDictionary[]>([]);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
+const appleServiceCategoryDictionaries = ref<DataDictionary[]>([]);
 const services = ref<AppleService[]>([]);
 const availableAccounts = ref<AvailableAppleAccount[]>([]);
 const selectedAccount = ref<AvailableAppleAccount | null>(null);
@@ -875,14 +892,26 @@ const regionMatchedServices = computed(() =>
       service.allowedRegions.includes(form.serviceRegion)
   )
 );
+const activeServiceCategoryValues = computed(
+  () =>
+    new Set(
+      appleServiceCategoryDictionaries.value
+        .filter((category) => category.status === 'active')
+        .map((category) => getServiceCategoryLabel(category.value || category.label))
+    )
+);
 const serviceCategoryOptions = computed(() => [
   ...new Set(
-    regionMatchedServices.value.map((service) => getServiceCategoryLabel(service.category))
+    regionMatchedServices.value
+      .map((service) => getServiceCategoryLabel(service.category))
+      .filter((category) => activeServiceCategoryValues.value.has(category))
   )
 ]);
 const filteredServices = computed(() =>
   regionMatchedServices.value.filter(
-    (service) => getServiceCategoryLabel(service.category) === form.serviceCategory
+    (service) =>
+      activeServiceCategoryValues.value.has(getServiceCategoryLabel(service.category)) &&
+      getServiceCategoryLabel(service.category) === form.serviceCategory
   )
 );
 const selectedServiceRegionLabel = computed(
@@ -1096,12 +1125,27 @@ function buildAppleRegionParams(): DataDictionaryQuery {
   };
 }
 
+function buildAppleServiceCategoryParams(): DataDictionaryQuery {
+  return {
+    page: 1,
+    pageSize: 200,
+    group: APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
+    status: 'active',
+    sortBy: 'sortOrder',
+    sortOrder: 'asc'
+  };
+}
+
 function applyCustomerTagResult(data: PageResult<DataDictionary>) {
   customerTagDictionaries.value = data.items;
 }
 
 function applyAppleRegionResult(data: PageResult<DataDictionary>) {
   appleRegionDictionaries.value = data.items;
+}
+
+function applyAppleServiceCategoryResult(data: PageResult<DataDictionary>) {
+  appleServiceCategoryDictionaries.value = data.items;
 }
 
 function getServiceCategoryLabel(category?: string | null) {
@@ -1247,12 +1291,20 @@ async function loadOrderEntryBaseData(
       { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
     ),
     dataCenterApi.listDictionaries(buildCustomerTagParams(), { signal: options.signal }),
-    dataCenterApi.listDictionaries(buildAppleRegionParams(), { signal: options.signal })
+    dataCenterApi.listDictionaries(buildAppleRegionParams(), { signal: options.signal }),
+    dataCenterApi.listDictionaries(buildAppleServiceCategoryParams(), { signal: options.signal })
   ]);
 }
 
 function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryBaseData>>) {
-  const [customerData, platformData, serviceData, customerTagData, appleRegionData] = data;
+  const [
+    customerData,
+    platformData,
+    serviceData,
+    customerTagData,
+    appleRegionData,
+    appleServiceCategoryData
+  ] = data;
   customers.value = mergeCustomerItems(
     customerData.items,
     selectedCustomer.value ? [selectedCustomer.value] : []
@@ -1261,6 +1313,7 @@ function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryB
   services.value = serviceData.items;
   applyCustomerTagResult(customerTagData);
   applyAppleRegionResult(appleRegionData);
+  applyAppleServiceCategoryResult(appleServiceCategoryData);
 }
 
 function mergeCustomerItems(items: Customer[], pinnedItems: Customer[] = []) {
@@ -1824,19 +1877,42 @@ onBeforeUnmount(() => {
 
 .order-entry-margin-calculator {
   display: grid;
-  grid-template-columns: minmax(0, 120px) auto minmax(0, 1fr);
+  grid-template-columns: auto 112px auto minmax(120px, auto);
   align-items: center;
   gap: 8px;
+  justify-content: end;
+  min-width: 0;
+}
+
+.order-entry-money-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 12px;
   margin-top: 8px;
 }
 
-.order-entry-margin-calculator span {
+.order-entry-margin-calculator__label,
+.order-entry-margin-calculator__hint {
   min-width: 0;
   overflow: hidden;
   color: #64748b;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.order-entry-margin-calculator__input {
+  width: 112px;
+}
+
+.order-entry-margin-calculator__suffix {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.order-entry-margin-calculator__action {
+  min-width: 84px;
 }
 
 :deep(.order-cost-track__bar--purple) {
@@ -1846,12 +1922,16 @@ onBeforeUnmount(() => {
 @media (max-width: 720px) {
   .order-entry-customer-picker,
   .order-entry-money-input,
+  .order-entry-money-meta,
   .order-entry-margin-calculator {
     grid-template-columns: 1fr;
+    justify-content: stretch;
   }
 
   .order-entry-customer-picker__create,
-  .order-entry-money-input__currency {
+  .order-entry-money-input__currency,
+  .order-entry-margin-calculator__input,
+  .order-entry-margin-calculator__action {
     width: 100%;
   }
 
@@ -1860,7 +1940,7 @@ onBeforeUnmount(() => {
   }
 
   .order-entry-history-card span:last-child,
-  .order-entry-margin-calculator span {
+  .order-entry-margin-calculator__hint {
     white-space: normal;
   }
 }

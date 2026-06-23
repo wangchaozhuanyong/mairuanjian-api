@@ -508,6 +508,8 @@ const ReportTable = defineComponent({
           loading: props.loading,
           data: props.items,
           size: props.tableSize,
+          fit: false,
+          tableLayout: 'auto',
           emptyText: `暂无${props.firstLabel}报表数据`,
           rowKey: 'key'
         },

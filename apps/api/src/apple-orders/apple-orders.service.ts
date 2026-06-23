@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import type {
   AppleOrderStatus,
   AppleService,
   Prisma,
+  ServiceActivationStatus,
   SourcePlatform
 } from '@prisma/client';
 import { Prisma as PrismaNamespace } from '@prisma/client';
@@ -20,6 +22,7 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { CreateAppleOrderDto } from './dto/create-apple-order.dto';
+import type { UpdateAppleOrderDto } from './dto/update-apple-order.dto';
 
 interface ListAppleOrdersQuery extends PaginationQuery {
   keyword?: string;
@@ -147,6 +150,7 @@ export class AppleOrdersService {
     const keyword = query.keyword?.trim();
     const status = this.parseOrderStatus(query.status, false);
     const where: Prisma.AppleOrderWhereInput = {
+      deletedAt: null,
       status: status ?? undefined,
       customerId: query.customerId || undefined,
       sourcePlatformId: query.sourcePlatformId || undefined,
@@ -191,8 +195,8 @@ export class AppleOrdersService {
   }
 
   async get(id: string) {
-    const order = await this.prisma.appleOrder.findUnique({
-      where: { id },
+    const order = await this.prisma.appleOrder.findFirst({
+      where: { id, deletedAt: null },
       include: orderInclude
     });
 
@@ -210,6 +214,7 @@ export class AppleOrdersService {
 
     const latestOrder = await this.prisma.appleOrder.findFirst({
       where: {
+        deletedAt: null,
         customerId,
         serviceId: serviceId ?? undefined,
         serviceAccount: serviceAccount
@@ -528,6 +533,211 @@ export class AppleOrdersService {
     });
 
     return this.get(createdOrder.id);
+  }
+
+  async update(id: string, dto: UpdateAppleOrderDto, operator?: AuthenticatedUser) {
+    this.assertAdmin(operator);
+
+    const existingOrder = await this.prisma.appleOrder.findFirst({
+      where: { id, deletedAt: null },
+      include: orderInclude
+    });
+
+    if (!existingOrder) {
+      throw new NotFoundException('Apple order not found');
+    }
+
+    const externalOrderNo =
+      dto.externalOrderNo !== undefined
+        ? this.normalizeNullableString(dto.externalOrderNo)
+        : existingOrder.externalOrderNo;
+
+    if (existingOrder.sourcePlatformId && externalOrderNo) {
+      await this.assertExternalOrderNoAvailable(
+        existingOrder.sourcePlatformId,
+        externalOrderNo,
+        existingOrder.id
+      );
+    }
+
+    const paidCurrency =
+      dto.paidCurrency !== undefined
+        ? this.normalizePaidCurrency(dto.paidCurrency)
+        : (existingOrder.paidCurrency as PaidCurrency);
+    const paidExchangeRateToRmb =
+      dto.paidExchangeRateToRmb !== undefined || dto.paidCurrency !== undefined
+        ? this.resolvePaidExchangeRateToRmb(dto.paidExchangeRateToRmb, paidCurrency)
+        : new PrismaNamespace.Decimal(existingOrder.paidExchangeRateToRmb);
+    const paidAmount =
+      dto.paidAmount !== undefined
+        ? this.normalizeDecimal(dto.paidAmount, 'paidAmount', '0')
+        : new PrismaNamespace.Decimal(existingOrder.paidAmount);
+    const platformFee =
+      dto.platformFee !== undefined
+        ? this.normalizeDecimal(dto.platformFee, 'platformFee', '0')
+        : new PrismaNamespace.Decimal(existingOrder.platformFee);
+    const refundLoss =
+      dto.refundLoss !== undefined
+        ? this.normalizeDecimal(dto.refundLoss, 'refundLoss', '0')
+        : new PrismaNamespace.Decimal(existingOrder.refundLoss);
+    const paidAmountRmb = this.convertPaidAmountToRmb(paidAmount, paidExchangeRateToRmb);
+    const platformFeeRmb = this.convertPaidAmountToRmb(platformFee, paidExchangeRateToRmb);
+    const refundLossRmb = this.convertPaidAmountToRmb(refundLoss, paidExchangeRateToRmb);
+    const profitAmount = paidAmountRmb
+      .minus(platformFeeRmb)
+      .minus(refundLossRmb)
+      .minus(existingOrder.appleCostRmb)
+      .minus(existingOrder.appleAccountPurchaseCost)
+      .toDecimalPlaces(4);
+    const status =
+      dto.status !== undefined
+        ? (this.parseOrderStatus(dto.status, true) ?? existingOrder.status)
+        : existingOrder.status;
+    const startTime =
+      dto.startTime !== undefined
+        ? this.parseDate(dto.startTime, 'startTime')
+        : existingOrder.startTime;
+    const expireTime =
+      dto.expireTime !== undefined
+        ? this.parseDate(dto.expireTime, 'expireTime')
+        : existingOrder.expireTime;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.appleOrder.update({
+        where: { id: existingOrder.id },
+        data: {
+          externalOrderNo,
+          serviceAccount:
+            dto.serviceAccount !== undefined
+              ? this.normalizeNullableString(dto.serviceAccount)
+              : existingOrder.serviceAccount,
+          currentPlan:
+            dto.currentPlan !== undefined
+              ? this.normalizeNullableString(dto.currentPlan)
+              : existingOrder.currentPlan,
+          targetPlan:
+            dto.targetPlan !== undefined
+              ? this.normalizeNullableString(dto.targetPlan)
+              : existingOrder.targetPlan,
+          startTime,
+          expireTime,
+          paidAmount,
+          paidCurrency,
+          paidExchangeRateToRmb,
+          paidAmountRmb,
+          platformFee,
+          platformFeeRmb,
+          refundLoss,
+          refundLossRmb,
+          profitAmount,
+          status,
+          remark:
+            dto.remark !== undefined
+              ? this.normalizeNullableString(dto.remark)
+              : existingOrder.remark,
+          updatedByUserId: operator?.id
+        }
+      });
+
+      await tx.serviceActivation.updateMany({
+        where: { orderId: existingOrder.id },
+        data: {
+          currentPlan:
+            dto.currentPlan !== undefined
+              ? this.normalizeNullableString(dto.currentPlan)
+              : existingOrder.currentPlan,
+          targetPlan:
+            dto.targetPlan !== undefined
+              ? this.normalizeNullableString(dto.targetPlan)
+              : existingOrder.targetPlan,
+          startTime,
+          expireTime,
+          paidAmount,
+          paidCurrency,
+          paidExchangeRateToRmb,
+          paidAmountRmb,
+          platformFee,
+          platformFeeRmb,
+          refundLoss,
+          refundLossRmb,
+          profitAmount,
+          externalOrderNo,
+          status: this.mapOrderStatusToActivationStatus(status)
+        }
+      });
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_order',
+      action: 'apple_order.update',
+      objectType: 'apple_order',
+      objectId: existingOrder.id,
+      beforeData: this.toAuditJson({
+        orderNo: existingOrder.orderNo,
+        externalOrderNo: existingOrder.externalOrderNo,
+        paidAmount: existingOrder.paidAmount.toString(),
+        paidCurrency: existingOrder.paidCurrency,
+        paidAmountRmb: existingOrder.paidAmountRmb.toString(),
+        platformFeeRmb: existingOrder.platformFeeRmb.toString(),
+        refundLossRmb: existingOrder.refundLossRmb.toString(),
+        profitAmount: existingOrder.profitAmount.toString(),
+        status: existingOrder.status
+      }),
+      afterData: this.toAuditJson({
+        externalOrderNo,
+        paidAmount: paidAmount.toString(),
+        paidCurrency,
+        paidAmountRmb: paidAmountRmb.toString(),
+        platformFeeRmb: platformFeeRmb.toString(),
+        refundLossRmb: refundLossRmb.toString(),
+        profitAmount: profitAmount.toString(),
+        status
+      }),
+      remark: `Updated Apple order ${existingOrder.orderNo}`
+    });
+
+    return this.get(existingOrder.id);
+  }
+
+  async remove(id: string, operator?: AuthenticatedUser) {
+    this.assertAdmin(operator);
+
+    const existingOrder = await this.prisma.appleOrder.findFirst({
+      where: { id, deletedAt: null },
+      include: orderInclude
+    });
+
+    if (!existingOrder) {
+      throw new NotFoundException('Apple order not found');
+    }
+
+    await this.prisma.appleOrder.update({
+      where: { id: existingOrder.id },
+      data: {
+        deletedAt: new Date(),
+        updatedByUserId: operator?.id
+      }
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_order',
+      action: 'apple_order.delete',
+      objectType: 'apple_order',
+      objectId: existingOrder.id,
+      beforeData: this.toAuditJson({
+        orderNo: existingOrder.orderNo,
+        customerId: existingOrder.customerId,
+        serviceId: existingOrder.serviceId,
+        appleAccountId: existingOrder.appleAccountId,
+        status: existingOrder.status,
+        profitAmount: existingOrder.profitAmount.toString()
+      }),
+      remark: `Deleted Apple order ${existingOrder.orderNo}`
+    });
+
+    return { deleted: true };
   }
 
   calculateOrderFinancials(input: OrderFinancialInput): OrderFinancialSnapshot {
@@ -921,13 +1131,16 @@ export class AppleOrdersService {
     date.setDate(Math.min(originalDay, lastDayOfTargetMonth));
   }
 
-  private async assertExternalOrderNoAvailable(sourcePlatformId: string, externalOrderNo: string) {
-    const existingOrder = await this.prisma.appleOrder.findUnique({
+  private async assertExternalOrderNoAvailable(
+    sourcePlatformId: string,
+    externalOrderNo: string,
+    excludeOrderId?: string
+  ) {
+    const existingOrder = await this.prisma.appleOrder.findFirst({
       where: {
-        sourcePlatformId_externalOrderNo: {
-          sourcePlatformId,
-          externalOrderNo
-        }
+        sourcePlatformId,
+        externalOrderNo,
+        id: excludeOrderId ? { not: excludeOrderId } : undefined
       },
       select: { id: true }
     });
@@ -994,6 +1207,18 @@ export class AppleOrdersService {
     }
 
     throw new BadRequestException('sortOrder is invalid');
+  }
+
+  private assertAdmin(operator?: AuthenticatedUser) {
+    if (!operator?.roles.includes('admin')) {
+      throw new ForbiddenException('Only administrator can edit or delete Apple orders');
+    }
+  }
+
+  private mapOrderStatusToActivationStatus(status: AppleOrderStatus): ServiceActivationStatus {
+    if (status === 'cancelled') return 'cancelled';
+    if (status === 'abnormal') return 'abnormal';
+    return 'active';
   }
 
   private parseBoolean(value: unknown, fallback: boolean) {
@@ -1120,8 +1345,7 @@ export class AppleOrdersService {
       startTime: order.startTime,
       expireTime: order.expireTime,
       daysUntilExpire,
-      expireStatus:
-        daysUntilExpire === null ? null : daysUntilExpire >= 0 ? 'active' : 'expired',
+      expireStatus: daysUntilExpire === null ? null : daysUntilExpire >= 0 ? 'active' : 'expired',
       paidAmount: order.paidAmount.toString(),
       paidCurrency: order.paidCurrency,
       paidAmountRmb: order.paidAmountRmb.toString(),
@@ -1133,10 +1357,9 @@ export class AppleOrdersService {
       appleAccountPurchaseCost: order.appleAccountPurchaseCost.toString(),
       appleAccountSalePrice: order.appleAccountSalePrice.toString(),
       profitAmount: order.profitAmount.toString(),
-      profitRate:
-        paidAmountRmb.greaterThan(0)
-          ? profitAmount.div(paidAmountRmb).mul(100).toDecimalPlaces(2).toString()
-          : null,
+      profitRate: paidAmountRmb.greaterThan(0)
+        ? profitAmount.div(paidAmountRmb).mul(100).toDecimalPlaces(2).toString()
+        : null,
       status: order.status,
       createdAt: order.createdAt
     };

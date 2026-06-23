@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { RealtimeService } from '../realtime/realtime.service';
 import { AppleOrdersService } from './apple-orders.service';
 import type { CreateAppleOrderDto } from './dto/create-apple-order.dto';
+import type { UpdateAppleOrderDto } from './dto/update-apple-order.dto';
 
 @Controller('apple/orders')
 export class AppleOrdersController {
@@ -76,6 +77,42 @@ export class AppleOrdersController {
       }
     });
     return order;
+  }
+
+  @Patch(':id')
+  @RequirePermissions('apple.order.update')
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAppleOrderDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const order = await this.appleOrdersService.update(id, dto, operator);
+    this.realtimeService.publish({
+      type: 'apple.order.updated',
+      module: 'apple',
+      entity: 'order',
+      action: 'updated',
+      resourceId: order.id,
+      scope: {
+        appleAccountId: order.appleAccountId,
+        customerId: order.customerId
+      }
+    });
+    return order;
+  }
+
+  @Delete(':id')
+  @RequirePermissions('apple.order.delete')
+  async remove(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const result = await this.appleOrdersService.remove(id, operator);
+    this.realtimeService.publish({
+      type: 'apple.order.deleted',
+      module: 'apple',
+      entity: 'order',
+      action: 'deleted',
+      resourceId: id
+    });
+    return result;
   }
 }
 

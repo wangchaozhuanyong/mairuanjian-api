@@ -1,7 +1,35 @@
-import { defineAsyncComponent, type App, type Component, type Plugin } from 'vue';
+import {
+  defineAsyncComponent,
+  defineComponent,
+  h,
+  type App,
+  type Component,
+  type Plugin
+} from 'vue';
 import { ElLoading } from 'element-plus/es/components/loading/index.mjs';
 
 type ComponentLoader = () => Promise<Component>;
+
+const AsyncElTable = defineAsyncComponent(() =>
+  import('element-plus/es/components/table/index.mjs').then((module) => module.ElTable)
+);
+
+const ElTableWithDefaults = defineComponent({
+  name: 'ElTable',
+  inheritAttrs: false,
+  setup(_, { attrs, slots }) {
+    return () =>
+      h(
+        AsyncElTable,
+        {
+          fit: false,
+          tableLayout: 'auto',
+          ...attrs
+        },
+        slots
+      );
+  }
+});
 
 const components: Array<[string, ComponentLoader]> = [
   [
@@ -152,10 +180,7 @@ const components: Array<[string, ComponentLoader]> = [
     'ElTabPane',
     () => import('element-plus/es/components/tabs/index.mjs').then((module) => module.ElTabPane)
   ],
-  [
-    'ElTable',
-    () => import('element-plus/es/components/table/index.mjs').then((module) => module.ElTable)
-  ],
+  ['ElTable', () => Promise.resolve(ElTableWithDefaults)],
   [
     'ElTableColumn',
     () =>

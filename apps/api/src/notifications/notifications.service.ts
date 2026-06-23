@@ -399,7 +399,7 @@ export class NotificationsService {
             }
           }),
           this.prisma.appleOrder.count({
-            where: { status: { in: ['pending', 'abnormal'] } }
+            where: { deletedAt: null, status: { in: ['pending', 'abnormal'] } }
           }),
           this.prisma.automationTask.count({
             where: {
@@ -529,7 +529,7 @@ export class NotificationsService {
           }),
           this.createNavItemBadge({
             itemKey: 'apple-orders',
-            label: 'ID 订单管理',
+            label: '订单管理',
             count: appleOrders,
             tone: appleOrders > 0 ? 'red' : 'neutral',
             description: '待处理或异常的 Apple ID 订单'
