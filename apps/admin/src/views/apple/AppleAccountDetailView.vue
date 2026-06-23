@@ -100,7 +100,7 @@
         <div class="panel-title-row">
           <PanelTitleHelp
             :title="account.appleIdMasked"
-            :help="`尾号 ${account.appleIdTail}，地区 ${account.region}，币种 ${account.currency}。这里查看这个账号的基础资料和敏感资料保存状态。`"
+            :help="`尾号 ${account.appleIdTail}，地区 ${formatAccountRegionCurrency(account.region, account.currency)}。这里查看这个账号的基础资料和敏感资料保存状态。`"
           />
           <div class="inline-actions">
             <StatusChip :tone="getAccountStatusTone(account.status)" dot>
@@ -823,6 +823,7 @@ import type {
   RenewalTask,
   ServiceActivation
 } from '@/types/system';
+import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 type ChipTone = 'green' | 'orange' | 'red' | 'neutral' | 'blue' | 'purple';
@@ -1132,6 +1133,13 @@ function formatDate(value?: string | null, dateOnly = false) {
 
   const date = new Date(value);
   return dateOnly ? date.toLocaleDateString('zh-CN') : date.toLocaleString('zh-CN');
+}
+
+function formatAccountRegionCurrency(
+  region: string | null | undefined,
+  currency: string | null | undefined
+) {
+  return formatAppleRegionCurrencyLabel(region, currency);
 }
 
 function parseDecimalInput(value?: string | null) {

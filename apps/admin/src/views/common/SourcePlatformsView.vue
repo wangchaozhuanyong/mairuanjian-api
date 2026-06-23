@@ -585,9 +585,9 @@
         <el-table-column prop="label" label="分类名称" min-width="180" sortable="custom" />
         <el-table-column label="使用中业务" width="120">
           <template #default="{ row }">
-            <StatusChip :tone="getCategoryUsageCount(row) > 0 ? 'blue' : 'neutral'">
+            <AppButton size="small" variant="soft" @click="openCategoryServices(row)">
               {{ getCategoryUsageCount(row) }} 个
-            </StatusChip>
+            </AppButton>
           </template>
         </el-table-column>
         <el-table-column prop="sortOrder" label="排序" width="100" sortable="custom" />
@@ -619,15 +619,10 @@
               <AppButton
                 size="small"
                 variant="danger"
-                :disabled="getCategoryUsageCount(row) > 0 && row.status !== 'active'"
-                :loading="
-                  getCategoryUsageCount(row) > 0
-                    ? updatingCategoryId === row.id
-                    : deletingDictionaryId === row.id
-                "
+                :loading="deletingDictionaryId === row.id"
                 @click="deleteAppleServiceCategory(row)"
               >
-                {{ getCategoryDeleteActionLabel(row) }}
+                删除
               </AppButton>
             </div>
           </template>
@@ -654,7 +649,9 @@
             </div>
             <div>
               <span>使用中业务</span>
-              <strong>{{ getCategoryUsageCount(category) }} 个</strong>
+              <AppButton size="small" variant="soft" @click="openCategoryServices(category)">
+                {{ getCategoryUsageCount(category) }} 个
+              </AppButton>
             </div>
             <div>
               <span>更新时间</span>
@@ -676,15 +673,10 @@
             <AppButton
               size="small"
               variant="danger"
-              :disabled="getCategoryUsageCount(category) > 0 && category.status !== 'active'"
-              :loading="
-                getCategoryUsageCount(category) > 0
-                  ? updatingCategoryId === category.id
-                  : deletingDictionaryId === category.id
-              "
+              :loading="deletingDictionaryId === category.id"
               @click="deleteAppleServiceCategory(category)"
             >
-              {{ getCategoryDeleteActionLabel(category) }}
+              删除
             </AppButton>
           </div>
         </article>
@@ -1060,8 +1052,8 @@
             </div>
           </div>
         </template>
-        <el-table-column prop="code" label="地区代码" width="120" sortable="custom">
-          <template #default="{ row }">{{ row.code.toLowerCase() }}</template>
+        <el-table-column prop="code" label="国家/代码" width="140" sortable="custom">
+          <template #default="{ row }">{{ getAppleRegionLabel(row) }}</template>
         </el-table-column>
         <el-table-column prop="label" label="显示名" min-width="150" sortable="custom" />
         <el-table-column label="币种" width="120">
@@ -1111,9 +1103,7 @@
         >
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
-              <strong
-                >{{ region.code.toLowerCase() }} / {{ getAppleRegionCurrency(region) }}</strong
-              >
+              <strong>{{ getAppleRegionCurrencySummary(region) }}</strong>
               <span>{{ region.label }}</span>
             </div>
             <StatusTag :status="region.status" />
@@ -1539,7 +1529,7 @@
     <el-dialog
       v-model="categoryDialogVisible"
       :title="editingCategory ? '编辑 Apple ID 业务分类' : '新增 Apple ID 业务分类'"
-      width="min(560px, calc(100vw - 24px))"
+      width="min(860px, calc(100vw - 24px))"
     >
       <el-form
         ref="categoryFormRef"
@@ -1591,10 +1581,209 @@
           <el-input v-model="categoryForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
+
+      <section v-if="editingCategory" class="category-service-panel">
+        <div class="category-service-panel__head">
+          <div>
+            <strong>使用中业务</strong>
+            <span>这里直接显示正在使用这个分类的业务，可以编辑业务或删除业务。</span>
+          </div>
+          <div class="inline-actions">
+            <StatusChip tone="blue">{{ categoryServicesTotal }} 个</StatusChip>
+            <AppButton size="small" variant="soft" @click="() => loadCategoryServices()">
+              刷新
+            </AppButton>
+          </div>
+        </div>
+        <el-table
+          v-loading="categoryServicesLoading"
+          class="desktop-data-table category-service-table"
+          :data="categoryServices"
+          size="small"
+          row-key="id"
+          empty-text="暂无业务使用这个分类"
+        >
+          <el-table-column label="业务" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <strong>{{ row.name }}</strong>
+              <div class="muted-block">
+                {{ row.currency }} · {{ getAppleServicePeriodLabel(row) }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="Apple余额价" width="130">
+            <template #default="{ row }">{{ row.officialCostValue }} {{ row.currency }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <StatusChip :tone="getAppleServiceStatusTone(row.status)" dot>
+                {{ getAppleServiceStatusLabel(row.status) }}
+              </StatusChip>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <div class="table-action-group">
+                <AppButton size="small" variant="ghost" @click="openCategoryServiceEdit(row)">
+                  编辑
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="danger"
+                  :loading="categoryServiceDeletingId === row.id"
+                  @click="deleteCategoryService(row)"
+                >
+                  删除
+                </AppButton>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
       <template #footer>
         <AppButton @click="categoryDialogVisible = false">取消</AppButton>
         <AppButton variant="primary" :loading="categorySaving" @click="saveAppleServiceCategory">
           保存
+        </AppButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="categoryServicesDialogVisible"
+      :title="
+        activeCategoryForServices ? `使用中业务 · ${activeCategoryForServices.label}` : '使用中业务'
+      "
+      width="min(860px, calc(100vw - 24px))"
+    >
+      <div class="category-service-panel category-service-panel--plain">
+        <div class="category-service-panel__head">
+          <div>
+            <strong>{{ categoryServicesTotal }} 个业务正在使用这个分类</strong>
+            <span>分类删除前，需要先把这些业务改到其他分类或删除业务。</span>
+          </div>
+          <AppButton size="small" variant="soft" @click="() => loadCategoryServices()">
+            刷新
+          </AppButton>
+        </div>
+        <el-table
+          v-loading="categoryServicesLoading"
+          class="desktop-data-table category-service-table"
+          :data="categoryServices"
+          size="small"
+          row-key="id"
+          empty-text="暂无业务使用这个分类"
+        >
+          <el-table-column label="业务" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <strong>{{ row.name }}</strong>
+              <div class="muted-block">
+                {{ row.currency }} · {{ getAppleServicePeriodLabel(row) }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="官网价" width="120">
+            <template #default="{ row }">{{ row.officialBasePrice }} {{ row.currency }}</template>
+          </el-table-column>
+          <el-table-column label="Apple余额价" width="130">
+            <template #default="{ row }">{{ row.officialCostValue }} {{ row.currency }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <StatusChip :tone="getAppleServiceStatusTone(row.status)" dot>
+                {{ getAppleServiceStatusLabel(row.status) }}
+              </StatusChip>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <div class="table-action-group">
+                <AppButton size="small" variant="ghost" @click="openCategoryServiceEdit(row)">
+                  编辑
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="danger"
+                  :loading="categoryServiceDeletingId === row.id"
+                  @click="deleteCategoryService(row)"
+                >
+                  删除
+                </AppButton>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <AppButton @click="categoryServicesDialogVisible = false">关闭</AppButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="categoryServiceDialogVisible"
+      :title="editingCategoryService ? `编辑业务 · ${editingCategoryService.name}` : '编辑业务'"
+      width="min(640px, calc(100vw - 24px))"
+    >
+      <el-form
+        ref="categoryServiceFormRef"
+        :model="categoryServiceForm"
+        :rules="categoryServiceRules"
+        label-position="top"
+      >
+        <div class="form-grid">
+          <el-form-item prop="name" label="业务名称">
+            <el-input v-model.trim="categoryServiceForm.name" />
+          </el-form-item>
+          <el-form-item prop="category" label="业务分类">
+            <el-select v-model="categoryServiceForm.category" class="full-input" filterable>
+              <el-option
+                v-for="category in categoryServiceEditCategoryOptions"
+                :key="category.value"
+                :label="category.label"
+                :value="category.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item prop="officialBasePrice" label="官网价">
+            <el-input v-model.trim="categoryServiceForm.officialBasePrice" />
+          </el-form-item>
+          <el-form-item prop="officialCostValue" label="Apple余额价">
+            <el-input v-model.trim="categoryServiceForm.officialCostValue" />
+          </el-form-item>
+          <el-form-item prop="currency" label="币种">
+            <el-input v-model.trim="categoryServiceForm.currency" />
+          </el-form-item>
+          <el-form-item label="业务周期">
+            <div class="category-service-period-fields">
+              <el-select v-model="categoryServiceForm.defaultPeriodType">
+                <el-option label="按月" value="month" />
+                <el-option label="按天" value="day" />
+                <el-option label="手动" value="manual" />
+              </el-select>
+              <el-input-number v-model="categoryServiceForm.defaultPeriodValue" :min="1" />
+            </div>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-radio-group v-model="categoryServiceForm.status">
+              <el-radio-button value="enabled">启用</el-radio-button>
+              <el-radio-button value="paused">暂停</el-radio-button>
+              <el-radio-button value="disabled">停用</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+        </div>
+        <el-form-item label="备注">
+          <el-input v-model="categoryServiceForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <AppButton @click="categoryServiceDialogVisible = false">取消</AppButton>
+        <AppButton
+          variant="primary"
+          :loading="
+            Boolean(editingCategoryService && categoryServiceSavingId === editingCategoryService.id)
+          "
+          @click="saveCategoryService"
+        >
+          保存业务
         </AppButton>
       </template>
     </el-dialog>
@@ -2092,7 +2281,16 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+  type Ref
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   appleServicesApi,
@@ -2124,12 +2322,15 @@ import type {
   DataDictionary,
   DataDictionaryStatus,
   PageResult,
+  AppleService,
   SourcePlatform,
   TableDensity,
   UserTableView
 } from '@/types/system';
 import {
   encodeAppleAccountRegionValue,
+  formatAppleRegionCurrencyLabel,
+  formatAppleRegionLabel,
   getDefaultAppleAccountRegionDictionaries,
   parseAppleAccountRegionDictionary
 } from '@/utils/appleAccountRegion';
@@ -2159,12 +2360,21 @@ import {
   systemQuickOptionGroups,
   type SystemQuickOptionGroupKey
 } from '@/utils/systemQuickOptions';
-import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
+import {
+  createSmartQueryKey,
+  invalidateSmartQueries,
+  refreshSmartQueryResource
+} from '@/utils/smartQuery';
 
 const tableKey = 'source_platforms';
 const statusOptions = [
   { label: '启用', value: 'active' },
   { label: '停用', value: 'disabled' }
+];
+const appleServiceDependentQueryScopes = [
+  'apple-services',
+  'order-entry-base',
+  'data-dictionaries'
 ];
 const platformColumnOptions = [
   { label: '平台名称', value: 'name', required: true },
@@ -2282,6 +2492,7 @@ const deliveryModeDialogVisible = ref(false);
 const editingPlatform = ref<SourcePlatform | null>(null);
 const editingTag = ref<DataDictionary | null>(null);
 const editingCategory = ref<DataDictionary | null>(null);
+const editingCategoryService = ref<AppleService | null>(null);
 const editingAppleServiceOption = ref<DataDictionary | null>(null);
 const editingAppleServiceOptionGroup = ref<AppleServiceQuickOptionGroupKey>('periodType');
 const editingNotificationOption = ref<DataDictionary | null>(null);
@@ -2294,6 +2505,7 @@ const editingDeliveryMode = ref<DataDictionary | null>(null);
 const formRef = ref<FormInstance>();
 const tagFormRef = ref<FormInstance>();
 const categoryFormRef = ref<FormInstance>();
+const categoryServiceFormRef = ref<FormInstance>();
 const appleServiceOptionFormRef = ref<FormInstance>();
 const notificationOptionFormRef = ref<FormInstance>();
 const systemOptionFormRef = ref<FormInstance>();
@@ -2343,6 +2555,14 @@ const total = ref(0);
 const tagTotal = ref(0);
 const categoryTotal = ref(0);
 const categoryUsageCounts = ref<Record<string, number>>({});
+const categoryServicesDialogVisible = ref(false);
+const categoryServiceDialogVisible = ref(false);
+const categoryServicesLoading = ref(false);
+const categoryServiceSavingId = ref('');
+const categoryServiceDeletingId = ref('');
+const activeCategoryForServices = ref<DataDictionary | null>(null);
+const categoryServices = ref<AppleService[]>([]);
+const categoryServicesTotal = ref(0);
 const regionTotal = ref(0);
 const methodTotal = ref(0);
 const deliveryModeTotal = ref(0);
@@ -2441,6 +2661,18 @@ const categoryForm = reactive({
   remark: ''
 });
 
+const categoryServiceForm = reactive({
+  name: '',
+  category: '',
+  officialBasePrice: '0',
+  officialCostValue: '0',
+  currency: 'USD',
+  defaultPeriodType: 'month' as AppleService['defaultPeriodType'],
+  defaultPeriodValue: 1,
+  status: 'enabled' as AppleService['status'],
+  remark: ''
+});
+
 const appleServiceOptionForm = reactive({
   code: '',
   label: '',
@@ -2504,6 +2736,26 @@ const activeTagCount = computed(
 const activeCategoryCount = computed(
   () => appleServiceCategories.value.filter((category) => category.status === 'active').length
 );
+const categoryServiceEditCategoryOptions = computed(() => {
+  const optionMap = new Map<string, { label: string; value: string }>();
+
+  for (const category of appleServiceCategories.value) {
+    const value = getAppleServiceCategoryValue(category);
+    if (category.status !== 'active' && value !== categoryServiceForm.category) {
+      continue;
+    }
+    optionMap.set(value, { label: category.label, value });
+  }
+
+  if (categoryServiceForm.category && !optionMap.has(categoryServiceForm.category)) {
+    optionMap.set(categoryServiceForm.category, {
+      label: categoryServiceForm.category,
+      value: categoryServiceForm.category
+    });
+  }
+
+  return [...optionMap.values()];
+});
 const activeAppleServiceOptionGroup = computed(
   () =>
     appleServiceQuickOptionGroups.find(
@@ -2574,6 +2826,14 @@ const categoryRules: FormRules<typeof categoryForm> = {
   label: [{ required: true, message: '请输入分类名称', trigger: 'blur' }]
 };
 
+const categoryServiceRules: FormRules<typeof categoryServiceForm> = {
+  name: [{ required: true, message: '请输入业务名称', trigger: 'blur' }],
+  category: [{ required: true, message: '请选择业务分类', trigger: 'change' }],
+  officialBasePrice: [{ required: true, message: '请输入官网价', trigger: 'blur' }],
+  officialCostValue: [{ required: true, message: '请输入 Apple余额价', trigger: 'blur' }],
+  currency: [{ required: true, message: '请输入币种', trigger: 'blur' }]
+};
+
 const appleServiceOptionRules: FormRules<typeof appleServiceOptionForm> = {
   label: [{ required: true, message: '请输入显示名称', trigger: 'blur' }]
 };
@@ -2610,6 +2870,16 @@ function getAppleRegionOption(region: DataDictionary) {
 
 function getAppleRegionCurrency(region: DataDictionary) {
   return getAppleRegionOption(region).currency;
+}
+
+function getAppleRegionLabel(region: DataDictionary) {
+  const option = getAppleRegionOption(region);
+  return formatAppleRegionLabel(option.code, [option]);
+}
+
+function getAppleRegionCurrencySummary(region: DataDictionary) {
+  const option = getAppleRegionOption(region);
+  return formatAppleRegionCurrencyLabel(option.code, option.currency, [option]);
 }
 
 function getAppleRegionDialCode(region: DataDictionary) {
@@ -2789,14 +3059,6 @@ function getCategoryUsageCount(category: DataDictionary) {
   return categoryUsageCounts.value[category.id] ?? 0;
 }
 
-function getCategoryDeleteActionLabel(category: DataDictionary) {
-  const usageCount = getCategoryUsageCount(category);
-  if (usageCount > 0) {
-    return category.status === 'active' ? '停用' : '已停用';
-  }
-  return '删除';
-}
-
 async function loadAppleServiceCategoryUsageCounts(categories: DataDictionary[]) {
   const requestId = ++categoryUsageRequestId;
   if (!categories.length) {
@@ -2825,6 +3087,90 @@ async function loadAppleServiceCategoryUsageCounts(categories: DataDictionary[])
     }
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务分类使用数失败');
   }
+}
+
+function invalidateAppleServiceConsumers() {
+  for (const scope of appleServiceDependentQueryScopes) {
+    invalidateSmartQueries(scope);
+  }
+}
+
+async function loadCategoryServices(category = activeCategoryForServices.value) {
+  if (!category) {
+    categoryServices.value = [];
+    categoryServicesTotal.value = 0;
+    return;
+  }
+
+  activeCategoryForServices.value = category;
+  categoryServicesLoading.value = true;
+  try {
+    const result = await appleServicesApi.list({
+      page: 1,
+      pageSize: 100,
+      category: getAppleServiceCategoryValue(category),
+      sortBy: 'updatedAt',
+      sortOrder: 'desc'
+    });
+    categoryServices.value = result.items;
+    categoryServicesTotal.value = result.total;
+    categoryUsageCounts.value = {
+      ...categoryUsageCounts.value,
+      [category.id]: result.total
+    };
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载使用中业务失败');
+  } finally {
+    categoryServicesLoading.value = false;
+  }
+}
+
+function openCategoryServices(category: DataDictionary) {
+  activeCategoryForServices.value = category;
+  categoryServicesDialogVisible.value = true;
+  void loadCategoryServices(category);
+}
+
+function openCategoryServiceEdit(service: AppleService) {
+  editingCategoryService.value = service;
+  categoryServiceForm.name = service.name;
+  categoryServiceForm.category = normalizeAppleServiceCategoryValue(service.category);
+  categoryServiceForm.officialBasePrice = service.officialBasePrice;
+  categoryServiceForm.officialCostValue = service.officialCostValue;
+  categoryServiceForm.currency = service.currency;
+  categoryServiceForm.defaultPeriodType = service.defaultPeriodType;
+  categoryServiceForm.defaultPeriodValue = service.defaultPeriodValue;
+  categoryServiceForm.status = service.status;
+  categoryServiceForm.remark = service.remark ?? '';
+  categoryServiceDialogVisible.value = true;
+  void nextTick(() => categoryServiceFormRef.value?.clearValidate());
+}
+
+function getAppleServiceStatusLabel(status: AppleService['status']) {
+  const labels: Record<AppleService['status'], string> = {
+    enabled: '启用',
+    paused: '暂停',
+    disabled: '停用'
+  };
+  return labels[status] ?? status;
+}
+
+function getAppleServiceStatusTone(status: AppleService['status']) {
+  if (status === 'enabled') return 'green';
+  if (status === 'paused') return 'orange';
+  return 'neutral';
+}
+
+function getAppleServicePeriodLabel(
+  service: Pick<AppleService, 'defaultPeriodType' | 'defaultPeriodValue'>
+) {
+  if (service.defaultPeriodType === 'day') {
+    return `${service.defaultPeriodValue} 天`;
+  }
+  if (service.defaultPeriodType === 'manual') {
+    return '手动';
+  }
+  return `${service.defaultPeriodValue} 个月`;
 }
 
 function applyAppleServiceOptionResult(
@@ -3629,6 +3975,9 @@ function resetCategoryForm() {
 
 function openCreateCategory() {
   editingCategory.value = null;
+  activeCategoryForServices.value = null;
+  categoryServices.value = [];
+  categoryServicesTotal.value = 0;
   resetCategoryForm();
   categoryDialogVisible.value = true;
 }
@@ -3639,7 +3988,9 @@ function openEditCategory(category: DataDictionary) {
   categoryForm.sortOrder = category.sortOrder;
   categoryForm.status = category.status;
   categoryForm.remark = category.remark ?? '';
+  activeCategoryForServices.value = category;
   categoryDialogVisible.value = true;
+  void loadCategoryServices(category);
 }
 
 function openEditAppleServiceOption(option: DataDictionary) {
@@ -3835,12 +4186,22 @@ async function deleteCustomerTag(tag: DataDictionary) {
 async function deleteAppleServiceCategory(category: DataDictionary) {
   const usageCount = getCategoryUsageCount(category);
   if (usageCount > 0) {
-    if (category.status !== 'active') {
-      ElMessage.info('这个分类已经停用；因为还有业务在使用，不能物理删除');
-      return;
+    try {
+      await ElMessageBox.confirm(
+        `这个分类还有 ${usageCount} 个业务正在使用，不能直接删除。请先查看使用中业务，把业务改到其他分类或删除业务后再删除分类。`,
+        '不能直接删除使用中的分类',
+        {
+          type: 'warning',
+          confirmButtonText: '查看使用中业务',
+          cancelButtonText: '返回'
+        }
+      );
+      openCategoryServices(category);
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        ElMessage.error(error instanceof Error ? error.message : '打开使用中业务失败');
+      }
     }
-
-    await toggleAppleServiceCategoryStatus(category);
     return;
   }
 
@@ -3854,6 +4215,71 @@ async function deleteAppleServiceCategory(category: DataDictionary) {
     },
     reload: () => loadAppleServiceCategories({ force: true })
   });
+  invalidateAppleServiceConsumers();
+}
+
+async function saveCategoryService() {
+  const valid = await categoryServiceFormRef.value?.validate().catch(() => false);
+  if (!valid || !editingCategoryService.value) {
+    return;
+  }
+
+  const serviceId = editingCategoryService.value.id;
+  categoryServiceSavingId.value = serviceId;
+  try {
+    await appleServicesApi.update(serviceId, {
+      name: categoryServiceForm.name.trim(),
+      category: normalizeAppleServiceCategoryValue(categoryServiceForm.category),
+      officialBasePrice: categoryServiceForm.officialBasePrice.trim(),
+      officialCostValue: categoryServiceForm.officialCostValue.trim(),
+      currency: categoryServiceForm.currency.trim().toUpperCase(),
+      defaultPeriodType: categoryServiceForm.defaultPeriodType,
+      defaultPeriodValue: categoryServiceForm.defaultPeriodValue,
+      status: categoryServiceForm.status,
+      remark: categoryServiceForm.remark.trim() || null
+    });
+
+    ElMessage.success('业务已保存');
+    categoryServiceDialogVisible.value = false;
+    invalidateAppleServiceConsumers();
+    await Promise.all([
+      loadCategoryServices(activeCategoryForServices.value),
+      loadAppleServiceCategories({ force: true })
+    ]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存业务失败');
+  } finally {
+    categoryServiceSavingId.value = '';
+  }
+}
+
+async function deleteCategoryService(service: AppleService) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除业务“${service.name}”？删除后订单录入不能再选择这个开通业务，历史订单不受影响。`,
+      '删除使用中业务',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消'
+      }
+    );
+
+    categoryServiceDeletingId.value = service.id;
+    await appleServicesApi.remove(service.id);
+    ElMessage.success('业务已删除');
+    invalidateAppleServiceConsumers();
+    await Promise.all([
+      loadCategoryServices(activeCategoryForServices.value),
+      loadAppleServiceCategories({ force: true })
+    ]);
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error instanceof Error ? error.message : '删除业务失败');
+    }
+  } finally {
+    categoryServiceDeletingId.value = '';
+  }
 }
 
 async function syncAppleServicesCategoryLabel(oldCategory: string, newCategory: string) {
@@ -3916,7 +4342,7 @@ async function deleteSystemOption(option: DataDictionary) {
 async function deleteAppleRegion(region: DataDictionary) {
   await deleteDictionaryOption(region, {
     entityLabel: 'Apple ID 地区',
-    displayName: `${region.code.toLowerCase()} / ${region.label}`,
+    displayName: getAppleRegionLabel(region),
     confirmDetail: '删除后新增 Apple ID 不会再出现这个地区，历史账号不受影响。',
     beforeReload: () => {
       if (appleRegionDictionaries.value.length === 1 && regionQuery.page > 1) {
@@ -4075,6 +4501,7 @@ async function saveAppleServiceCategory() {
         : 'Apple ID 业务分类已保存'
     );
     categoryDialogVisible.value = false;
+    invalidateAppleServiceConsumers();
     await loadAppleServiceCategories({ force: true });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存 Apple ID 业务分类失败');
@@ -4105,6 +4532,7 @@ async function toggleAppleServiceCategoryStatus(category: DataDictionary) {
       status: nextStatus
     });
     ElMessage.success(`Apple ID 业务分类已${actionLabel}`);
+    invalidateAppleServiceConsumers();
     await loadAppleServiceCategories({ force: true });
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
@@ -4357,8 +4785,8 @@ async function toggleAppleRegionStatus(region: DataDictionary) {
   try {
     await ElMessageBox.confirm(
       nextStatus === 'active'
-        ? `确认启用“${region.code.toLowerCase()}”？启用后新增 Apple ID 可以选择这个地区。`
-        : `确认停用“${region.code.toLowerCase()}”？停用后新增 Apple ID 不会再出现这个地区，历史账号不受影响。`,
+        ? `确认启用“${getAppleRegionLabel(region)}”？启用后新增 Apple ID 可以选择这个地区。`
+        : `确认停用“${getAppleRegionLabel(region)}”？停用后新增 Apple ID 不会再出现这个地区，历史账号不受影响。`,
       `${actionLabel}Apple ID 地区`,
       {
         type: 'warning',
@@ -4590,6 +5018,49 @@ onBeforeUnmount(stopRealtimeRefresh);
   width: 150px;
 }
 
+.category-service-panel {
+  padding-top: 16px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.category-service-panel--plain {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+
+.category-service-panel__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.category-service-panel__head strong {
+  display: block;
+  color: var(--text-primary);
+}
+
+.category-service-panel__head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.category-service-table {
+  width: 100%;
+}
+
+.category-service-period-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+}
+
 @media (max-width: 840px) {
   .source-options-nav {
     margin: 0 -12px;
@@ -4605,6 +5076,14 @@ onBeforeUnmount(stopRealtimeRefresh);
   .quick-settings-toolbar__search,
   .quick-settings-toolbar__select {
     width: 100%;
+  }
+
+  .category-service-panel__head {
+    flex-direction: column;
+  }
+
+  .category-service-period-fields {
+    grid-template-columns: 1fr;
   }
 }
 </style>

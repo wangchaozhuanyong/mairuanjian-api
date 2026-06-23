@@ -33,427 +33,495 @@
         :rules="rules"
         label-position="top"
       >
-        <div class="form-grid form-grid--three">
-          <el-form-item required>
-            <template #label>
-              <FieldHelpLabel
-                label="客户"
-                purpose="这笔订单属于哪个客户，后面查续费、利润、售后都会关联到他。"
-                example="老客户可以搜客户名、微信或手机号尾号；找不到就点手动输入。"
-              />
-            </template>
-            <div class="order-entry-customer-picker">
-              <el-select
-                v-model="form.customerId"
-                class="full-input"
-                clearable
-                filterable
-                remote
-                reserve-keyword
-                :disabled="Boolean(newCustomerDraft)"
-                :loading="customerSearching"
-                :remote-method="searchCustomers"
-                placeholder="搜索客户名称、微信、手机号尾号"
-                @change="handleCustomerChange"
-                @visible-change="handleCustomerSelectVisibleChange"
-              >
-                <el-option
-                  v-for="customer in customers"
-                  :key="customer.id"
-                  :label="getCustomerOptionLabel(customer)"
-                  :value="customer.id"
-                >
-                  <div class="order-entry-customer-option">
-                    <strong>{{ customer.name }}</strong>
-                    <span>{{ getCustomerMeta(customer) }}</span>
-                  </div>
-                </el-option>
-                <template #empty>
-                  <div class="order-entry-select-empty">
-                    <span>{{
-                      customerSearching ? '正在搜索客户...' : '未找到客户，可手动输入资料。'
-                    }}</span>
-                    <AppButton size="small" variant="soft" @click.stop="openNewCustomerDialog">
+        <div class="order-entry-layout">
+          <section class="order-entry-pane order-entry-pane--manual">
+            <div class="order-entry-pane__header">
+              <div>
+                <span>需要填写</span>
+                <strong>录入信息</strong>
+              </div>
+              <StatusChip tone="blue">左侧填写</StatusChip>
+            </div>
+
+            <div class="order-entry-section">
+              <span class="order-entry-section__title">客户与来源</span>
+              <div class="order-entry-field-grid">
+                <el-form-item class="order-entry-field--wide" required>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="客户"
+                      purpose="这笔订单属于哪个客户，后面查续费、利润、售后都会关联到他。"
+                      example="老客户可以搜客户名、微信或手机号尾号；找不到就点手动输入。"
+                    />
+                  </template>
+                  <div class="order-entry-customer-picker">
+                    <el-select
+                      v-model="form.customerId"
+                      class="full-input"
+                      clearable
+                      filterable
+                      remote
+                      reserve-keyword
+                      :disabled="Boolean(newCustomerDraft)"
+                      :loading="customerSearching"
+                      :remote-method="searchCustomers"
+                      placeholder="搜索客户名称、微信、手机号尾号"
+                      @change="handleCustomerChange"
+                      @visible-change="handleCustomerSelectVisibleChange"
+                    >
+                      <el-option
+                        v-for="customer in customers"
+                        :key="customer.id"
+                        :label="getCustomerOptionLabel(customer)"
+                        :value="customer.id"
+                      >
+                        <div class="order-entry-customer-option">
+                          <strong>{{ customer.name }}</strong>
+                          <span>{{ getCustomerMeta(customer) }}</span>
+                        </div>
+                      </el-option>
+                      <template #empty>
+                        <div class="order-entry-select-empty">
+                          <span>{{
+                            customerSearching ? '正在搜索客户...' : '未找到客户，可手动输入资料。'
+                          }}</span>
+                          <AppButton
+                            size="small"
+                            variant="soft"
+                            @click.stop="openNewCustomerDialog"
+                          >
+                            手动输入
+                          </AppButton>
+                        </div>
+                      </template>
+                    </el-select>
+                    <AppButton
+                      class="order-entry-customer-picker__create"
+                      size="small"
+                      variant="soft"
+                      @click="openNewCustomerDialog"
+                    >
                       手动输入
                     </AppButton>
                   </div>
-                </template>
-              </el-select>
-              <AppButton
-                class="order-entry-customer-picker__create"
-                size="small"
-                variant="soft"
-                @click="openNewCustomerDialog"
-              >
-                手动输入
-              </AppButton>
-            </div>
-            <div v-if="newCustomerDraft" class="order-entry-customer-draft">
-              <StatusChip tone="blue">待新增</StatusChip>
-              <span>{{ newCustomerDraftSummary }}</span>
-              <AppButton size="small" variant="ghost" @click="clearNewCustomerDraft">
-                移除
-              </AppButton>
-            </div>
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="来源平台"
-                purpose="记录订单从哪里来，并按平台设置自动计算手续费。"
-                example="微信来的订单选微信，官网来的订单选官网，私下收款可以留空或选对应自建平台。"
-              />
-            </template>
-            <el-select
-              v-model="form.sourcePlatformId"
-              class="full-input"
-              clearable
-              filterable
-              @change="handleSourcePlatformChange"
-            >
-              <el-option
-                v-for="platform in sourcePlatforms"
-                :key="platform.id"
-                :label="platform.name"
-                :value="platform.id"
-              />
-            </el-select>
-          </el-form-item>
+                  <div v-if="newCustomerDraft" class="order-entry-customer-draft">
+                    <StatusChip tone="blue">待新增</StatusChip>
+                    <span>{{ newCustomerDraftSummary }}</span>
+                    <AppButton size="small" variant="ghost" @click="clearNewCustomerDraft">
+                      移除
+                    </AppButton>
+                  </div>
+                </el-form-item>
 
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="平台订单号"
-                purpose="保存外部平台的订单编号，方便以后对账、查售后和回看聊天记录。"
-                example="官网订单填官网单号，微信订单填转账备注；没有平台单号可以先留空。"
-              />
-            </template>
-            <el-input v-model.trim="form.externalOrderNo" />
-          </el-form-item>
-          <el-form-item prop="serviceRegion">
-            <template #label>
-              <FieldHelpLabel
-                label="国家"
-                purpose="先确定 Apple ID 地区，后面的分类和业务只展示这个国家可开的项目。"
-                example="美区业务先选 US，美国区账号才会进入匹配。"
-              />
-            </template>
-            <el-select
-              v-model="form.serviceRegion"
-              class="full-input"
-              clearable
-              filterable
-              placeholder="请选择国家 / 地区"
-              @change="handleServiceRegionChange"
-            >
-              <el-option
-                v-for="item in serviceRegionOptions"
-                :key="item.code"
-                :label="item.label"
-                :value="item.code"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item prop="serviceCategory">
-            <template #label>
-              <FieldHelpLabel
-                label="分类"
-                purpose="按业务分类缩小范围，避免订单录入时在一长串业务里找。"
-                example="先选 AI 订阅，再选具体的 Plus 月费或年费。"
-              />
-            </template>
-            <el-select
-              v-model="form.serviceCategory"
-              class="full-input"
-              clearable
-              filterable
-              placeholder="请选择分类"
-              :disabled="!form.serviceRegion"
-              @change="handleServiceCategoryChange"
-            >
-              <el-option
-                v-for="category in serviceCategoryOptions"
-                :key="category"
-                :label="category"
-                :value="category"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item prop="serviceId">
-            <template #label>
-              <FieldHelpLabel
-                label="开通业务"
-                purpose="选择客户这次要开的具体服务，系统会按业务配置带出售价、周期和 Apple 消耗金额。"
-                example="客户买 gpt pro 1 个月，就选对应的 gpt pro 月费业务。"
-              />
-            </template>
-            <el-select
-              v-model="form.serviceId"
-              class="full-input"
-              filterable
-              :loading="loading"
-              :disabled="!form.serviceRegion || !form.serviceCategory"
-              placeholder="请选择业务"
-              @change="handleServiceChange"
-            >
-              <el-option
-                v-for="service in filteredServices"
-                :key="service.id"
-                :label="`${service.name} · ${service.officialCostValue} ${service.currency}`"
-                :value="service.id"
-              />
-              <template #empty>
-                <div class="order-entry-select-empty">
-                  <span>
-                    {{
-                      loading
-                        ? '正在加载业务...'
-                        : '没有可选业务，请确认 ID 业务设置里已启用后再刷新。'
-                    }}
-                  </span>
-                  <AppButton
-                    v-if="!loading"
-                    size="small"
-                    variant="soft"
-                    @click.stop="loadInitialData({ force: true, dedupeMs: 0 })"
-                  >
-                    刷新业务
-                  </AppButton>
-                </div>
-              </template>
-            </el-select>
-          </el-form-item>
-
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="客户网站账号"
-                purpose="记录客户在目标网站或 App 里的账号，方便开通、续费和售后定位。"
-                example="ChatGPT 业务可以填客户登录邮箱；如果业务不需要客户账号可留空。"
-              />
-            </template>
-            <el-input v-model.trim="form.serviceAccount" @blur="loadOrderEntryContext" />
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="当前套餐"
-                purpose="记录客户开通前或当前正在用的套餐，方便判断是新开、续费还是升级。"
-                example="客户现在是 Free 就填 Free；已经是 Plus 月费就填 Plus 月费。"
-              />
-            </template>
-            <el-input v-model.trim="form.currentPlan" />
-            <div v-if="orderContextLoading || orderContext" class="order-entry-history-card">
-              <StatusChip :tone="orderContext ? 'blue' : 'neutral'">
-                {{ orderContext ? '上次记录' : '查询中' }}
-              </StatusChip>
-              <span v-if="orderContext">
-                {{ getOrderContextSummary() }}
-              </span>
-              <span v-else>正在读取客户上次套餐和收费记录...</span>
-            </div>
-          </el-form-item>
-
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="开通时间"
-                purpose="记录服务从什么时候开始算，用来生成开通记录和续费提醒。"
-                example="现在马上开通就用默认当前时间；补录旧订单就改成实际开通时间。"
-              />
-            </template>
-            <el-date-picker
-              v-model="form.startTime"
-              class="full-input"
-              type="datetime"
-              value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
-              @change="syncExpireTimeFromService"
-            />
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="到期时间"
-                purpose="记录服务什么时候结束，后续续费任务和到期提醒会看这个时间。"
-                example="系统按含开通当天计算：5 月 8 日开通 1 个月，默认填 6 月 7 日。特殊订单可以手动改。"
-              />
-            </template>
-            <el-date-picker
-              v-model="form.expireTime"
-              class="full-input"
-              type="datetime"
-              value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
-              placeholder="按业务周期自动计算"
-            />
-          </el-form-item>
-
-          <el-form-item prop="paidAmount">
-            <template #label>
-              <FieldHelpLabel
-                label="客户实收"
-                purpose="客户这单实际付给你的金额，是计算订单利润的收入部分。"
-                example="客户转了 20 元就填 20；如果收的是美元、马币或 USDT，就选择对应币种并填写汇率。"
-              />
-            </template>
-            <div class="order-entry-money-input">
-              <el-input
-                v-model.trim="form.paidAmount"
-                type="number"
-                inputmode="decimal"
-                min="0"
-                placeholder="0.00"
-                @change="syncDerivedOrderAmounts"
-              />
-              <el-select
-                v-model="form.paidCurrency"
-                class="order-entry-money-input__currency"
-                @change="handlePaidCurrencyChange"
-              >
-                <el-option
-                  v-for="option in paidCurrencyOptions"
-                  :key="option.value"
-                  :label="option.label"
-                  :value="option.value"
-                />
-              </el-select>
-            </div>
-            <div class="order-entry-money-meta">
-              <div class="order-entry-money-hint">
-                {{ paidAmountRmbHint }}
-              </div>
-              <div class="order-entry-margin-calculator">
-                <span class="order-entry-margin-calculator__label">毛利率</span>
-                <el-input
-                  v-model.trim="form.targetGrossMargin"
-                  class="order-entry-margin-calculator__input"
-                  type="number"
-                  inputmode="decimal"
-                  min="0"
-                  max="99"
-                  placeholder="0"
-                >
-                  <template #suffix>
-                    <span class="order-entry-margin-calculator__suffix">%</span>
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="来源平台"
+                      purpose="记录订单从哪里来，并按平台设置自动计算手续费。"
+                      example="微信来的订单选微信，官网来的订单选官网，私下收款可以留空或选对应自建平台。"
+                    />
                   </template>
-                </el-input>
-                <AppButton
-                  class="order-entry-margin-calculator__action"
-                  size="small"
-                  variant="soft"
-                  @click="fillPaidAmountByMargin"
-                >
-                  反算实收
-                </AppButton>
-                <span class="order-entry-margin-calculator__hint">
-                  {{ suggestedPaidAmountHint }}
-                </span>
+                  <el-select
+                    v-model="form.sourcePlatformId"
+                    class="full-input"
+                    clearable
+                    filterable
+                    @change="handleSourcePlatformChange"
+                  >
+                    <el-option
+                      v-for="platform in sourcePlatforms"
+                      :key="platform.id"
+                      :label="platform.name"
+                      :value="platform.id"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="平台订单号"
+                      purpose="保存外部平台的订单编号，方便以后对账、查售后和回看聊天记录。"
+                      example="官网订单填官网单号，微信订单填转账备注；没有平台单号可以先留空。"
+                    />
+                  </template>
+                  <el-input v-model.trim="form.externalOrderNo" />
+                </el-form-item>
               </div>
             </div>
-          </el-form-item>
-          <el-form-item v-if="form.paidCurrency !== 'CNY'" prop="paidExchangeRateToRmb">
-            <template #label>
-              <FieldHelpLabel
-                label="折算人民币汇率"
-                purpose="把客户实收币种折成人民币，利润统一按人民币计算。"
-                example="收 20 USD，1 USD = 7.20 元，就填 7.20。"
-              />
-            </template>
-            <el-input
-              v-model.trim="form.paidExchangeRateToRmb"
-              type="number"
-              inputmode="decimal"
-              min="0"
-              placeholder="例如 7.20"
-              @change="syncDerivedOrderAmounts"
-            />
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="平台手续费"
-                purpose="平台从这单里扣掉的钱，系统按来源平台的费率和固定费用自动算。"
-                example="某渠道设置了 1% 手续费，客户实收 20，系统会自动带出约 0.20。"
-              />
-            </template>
-            <el-input v-model.trim="form.platformFee" disabled placeholder="按来源平台自动计算" />
-            <div class="order-entry-money-hint">
-              折合人民币 {{ formatMoney(platformFeeRmbValue) }}
-            </div>
-          </el-form-item>
-          <el-form-item>
-            <template #label>
-              <FieldHelpLabel
-                label="退款/补发损耗"
-                purpose="记录这单额外亏掉的钱，比如补发、退款差额或人工承担的损失。"
-                example="没有损耗填 0；给客户补了 3 元成本就填 3。"
-              />
-            </template>
-            <el-input v-model.trim="form.refundLoss" type="number" inputmode="decimal" min="0" />
-            <div class="order-entry-money-hint">
-              折合人民币 {{ formatMoney(refundLossRmbValue) }}
-            </div>
-          </el-form-item>
 
-          <el-form-item prop="appleCostValue">
-            <template #label>
-              <FieldHelpLabel
-                label="Apple 消耗金额"
-                purpose="这单预计会扣多少 Apple ID 外币余额，后端会用它乘以当前平均成本算成本。"
-                example="业务官方消耗是 20 USD，这里自动带出 20。"
-              />
-            </template>
-            <el-input
-              v-model.trim="form.appleCostValue"
-              disabled
-              placeholder="按业务官方消耗自动带出"
-            />
-          </el-form-item>
-          <el-form-item prop="appleAccountOwnershipType">
-            <template #label>
-              <FieldHelpLabel
-                label="ID 处理方式"
-                purpose="寄存只扣 Apple 余额成本；售出会把 Apple ID 本身成本一起计入订单利润。"
-                example="ID 留在你这边继续用选寄存；ID 卖给客户以后不再复用选售出。"
-              />
-            </template>
-            <el-select
-              v-model="form.appleAccountOwnershipType"
-              class="full-input"
-              @change="handleAppleAccountOwnershipTypeChange"
-            >
-              <el-option label="寄存" value="consigned" />
-              <el-option label="售出" value="sold" />
-            </el-select>
-          </el-form-item>
-          <el-form-item prop="appleAccountId">
-            <template #label>
-              <FieldHelpLabel
-                label="已选 Apple ID"
-                purpose="这单最终使用哪个 Apple ID 扣余额和生成开通记录。"
-                example="自动匹配出可用账号后点选择，这里会显示已选账号和余额。"
-              />
-            </template>
-            <el-input :model-value="selectedAccountLabel" disabled />
-            <div
-              v-if="selectedAccount && form.appleAccountOwnershipType === 'sold'"
-              class="order-entry-money-hint"
-            >
-              ID 成本 {{ formatMoney(selectedAccountPurchaseCost) }}，参考售价
-              {{ formatMoney(selectedAccountSalePrice) }}
+            <div class="order-entry-section">
+              <span class="order-entry-section__title">业务选择</span>
+              <div class="order-entry-field-grid">
+                <el-form-item prop="serviceRegion">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="国家"
+                      purpose="先确定 Apple ID 地区，后面的分类和业务只展示这个国家可开的项目。"
+                      example="美区业务先选 US，美国区账号才会进入匹配。"
+                    />
+                  </template>
+                  <el-select
+                    v-model="form.serviceRegion"
+                    class="full-input"
+                    clearable
+                    filterable
+                    placeholder="请选择国家 / 地区"
+                    @change="handleServiceRegionChange"
+                  >
+                    <el-option
+                      v-for="item in serviceRegionOptions"
+                      :key="item.code"
+                      :label="item.label"
+                      :value="item.code"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item prop="serviceCategory">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="分类"
+                      purpose="按业务分类缩小范围，避免订单录入时在一长串业务里找。"
+                      example="先选 AI 订阅，再选具体的 Plus 月费或年费。"
+                    />
+                  </template>
+                  <el-select
+                    v-model="form.serviceCategory"
+                    class="full-input"
+                    clearable
+                    filterable
+                    placeholder="请选择分类"
+                    :disabled="!form.serviceRegion"
+                    @change="handleServiceCategoryChange"
+                  >
+                    <el-option
+                      v-for="category in serviceCategoryOptions"
+                      :key="category"
+                      :label="category"
+                      :value="category"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item class="order-entry-field--wide" prop="serviceId">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="开通业务"
+                      purpose="选择客户这次要开的具体服务，系统会按业务配置带出售价、周期和 Apple 消耗金额。"
+                      example="客户买 gpt pro 1 个月，就选对应的 gpt pro 月费业务。"
+                    />
+                  </template>
+                  <el-select
+                    v-model="form.serviceId"
+                    class="full-input"
+                    filterable
+                    :loading="loading"
+                    :disabled="!form.serviceRegion || !form.serviceCategory"
+                    placeholder="请选择业务"
+                    @change="handleServiceChange"
+                  >
+                    <el-option
+                      v-for="service in filteredServices"
+                      :key="service.id"
+                      :label="`${service.name} · ${service.officialCostValue} ${service.currency}`"
+                      :value="service.id"
+                    />
+                    <template #empty>
+                      <div class="order-entry-select-empty">
+                        <span>
+                          {{
+                            loading
+                              ? '正在加载业务...'
+                              : '没有可选业务，请确认 ID 业务设置里已启用后再刷新。'
+                          }}
+                        </span>
+                        <AppButton
+                          v-if="!loading"
+                          size="small"
+                          variant="soft"
+                          @click.stop="loadInitialData({ force: true, dedupeMs: 0 })"
+                        >
+                          刷新业务
+                        </AppButton>
+                      </div>
+                    </template>
+                  </el-select>
+                </el-form-item>
+              </div>
             </div>
-          </el-form-item>
+
+            <div class="order-entry-section">
+              <span class="order-entry-section__title">账号与收款</span>
+              <div class="order-entry-field-grid">
+                <el-form-item class="order-entry-field--wide">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="客户网站账号"
+                      purpose="记录客户在目标网站或 App 里的账号，方便开通、续费和售后定位。"
+                      example="ChatGPT 业务可以填客户登录邮箱；如果业务不需要客户账号可留空。"
+                    />
+                  </template>
+                  <el-input v-model.trim="form.serviceAccount" @blur="loadOrderEntryContext" />
+                </el-form-item>
+
+                <el-form-item class="order-entry-field--wide" prop="paidAmount">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="客户实收"
+                      purpose="客户这单实际付给你的金额，是计算订单利润的收入部分。"
+                      example="客户转了 20 元就填 20；如果收的是美元、马币或 USDT，就选择对应币种并填写汇率。"
+                    />
+                  </template>
+                  <div class="order-entry-money-input">
+                    <el-input
+                      v-model.trim="form.paidAmount"
+                      type="number"
+                      inputmode="decimal"
+                      min="0"
+                      placeholder="0.00"
+                      @change="syncDerivedOrderAmounts"
+                    />
+                    <el-select
+                      v-model="form.paidCurrency"
+                      class="order-entry-money-input__currency"
+                      @change="handlePaidCurrencyChange"
+                    >
+                      <el-option
+                        v-for="option in paidCurrencyOptions"
+                        :key="option.value"
+                        :label="option.label"
+                        :value="option.value"
+                      />
+                    </el-select>
+                  </div>
+                  <div class="order-entry-money-meta">
+                    <div class="order-entry-money-hint">
+                      {{ paidAmountRmbHint }}
+                    </div>
+                    <div class="order-entry-margin-calculator">
+                      <span class="order-entry-margin-calculator__label">毛利率</span>
+                      <el-input
+                        v-model.trim="form.targetGrossMargin"
+                        class="order-entry-margin-calculator__input"
+                        type="number"
+                        inputmode="decimal"
+                        min="0"
+                        max="99"
+                        placeholder="0"
+                      >
+                        <template #suffix>
+                          <span class="order-entry-margin-calculator__suffix">%</span>
+                        </template>
+                      </el-input>
+                      <AppButton
+                        class="order-entry-margin-calculator__action"
+                        size="small"
+                        variant="soft"
+                        @click="fillPaidAmountByMargin"
+                      >
+                        反算实收
+                      </AppButton>
+                      <span class="order-entry-margin-calculator__hint">
+                        {{ suggestedPaidAmountHint }}
+                      </span>
+                    </div>
+                  </div>
+                </el-form-item>
+
+                <el-form-item v-if="form.paidCurrency !== 'CNY'" prop="paidExchangeRateToRmb">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="折算人民币汇率"
+                      purpose="把客户实收币种折成人民币，利润统一按人民币计算。"
+                      example="收 20 USD，1 USD = 7.20 元，就填 7.20。"
+                    />
+                  </template>
+                  <el-input
+                    v-model.trim="form.paidExchangeRateToRmb"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    placeholder="例如 7.20"
+                    @change="syncDerivedOrderAmounts"
+                  />
+                </el-form-item>
+              </div>
+            </div>
+
+            <div class="order-entry-section">
+              <span class="order-entry-section__title">成本补充</span>
+              <div class="order-entry-field-grid">
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="退款/补发损耗"
+                      purpose="记录这单额外亏掉的钱，比如补发、退款差额或人工承担的损失。"
+                      example="没有损耗填 0；给客户补了 3 元成本就填 3。"
+                    />
+                  </template>
+                  <el-input
+                    v-model.trim="form.refundLoss"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                  />
+                  <div class="order-entry-money-hint">
+                    折合人民币 {{ formatMoney(refundLossRmbValue) }}
+                  </div>
+                </el-form-item>
+
+                <el-form-item prop="appleAccountOwnershipType">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="ID 处理方式"
+                      purpose="寄存只扣 Apple 余额成本；售出会把 Apple ID 本身成本一起计入订单利润。"
+                      example="ID 留在你这边继续用选寄存；ID 卖给客户以后不再复用选售出。"
+                    />
+                  </template>
+                  <el-select
+                    v-model="form.appleAccountOwnershipType"
+                    class="full-input"
+                    @change="handleAppleAccountOwnershipTypeChange"
+                  >
+                    <el-option label="寄存" value="consigned" />
+                    <el-option label="售出" value="sold" />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item class="order-entry-field--wide">
+                  <template #label>
+                    <FieldHelpLabel
+                      label="备注"
+                      purpose="写给自己或同事看的补充说明，不参与金额计算。"
+                      example="可以写客户特殊要求、聊天重点、人工处理原因。"
+                    />
+                  </template>
+                  <el-input v-model="form.remark" type="textarea" :rows="3" />
+                </el-form-item>
+              </div>
+            </div>
+          </section>
+
+          <aside class="order-entry-pane order-entry-pane--system">
+            <div class="order-entry-pane__header">
+              <div>
+                <span>不需要填写</span>
+                <strong>系统信息</strong>
+              </div>
+              <StatusChip tone="green">自动带出</StatusChip>
+            </div>
+
+            <div class="order-entry-system-stack">
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="当前套餐"
+                    purpose="记录客户开通前或当前正在用的套餐，方便判断是新开、续费还是升级。"
+                    example="客户现在是 Free 就填 Free；已经是 Plus 月费就填 Plus 月费。"
+                  />
+                </template>
+                <el-input v-model.trim="form.currentPlan" />
+                <div v-if="orderContextLoading || orderContext" class="order-entry-history-card">
+                  <StatusChip :tone="orderContext ? 'blue' : 'neutral'">
+                    {{ orderContext ? '上次记录' : '查询中' }}
+                  </StatusChip>
+                  <span v-if="orderContext">
+                    {{ getOrderContextSummary() }}
+                  </span>
+                  <span v-else>正在读取客户上次套餐和收费记录...</span>
+                </div>
+              </el-form-item>
+
+              <div class="order-entry-side-grid">
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="开通时间"
+                      purpose="记录服务从什么时候开始算，用来生成开通记录和续费提醒。"
+                      example="现在马上开通就用默认当前时间；补录旧订单就改成实际开通时间。"
+                    />
+                  </template>
+                  <el-date-picker
+                    v-model="form.startTime"
+                    class="full-input"
+                    type="datetime"
+                    value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+                    @change="syncExpireTimeFromService"
+                  />
+                </el-form-item>
+
+                <el-form-item>
+                  <template #label>
+                    <FieldHelpLabel
+                      label="到期时间"
+                      purpose="记录服务什么时候结束，后续续费任务和到期提醒会看这个时间。"
+                      example="系统按含开通当天计算：5 月 8 日开通 1 个月，默认填 6 月 7 日。特殊订单可以手动改。"
+                    />
+                  </template>
+                  <el-date-picker
+                    v-model="form.expireTime"
+                    class="full-input"
+                    type="datetime"
+                    value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+                    placeholder="按业务周期自动计算"
+                  />
+                </el-form-item>
+              </div>
+
+              <el-form-item>
+                <template #label>
+                  <FieldHelpLabel
+                    label="平台手续费"
+                    purpose="平台从这单里扣掉的钱，系统按来源平台的费率和固定费用自动算。"
+                    example="某渠道设置了 1% 手续费，客户实收 20，系统会自动带出约 0.20。"
+                  />
+                </template>
+                <el-input
+                  v-model.trim="form.platformFee"
+                  disabled
+                  placeholder="按来源平台自动计算"
+                />
+                <div class="order-entry-money-hint">
+                  折合人民币 {{ formatMoney(platformFeeRmbValue) }}
+                </div>
+              </el-form-item>
+
+              <el-form-item prop="appleCostValue">
+                <template #label>
+                  <FieldHelpLabel
+                    label="Apple 消耗金额"
+                    purpose="这单预计会扣多少 Apple ID 外币余额，后端会用它乘以当前平均成本算成本。"
+                    example="业务官方消耗是 20 USD，这里自动带出 20。"
+                  />
+                </template>
+                <el-input
+                  v-model.trim="form.appleCostValue"
+                  disabled
+                  placeholder="按业务官方消耗自动带出"
+                />
+              </el-form-item>
+
+              <el-form-item prop="appleAccountId">
+                <template #label>
+                  <FieldHelpLabel
+                    label="已选 Apple ID"
+                    purpose="这单最终使用哪个 Apple ID 扣余额和生成开通记录。"
+                    example="自动匹配出可用账号后点选择，这里会显示已选账号和余额。"
+                  />
+                </template>
+                <el-input :model-value="selectedAccountLabel" disabled />
+                <div
+                  v-if="selectedAccount && form.appleAccountOwnershipType === 'sold'"
+                  class="order-entry-money-hint"
+                >
+                  ID 成本 {{ formatMoney(selectedAccountPurchaseCost) }}，参考售价
+                  {{ formatMoney(selectedAccountSalePrice) }}
+                </div>
+              </el-form-item>
+            </div>
+          </aside>
         </div>
-
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="备注"
-              purpose="写给自己或同事看的补充说明，不参与金额计算。"
-              example="可以写客户特殊要求、聊天重点、人工处理原因。"
-            />
-          </template>
-          <el-input v-model="form.remark" type="textarea" :rows="3" />
-        </el-form-item>
 
         <div class="v3-entry-form__actions">
           <AppButton :disabled="saving" @click="resetOrderForm">重置录入</AppButton>
@@ -483,7 +551,7 @@
             <p>
               {{
                 selectedAccount
-                  ? `${selectedAccount.region} / ${selectedAccount.currency} · 余额 ${selectedAccount.balance}`
+                  ? `${formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)} · 余额 ${selectedAccount.balance}`
                   : '选择业务后会自动匹配可用 Apple ID，也可以手动重新匹配。'
               }}
             </p>
@@ -523,7 +591,9 @@
             <template #default="{ row }">{{ row.accountMasked }}</template>
           </el-table-column>
           <el-table-column label="地区/币种" width="110">
-            <template #default="{ row }">{{ row.region }} / {{ row.currency }}</template>
+            <template #default="{ row }">{{
+              formatAccountRegionCurrency(row.region, row.currency)
+            }}</template>
           </el-table-column>
           <el-table-column prop="balance" label="余额" width="90" />
           <el-table-column label="均价" width="100">
@@ -578,7 +648,7 @@
             <div class="mobile-record-card__head">
               <div class="mobile-record-card__title">
                 <strong>{{ account.accountMasked }}</strong>
-                <span>{{ account.region }} / {{ account.currency }}</span>
+                <span>{{ formatAccountRegionCurrency(account.region, account.currency) }}</span>
               </div>
               <StatusChip :tone="getAvailabilityTone(account.availability)" dot>
                 {{ getAvailabilityLabel(account.availability) }}
@@ -742,6 +812,8 @@ import {
   resetCustomerProfileForm
 } from '@/utils/customerProfileForm';
 import {
+  formatAppleRegionCurrencyLabel,
+  formatAppleRegionLabel,
   formatAppleAccountRegionOptionLabel,
   mergeAppleAccountRegionOptions
 } from '@/utils/appleAccountRegion';
@@ -880,7 +952,7 @@ const serviceRegionOptions = computed(() => {
     })),
     ...missingCodes.map((code) => ({
       code,
-      label: code
+      label: formatAppleRegionLabel(code)
     }))
   ];
 });
@@ -1097,6 +1169,13 @@ function formatMoney(value: number) {
 
 function formatAverageCost(value: string | number | null | undefined) {
   return readAmount(value).toFixed(2);
+}
+
+function formatAccountRegionCurrency(
+  region: string | null | undefined,
+  currency: string | null | undefined
+) {
+  return formatAppleRegionCurrencyLabel(region, currency);
 }
 
 function getOwnershipLabel(value: AppleAccountOwnershipType) {
@@ -1768,6 +1847,98 @@ onBeforeUnmount(() => {
   border-radius: 8px;
 }
 
+.order-entry-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.75fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.order-entry-pane {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.order-entry-pane--manual {
+  padding: 16px;
+}
+
+.order-entry-pane--system {
+  position: sticky;
+  top: 84px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.order-entry-pane__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.order-entry-pane__header div {
+  display: grid;
+  gap: 2px;
+}
+
+.order-entry-pane__header span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.order-entry-pane__header strong {
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.order-entry-section {
+  padding: 14px 0 16px;
+  border-top: 1px solid #edf2f7;
+}
+
+.order-entry-section:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.order-entry-section__title {
+  display: block;
+  margin-bottom: 10px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.order-entry-field-grid,
+.order-entry-side-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.order-entry-field-grid :deep(.el-form-item),
+.order-entry-side-grid :deep(.el-form-item),
+.order-entry-system-stack :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.order-entry-field--wide {
+  grid-column: 1 / -1;
+}
+
+.order-entry-system-stack {
+  display: grid;
+  gap: 14px;
+}
+
 .order-entry-select-empty {
   display: flex;
   min-width: 260px;
@@ -1920,6 +2091,33 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
+  .order-entry-layout,
+  .order-entry-field-grid,
+  .order-entry-side-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .order-entry-pane {
+    border-radius: 10px;
+  }
+
+  .order-entry-pane--manual,
+  .order-entry-pane--system {
+    padding: 12px;
+  }
+
+  .order-entry-pane--system {
+    position: static;
+  }
+
+  .order-entry-pane__header {
+    align-items: flex-start;
+  }
+
+  .order-entry-field--wide {
+    grid-column: auto;
+  }
+
   .order-entry-customer-picker,
   .order-entry-money-input,
   .order-entry-money-meta,

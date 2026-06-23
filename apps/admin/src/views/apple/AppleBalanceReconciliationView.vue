@@ -110,7 +110,9 @@
           width="130"
           sortable="custom"
         >
-          <template #default="{ row }">{{ row.region }} / {{ row.currency }}</template>
+          <template #default="{ row }">{{
+            formatAccountRegionCurrency(row.region, row.currency)
+          }}</template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('currentBalance')"
@@ -219,7 +221,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ account.appleIdMasked }}</strong>
-              <span>{{ account.region }} / {{ account.currency }}</span>
+              <span>{{ formatAccountRegionCurrency(account.region, account.currency) }}</span>
             </div>
             <StatusChip :tone="getStatusTone(account.status)" dot>
               {{ getStatusLabel(account.status) }}
@@ -301,8 +303,9 @@
           </div>
           <strong class="account-action-hero__id">{{ selectedAccount.appleIdMasked }}</strong>
           <div class="account-action-tags">
-            <span>{{ selectedAccount.region }}</span>
-            <span>{{ selectedAccount.currency }}</span>
+            <span>{{
+              formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+            }}</span>
             <span :class="{ 'account-action-tag--warning': selectedAccount.isManuallyLocked }">
               {{ selectedAccount.isManuallyLocked ? '手动锁定' : '可对账' }}
             </span>
@@ -406,8 +409,9 @@
             </div>
             <strong>{{ selectedAccount.appleIdMasked }}</strong>
             <div class="account-action-tags">
-              <span>{{ selectedAccount.region }}</span>
-              <span>{{ selectedAccount.currency }}</span>
+              <span>{{
+                formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+              }}</span>
               <span>{{ getOwnershipTypeLabel(selectedAccount.ownershipType) }}</span>
               <span :class="{ 'account-action-tag--warning': selectedAccount.isManuallyLocked }">
                 {{ selectedAccount.isManuallyLocked ? '手动锁定' : '未锁定' }}
@@ -453,7 +457,9 @@
           <div class="account-detail-info-grid">
             <div>
               <span>地区/币种</span>
-              <strong>{{ selectedAccount.region }} / {{ selectedAccount.currency }}</strong>
+              <strong>{{
+                formatAccountRegionCurrency(selectedAccount.region, selectedAccount.currency)
+              }}</strong>
             </div>
             <div>
               <span>来源</span>
@@ -769,6 +775,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 const router = useRouter();
@@ -967,6 +974,13 @@ function getAccountAverageCostNumber(account: AppleAccount) {
 
 function getAccountAverageCost(account: AppleAccount) {
   return getAccountAverageCostNumber(account).toFixed(2);
+}
+
+function formatAccountRegionCurrency(
+  region: string | null | undefined,
+  currency: string | null | undefined
+) {
+  return formatAppleRegionCurrencyLabel(region, currency);
 }
 
 function getAccountTotalCostNumber(account: AppleAccount) {

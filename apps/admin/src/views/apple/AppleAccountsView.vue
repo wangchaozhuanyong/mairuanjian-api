@@ -1397,6 +1397,7 @@ import {
   buildAppleAccountCurrencyOptions,
   formatCurrencyLabel,
   formatAppleAccountRegionOptionLabel,
+  formatAppleRegionLabel,
   formatRegionCurrency,
   getAppleAccountRegionOption,
   getCurrencyForRegion,
@@ -1619,7 +1620,7 @@ const filterChips = computed(() => {
   const ownershipLabel = ownershipOptions.find((item) => item.value === query.ownershipType)?.label;
 
   if (query.region) {
-    chips.push({ key: 'region', label: '地区', value: query.region });
+    chips.push({ key: 'region', label: '地区', value: formatAccountRegion(query.region) });
   }
 
   if (query.currency) {
@@ -1731,6 +1732,11 @@ function formatAverageCost(value: string | null | undefined) {
 
 function formatAccountRegionCurrency(region: string, currency: string) {
   return formatRegionCurrency(region, currency, appleRegionOptions.value);
+}
+
+function formatAccountRegion(region: string | null | undefined) {
+  const option = getAppleAccountRegionOption(region, appleRegionOptions.value);
+  return option ? formatAppleAccountRegionOptionLabel(option) : formatAppleRegionLabel(region);
 }
 
 function getOwnershipLabel(value: AppleAccountOwnershipType) {

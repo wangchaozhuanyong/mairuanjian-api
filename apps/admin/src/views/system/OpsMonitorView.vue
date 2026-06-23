@@ -437,7 +437,9 @@
             row-key="id"
           >
             <el-table-column label="节点" min-width="220" prop="name" />
-            <el-table-column label="国家" width="90" prop="countryCode" />
+            <el-table-column label="国家" width="120">
+              <template #default="{ row }">{{ formatCountryCode(row.countryCode) }}</template>
+            </el-table-column>
             <el-table-column label="协议" width="110" prop="protocol" />
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
@@ -467,7 +469,7 @@
               <div class="mobile-record-card__head">
                 <div class="mobile-record-card__title">
                   <strong>{{ node.name }}</strong>
-                  <span>{{ node.countryCode }} · {{ node.protocol }}</span>
+                  <span>{{ formatCountryCode(node.countryCode) }} · {{ node.protocol }}</span>
                 </div>
                 <StatusChip :tone="getGatewayStatusTone(node.status)" dot>
                   {{ formatGatewayStatus(node.status) }}
@@ -806,6 +808,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { OPS_ERROR_LEVEL_DICTIONARY_GROUP } from '@/config/quickSettings';
+import { formatAppleRegionLabel } from '@/utils/appleAccountRegion';
 import type {
   AppleWebGatewayStatus,
   CronJobLog,
@@ -936,7 +939,9 @@ const appleGatewayAvailability = computed(() => {
 const appleGatewayCountryText = computed(() => {
   const summary = appleGatewayStatus.value?.countrySummary ?? [];
   if (!summary.length) return '-';
-  return summary.map((item) => `${item.countryCode} ${item.available}/${item.total}`).join(' · ');
+  return summary
+    .map((item) => `${formatCountryCode(item.countryCode)} ${item.available}/${item.total}`)
+    .join(' · ');
 });
 const appleGatewayEmptyText = computed(() =>
   appleGatewayStatus.value?.configured
@@ -1537,5 +1542,9 @@ function formatGatewayStatus(status: string) {
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-';
+}
+
+function formatCountryCode(countryCode: string | null | undefined) {
+  return formatAppleRegionLabel(countryCode);
 }
 </script>

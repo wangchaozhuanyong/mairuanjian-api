@@ -177,7 +177,7 @@
           <template #default="{ row }">
             <strong>{{ row.appleAccount.appleIdMasked }}</strong>
             <div class="muted-block">
-              {{ row.appleAccount.region }} / {{ row.appleAccount.currency }}
+              {{ formatAccountRegionCurrency(row.appleAccount.region, row.appleAccount.currency) }}
             </div>
           </template>
         </el-table-column>
@@ -267,7 +267,10 @@
             <div class="mobile-record-card__title">
               <strong>{{ plan.appleAccount.appleIdMasked }}</strong>
               <span>
-                {{ plan.appleAccount.region }} / {{ plan.appleAccount.currency }} ·
+                {{
+                  formatAccountRegionCurrency(plan.appleAccount.region, plan.appleAccount.currency)
+                }}
+                ·
                 {{ formatDate(plan.planDate, true) }}
               </span>
             </div>
@@ -525,6 +528,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const plans = ref<AppleActionPlan[]>([]);
@@ -972,6 +976,13 @@ function formatAverageCost(value?: string | number | null) {
 
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue.toFixed(2) : '-';
+}
+
+function formatAccountRegionCurrency(
+  region: string | null | undefined,
+  currency: string | null | undefined
+) {
+  return formatAppleRegionCurrencyLabel(region, currency);
 }
 
 function getStatusLabel(value: AppleActionPlan['status']) {

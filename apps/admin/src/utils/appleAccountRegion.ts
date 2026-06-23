@@ -26,9 +26,62 @@ type PhoneNormalizeResult =
     };
 
 const regionChineseLabelByCode: Record<string, string> = {
+  AE: '阿联酋',
+  AR: '阿根廷',
+  AT: '奥地利',
+  AU: '澳大利亚',
+  BD: '孟加拉国',
+  BE: '比利时',
+  BR: '巴西',
+  CA: '加拿大',
+  CH: '瑞士',
+  CL: '智利',
   CN: '中国',
+  CO: '哥伦比亚',
+  CZ: '捷克',
+  DE: '德国',
+  DK: '丹麦',
+  EG: '埃及',
+  ES: '西班牙',
+  EU: '欧元区',
+  FI: '芬兰',
+  FR: '法国',
+  GB: '英国',
+  GH: '加纳',
+  GR: '希腊',
+  HK: '中国香港',
+  HU: '匈牙利',
+  ID: '印度尼西亚',
+  IE: '爱尔兰',
+  IL: '以色列',
+  IN: '印度',
+  IT: '意大利',
+  JP: '日本',
+  KE: '肯尼亚',
+  KR: '韩国',
+  MA: '摩洛哥',
+  MX: '墨西哥',
   MY: '马来西亚',
-  US: '美国'
+  NG: '尼日利亚',
+  NL: '荷兰',
+  NO: '挪威',
+  NZ: '新西兰',
+  PE: '秘鲁',
+  PH: '菲律宾',
+  PK: '巴基斯坦',
+  PL: '波兰',
+  PT: '葡萄牙',
+  RO: '罗马尼亚',
+  SA: '沙特阿拉伯',
+  SE: '瑞典',
+  SG: '新加坡',
+  TH: '泰国',
+  TR: '土耳其',
+  TW: '中国台湾',
+  UA: '乌克兰',
+  US: '美国',
+  VN: '越南',
+  ZA: '南非'
 };
 
 export const appleAccountRegionOptions: AppleAccountRegionOption[] = [
@@ -71,8 +124,8 @@ export function getAppleAccountRegionOption(
   region: string | null | undefined,
   options: AppleAccountRegionOption[] = appleAccountRegionOptions
 ) {
-  const normalized = normalizeRegionCode(region);
-  return options.find((item) => normalizeRegionCode(item.code) === normalized) ?? null;
+  const normalized = normalizeAppleRegionCode(region);
+  return options.find((item) => normalizeAppleRegionCode(item.code) === normalized) ?? null;
 }
 
 export function getAppleAccountRegionLabel(
@@ -80,7 +133,7 @@ export function getAppleAccountRegionLabel(
   options: AppleAccountRegionOption[] = appleAccountRegionOptions
 ) {
   const option = getAppleAccountRegionOption(region, options);
-  return option ? formatAppleAccountRegionOptionLabel(option) : (region ?? '-');
+  return option ? formatAppleAccountRegionOptionLabel(option) : formatAppleRegionLabel(region);
 }
 
 export function getCurrencyForRegion(
@@ -106,20 +159,66 @@ export function formatRegionCurrency(
   currency: string,
   options: AppleAccountRegionOption[] = appleAccountRegionOptions
 ) {
-  return `${getAppleAccountRegionLabel(region, options)} / ${formatCurrencyLabel(currency, options)}`;
+  return formatAppleRegionCurrencyLabel(region, currency, options);
 }
 
 export function formatAppleAccountRegionOptionLabel(option: AppleAccountRegionOption) {
-  const code = normalizeRegionCode(option.code);
+  const code = normalizeAppleRegionCode(option.code);
   return `${getRegionChineseLabel(option)} ${code}`;
 }
 
 function getRegionChineseLabel(option: AppleAccountRegionOption) {
-  const code = normalizeRegionCode(option.code);
+  const code = normalizeAppleRegionCode(option.code);
   const label = option.labelZh.trim();
   const chineseLabel = label.match(/[\u4e00-\u9fff]+/u)?.[0];
 
   return chineseLabel || regionChineseLabelByCode[code] || code;
+}
+
+export function formatAppleRegionLabel(
+  region: string | null | undefined,
+  options: AppleAccountRegionOption[] = appleAccountRegionOptions,
+  fallback = '-'
+) {
+  const code = normalizeAppleRegionCode(region);
+  if (!code) return fallback;
+
+  const option = options.find((item) => normalizeAppleRegionCode(item.code) === code);
+  const label = option ? getRegionChineseLabel(option) : regionChineseLabelByCode[code] || code;
+
+  return label === code ? code : `${label} ${code}`;
+}
+
+export function formatAppleRegionCurrencyLabel(
+  region: string | null | undefined,
+  currency: string | null | undefined,
+  options: AppleAccountRegionOption[] = appleAccountRegionOptions,
+  fallback = '-'
+) {
+  const regionLabel = formatAppleRegionLabel(region, options, '');
+  const currencyCode = normalizeCurrencyCode(currency);
+
+  if (regionLabel && currencyCode) {
+    return `${regionLabel} / ${currencyCode}`;
+  }
+
+  return regionLabel || currencyCode || fallback;
+}
+
+export function formatAppleRegionListLabel(
+  regions: Array<string | null | undefined> | readonly (string | null | undefined)[],
+  options: AppleAccountRegionOption[] = appleAccountRegionOptions,
+  fallback = '不限'
+) {
+  const labels = [
+    ...new Set(
+      regions
+        .map((region) => formatAppleRegionLabel(region, options, ''))
+        .filter((label) => Boolean(label))
+    )
+  ];
+
+  return labels.length ? labels.join('、') : fallback;
 }
 
 export function buildAppleAccountCurrencyOptions(options: AppleAccountRegionOption[]) {
@@ -156,7 +255,7 @@ export function parseAppleAccountRegionDictionary(item: DataDictionary): AppleAc
   const fallback = getAppleAccountRegionOption(item.code);
 
   return {
-    code: normalizeRegionCode(item.code),
+    code: normalizeAppleRegionCode(item.code),
     labelZh: item.label.trim() || item.code.toLowerCase(),
     labelEn: item.label.trim() || item.code.toLowerCase(),
     currency: normalizeCurrencyCode(parsed.currency || fallback?.currency || item.value || 'USD'),
@@ -170,7 +269,7 @@ export function mergeAppleAccountRegionOptions(dictionaries: DataDictionary[]) {
   const merged = new Map<string, AppleAccountRegionOption>();
 
   for (const item of appleAccountRegionOptions) {
-    merged.set(normalizeRegionCode(item.code), item);
+    merged.set(normalizeAppleRegionCode(item.code), item);
   }
 
   for (const item of dictionaries) {
@@ -178,7 +277,7 @@ export function mergeAppleAccountRegionOptions(dictionaries: DataDictionary[]) {
       continue;
     }
     const option = parseAppleAccountRegionDictionary(item);
-    merged.set(normalizeRegionCode(option.code), option);
+    merged.set(normalizeAppleRegionCode(option.code), option);
   }
 
   return Array.from(merged.values()).sort((left, right) => {
@@ -225,10 +324,37 @@ export function normalizePhoneForRegion(value: string, region: string): PhoneNor
   return normalizeUnitedStatesPhone(raw);
 }
 
-function normalizeRegionCode(region: string | null | undefined) {
-  return String(region ?? '')
+export function normalizeAppleRegionCode(region: string | null | undefined) {
+  const raw = String(region ?? '')
     .trim()
     .toUpperCase();
+  if (!raw || raw === '-') return '';
+
+  if (regionChineseLabelByCode[raw]) {
+    return raw;
+  }
+
+  const candidates = raw
+    .replace(/[·/:|,，()（）[\]{}]+/g, ' ')
+    .split(/\s+/)
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (regionChineseLabelByCode[candidate]) {
+      return candidate;
+    }
+  }
+
+  const regionMatches = raw.match(/\b[A-Z]{2}\b/g) ?? [];
+  for (const candidate of regionMatches) {
+    if (regionChineseLabelByCode[candidate]) {
+      return candidate;
+    }
+  }
+
+  const suffix = raw.slice(-2);
+  return regionChineseLabelByCode[suffix] ? suffix : raw;
 }
 
 function normalizeCurrencyCode(currency: string | null | undefined) {

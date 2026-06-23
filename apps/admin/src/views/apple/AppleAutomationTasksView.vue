@@ -139,7 +139,8 @@
           <template #default="{ row }">
             {{ row.appleAccount.appleIdMasked }}
             <div class="muted-block">
-              {{ row.appleAccount.region }} / 余额 {{ row.appleAccount.currentBalance }}
+              {{ formatAccountRegion(row.appleAccount.region) }} / 余额
+              {{ row.appleAccount.currentBalance }}
             </div>
           </template>
         </el-table-column>
@@ -273,7 +274,7 @@
               {{ getStatusLabel(task.status) }}
             </StatusChip>
             <StatusChip v-if="task.manualRequired" tone="orange">人工验证</StatusChip>
-            <StatusChip tone="blue">{{ task.appleAccount.region }}</StatusChip>
+            <StatusChip tone="blue">{{ formatAccountRegion(task.appleAccount.region) }}</StatusChip>
           </div>
 
           <div class="mobile-record-card__actions">
@@ -518,7 +519,7 @@
             <el-option
               v-for="account in appleAccounts"
               :key="account.id"
-              :label="`${account.appleIdMasked} / ${account.region} / 余额 ${account.currentBalance}`"
+              :label="`${account.appleIdMasked} / ${formatAccountRegion(account.region)} / 余额 ${account.currentBalance}`"
               :value="account.id"
             />
           </el-select>
@@ -605,7 +606,7 @@
             <el-option
               v-for="account in appleAccounts"
               :key="account.id"
-              :label="`${account.appleIdMasked} / ${account.region} / 余额 ${account.currentBalance}`"
+              :label="`${account.appleIdMasked} / ${formatAccountRegion(account.region)} / 余额 ${account.currentBalance}`"
               :value="account.id"
             />
           </el-select>
@@ -688,7 +689,7 @@ import type {
   UserTableView
 } from '@/types/system';
 import { buildTechnicalFieldRows } from '@/utils/internalTechnicalFields';
-import { appleAccountRegionOptions } from '@/utils/appleAccountRegion';
+import { appleAccountRegionOptions, formatAppleRegionLabel } from '@/utils/appleAccountRegion';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartAppleAccounts } from '@/utils/smartSystemQueries';
 
@@ -778,7 +779,7 @@ const priorityOptions: Array<{ label: string; value: AutomationTaskPriority }> =
 ];
 
 const gatewayRegionOptions = appleAccountRegionOptions.map((item) => ({
-  label: `${item.labelZh} ${item.code}`,
+  label: formatAppleRegionLabel(item.code),
   value: item.code
 }));
 
@@ -1339,6 +1340,10 @@ function formatJson(value: Record<string, unknown> | null | undefined) {
 function formatDate(value?: string | null) {
   if (!value) return '-';
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
+function formatAccountRegion(region: string | null | undefined) {
+  return formatAppleRegionLabel(region);
 }
 
 function getTaskTypeLabel(value: AutomationTaskType) {

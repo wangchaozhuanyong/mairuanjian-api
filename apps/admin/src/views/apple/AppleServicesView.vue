@@ -191,7 +191,7 @@
               class="tag-gap"
               tone="cyan"
             >
-              {{ region }}
+              {{ formatServiceRegionLabel(region) }}
             </StatusChip>
             <span v-if="!row.allowedRegions.length">不限</span>
           </template>
@@ -269,7 +269,7 @@
               <span>允许地区</span>
               <div class="mobile-record-card__chips">
                 <StatusChip v-for="region in service.allowedRegions" :key="region" tone="cyan">
-                  {{ region }}
+                  {{ formatServiceRegionLabel(region) }}
                 </StatusChip>
                 <em v-if="!service.allowedRegions.length">不限</em>
               </div>
@@ -603,7 +603,9 @@
               </template>
             </el-table-column>
             <el-table-column label="地区/币种" min-width="120">
-              <template #default="{ row }">{{ row.region }} / {{ row.currency }}</template>
+              <template #default="{ row }">{{
+                formatOfficialRegionCurrency(row.region, row.currency)
+              }}</template>
             </el-table-column>
             <el-table-column label="采集方式" width="120">
               <template #default="{ row }">{{ getCollectMethodLabel(row.collectMethod) }}</template>
@@ -708,7 +710,9 @@
               </template>
             </el-table-column>
             <el-table-column label="地区/币种" width="130">
-              <template #default="{ row }">{{ row.region }} / {{ row.currency }}</template>
+              <template #default="{ row }">{{
+                formatOfficialRegionCurrency(row.region, row.currency)
+              }}</template>
             </el-table-column>
             <el-table-column label="官网价" width="130">
               <template #default="{ row }">{{ row.officialPrice }}</template>
@@ -1123,7 +1127,7 @@
             <el-option
               v-for="source in officialPriceSources"
               :key="source.id"
-              :label="`${source.name} · ${source.region}/${source.currency}`"
+              :label="`${source.name} · ${formatOfficialRegionCurrency(source.region, source.currency)}`"
               :value="source.id"
             />
           </el-select>
@@ -1242,6 +1246,9 @@ import type {
 import {
   buildAppleAccountCurrencyOptions,
   formatAppleAccountRegionOptionLabel,
+  formatAppleRegionCurrencyLabel as formatSharedAppleRegionCurrencyLabel,
+  formatAppleRegionLabel as formatSharedAppleRegionLabel,
+  formatAppleRegionListLabel as formatSharedAppleRegionListLabel,
   mergeAppleAccountRegionOptions
 } from '@/utils/appleAccountRegion';
 import {
@@ -1647,7 +1654,7 @@ const formOfficialCountryOptions = computed(() => {
     options.unshift({
       currency,
       label: currency
-        ? `${formatCountryCodeLabel(primaryRegion, currency)} · ${primaryRegion}/${currency}`
+        ? formatOfficialRegionCurrency(primaryRegion, currency)
         : formatCountryCodeLabel(primaryRegion),
       value: primaryRegion
     });
@@ -1892,20 +1899,7 @@ function normalizeOfficialPeriodValue(value?: string | number | null) {
 }
 
 function getOfficialRegionSelectLabel(region: string, currency: string) {
-  const catalogOption = officialAutoRegionOptions.value.find(
-    (item) => item.region === region && item.currency === currency
-  );
-  const fallbackOption = fallbackOfficialAutoRegionOptions.find(
-    (item) => item.region === region && item.currency === currency
-  );
-  const dictionaryOption = appleRegionOptions.value.find((item) => item.code === region);
-  const rawLabel =
-    catalogOption?.label || fallbackOption?.label || dictionaryOption?.labelZh || region;
-  const countryName = rawLabel.endsWith(` ${currency}`)
-    ? rawLabel.slice(0, -currency.length - 1)
-    : rawLabel;
-
-  return `${countryName} · ${region}/${currency}`;
+  return formatOfficialRegionCurrency(region, currency);
 }
 
 function getServiceCountryLabel(service: Pick<AppleService, 'allowedRegions' | 'currency'>) {
@@ -1938,54 +1932,30 @@ function getServicePrimaryRegion(service: Pick<AppleService, 'allowedRegions' | 
 
 function formatCountryCodeLabel(region: string, currency?: string | null) {
   const normalizedRegion = normalizeAppleRegionCode(region, currency);
-  const normalizedCurrency = normalizeOfficialReviewCode(currency);
-  const dictionaryOption = appleRegionOptions.value.find((item) => item.code === normalizedRegion);
-  const officialOption = officialCountryOptions.value.find(
-    (item) => item.value === normalizedRegion
-  );
-  const autoOption =
-    officialAutoRegionOptions.value.find(
-      (item) =>
-        item.region === normalizedRegion &&
-        (!normalizedCurrency || item.currency === normalizedCurrency)
-    ) || officialAutoRegionOptions.value.find((item) => item.region === normalizedRegion);
-  const fallbackOption =
-    fallbackOfficialAutoRegionOptions.find(
-      (item) =>
-        item.region === normalizedRegion &&
-        (!normalizedCurrency || item.currency === normalizedCurrency)
-    ) || fallbackOfficialAutoRegionOptions.find((item) => item.region === normalizedRegion);
-  const rawLabel =
-    dictionaryOption?.labelZh ||
-    officialOption?.label ||
-    autoOption?.label ||
-    fallbackOption?.label ||
-    normalizedRegion;
-  const countryName = simplifyCountryLabel(
-    rawLabel,
-    normalizedRegion,
-    normalizedCurrency ||
-      autoOption?.currency ||
-      fallbackOption?.currency ||
-      dictionaryOption?.currency
-  );
-
-  return countryName === normalizedRegion ? normalizedRegion : `${countryName} ${normalizedRegion}`;
+  return formatSharedAppleRegionLabel(normalizedRegion, appleRegionOptions.value);
 }
 
-function simplifyCountryLabel(label: string, region: string, currency?: string) {
-  let countryName = label.split('·')[0]?.split('/')[0]?.trim() || region;
-
-  for (const code of [currency, region]) {
-    if (!code) continue;
-    countryName = countryName.replace(new RegExp(`\\s+${escapeRegExp(code)}$`, 'i'), '').trim();
-  }
-
-  return countryName || region;
+function formatServiceRegionLabel(region: string | null | undefined) {
+  return formatSharedAppleRegionLabel(region, appleRegionOptions.value);
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function formatOfficialRegionCurrency(
+  region: string | null | undefined,
+  currency: string | null | undefined
+) {
+  const normalizedRegion = normalizeAppleRegionCode(region, currency);
+  return formatSharedAppleRegionCurrencyLabel(
+    normalizedRegion || region,
+    currency,
+    appleRegionOptions.value
+  );
+}
+
+function formatAllowedRegionList(regions: string[]) {
+  return formatSharedAppleRegionListLabel(
+    regions.map((region) => normalizeAppleRegionCode(region)),
+    appleRegionOptions.value
+  );
 }
 
 function getOfficialServiceNameOptionLabel(option: OfficialCollectedServiceOption) {
@@ -2160,13 +2130,7 @@ function getGlobalBalanceRuleTypeLabel(ruleType: typeof globalBalanceRuleForm.ru
 }
 
 function getOfficialSourceRegionSummary(source: AppleOfficialPriceSource) {
-  const option = officialAutoRegionOptions.value.find(
-    (item) => item.region === source.region && item.currency === source.currency
-  );
-  const fallback = fallbackOfficialAutoRegionOptions.find(
-    (item) => item.region === source.region && item.currency === source.currency
-  );
-  return `${option?.label || fallback?.label || source.region} / ${source.currency}`;
+  return formatOfficialRegionCurrency(source.region, source.currency);
 }
 
 function getOfficialBatchTitle(batch: AppleOfficialPriceCheckBatch) {
@@ -2236,13 +2200,7 @@ function getOfficialBatchItemStatusTone(
 }
 
 function getOfficialBatchItemRegionLabel(item: AppleOfficialPriceCheckBatch['items'][number]) {
-  const option = officialAutoRegionOptions.value.find(
-    (region) => region.region === item.region && region.currency === item.currency
-  );
-  const fallback = fallbackOfficialAutoRegionOptions.find(
-    (region) => region.region === item.region && region.currency === item.currency
-  );
-  return `${option?.label || fallback?.label || item.region} / ${item.currency}`;
+  return formatOfficialRegionCurrency(item.region, item.currency);
 }
 
 function getOfficialBatchItemMessage(item: AppleOfficialPriceCheckBatch['items'][number]) {
@@ -2813,19 +2771,7 @@ function getOfficialReviewRegionLabel(review: ApplePriceChangeReview) {
   const currency = getOfficialReviewCurrencyCode(review);
   if (!region && !currency) return '-';
 
-  const option = officialAutoRegionOptions.value.find(
-    (item) => item.region === region && item.currency === currency
-  );
-  const fallback = fallbackOfficialAutoRegionOptions.find(
-    (item) => item.region === region && item.currency === currency
-  );
-  const matchedLabel = option?.label || fallback?.label;
-  const countryName =
-    matchedLabel && currency && matchedLabel.endsWith(` ${currency}`)
-      ? matchedLabel.slice(0, -currency.length - 1)
-      : matchedLabel || region;
-
-  return currency ? `${countryName} · ${region}/${currency}` : countryName;
+  return currency ? formatOfficialRegionCurrency(region, currency) : formatCountryCodeLabel(region);
 }
 
 function getOfficialReviewOldSummary(review: ApplePriceChangeReview) {
@@ -3530,7 +3476,7 @@ async function checkOfficialPrice() {
     impact: [
       `官方来源：${selectedSource?.name ?? '手动选择来源'}`,
       `套餐：${officialCheckForm.serviceName}`,
-      `地区/币种：${officialCheckForm.region || '-'} / ${officialCheckForm.currency || '-'}`,
+      `地区/币种：${formatOfficialRegionCurrency(officialCheckForm.region, officialCheckForm.currency)}`,
       officialCheckForm.scanRemovedPlans
         ? '会同时检查同币种业务里的疑似下架套餐'
         : '不会检查疑似下架套餐'
@@ -3774,7 +3720,7 @@ async function removeService(service: AppleService) {
       description: `将删除业务「${service.name}」。`,
       impact: [
         `分类：${getCategoryLabel(service.category)}`,
-        `地区/币种：${service.allowedRegions.length ? service.allowedRegions.join('、') : '不限'} / ${service.currency}`,
+        `地区/币种：${service.allowedRegions.length ? `${formatAllowedRegionList(service.allowedRegions)} / ${service.currency}` : '不限'}`,
         '删除后新订单不能再选择该业务，自动匹配也不会再使用该业务'
       ],
       riskNotes: '历史订单、开通记录和报表不会被物理删除，但后续业务录入会少一个可选项。',
