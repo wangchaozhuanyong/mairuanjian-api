@@ -1083,6 +1083,7 @@ export interface AppleOfficialPriceSnapshot {
   > | null;
   appleServiceId?: string | null;
   appleService?: Pick<AppleService, 'id' | 'name' | 'category' | 'currency'> | null;
+  automationTaskId?: string | null;
   provider: string;
   planCode?: string | null;
   serviceName: string;
@@ -1095,6 +1096,31 @@ export interface AppleOfficialPriceSnapshot {
   periodValue: number;
   rawPayload?: Record<string, unknown> | null;
   collectedAt: string;
+}
+
+export type AppleServiceRegionPriceStatus = 'active' | 'disabled' | 'needs_review';
+
+export interface AppleServiceRegionPrice {
+  id: string;
+  serviceId: string;
+  sourceSnapshotId?: string | null;
+  sourceSnapshot?: Pick<AppleOfficialPriceSnapshot, 'id' | 'provider' | 'collectedAt'> | null;
+  provider: string;
+  serviceName: string;
+  category: string;
+  region: string;
+  currency: string;
+  officialPrice: string;
+  appleBalancePrice: string;
+  periodType: AppleService['defaultPeriodType'];
+  periodValue: number;
+  status: AppleServiceRegionPriceStatus;
+  collectedAt?: string | null;
+  confirmedAt?: string | null;
+  remark?: string | null;
+  service: AppleService;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApplePriceChangeReview {
@@ -1132,6 +1158,7 @@ export interface ApplePriceChangeReview {
     | 'defaultPeriodValue'
     | 'status'
   > | null;
+  automationTaskId?: string | null;
   changeType: ApplePriceChangeType;
   oldValue?: Record<string, unknown> | null;
   newValue: Record<string, unknown>;
@@ -1187,6 +1214,51 @@ export interface AppleOfficialPriceCheckBatch {
   reused?: boolean;
 }
 
+export type AppleOfficialPriceCheckResultStatus =
+  | 'unchanged'
+  | ApplePriceChangeType
+  | 'failed'
+  | 'manual_required';
+
+export interface AppleOfficialPriceCheckBatchResultRow {
+  id: string;
+  batchItemId?: string | null;
+  taskId?: string | null;
+  snapshotId?: string | null;
+  reviewId?: string | null;
+  sourceId?: string | null;
+  sourceName: string;
+  provider: string;
+  serviceName: string;
+  category: string;
+  region: string;
+  currency: string;
+  status: AppleOfficialPriceCheckResultStatus;
+  reviewStatus?: ApplePriceChangeReviewStatus | null;
+  oldOfficialPrice?: string | null;
+  newOfficialPrice?: string | null;
+  oldAppleBalancePrice?: string | null;
+  newAppleBalancePrice?: string | null;
+  periodType?: AppleService['defaultPeriodType'] | null;
+  periodValue?: number | null;
+  message?: string | null;
+  collectedAt?: string | null;
+}
+
+export interface AppleOfficialPriceCheckBatchResults {
+  batch: AppleOfficialPriceCheckBatch;
+  summary: {
+    totalCount: number;
+    unchangedCount: number;
+    changedCount: number;
+    newPlanCount: number;
+    removedPlanCount: number;
+    failedCount: number;
+    manualRequiredCount: number;
+  };
+  items: AppleOfficialPriceCheckBatchResultRow[];
+}
+
 export interface AvailableAppleAccount {
   appleAccountId: string;
   accountMasked: string;
@@ -1209,12 +1281,21 @@ export interface AppleOrder {
   id: string;
   orderNo: string;
   customerId: string;
-  customer: Pick<Customer, 'id' | 'name' | 'wechat'>;
+  customer: Pick<Customer, 'id' | 'name' | 'maskedPhone' | 'phoneTail' | 'wechat'>;
   sourcePlatformId?: string | null;
   sourcePlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;
   externalOrderNo?: string | null;
   serviceId: string;
-  service: Pick<AppleService, 'id' | 'name' | 'category' | 'currency' | 'officialCostValue'>;
+  service: Pick<
+    AppleService,
+    'id' | 'name' | 'category' | 'currency' | 'officialCostValue' | 'allowedRegions'
+  >;
+  servicePriceId?: string | null;
+  serviceRegion?: string | null;
+  servicePrice?: Omit<
+    AppleServiceRegionPrice,
+    'service' | 'sourceSnapshot' | 'createdAt' | 'updatedAt'
+  > | null;
   appleAccountId?: string | null;
   appleAccount?: {
     id: string;
@@ -1271,6 +1352,8 @@ export interface ServiceActivation {
   } | null;
   serviceId: string;
   service: Pick<AppleService, 'id' | 'name' | 'category' | 'currency'>;
+  servicePriceId?: string | null;
+  serviceRegion?: string | null;
   currentPlan?: string | null;
   targetPlan?: string | null;
   startTime?: string | null;
@@ -1326,6 +1409,8 @@ export interface AppleOrderEntryContext {
     serviceId: string;
     serviceName: string;
     serviceCategory: string;
+    servicePriceId?: string | null;
+    serviceRegion?: string | null;
     serviceAccount?: string | null;
     currentPlan?: string | null;
     targetPlan?: string | null;
@@ -1525,6 +1610,8 @@ export type AutomationTaskStatus =
 
 export type AutomationTaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
+export type AutomationTaskBatchType = 'status_check' | 'balance_check' | 'official_price_check';
+
 export interface AutomationTaskAttachment {
   id: string;
   originalName: string;
@@ -1556,8 +1643,86 @@ export interface AutomationTaskLog {
   createdAt: string;
 }
 
+export interface AppleAutomationTaskBatch {
+  id: string;
+  batchType: AutomationTaskBatchType;
+  status: AutomationTaskStatus;
+  totalCount: number;
+  queuedCount: number;
+  runningCount: number;
+  successCount: number;
+  failedCount: number;
+  manualRequiredCount: number;
+  note?: string | null;
+  createdBy?: Pick<ManagedUser, 'id' | 'username' | 'displayName'> | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AppleAutomationTaskBatchResult {
+  taskId: string;
+  batchId?: string | null;
+  taskType: AutomationTaskType;
+  appleAccountId?: string | null;
+  appleAccount?: {
+    id: string;
+    appleIdMasked: string;
+    region: string;
+    currency: string;
+    currentBalance: string;
+    status: AppleAccount['status'];
+  } | null;
+  status: AutomationTaskStatus;
+  manualRequired: boolean;
+  resultStatus?: AppleAccount['status'] | string | null;
+  systemBalance?: string | null;
+  checkedBalance?: string | null;
+  currency?: string | null;
+  resultSource: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  suggestedAction: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt: string;
+}
+
+export interface AppleAutomationTaskBatchResults {
+  batch: AppleAutomationTaskBatch;
+  items: AppleAutomationTaskBatchResult[];
+}
+
+export interface AppleAutomationWorkbenchCapability {
+  mode: string;
+  enabled: boolean;
+  ready: boolean;
+  queuedCount: number;
+  runningCount: number;
+  manualRequiredCount: number;
+  failedCount: number;
+  message: string;
+}
+
+export interface AppleAutomationStatusCheckCapability extends AppleAutomationWorkbenchCapability {
+  gatewayConfigured: boolean;
+  configuredRegions: string[];
+  availableGatewayCountries: string[];
+  workerIntervalMs: number;
+  workerMaxBatch: number;
+}
+
+export interface AppleAutomationWorkbenchStatus {
+  checkedAt: string;
+  statusCheck: AppleAutomationStatusCheckCapability;
+  balanceCheck: AppleAutomationWorkbenchCapability;
+  officialPriceCheck: AppleAutomationWorkbenchCapability;
+}
+
 export interface AppleAutomationTask {
   id: string;
+  batchId?: string | null;
   taskType: AutomationTaskType;
   appleAccountId: string;
   appleAccount: {

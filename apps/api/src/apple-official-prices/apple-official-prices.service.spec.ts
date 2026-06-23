@@ -240,6 +240,9 @@ describe('AppleOfficialPricesService', () => {
       appleOfficialPriceSnapshot: {
         create: jest.fn().mockResolvedValue(snapshot)
       },
+      appleServiceRegionPrice: {
+        upsert: jest.fn().mockResolvedValue({})
+      },
       applePriceChangeReview: {
         create: jest.fn().mockResolvedValue(pendingReview)
       },
@@ -301,6 +304,7 @@ describe('AppleOfficialPricesService', () => {
     const appleServicesService = {
       create: jest.fn(),
       update: jest.fn().mockResolvedValue({}),
+      upsertRegionPriceFromOfficial: jest.fn().mockResolvedValue({}),
       getBalancePriceRule: jest.fn().mockResolvedValue({ ruleType: 'percent', ruleValue: '1' })
     } as unknown as AppleServicesService;
 

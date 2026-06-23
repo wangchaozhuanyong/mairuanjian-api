@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import { RealtimeService } from '../realtime/realtime.service';
 import { AppleAutomationTasksService } from './apple-automation-tasks.service';
 import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
+import type { BatchBalanceCheckDto } from './dto/batch-balance-check.dto';
 import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
@@ -67,6 +68,54 @@ export class AppleAutomationTasksController {
       });
     }
     return result;
+  }
+
+  @Post('batches/status-check')
+  @RequirePermissions('apple.automation_task.manage')
+  async createStatusCheckBatch(
+    @Body() dto: BatchStatusCheckDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.automationTasksService.createStatusCheckBatch(dto, operator);
+    this.publishAutomationTaskEvent(
+      'apple.automation_task.batch_created',
+      'batch_created',
+      result.batch.id
+    );
+    return result;
+  }
+
+  @Post('batches/balance-check')
+  @RequirePermissions('apple.automation_task.manage')
+  async createBalanceCheckBatch(
+    @Body() dto: BatchBalanceCheckDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const result = await this.automationTasksService.createBalanceCheckBatch(dto, operator);
+    this.publishAutomationTaskEvent(
+      'apple.automation_task.batch_created',
+      'batch_created',
+      result.batch.id
+    );
+    return result;
+  }
+
+  @Get('batches/:id')
+  @RequirePermissions('apple.automation_task.manage')
+  getBatch(@Param('id') id: string) {
+    return this.automationTasksService.getBatch(id);
+  }
+
+  @Get('batches/:id/results')
+  @RequirePermissions('apple.automation_task.manage')
+  getBatchResults(@Param('id') id: string) {
+    return this.automationTasksService.getBatchResults(id);
+  }
+
+  @Get('workbench-status')
+  @RequirePermissions('apple.automation_task.manage')
+  workbenchStatus() {
+    return this.automationTasksService.workbenchStatus();
   }
 
   @Get(':id')

@@ -79,6 +79,105 @@ describe('AppleOrdersService', () => {
     expect(snapshot.profitAmount.toString()).toBe('43');
   });
 
+  it('masks customer phone and falls back to account purchase cost for sold order response', () => {
+    const now = new Date('2026-06-23T00:00:00.000Z');
+    const order = {
+      id: 'order-id',
+      orderNo: 'AO202606230001',
+      customerId: 'customer-id',
+      customer: {
+        id: 'customer-id',
+        name: '2324',
+        phone: '138 0000 8000',
+        phoneTail: '8000',
+        wechat: 'wx_2324'
+      },
+      sourcePlatformId: null,
+      sourcePlatform: null,
+      externalOrderNo: null,
+      serviceId: 'service-id',
+      service: {
+        id: 'service-id',
+        name: 'ChatGPT Plus 1个月',
+        category: 'ChatGPT',
+        currency: 'USD',
+        officialCostValue: new Prisma.Decimal('20'),
+        allowedRegions: ['US']
+      },
+      appleAccountId: 'account-id',
+      appleAccount: {
+        ...baseAccount,
+        purchaseCost: new Prisma.Decimal('30'),
+        salePrice: new Prisma.Decimal('50')
+      },
+      activation: null,
+      serviceAccount: 'site-account',
+      currentPlan: null,
+      targetPlan: 'ChatGPT Plus 1个月',
+      startTime: now,
+      expireTime: now,
+      paidAmount: new Prisma.Decimal('188'),
+      paidCurrency: 'CNY',
+      paidExchangeRateToRmb: new Prisma.Decimal('1'),
+      paidAmountRmb: new Prisma.Decimal('188'),
+      platformFee: new Prisma.Decimal('3'),
+      platformFeeRmb: new Prisma.Decimal('3'),
+      refundLoss: new Prisma.Decimal('0'),
+      refundLossRmb: new Prisma.Decimal('0'),
+      appleCostValue: new Prisma.Decimal('20'),
+      appleCostRmb: new Prisma.Decimal('112'),
+      appleAccountOwnershipType: 'sold',
+      appleAccountPurchaseCost: new Prisma.Decimal('0'),
+      appleAccountSalePrice: new Prisma.Decimal('50'),
+      appleAccountSaleProfit: new Prisma.Decimal('50'),
+      profitAmount: new Prisma.Decimal('73'),
+      status: 'active',
+      remark: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null
+    };
+
+    const response = (
+      service as unknown as {
+        toOrderResponse: (order: unknown) => {
+          customer: Record<string, unknown>;
+          appleAccountPurchaseCost: string;
+          appleAccountSaleProfit: string;
+          profitAmount: string;
+        };
+      }
+    ).toOrderResponse(order);
+
+    expect(response.customer).toEqual({
+      id: 'customer-id',
+      name: '2324',
+      maskedPhone: '138****8000',
+      phoneTail: '8000',
+      wechat: 'wx_2324'
+    });
+    expect(response.customer.phone).toBeUndefined();
+    expect(response.appleAccountPurchaseCost).toBe('30');
+    expect(response.appleAccountSaleProfit).toBe('20');
+    expect(response.profitAmount).toBe('43');
+  });
+
+  it('ignores Apple ID purchase cost when order uses consigned account', () => {
+    const effectiveCost = (
+      service as unknown as {
+        getEffectiveAppleAccountPurchaseCost: (order: unknown) => Prisma.Decimal;
+      }
+    ).getEffectiveAppleAccountPurchaseCost({
+      appleAccountOwnershipType: 'consigned',
+      appleAccountPurchaseCost: new Prisma.Decimal('30'),
+      appleAccount: {
+        purchaseCost: new Prisma.Decimal('80')
+      }
+    });
+
+    expect(effectiveCost.toString()).toBe('0');
+  });
+
   it('calculates monthly expire time as the last included service day', () => {
     const expireTime = calculateExpireTime(
       {

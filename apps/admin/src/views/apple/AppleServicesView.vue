@@ -693,6 +693,59 @@
           />
         </el-tab-pane>
 
+        <el-tab-pane label="当前价格表" name="region-prices">
+          <div class="apple-official-tab-note">
+            <strong>当前价格表</strong>
+            <span>
+              这里记录哪个国家、哪个分类、哪个业务套餐当前可用于订单录入；价格来自业务设置回填或官方采集确认。
+            </span>
+            <StatusChip tone="blue">{{ officialRegionPriceTotal }} 条</StatusChip>
+          </div>
+          <el-table
+            v-loading="officialPriceLoading"
+            class="desktop-data-table"
+            :data="officialRegionPrices"
+            row-key="id"
+            empty-text="暂无当前价格"
+          >
+            <el-table-column label="国家/币种" width="150">
+              <template #default="{ row }">{{
+                formatOfficialRegionCurrency(row.region, row.currency)
+              }}</template>
+            </el-table-column>
+            <el-table-column label="分类" width="130" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.category }}</template>
+            </el-table-column>
+            <el-table-column label="业务套餐" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                <strong>{{ row.serviceName || row.service.name }}</strong>
+                <div class="muted-block">{{ getPeriodLabel(row.periodType, row.periodValue) }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="官网价" width="130">
+              <template #default="{ row }">{{ row.officialPrice }} {{ row.currency }}</template>
+            </el-table-column>
+            <el-table-column label="Apple消耗价" width="140">
+              <template #default="{ row }">{{ row.appleBalancePrice }} {{ row.currency }}</template>
+            </el-table-column>
+            <el-table-column label="来源" width="130">
+              <template #default="{ row }">{{ getProviderLabel(row.provider) }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <StatusChip :tone="getRegionPriceStatusTone(row.status)" dot>
+                  {{ getRegionPriceStatusLabel(row.status) }}
+                </StatusChip>
+              </template>
+            </el-table-column>
+            <el-table-column label="更新时间" min-width="170">
+              <template #default="{ row }">
+                {{ formatDate(row.confirmedAt || row.collectedAt || row.updatedAt) }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
         <el-tab-pane label="采集记录" name="snapshots">
           <el-table
             v-loading="officialPriceLoading"
@@ -1239,6 +1292,7 @@ import type {
   AppleOfficialPriceSource,
   AppleOfficialPriceSnapshot,
   ApplePriceChangeReview,
+  AppleServiceRegionPrice,
   DataDictionary,
   PageResult,
   TableDensity,
@@ -1406,6 +1460,7 @@ const selectedServices = ref<AppleService[]>([]);
 const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
 const officialPriceReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
+const officialRegionPrices = ref<AppleServiceRegionPrice[]>([]);
 const officialPriceOptionReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceOptionSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
 const officialPriceBatch = ref<AppleOfficialPriceCheckBatch | null>(null);
@@ -1414,6 +1469,7 @@ const officialProviderCatalogRegions = ref(fallbackOfficialAutoRegionOptions);
 const officialSourceTotal = ref(0);
 const officialReviewTotal = ref(0);
 const officialSnapshotTotal = ref(0);
+const officialRegionPriceTotal = ref(0);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const serviceCategoryDictionaries = ref<DataDictionary[]>([]);
 const periodTypeDictionaries = ref<DataDictionary[]>([]);
@@ -2201,6 +2257,22 @@ function getOfficialBatchItemStatusTone(
   if (status === 'failed') return 'red';
   if (status === 'waiting_manual_verify' || status === 'need_review') return 'orange';
   if (status === 'running' || status === 'queued' || status === 'pending') return 'blue';
+  return 'neutral';
+}
+
+function getRegionPriceStatusLabel(status: AppleServiceRegionPrice['status']) {
+  return (
+    {
+      active: '可用',
+      disabled: '停用',
+      needs_review: '待确认'
+    }[status] ?? status
+  );
+}
+
+function getRegionPriceStatusTone(status: AppleServiceRegionPrice['status']) {
+  if (status === 'active') return 'green';
+  if (status === 'needs_review') return 'orange';
   return 'neutral';
 }
 
@@ -3042,43 +3114,50 @@ async function loadOfficialPricePanel(
       !options.preserveOptionCache ||
       !officialPriceOptionReviews.value.length ||
       !officialPriceOptionSnapshots.value.length;
-    const [sources, reviews, snapshots, optionReviews, optionSnapshots] = await Promise.all([
-      appleOfficialPricesApi.listSources({
-        page: officialSourceQuery.page,
-        pageSize: officialSourceQuery.pageSize,
-        status: ''
-      }),
-      appleOfficialPricesApi.listReviews({
-        page: officialReviewQuery.page,
-        pageSize: officialReviewQuery.pageSize,
-        status: '',
-        sortBy: 'createdAt',
-        sortOrder: 'desc'
-      }),
-      appleOfficialPricesApi.listSnapshots({
-        page: officialSnapshotQuery.page,
-        pageSize: officialSnapshotQuery.pageSize,
-        sortBy: 'collectedAt',
-        sortOrder: 'desc'
-      }),
-      shouldRefreshOptionCache
-        ? appleOfficialPricesApi.listReviews({
-            page: 1,
-            pageSize: 500,
-            status: '',
-            sortBy: 'createdAt',
-            sortOrder: 'desc'
-          })
-        : Promise.resolve(null),
-      shouldRefreshOptionCache
-        ? appleOfficialPricesApi.listSnapshots({
-            page: 1,
-            pageSize: 500,
-            sortBy: 'collectedAt',
-            sortOrder: 'desc'
-          })
-        : Promise.resolve(null)
-    ]);
+    const [sources, reviews, snapshots, regionPrices, optionReviews, optionSnapshots] =
+      await Promise.all([
+        appleOfficialPricesApi.listSources({
+          page: officialSourceQuery.page,
+          pageSize: officialSourceQuery.pageSize,
+          status: ''
+        }),
+        appleOfficialPricesApi.listReviews({
+          page: officialReviewQuery.page,
+          pageSize: officialReviewQuery.pageSize,
+          status: '',
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        }),
+        appleOfficialPricesApi.listSnapshots({
+          page: officialSnapshotQuery.page,
+          pageSize: officialSnapshotQuery.pageSize,
+          sortBy: 'collectedAt',
+          sortOrder: 'desc'
+        }),
+        appleServicesApi.listRegionPrices({
+          page: 1,
+          pageSize: 500,
+          status: '',
+          orderEntryOnly: 'false'
+        }),
+        shouldRefreshOptionCache
+          ? appleOfficialPricesApi.listReviews({
+              page: 1,
+              pageSize: 500,
+              status: '',
+              sortBy: 'createdAt',
+              sortOrder: 'desc'
+            })
+          : Promise.resolve(null),
+        shouldRefreshOptionCache
+          ? appleOfficialPricesApi.listSnapshots({
+              page: 1,
+              pageSize: 500,
+              sortBy: 'collectedAt',
+              sortOrder: 'desc'
+            })
+          : Promise.resolve(null)
+      ]);
 
     if (requestId !== officialPricePanelLoadRequestId) {
       return;
@@ -3087,9 +3166,11 @@ async function loadOfficialPricePanel(
     officialPriceSources.value = sources.items;
     officialPriceReviews.value = reviews.items;
     officialPriceSnapshots.value = snapshots.items;
+    officialRegionPrices.value = regionPrices.items;
     officialSourceTotal.value = sources.total;
     officialReviewTotal.value = reviews.total;
     officialSnapshotTotal.value = snapshots.total;
+    officialRegionPriceTotal.value = regionPrices.total;
     if (optionReviews) {
       officialPriceOptionReviews.value = optionReviews.items;
     }

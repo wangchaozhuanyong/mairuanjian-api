@@ -92,8 +92,19 @@
         <el-table-column v-if="isColumnVisible('customer')" label="客户" min-width="130">
           <template #default="{ row }">{{ row.customer.name }}</template>
         </el-table-column>
-        <el-table-column v-if="isColumnVisible('service')" label="业务" min-width="150">
-          <template #default="{ row }">{{ row.service.name }}</template>
+        <el-table-column v-if="isColumnVisible('customerPhone')" label="手机号" min-width="130">
+          <template #default="{ row }">{{ formatCustomerPhone(row) }}</template>
+        </el-table-column>
+        <el-table-column v-if="isColumnVisible('customerWechat')" label="微信" min-width="120">
+          <template #default="{ row }">{{ row.customer.wechat || '-' }}</template>
+        </el-table-column>
+        <el-table-column
+          v-if="isColumnVisible('service')"
+          label="业务"
+          min-width="190"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">{{ formatOrderService(row) }}</template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('appleAccount')" label="Apple ID" min-width="170">
           <template #default="{ row }">{{ row.appleAccount?.appleIdMasked ?? '-' }}</template>
@@ -128,9 +139,12 @@
           <template #header>
             <span class="help-label">
               成本
-              <FeatureHelp text="这单消耗掉的 Apple 余额折算成人民币后的成本。" />
+              <FeatureHelp
+                text="成本 = Apple 余额成本 + 售出 ID 成本。寄存 ID 不计算 ID 本身成本。"
+              />
             </span>
           </template>
+          <template #default="{ row }">{{ formatMoneyNumber(getOrderTotalCost(row)) }}</template>
         </el-table-column>
         <el-table-column
           v-if="isColumnVisible('platformFeeRmb')"
@@ -170,12 +184,14 @@
           <template #header>
             <span class="help-label">
               利润
-              <FeatureHelp text="利润 = 实收 - Apple 余额成本 - 平台手续费 - 退款/补发损耗。" />
+              <FeatureHelp
+                text="利润 = 实收 - Apple 余额成本 - 售出 ID 成本 - 平台手续费 - 退款/补发损耗。"
+              />
             </span>
           </template>
           <template #default="{ row }">
-            <StatusChip :tone="getProfitTone(row.profitAmount)">
-              {{ row.profitAmount }}
+            <StatusChip :tone="getProfitTone(formatOrderProfit(row))">
+              {{ formatOrderProfit(row) }}
             </StatusChip>
           </template>
         </el-table-column>
@@ -265,7 +281,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ order.orderNo }}</strong>
-              <span>{{ order.customer.name }} · {{ order.service.name }}</span>
+              <span>{{ order.customer.name }} · {{ formatOrderService(order) }}</span>
             </div>
             <StatusChip :tone="getStatusTone(order.status)" dot>
               {{ getStatusLabel(order.status) }}
@@ -280,7 +296,7 @@
             </div>
             <div>
               <span>成本</span>
-              <strong>{{ order.appleCostRmb }}</strong>
+              <strong>{{ formatMoneyNumber(getOrderTotalCost(order)) }}</strong>
             </div>
             <div>
               <span>平台手续费</span>
@@ -292,11 +308,19 @@
             </div>
             <div>
               <span>利润</span>
-              <strong>{{ order.profitAmount }}</strong>
+              <strong>{{ formatOrderProfit(order) }}</strong>
             </div>
           </div>
 
           <div class="mobile-record-card__meta">
+            <div>
+              <span>手机号</span>
+              <strong>{{ formatCustomerPhone(order) }}</strong>
+            </div>
+            <div>
+              <span>微信</span>
+              <strong>{{ order.customer.wechat || '-' }}</strong>
+            </div>
             <div>
               <span>Apple ID</span>
               <strong>{{ order.appleAccount?.appleIdMasked ?? '-' }}</strong>
@@ -464,7 +488,7 @@
       :title="selectedOrder?.orderNo ?? '订单详情'"
       eyebrow="Apple ID 订单"
       :description="
-        selectedOrder ? `${selectedOrder.customer.name} · ${selectedOrder.service.name}` : ''
+        selectedOrder ? `${selectedOrder.customer.name} · ${formatOrderService(selectedOrder)}` : ''
       "
       size="640px"
     >
@@ -475,7 +499,7 @@
               {{ getStatusLabel(selectedOrder.status) }}
             </StatusChip>
             <strong>{{ selectedOrder.customer.name }}</strong>
-            <span>{{ selectedOrder.service.name }}</span>
+            <span>{{ formatOrderService(selectedOrder) }}</span>
             <div class="order-detail-hero__meta">
               <span>{{ selectedOrder.appleAccount?.appleIdMasked ?? '未绑定 Apple ID' }}</span>
               <span>{{ selectedOrder.sourcePlatform?.name ?? '无来源平台' }}</span>
@@ -491,16 +515,22 @@
         <section class="order-detail-finance">
           <div
             class="order-detail-profit"
-            :class="{ 'order-detail-profit--negative': Number(selectedOrder.profitAmount) < 0 }"
+            :class="{
+              'order-detail-profit--negative': Number(formatOrderProfit(selectedOrder)) < 0
+            }"
           >
             <span>预计利润</span>
-            <strong>{{ selectedOrder.profitAmount }}</strong>
+            <strong>{{ formatOrderProfit(selectedOrder) }}</strong>
             <small>利润率 {{ formatProfitRate(selectedOrder) }}</small>
           </div>
           <div class="order-detail-breakdown" aria-label="订单成本拆解">
             <div>
               <span>实收折合</span>
               <strong>{{ selectedOrder.paidAmountRmb }} CNY</strong>
+            </div>
+            <div>
+              <span>实际成本</span>
+              <strong>{{ formatMoneyNumber(getOrderTotalCost(selectedOrder)) }} CNY</strong>
             </div>
             <div>
               <span>Apple 余额成本</span>
@@ -514,9 +544,9 @@
               <span>退款/补发损耗</span>
               <strong>{{ selectedOrder.refundLossRmb }} CNY</strong>
             </div>
-            <div v-if="Number(selectedOrder.appleAccountPurchaseCost) > 0">
+            <div v-if="getOrderAppleIdCost(selectedOrder) > 0">
               <span>ID 购入成本</span>
-              <strong>{{ selectedOrder.appleAccountPurchaseCost }} CNY</strong>
+              <strong>{{ formatMoneyNumber(getOrderAppleIdCost(selectedOrder)) }} CNY</strong>
             </div>
           </div>
         </section>
@@ -527,6 +557,18 @@
             <span>{{ selectedOrder.service.category }}</span>
           </div>
           <div class="order-detail-info-grid">
+            <div>
+              <span>客户手机号</span>
+              <strong>{{ formatCustomerPhone(selectedOrder) }}</strong>
+            </div>
+            <div>
+              <span>客户微信</span>
+              <strong>{{ selectedOrder.customer.wechat || '-' }}</strong>
+            </div>
+            <div>
+              <span>开通国家</span>
+              <strong>{{ formatOrderRegion(selectedOrder) }}</strong>
+            </div>
             <div>
               <span>平台订单号</span>
               <strong>{{ selectedOrder.externalOrderNo ?? '-' }}</strong>
@@ -617,6 +659,7 @@ import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type { AppleOrder, PageResult, TableDensity, UserTableView } from '@/types/system';
+import { formatAppleRegionLabel } from '@/utils/appleAccountRegion';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const router = useRouter();
@@ -632,6 +675,8 @@ const statusOptions = [
 const orderColumnOptions = [
   { label: '订单号', value: 'orderNo', required: true },
   { label: '客户', value: 'customer' },
+  { label: '手机号', value: 'customerPhone' },
+  { label: '微信', value: 'customerWechat' },
   { label: '业务', value: 'service' },
   { label: 'Apple ID', value: 'appleAccount' },
   { label: '实收', value: 'paidAmountRmb' },
@@ -757,11 +802,76 @@ function formatDate(value?: string | null) {
 function sumField(
   field: 'paidAmountRmb' | 'appleCostRmb' | 'platformFeeRmb' | 'refundLossRmb' | 'profitAmount'
 ) {
-  return orders.value.reduce((sum, order) => sum + Number(order[field]), 0).toFixed(2);
+  return orders.value
+    .reduce((sum, order) => {
+      if (field === 'appleCostRmb') {
+        return sum + getOrderTotalCost(order);
+      }
+      if (field === 'profitAmount') {
+        return sum + Number(formatOrderProfit(order));
+      }
+      return sum + Number(order[field]);
+    }, 0)
+    .toFixed(2);
 }
 
 function formatPaidAmount(order: AppleOrder) {
   return `${order.paidAmount} ${order.paidCurrency}`;
+}
+
+function readAmount(value?: string | null) {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function formatMoneyNumber(value: number) {
+  return value.toFixed(2);
+}
+
+function getOrderAppleIdCost(order: AppleOrder) {
+  if (order.appleAccountOwnershipType !== 'sold') {
+    return 0;
+  }
+
+  const orderCost = readAmount(order.appleAccountPurchaseCost);
+  if (orderCost > 0) {
+    return orderCost;
+  }
+
+  return readAmount(order.appleAccount?.purchaseCost);
+}
+
+function getOrderTotalCost(order: AppleOrder) {
+  return readAmount(order.appleCostRmb) + getOrderAppleIdCost(order);
+}
+
+function formatOrderProfit(order: AppleOrder) {
+  const profit =
+    readAmount(order.paidAmountRmb) -
+    readAmount(order.platformFeeRmb) -
+    readAmount(order.refundLossRmb) -
+    getOrderTotalCost(order);
+  return profit.toFixed(4);
+}
+
+function formatCustomerPhone(order: AppleOrder) {
+  return (
+    order.customer.maskedPhone ??
+    (order.customer.phoneTail ? `尾号 ${order.customer.phoneTail}` : '-')
+  );
+}
+
+function getOrderRegion(order: AppleOrder) {
+  return order.appleAccount?.region || order.service.allowedRegions?.[0] || '';
+}
+
+function formatOrderRegion(order: AppleOrder) {
+  return formatAppleRegionLabel(getOrderRegion(order));
+}
+
+function formatOrderService(order: AppleOrder) {
+  const region = formatOrderRegion(order);
+  return region === '-' ? order.service.name : `${region} · ${order.service.name}`;
 }
 
 function getStatusLabel(status: AppleOrder['status']) {
@@ -788,7 +898,7 @@ function getProfitTone(value: string) {
 function formatProfitRate(order: AppleOrder) {
   const paidAmountRmb = Number(order.paidAmountRmb);
   if (!paidAmountRmb) return '-';
-  return `${((Number(order.profitAmount) / paidAmountRmb) * 100).toFixed(2)}%`;
+  return `${((Number(formatOrderProfit(order)) / paidAmountRmb) * 100).toFixed(2)}%`;
 }
 
 function formatPlanChange(order: AppleOrder) {
@@ -1085,7 +1195,24 @@ function normalizeVisibleColumns(columns: string[]) {
   const allowedColumns = new Set(defaultColumns);
   const nextColumns = expandedColumns.filter((column) => allowedColumns.has(column));
 
-  return nextColumns.length ? nextColumns : defaultColumns;
+  if (!nextColumns.length) {
+    return defaultColumns;
+  }
+
+  const customerIndex = nextColumns.indexOf('customer');
+  if (customerIndex >= 0) {
+    const contactColumns = ['customerPhone', 'customerWechat'];
+    let insertOffset = 1;
+
+    for (const column of contactColumns) {
+      if (!nextColumns.includes(column)) {
+        nextColumns.splice(customerIndex + insertOffset, 0, column);
+        insertOffset += 1;
+      }
+    }
+  }
+
+  return nextColumns;
 }
 
 function parseSortConfig(value: Record<string, unknown>): {

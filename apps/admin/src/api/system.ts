@@ -12,6 +12,9 @@ import type {
   AppleAccountSecretField,
   AppleAccountSourceChannel,
   AppleAccountStatusCheck,
+  AppleAutomationTaskBatch,
+  AppleAutomationTaskBatchResults,
+  AppleAutomationWorkbenchStatus,
   AppleAutomationTask,
   AutomationTaskLog,
   AppleBalanceAdjustment,
@@ -23,6 +26,7 @@ import type {
   CodeAfterSale,
   CodeDeliveryLog,
   AppleService,
+  AppleServiceRegionPrice,
   AppleBalancePriceRuleType,
   AppleServicePlatformMapping,
   AppleWebGatewayNodeStatus,
@@ -30,6 +34,7 @@ import type {
   AppleOfficialPriceSource,
   AppleOfficialPriceSnapshot,
   AppleOfficialPriceCheckBatch,
+  AppleOfficialPriceCheckBatchResults,
   ApplePriceChangeReview,
   AppleOfficialPriceCollectMethod,
   AppleOfficialPriceSourceStatus,
@@ -575,6 +580,14 @@ export interface AppleServiceQuery extends CommonPageQuery {
   category?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc' | '';
+}
+
+export interface AppleServiceRegionPriceQuery extends CommonPageQuery {
+  region?: string;
+  category?: string;
+  serviceId?: string;
+  status?: AppleServiceRegionPrice['status'] | '';
+  orderEntryOnly?: string;
 }
 
 export interface AppleOfficialPriceSourceQuery extends CommonPageQuery {
@@ -1253,6 +1266,8 @@ export interface CreateAppleOrderPayload {
   sourcePlatformId?: string | null;
   externalOrderNo?: string | null;
   serviceId: string;
+  servicePriceId?: string | null;
+  serviceRegion?: string | null;
   appleAccountId?: string | null;
   serviceAccount?: string | null;
   currentPlan?: string | null;
@@ -1373,6 +1388,12 @@ export interface BatchAppleStatusCheckResult {
   queuedCount: number;
   manualRequiredCount: number;
   items: AppleAutomationTask[];
+}
+
+export interface BatchAppleBalanceCheckPayload {
+  appleAccountIds: string[];
+  priority?: AutomationTaskPriority;
+  note?: string | null;
 }
 
 export interface AppleWebCheckGatewayCandidate {
@@ -2177,6 +2198,16 @@ export const appleServicesApi = {
   getBalancePriceRule() {
     return request<AppleBalancePriceRule>(http.get('/apple/services/balance-price-rule'));
   },
+  listOrderOptions(options: ApiRequestOptions = {}) {
+    return request<{ items: AppleServiceRegionPrice[] }>(
+      http.get('/apple/services/order-options', { signal: options.signal })
+    );
+  },
+  listRegionPrices(params: AppleServiceRegionPriceQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<AppleServiceRegionPrice>>(
+      http.get('/apple/services/region-prices', { params, signal: options.signal })
+    );
+  },
   updateBalancePriceRule(payload: AppleBalancePriceRule) {
     return request<AppleBalancePriceRule>(
       http.patch('/apple/services/balance-price-rule', payload)
@@ -2270,6 +2301,11 @@ export const appleOfficialPricesApi = {
   getCheckBatch(id: string) {
     return request<AppleOfficialPriceCheckBatch>(
       http.get(`/apple/official-prices/check-batches/${id}`)
+    );
+  },
+  getCheckBatchResults(id: string) {
+    return request<AppleOfficialPriceCheckBatchResults>(
+      http.get(`/apple/official-prices/check-batches/${id}/results`)
     );
   },
   listSnapshots(params: AppleOfficialPriceSnapshotQuery) {
@@ -2531,6 +2567,29 @@ export const appleAutomationTasksApi = {
   batchStatusCheck(payload: BatchAppleStatusCheckPayload) {
     return request<BatchAppleStatusCheckResult>(
       http.post('/apple/automation-tasks/batch-status-check', payload)
+    );
+  },
+  createStatusCheckBatch(payload: BatchAppleStatusCheckPayload) {
+    return request<AppleAutomationTaskBatchResults>(
+      http.post('/apple/automation-tasks/batches/status-check', payload)
+    );
+  },
+  createBalanceCheckBatch(payload: BatchAppleBalanceCheckPayload) {
+    return request<AppleAutomationTaskBatchResults>(
+      http.post('/apple/automation-tasks/batches/balance-check', payload)
+    );
+  },
+  getBatch(id: string) {
+    return request<AppleAutomationTaskBatch>(http.get(`/apple/automation-tasks/batches/${id}`));
+  },
+  getBatchResults(id: string) {
+    return request<AppleAutomationTaskBatchResults>(
+      http.get(`/apple/automation-tasks/batches/${id}/results`)
+    );
+  },
+  workbenchStatus() {
+    return request<AppleAutomationWorkbenchStatus>(
+      http.get('/apple/automation-tasks/workbench-status')
     );
   },
   listLogs(id: string) {

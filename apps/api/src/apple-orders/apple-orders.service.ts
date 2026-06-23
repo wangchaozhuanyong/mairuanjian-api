@@ -98,6 +98,8 @@ const orderInclude = {
     select: {
       id: true,
       name: true,
+      phone: true,
+      phoneTail: true,
       wechat: true
     }
   },
@@ -113,9 +115,11 @@ const orderInclude = {
       name: true,
       category: true,
       currency: true,
-      officialCostValue: true
+      officialCostValue: true,
+      allowedRegions: true
     }
   },
+  servicePrice: true,
   appleAccount: true,
   activation: true
 } satisfies Prisma.AppleOrderInclude;
@@ -162,7 +166,18 @@ export class AppleOrdersService {
             { externalOrderNo: { contains: keyword, mode: 'insensitive' } },
             { serviceAccount: { contains: keyword, mode: 'insensitive' } },
             { remark: { contains: keyword, mode: 'insensitive' } },
-            { customer: { is: { name: { contains: keyword, mode: 'insensitive' } } } },
+            {
+              customer: {
+                is: {
+                  OR: [
+                    { name: { contains: keyword, mode: 'insensitive' } },
+                    { phone: { contains: keyword, mode: 'insensitive' } },
+                    { phoneTail: { contains: keyword.slice(-8), mode: 'insensitive' } },
+                    { wechat: { contains: keyword, mode: 'insensitive' } }
+                  ]
+                }
+              }
+            },
             { service: { is: { name: { contains: keyword, mode: 'insensitive' } } } },
             {
               appleAccount: {
@@ -288,6 +303,7 @@ export class AppleOrdersService {
   async create(dto: CreateAppleOrderDto, operator?: AuthenticatedUser) {
     const customerId = this.normalizeRequiredId(dto.customerId, 'customerId');
     const serviceId = this.normalizeRequiredId(dto.serviceId, 'serviceId');
+    const servicePriceId = this.normalizeNullableString(dto.servicePriceId);
     const sourcePlatformId = this.normalizeNullableString(dto.sourcePlatformId);
     const externalOrderNo = this.normalizeNullableString(dto.externalOrderNo);
 
@@ -311,6 +327,33 @@ export class AppleOrdersService {
       if (!service) {
         throw new BadRequestException('Apple service does not exist or is not enabled');
       }
+
+      const servicePrice = servicePriceId
+        ? await tx.appleServiceRegionPrice.findFirst({
+            where: {
+              id: servicePriceId,
+              serviceId,
+              deletedAt: null,
+              status: 'active'
+            }
+          })
+        : null;
+
+      if (servicePriceId && !servicePrice) {
+        throw new BadRequestException('Selected service price does not exist or is disabled');
+      }
+
+      const serviceRegion =
+        servicePrice?.region ?? this.normalizeNullableString(dto.serviceRegion)?.toUpperCase();
+      const serviceForMatching = servicePrice
+        ? {
+            ...service,
+            currency: servicePrice.currency,
+            allowedRegions: [servicePrice.region],
+            defaultPeriodType: servicePrice.periodType,
+            defaultPeriodValue: servicePrice.periodValue
+          }
+        : service;
 
       const sourcePlatform = sourcePlatformId
         ? await tx.sourcePlatform.findFirst({
@@ -337,7 +380,7 @@ export class AppleOrdersService {
       const appleCostValue = this.normalizeDecimal(
         dto.appleCostValue,
         'appleCostValue',
-        service.officialCostValue
+        servicePrice?.appleBalancePrice ?? service.officialCostValue
       );
       const appleAccountOwnershipType = this.parseAppleAccountOwnershipType(
         dto.appleAccountOwnershipType
@@ -352,7 +395,7 @@ export class AppleOrdersService {
       const startTime = this.parseDate(dto.startTime, 'startTime') ?? new Date();
       const expireTime =
         this.parseDate(dto.expireTime, 'expireTime') ??
-        this.calculateExpireTime(service, startTime);
+        this.calculateExpireTime(serviceForMatching, startTime);
 
       let appleAccount: MatchableAccount | null = null;
 
@@ -360,7 +403,7 @@ export class AppleOrdersService {
         appleAccount = await this.resolveAppleAccountForOrder(
           tx,
           dto.appleAccountId,
-          service,
+          serviceForMatching,
           appleCostValue,
           appleAccountOwnershipType
         );
@@ -393,6 +436,8 @@ export class AppleOrdersService {
           sourcePlatformId: sourcePlatform?.id,
           externalOrderNo,
           serviceId,
+          servicePriceId: servicePrice?.id,
+          serviceRegion,
           appleAccountId: appleAccount?.id,
           serviceAccount,
           currentPlan: this.normalizeNullableString(dto.currentPlan),
@@ -464,12 +509,14 @@ export class AppleOrdersService {
           customerId,
           appleAccountId: appleAccount?.id,
           serviceId,
+          servicePriceId: servicePrice?.id,
+          serviceRegion,
           currentPlan: this.normalizeNullableString(dto.currentPlan),
           targetPlan: this.normalizeNullableString(dto.targetPlan),
           startTime,
           expireTime,
           consumedValue: appleCostValue,
-          currency: service.currency,
+          currency: servicePrice?.currency ?? service.currency,
           avgUnitCost: appleAccount?.averageCost ?? new PrismaNamespace.Decimal(0),
           costRmb: financials.appleCostRmb,
           paidAmount,
@@ -518,6 +565,8 @@ export class AppleOrdersService {
         orderNo: createdOrder.orderNo,
         customerId: createdOrder.customerId,
         serviceId: createdOrder.serviceId,
+        servicePriceId: createdOrder.servicePriceId,
+        serviceRegion: createdOrder.serviceRegion,
         appleAccountId: createdOrder.appleAccountId,
         paidAmount: createdOrder.paidAmount.toString(),
         paidCurrency: createdOrder.paidCurrency,
@@ -583,11 +632,15 @@ export class AppleOrdersService {
     const paidAmountRmb = this.convertPaidAmountToRmb(paidAmount, paidExchangeRateToRmb);
     const platformFeeRmb = this.convertPaidAmountToRmb(platformFee, paidExchangeRateToRmb);
     const refundLossRmb = this.convertPaidAmountToRmb(refundLoss, paidExchangeRateToRmb);
+    const appleAccountPurchaseCost = this.getEffectiveAppleAccountPurchaseCost(existingOrder);
+    const appleAccountSaleProfit = new PrismaNamespace.Decimal(existingOrder.appleAccountSalePrice)
+      .minus(appleAccountPurchaseCost)
+      .toDecimalPlaces(4);
     const profitAmount = paidAmountRmb
       .minus(platformFeeRmb)
       .minus(refundLossRmb)
       .minus(existingOrder.appleCostRmb)
-      .minus(existingOrder.appleAccountPurchaseCost)
+      .minus(appleAccountPurchaseCost)
       .toDecimalPlaces(4);
     const status =
       dto.status !== undefined
@@ -629,6 +682,8 @@ export class AppleOrdersService {
           platformFeeRmb,
           refundLoss,
           refundLossRmb,
+          appleAccountPurchaseCost,
+          appleAccountSaleProfit,
           profitAmount,
           status,
           remark:
@@ -660,6 +715,8 @@ export class AppleOrdersService {
           platformFeeRmb,
           refundLoss,
           refundLossRmb,
+          appleAccountPurchaseCost,
+          appleAccountSaleProfit,
           profitAmount,
           externalOrderNo,
           status: this.mapOrderStatusToActivationStatus(status)
@@ -1302,6 +1359,59 @@ export class AppleOrdersService {
     return `${prefix}@${domain}`;
   }
 
+  private maskPhone(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const compact = value.replace(/\s+/g, '');
+    if (compact.length <= 4) {
+      return '****';
+    }
+
+    return `${compact.slice(0, 3)}****${compact.slice(-4)}`;
+  }
+
+  private getEffectiveAppleAccountPurchaseCost(
+    order: Prisma.AppleOrderGetPayload<{ include: typeof orderInclude }>
+  ) {
+    const storedCost = new PrismaNamespace.Decimal(order.appleAccountPurchaseCost);
+
+    if (order.appleAccountOwnershipType !== 'sold') {
+      return new PrismaNamespace.Decimal(0);
+    }
+
+    const accountCost = order.appleAccount
+      ? new PrismaNamespace.Decimal(order.appleAccount.purchaseCost)
+      : new PrismaNamespace.Decimal(0);
+
+    return storedCost.greaterThan(0) ? storedCost : accountCost;
+  }
+
+  private calculateEffectiveProfitAmount(
+    order: Prisma.AppleOrderGetPayload<{ include: typeof orderInclude }>,
+    appleAccountPurchaseCost = this.getEffectiveAppleAccountPurchaseCost(order)
+  ) {
+    return new PrismaNamespace.Decimal(order.paidAmountRmb)
+      .minus(order.platformFeeRmb)
+      .minus(order.refundLossRmb)
+      .minus(order.appleCostRmb)
+      .minus(appleAccountPurchaseCost)
+      .toDecimalPlaces(4);
+  }
+
+  private toOrderCustomerResponse(
+    customer: Prisma.AppleOrderGetPayload<{ include: typeof orderInclude }>['customer']
+  ) {
+    return {
+      id: customer.id,
+      name: customer.name,
+      maskedPhone: this.maskPhone(customer.phone),
+      phoneTail: customer.phoneTail,
+      wechat: customer.wechat
+    };
+  }
+
   private toAuditJson(data: unknown) {
     return JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
   }
@@ -1331,7 +1441,8 @@ export class AppleOrdersService {
   ) {
     const daysUntilExpire = this.calculateSignedDaysUntil(order.expireTime);
     const paidAmountRmb = new PrismaNamespace.Decimal(order.paidAmountRmb);
-    const profitAmount = new PrismaNamespace.Decimal(order.profitAmount);
+    const appleAccountPurchaseCost = this.getEffectiveAppleAccountPurchaseCost(order);
+    const profitAmount = this.calculateEffectiveProfitAmount(order, appleAccountPurchaseCost);
 
     return {
       orderId: order.id,
@@ -1339,6 +1450,8 @@ export class AppleOrdersService {
       serviceId: order.serviceId,
       serviceName: order.service.name,
       serviceCategory: order.service.category,
+      servicePriceId: order.servicePriceId,
+      serviceRegion: order.serviceRegion,
       serviceAccount: order.serviceAccount,
       currentPlan: order.currentPlan,
       targetPlan: order.targetPlan,
@@ -1354,9 +1467,9 @@ export class AppleOrdersService {
       appleCostValue: order.appleCostValue.toString(),
       appleCostRmb: order.appleCostRmb.toString(),
       appleAccountOwnershipType: order.appleAccountOwnershipType,
-      appleAccountPurchaseCost: order.appleAccountPurchaseCost.toString(),
+      appleAccountPurchaseCost: appleAccountPurchaseCost.toString(),
       appleAccountSalePrice: order.appleAccountSalePrice.toString(),
-      profitAmount: order.profitAmount.toString(),
+      profitAmount: profitAmount.toString(),
       profitRate: paidAmountRmb.greaterThan(0)
         ? profitAmount.div(paidAmountRmb).mul(100).toDecimalPlaces(2).toString()
         : null,
@@ -1376,11 +1489,17 @@ export class AppleOrdersService {
   }
 
   private toOrderResponse(order: Prisma.AppleOrderGetPayload<{ include: typeof orderInclude }>) {
+    const appleAccountPurchaseCost = this.getEffectiveAppleAccountPurchaseCost(order);
+    const appleAccountSaleProfit = new PrismaNamespace.Decimal(order.appleAccountSalePrice)
+      .minus(appleAccountPurchaseCost)
+      .toDecimalPlaces(4);
+    const profitAmount = this.calculateEffectiveProfitAmount(order, appleAccountPurchaseCost);
+
     return {
       id: order.id,
       orderNo: order.orderNo,
       customerId: order.customerId,
-      customer: order.customer,
+      customer: this.toOrderCustomerResponse(order.customer),
       sourcePlatformId: order.sourcePlatformId,
       sourcePlatform: order.sourcePlatform,
       externalOrderNo: order.externalOrderNo,
@@ -1389,6 +1508,26 @@ export class AppleOrdersService {
         ...order.service,
         officialCostValue: order.service.officialCostValue.toString()
       },
+      servicePriceId: order.servicePriceId,
+      serviceRegion: order.serviceRegion,
+      servicePrice: order.servicePrice
+        ? {
+            id: order.servicePrice.id,
+            serviceId: order.servicePrice.serviceId,
+            provider: order.servicePrice.provider,
+            serviceName: order.servicePrice.serviceName,
+            category: order.servicePrice.category,
+            region: order.servicePrice.region,
+            currency: order.servicePrice.currency,
+            officialPrice: order.servicePrice.officialPrice.toString(),
+            appleBalancePrice: order.servicePrice.appleBalancePrice.toString(),
+            periodType: order.servicePrice.periodType,
+            periodValue: order.servicePrice.periodValue,
+            status: order.servicePrice.status,
+            collectedAt: order.servicePrice.collectedAt,
+            confirmedAt: order.servicePrice.confirmedAt
+          }
+        : null,
       appleAccountId: order.appleAccountId,
       appleAccount: order.appleAccount
         ? {
@@ -1419,10 +1558,10 @@ export class AppleOrdersService {
       appleCostValue: order.appleCostValue.toString(),
       appleCostRmb: order.appleCostRmb.toString(),
       appleAccountOwnershipType: order.appleAccountOwnershipType,
-      appleAccountPurchaseCost: order.appleAccountPurchaseCost.toString(),
+      appleAccountPurchaseCost: appleAccountPurchaseCost.toString(),
       appleAccountSalePrice: order.appleAccountSalePrice.toString(),
-      appleAccountSaleProfit: order.appleAccountSaleProfit.toString(),
-      profitAmount: order.profitAmount.toString(),
+      appleAccountSaleProfit: appleAccountSaleProfit.toString(),
+      profitAmount: profitAmount.toString(),
       status: order.status,
       remark: order.remark,
       activationId: order.activation?.id ?? null,

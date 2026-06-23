@@ -90,6 +90,12 @@ enum AppleBalancePriceRuleType {
   manual
 }
 
+enum AppleServiceRegionPriceStatus {
+  active
+  disabled
+  needs_review
+}
+
 enum AppleOrderStatus {
   pending
   active
@@ -238,6 +244,12 @@ enum AutomationTaskPriority {
   medium
   high
   urgent
+}
+
+enum AutomationTaskBatchType {
+  status_check
+  balance_check
+  official_price_check
 }
 
 enum AutomationTaskLogLevel {
@@ -478,6 +490,7 @@ model User {
   appleOfficialPriceSourcesCreated  AppleOfficialPriceSource[]  @relation("AppleOfficialPriceSourceCreatedBy")
   appleOfficialPriceSourcesUpdated  AppleOfficialPriceSource[]  @relation("AppleOfficialPriceSourceUpdatedBy")
   applePriceChangeReviewsReviewed   ApplePriceChangeReview[]    @relation("ApplePriceChangeReviewReviewedBy")
+  automationTaskBatchesCreated      AutomationTaskBatch[]       @relation("AutomationTaskBatchCreatedBy")
   appleOrdersCreated                AppleOrder[]                @relation("AppleOrderCreatedBy")
   appleOrdersUpdated                AppleOrder[]                @relation("AppleOrderUpdatedBy")
   appleAccountLocksCreated          AppleAccountLock[]          @relation("AppleAccountLockCreatedBy")
@@ -829,6 +842,7 @@ model AppleService {
   renewalTasks           RenewalTask[]
   actionPlanItems        AppleAccountActionPlanItem[]
   platformMappings       AppleServicePlatformMapping[]
+  regionPrices           AppleServiceRegionPrice[]
   automationTasks        AutomationTask[]
   officialPriceSnapshots AppleOfficialPriceSnapshot[]
   priceChangeReviews     ApplePriceChangeReview[]
@@ -892,12 +906,16 @@ model AppleOfficialPriceSnapshot {
   rawPayload        Json?                  @map("raw_payload")
   collectedAt       DateTime               @default(now()) @map("collected_at") @db.Timestamptz(6)
 
-  source        AppleOfficialPriceSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
-  appleService  AppleService?            @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
-  changeReviews ApplePriceChangeReview[]
+  source           AppleOfficialPriceSource  @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  appleService     AppleService?             @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
+  automationTaskId String?                   @map("automation_task_id") @db.Uuid
+  automationTask   AutomationTask?           @relation("OfficialPriceSnapshotAutomationTask", fields: [automationTaskId], references: [id], onDelete: SetNull)
+  changeReviews    ApplePriceChangeReview[]
+  regionPrices     AppleServiceRegionPrice[]
 
   @@index([sourceId])
   @@index([appleServiceId])
+  @@index([automationTaskId])
   @@index([provider])
   @@index([serviceName])
   @@index([region])
@@ -906,11 +924,49 @@ model AppleOfficialPriceSnapshot {
   @@map("apple_official_price_snapshots")
 }
 
+model AppleServiceRegionPrice {
+  id                String                        @id @default(uuid()) @db.Uuid
+  serviceId         String                        @map("service_id") @db.Uuid
+  sourceSnapshotId  String?                       @map("source_snapshot_id") @db.Uuid
+  provider          String                        @default("manual") @db.VarChar(40)
+  serviceName       String                        @map("service_name") @db.VarChar(120)
+  category          String                        @default("通用") @db.VarChar(80)
+  region            String                        @db.VarChar(20)
+  currency          String                        @db.VarChar(10)
+  officialPrice     Decimal                       @map("official_price") @db.Decimal(18, 4)
+  appleBalancePrice Decimal                       @map("apple_balance_price") @db.Decimal(18, 4)
+  periodType        AppleServicePeriodType        @default(month) @map("period_type")
+  periodValue       Int                           @default(1) @map("period_value")
+  status            AppleServiceRegionPriceStatus @default(active)
+  collectedAt       DateTime?                     @map("collected_at") @db.Timestamptz(6)
+  confirmedAt       DateTime?                     @map("confirmed_at") @db.Timestamptz(6)
+  remark            String?                       @db.Text
+  createdAt         DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?                     @map("deleted_at") @db.Timestamptz(6)
+
+  service        AppleService                @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  sourceSnapshot AppleOfficialPriceSnapshot? @relation(fields: [sourceSnapshotId], references: [id], onDelete: SetNull)
+  orders         AppleOrder[]
+  activations    ServiceActivation[]
+
+  @@unique([serviceId, region, currency])
+  @@index([serviceId])
+  @@index([sourceSnapshotId])
+  @@index([region, category, status])
+  @@index([currency])
+  @@index([status])
+  @@index([collectedAt])
+  @@index([deletedAt])
+  @@map("apple_service_region_prices")
+}
+
 model ApplePriceChangeReview {
   id               String                       @id @default(uuid()) @db.Uuid
   sourceId         String                       @map("source_id") @db.Uuid
   snapshotId       String?                      @map("snapshot_id") @db.Uuid
   appleServiceId   String?                      @map("apple_service_id") @db.Uuid
+  automationTaskId String?                      @map("automation_task_id") @db.Uuid
   changeType       ApplePriceChangeType         @map("change_type")
   oldValue         Json?                        @map("old_value")
   newValue         Json                         @map("new_value")
@@ -921,14 +977,16 @@ model ApplePriceChangeReview {
   createdAt        DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  source       AppleOfficialPriceSource    @relation(fields: [sourceId], references: [id], onDelete: Restrict)
-  snapshot     AppleOfficialPriceSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: SetNull)
-  appleService AppleService?               @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
-  reviewedBy   User?                       @relation("ApplePriceChangeReviewReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  source         AppleOfficialPriceSource    @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  snapshot       AppleOfficialPriceSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: SetNull)
+  appleService   AppleService?               @relation(fields: [appleServiceId], references: [id], onDelete: SetNull)
+  automationTask AutomationTask?             @relation("OfficialPriceReviewAutomationTask", fields: [automationTaskId], references: [id], onDelete: SetNull)
+  reviewedBy     User?                       @relation("ApplePriceChangeReviewReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
 
   @@index([sourceId])
   @@index([snapshotId])
   @@index([appleServiceId])
+  @@index([automationTaskId])
   @@index([changeType])
   @@index([status])
   @@index([createdAt])
@@ -1267,6 +1325,8 @@ model AppleOrder {
   sourcePlatformId          String?                   @map("source_platform_id") @db.Uuid
   externalOrderNo           String?                   @map("external_order_no") @db.VarChar(120)
   serviceId                 String                    @map("service_id") @db.Uuid
+  servicePriceId            String?                   @map("service_price_id") @db.Uuid
+  serviceRegion             String?                   @map("service_region") @db.VarChar(20)
   appleAccountId            String?                   @map("apple_account_id") @db.Uuid
   serviceAccount            String?                   @map("service_account") @db.VarChar(255)
   currentPlan               String?                   @map("current_plan") @db.VarChar(120)
@@ -1296,13 +1356,14 @@ model AppleOrder {
   updatedAt                 DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt                 DateTime?                 @map("deleted_at") @db.Timestamptz(6)
 
-  customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  sourcePlatform   SourcePlatform?    @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
-  service          AppleService       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  appleAccount     AppleAccount?      @relation("AppleAccountOrders", fields: [appleAccountId], references: [id], onDelete: Restrict)
-  soldAppleAccount AppleAccount?      @relation("AppleAccountSoldOrder")
-  createdBy        User?              @relation("AppleOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy        User?              @relation("AppleOrderUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  customer         Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sourcePlatform   SourcePlatform?          @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
+  service          AppleService             @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  servicePrice     AppleServiceRegionPrice? @relation(fields: [servicePriceId], references: [id], onDelete: SetNull)
+  appleAccount     AppleAccount?            @relation("AppleAccountOrders", fields: [appleAccountId], references: [id], onDelete: Restrict)
+  soldAppleAccount AppleAccount?            @relation("AppleAccountSoldOrder")
+  createdBy        User?                    @relation("AppleOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy        User?                    @relation("AppleOrderUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   activation       ServiceActivation?
   locks            AppleAccountLock[]
   renewalTasks     RenewalTask[]
@@ -1311,6 +1372,8 @@ model AppleOrder {
   @@index([customerId])
   @@index([sourcePlatformId])
   @@index([serviceId])
+  @@index([servicePriceId])
+  @@index([serviceRegion])
   @@index([appleAccountId])
   @@index([status])
   @@index([createdAt])
@@ -1324,6 +1387,8 @@ model ServiceActivation {
   customerId                String                    @map("customer_id") @db.Uuid
   appleAccountId            String?                   @map("apple_account_id") @db.Uuid
   serviceId                 String                    @map("service_id") @db.Uuid
+  servicePriceId            String?                   @map("service_price_id") @db.Uuid
+  serviceRegion             String?                   @map("service_region") @db.VarChar(20)
   currentPlan               String?                   @map("current_plan") @db.VarChar(120)
   targetPlan                String?                   @map("target_plan") @db.VarChar(120)
   startTime                 DateTime?                 @map("start_time") @db.Timestamptz(6)
@@ -1358,6 +1423,7 @@ model ServiceActivation {
   customer        Customer                     @relation(fields: [customerId], references: [id], onDelete: Restrict)
   appleAccount    AppleAccount?                @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
   service         AppleService                 @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  servicePrice    AppleServiceRegionPrice?     @relation(fields: [servicePriceId], references: [id], onDelete: SetNull)
   sourcePlatform  SourcePlatform?              @relation(fields: [sourcePlatformId], references: [id], onDelete: SetNull)
   renewalTasks    RenewalTask[]
   actionPlanItems AppleAccountActionPlanItem[]
@@ -1366,6 +1432,8 @@ model ServiceActivation {
   @@index([customerId])
   @@index([appleAccountId])
   @@index([serviceId])
+  @@index([servicePriceId])
+  @@index([serviceRegion])
   @@index([expireTime])
   @@index([status])
   @@map("service_activations")
@@ -1524,6 +1592,7 @@ model AppleAccountActionPlanItem {
 
 model AutomationTask {
   id                     String                 @id @default(uuid()) @db.Uuid
+  batchId                String?                @map("batch_id") @db.Uuid
   taskType               AutomationTaskType     @map("task_type")
   appleAccountId         String?                @map("apple_account_id") @db.Uuid
   customerId             String?                @map("customer_id") @db.Uuid
@@ -1545,14 +1614,18 @@ model AutomationTask {
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  appleAccount         AppleAccount?       @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
-  customer             Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  service              AppleService?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  activation           ServiceActivation?  @relation(fields: [activationId], references: [id], onDelete: SetNull)
-  screenshotAttachment Attachment?         @relation("AutomationTaskScreenshot", fields: [screenshotAttachmentId], references: [id], onDelete: SetNull)
-  createdBy            User?               @relation("AutomationTaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  logs                 AutomationTaskLog[]
+  appleAccount           AppleAccount?                @relation(fields: [appleAccountId], references: [id], onDelete: Restrict)
+  customer               Customer?                    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  service                AppleService?                @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  activation             ServiceActivation?           @relation(fields: [activationId], references: [id], onDelete: SetNull)
+  batch                  AutomationTaskBatch?         @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  screenshotAttachment   Attachment?                  @relation("AutomationTaskScreenshot", fields: [screenshotAttachmentId], references: [id], onDelete: SetNull)
+  createdBy              User?                        @relation("AutomationTaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  logs                   AutomationTaskLog[]
+  officialPriceSnapshots AppleOfficialPriceSnapshot[] @relation("OfficialPriceSnapshotAutomationTask")
+  officialPriceReviews   ApplePriceChangeReview[]     @relation("OfficialPriceReviewAutomationTask")
 
+  @@index([batchId])
   @@index([taskType])
   @@index([status])
   @@index([priority])
@@ -1563,6 +1636,32 @@ model AutomationTask {
   @@index([manualRequired])
   @@index([createdAt])
   @@map("automation_tasks")
+}
+
+model AutomationTaskBatch {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  batchType           AutomationTaskBatchType @map("batch_type")
+  status              AutomationTaskStatus    @default(queued)
+  totalCount          Int                     @default(0) @map("total_count")
+  queuedCount         Int                     @default(0) @map("queued_count")
+  runningCount        Int                     @default(0) @map("running_count")
+  successCount        Int                     @default(0) @map("success_count")
+  failedCount         Int                     @default(0) @map("failed_count")
+  manualRequiredCount Int                     @default(0) @map("manual_required_count")
+  note                String?                 @db.Text
+  createdByUserId     String?                 @map("created_by_user_id") @db.Uuid
+  startedAt           DateTime?               @map("started_at") @db.Timestamptz(6)
+  finishedAt          DateTime?               @map("finished_at") @db.Timestamptz(6)
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User?            @relation("AutomationTaskBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  tasks     AutomationTask[]
+
+  @@index([batchType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("automation_task_batches")
 }
 
 model AutomationTaskLog {

@@ -44,6 +44,34 @@ export class AppleServicesController {
     return this.appleServicesService.getBalancePriceRule();
   }
 
+  @Get('order-options')
+  @RequirePermissions('apple.order.create')
+  listOrderOptions() {
+    return this.appleServicesService.listOrderOptions();
+  }
+
+  @Get('region-prices')
+  @RequirePermissions('apple.service.manage')
+  listRegionPrices(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('region') region?: string,
+    @Query('category') category?: string,
+    @Query('serviceId') serviceId?: string,
+    @Query('status') status?: string,
+    @Query('orderEntryOnly') orderEntryOnly?: string
+  ) {
+    return this.appleServicesService.listRegionPrices({
+      page,
+      pageSize,
+      region,
+      category,
+      serviceId,
+      status,
+      orderEntryOnly
+    });
+  }
+
   @Get(':id')
   @RequirePermissions('apple.service.manage')
   get(@Param('id') id: string) {

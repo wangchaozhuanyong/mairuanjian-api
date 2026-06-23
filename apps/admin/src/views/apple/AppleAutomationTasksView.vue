@@ -1,334 +1,621 @@
 <template>
   <PageScaffold
-    title="Apple ID 自动化任务"
+    title="ID 自动化工作台"
     group="Apple ID 业务"
     phase="Phase 8"
-    description="集中管理查询余额、检测状态、自动充值、取消订阅和账号资料变更等自动化任务，高风险任务进入人工验证兜底。"
+    description="按要做的事开始操作：批量查状态、批量查余额、巡检价格套餐；任务队列只保留为执行记录和排查入口。"
   >
     <template #actions>
-      <StatusChip tone="orange" dot>人工验证兜底</StatusChip>
+      <StatusChip :tone="manualCount > 0 ? 'orange' : 'green'" dot>
+        {{ manualCount > 0 ? `待人工 ${manualCount}` : '暂无人工待处理' }}
+      </StatusChip>
     </template>
 
-    <section class="content-panel apple-compact-list-panel">
+    <section class="content-panel automation-workbench-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
-          title="自动化任务队列"
-          help="这里看系统自动跑的任务，比如查余额、检测状态、充值、取消订阅和资料变更。失败或风险高的任务会转人工确认。"
+          title="要做什么"
+          help="先选一个要做的动作，再选 Apple ID 或国家地区，点开始后直接看结果表。"
         />
         <div class="inline-actions">
-          <StatusChip tone="blue" dot>共 {{ total }} 个任务</StatusChip>
-          <StatusChip tone="orange">队列中 {{ queuedCount }}</StatusChip>
-          <StatusChip tone="purple">运行中 {{ runningCount }}</StatusChip>
-          <StatusChip :tone="manualCount > 0 ? 'red' : 'green'" dot>
-            {{ manualCount > 0 ? `需人工 ${manualCount}` : '无需人工' }}
-          </StatusChip>
+          <StatusChip tone="blue" dot>任务 {{ total }}</StatusChip>
+          <StatusChip tone="orange">队列 {{ queuedCount }}</StatusChip>
+          <StatusChip tone="purple">运行 {{ runningCount }}</StatusChip>
           <StatusChip :tone="failedCount > 0 ? 'red' : 'green'">
-            失败复核 {{ failedCount }}
+            失败 {{ failedCount }}
           </StatusChip>
-          <StatusChip tone="green">成功 {{ successCount }}</StatusChip>
-          <StatusChip :tone="automationFocusTasks.length ? 'orange' : 'green'">
-            待处理 {{ automationFocusTasks.length }}
-          </StatusChip>
-          <AppButton variant="primary" @click="openBatchCheckDialog">批量检查状态</AppButton>
         </div>
       </div>
 
-      <TableToolbar
-        v-model:keyword="query.keyword"
-        v-model:status="query.status"
-        v-model:visible-columns="visibleColumns"
-        v-model:saved-view-id="savedViewId"
-        :column-options="automationColumnOptions"
-        :status-options="statusOptions"
-        :saved-views="savedViews"
-        :filter-chips="filterChips"
-        :selected-count="selectedTasks.length"
-        :batch-actions="batchActions"
-        :show-date-shortcut="false"
-        primary-label="创建自动化任务"
-        placeholder="搜索 Apple ID、任务、错误说明"
-        @search="handleSearch"
-        @refresh="loadTasks"
-        @primary="openCreateDialog"
-        @clear-filters="clearFilters"
-        @remove-filter="removeFilter"
-        @save-view="saveTableView"
-        @apply-view="applySavedView"
-        @export="exportList"
-        @batch-action="handleBatchAction"
-      >
-        <template #filters>
-          <el-select
-            v-model="query.taskType"
-            class="table-toolbar__select"
-            clearable
-            placeholder="任务类型"
-            @change="handleSearch"
-          >
-            <el-option
-              v-for="item in taskTypeOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-          <el-select
-            v-model="query.priority"
-            class="table-toolbar__select"
-            clearable
-            placeholder="优先级"
-            @change="handleSearch"
-          >
-            <el-option
-              v-for="item in priorityOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-          <el-select
-            v-model="query.manualRequired"
-            class="table-toolbar__select"
-            clearable
-            placeholder="人工验证"
-            @change="handleSearch"
-          >
-            <el-option
-              v-for="item in manualRequiredOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </template>
-      </TableToolbar>
-
-      <el-table
-        v-loading="loading"
-        class="desktop-data-table"
-        :data="tasks"
-        :size="tableSize"
-        row-key="id"
-        empty-text="暂无自动化任务"
-        @selection-change="handleSelectionChange"
-        @sort-change="handleSortChange"
-      >
-        <template #empty>
-          <div class="apple-core-empty-state">
-            <strong>暂无自动化任务</strong>
-            <span>可以创建自动化任务，或清空筛选后查看全部任务队列。</span>
-            <div class="apple-core-empty-state__actions">
-              <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-              <AppButton variant="primary" @click="openCreateDialog">创建自动化任务</AppButton>
-            </div>
+      <div v-loading="workbenchStatusLoading" class="automation-readiness-grid">
+        <section class="automation-readiness-card">
+          <div>
+            <strong>状态查询</strong>
+            <span>{{ workbenchStatus?.statusCheck.message ?? '正在读取状态查询能力' }}</span>
           </div>
-        </template>
-        <el-table-column type="selection" width="46" />
-        <el-table-column
-          v-if="isColumnVisible('task')"
-          prop="taskType"
-          label="任务"
-          min-width="210"
-          sortable="custom"
-        >
-          <template #default="{ row }">
-            <strong>{{ getTaskTypeLabel(row.taskType) }}</strong>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="isColumnVisible('appleAccount')" label="Apple ID" min-width="190">
-          <template #default="{ row }">
-            {{ row.appleAccount.appleIdMasked }}
-            <div class="muted-block">
-              {{ formatAccountRegion(row.appleAccount.region) }} / 余额
-              {{ row.appleAccount.currentBalance }}
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('priority')"
-          prop="priority"
-          label="优先级"
-          width="90"
-          sortable="custom"
-        >
-          <template #default="{ row }">
-            <StatusChip :tone="getPriorityTone(row.priority)" dot>
-              {{ getPriorityLabel(row.priority) }}
-            </StatusChip>
-          </template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('status')"
-          prop="status"
-          label="状态"
-          width="130"
-          sortable="custom"
-        >
-          <template #default="{ row }">
-            <StatusChip :tone="getStatusTone(row.status)" dot>
-              {{ getStatusLabel(row.status) }}
-            </StatusChip>
-          </template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('result')"
-          prop="manualRequired"
-          label="结果/异常"
-          min-width="210"
-          sortable="custom"
-        >
-          <template #default="{ row }">
-            <span v-if="row.errorMessage">{{ row.errorMessage }}</span>
-            <span v-else-if="row.resultPayload">已有结果</span>
-            <span v-else>-</span>
-            <div v-if="row.manualRequired" class="muted-block">等待人工验证</div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('time')"
-          prop="createdAt"
-          label="时间"
-          min-width="180"
-          sortable="custom"
-        >
-          <template #default="{ row }">
-            {{ formatDate(row.createdAt) }}
-            <div class="muted-block">完成 {{ formatDate(row.finishedAt) }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
-          <template #default="{ row }">
-            <div class="table-action-group table-action-group--wrap">
-              <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
-              <AppButton
-                variant="success"
-                :disabled="!canRun(row)"
-                :loading="actionLoadingId === row.id"
-                @click="runPlaceholder(row)"
-              >
-                执行
-              </AppButton>
-              <AppButton
-                variant="ghost"
-                :disabled="!canRetry(row)"
-                :loading="actionLoadingId === row.id"
-                @click="retryTask(row)"
-              >
-                重试
-              </AppButton>
-              <AppButton
-                variant="soft"
-                :disabled="isFinalStatus(row.status)"
-                @click="markManual(row)"
-              >
-                转人工
-              </AppButton>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
+          <StatusChip :tone="getCapabilityTone(workbenchStatus?.statusCheck)" dot>
+            {{ getStatusCheckAbilityLabel() }}
+          </StatusChip>
+          <div class="automation-readiness-card__meta">
+            <span
+              >节点
+              {{ formatRegionList(workbenchStatus?.statusCheck.availableGatewayCountries) }}</span
+            >
+            <span>{{ getCapabilityWorkloadLabel(workbenchStatus?.statusCheck) }}</span>
+          </div>
+        </section>
+        <section class="automation-readiness-card">
+          <div>
+            <strong>余额查询</strong>
+            <span>{{ workbenchStatus?.balanceCheck.message ?? '正在读取余额查询能力' }}</span>
+          </div>
+          <StatusChip :tone="getCapabilityTone(workbenchStatus?.balanceCheck)" dot>
+            {{ getCapabilityModeLabel(workbenchStatus?.balanceCheck.mode) }}
+          </StatusChip>
+          <div class="automation-readiness-card__meta">
+            <span>{{ getCapabilityWorkloadLabel(workbenchStatus?.balanceCheck) }}</span>
+          </div>
+        </section>
+        <section class="automation-readiness-card">
+          <div>
+            <strong>价格巡检</strong>
+            <span>{{ workbenchStatus?.officialPriceCheck.message ?? '正在读取价格巡检能力' }}</span>
+          </div>
+          <StatusChip :tone="getCapabilityTone(workbenchStatus?.officialPriceCheck)" dot>
+            {{ getCapabilityModeLabel(workbenchStatus?.officialPriceCheck.mode) }}
+          </StatusChip>
+          <div class="automation-readiness-card__meta">
+            <span>{{ getCapabilityWorkloadLabel(workbenchStatus?.officialPriceCheck) }}</span>
+          </div>
+        </section>
+      </div>
 
-      <div class="mobile-record-list" aria-label="Apple ID 自动化任务移动列表">
-        <article v-for="task in tasks" :key="task.id" class="mobile-record-card">
-          <div class="mobile-record-card__head">
-            <div class="mobile-record-card__title">
-              <strong>{{ getTaskTypeLabel(task.taskType) }}</strong>
+      <el-tabs v-model="activeTab" class="automation-tabs">
+        <el-tab-pane label="开始操作" name="start">
+          <div class="automation-action-grid">
+            <section class="automation-action-card">
+              <div class="automation-action-card__head">
+                <div>
+                  <strong>批量查 ID 是否正常</strong>
+                  <span>选择账号后开始检查，结果会显示正常、需验证、锁定或风险。</span>
+                </div>
+                <StatusChip tone="blue">状态</StatusChip>
+              </div>
+              <el-form label-position="top">
+                <el-form-item label="Apple ID">
+                  <el-select
+                    v-model="statusCheckForm.appleAccountIds"
+                    class="full-width"
+                    collapse-tags
+                    collapse-tags-tooltip
+                    filterable
+                    multiple
+                    placeholder="选择要检查的 Apple ID"
+                  >
+                    <el-option
+                      v-for="account in appleAccounts"
+                      :key="account.id"
+                      :label="formatAccountOption(account)"
+                      :value="account.id"
+                    />
+                  </el-select>
+                </el-form-item>
+                <div class="automation-form-row">
+                  <el-form-item label="出口国家">
+                    <el-select v-model="statusCheckForm.gatewayRegion" class="full-width">
+                      <el-option
+                        v-for="item in gatewayRegionOptions"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="优先级">
+                    <el-select v-model="statusCheckForm.priority" class="full-width">
+                      <el-option
+                        v-for="item in priorityOptions"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </div>
+                <el-form-item label="备注">
+                  <el-input
+                    v-model.trim="statusCheckForm.note"
+                    maxlength="120"
+                    placeholder="例如 周一巡检 / 客户催处理"
+                    show-word-limit
+                  />
+                </el-form-item>
+              </el-form>
+              <AppButton
+                class="automation-action-card__button"
+                variant="primary"
+                :loading="runningAction === 'status'"
+                @click="startStatusCheck"
+              >
+                开始查询状态
+              </AppButton>
+            </section>
+
+            <section class="automation-action-card">
+              <div class="automation-action-card__head">
+                <div>
+                  <strong>批量查 ID 余额</strong>
+                  <span>第一期先返回系统当前余额快照；真实官网读取接入后会显示官网来源。</span>
+                </div>
+                <StatusChip tone="green">余额</StatusChip>
+              </div>
+              <el-form label-position="top">
+                <el-form-item label="Apple ID">
+                  <el-select
+                    v-model="balanceCheckForm.appleAccountIds"
+                    class="full-width"
+                    collapse-tags
+                    collapse-tags-tooltip
+                    filterable
+                    multiple
+                    placeholder="选择要查询余额的 Apple ID"
+                  >
+                    <el-option
+                      v-for="account in appleAccounts"
+                      :key="account.id"
+                      :label="formatAccountOption(account)"
+                      :value="account.id"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="优先级">
+                  <el-select v-model="balanceCheckForm.priority" class="full-width">
+                    <el-option
+                      v-for="item in priorityOptions"
+                      :key="item.value"
+                      :label="item.label"
+                      :value="item.value"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="备注">
+                  <el-input
+                    v-model.trim="balanceCheckForm.note"
+                    maxlength="120"
+                    placeholder="例如 续费前对账 / 客户投诉核对"
+                    show-word-limit
+                  />
+                </el-form-item>
+              </el-form>
+              <AppButton
+                class="automation-action-card__button"
+                variant="primary"
+                :loading="runningAction === 'balance'"
+                @click="startBalanceCheck"
+              >
+                开始查询余额
+              </AppButton>
+            </section>
+
+            <section class="automation-action-card">
+              <div class="automation-action-card__head">
+                <div>
+                  <strong>巡检官方价格和套餐</strong>
+                  <span>跑完后显示有变动、没变动、新套餐和失败项；确认后才同步业务价格。</span>
+                </div>
+                <StatusChip tone="purple">价格</StatusChip>
+              </div>
+              <el-form label-position="top">
+                <el-form-item label="供应商">
+                  <el-select v-model="officialCheckForm.provider" class="full-width">
+                    <el-option label="全部供应商" value="all" />
+                    <el-option
+                      v-for="provider in officialProviderOptions"
+                      :key="provider.value"
+                      :label="provider.label"
+                      :value="provider.value"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="国家 / 地区">
+                  <el-select
+                    v-model="officialCheckForm.regions"
+                    class="full-width"
+                    collapse-tags
+                    collapse-tags-tooltip
+                    multiple
+                    placeholder="不选则按全部地区巡检"
+                  >
+                    <el-option
+                      v-for="region in officialRegionOptions"
+                      :key="region.value"
+                      :label="region.label"
+                      :value="region.value"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-form>
+              <AppButton
+                class="automation-action-card__button"
+                variant="primary"
+                :loading="runningAction === 'official'"
+                @click="startOfficialPriceCheck"
+              >
+                开始价格巡检
+              </AppButton>
+            </section>
+          </div>
+
+          <div class="automation-secondary-actions">
+            <div>
+              <strong>其他自动化动作</strong>
               <span
-                >{{ task.appleAccount.appleIdMasked }} · 余额
-                {{ task.appleAccount.currentBalance }}</span
+                >这些动作需要真实 Worker
+                或人工兜底，先创建清楚的待处理任务，不假装已经自动完成。</span
               >
             </div>
-            <StatusChip :tone="getPriorityTone(task.priority)">
-              {{ getPriorityLabel(task.priority) }}
-            </StatusChip>
-          </div>
-
-          <div class="mobile-record-card__stats">
-            <div>
-              <span>状态</span>
-              <strong>{{ getStatusLabel(task.status) }}</strong>
-            </div>
-            <div>
-              <span>余额</span>
-              <strong>{{ task.appleAccount.currentBalance }}</strong>
-            </div>
-            <div>
-              <span>重试</span>
-              <strong>{{ task.retryCount }}</strong>
+            <div class="inline-actions">
+              <AppButton variant="soft" @click="openAdvancedTask('topup')">自动充值</AppButton>
+              <AppButton variant="soft" @click="openAdvancedTask('cancel_subscription')">
+                取消订阅
+              </AppButton>
+              <AppButton variant="soft" @click="openAdvancedTask('change_phone')">
+                修改手机号
+              </AppButton>
+              <AppButton variant="soft" @click="openAdvancedTask('change_security')">
+                修改密保
+              </AppButton>
             </div>
           </div>
+        </el-tab-pane>
 
-          <div class="mobile-record-card__meta">
-            <div>
-              <span>结果 / 异常</span>
-              <strong>{{ task.errorMessage || (task.resultPayload ? '已有结果' : '-') }}</strong>
+        <el-tab-pane label="结果表" name="results">
+          <div v-if="taskBatchResults" class="automation-result-block">
+            <div class="automation-result-block__head">
+              <div>
+                <strong>{{ getBatchTitle(taskBatchResults.batch.batchType) }}</strong>
+                <span>
+                  共 {{ taskBatchResults.batch.totalCount }} 个，成功
+                  {{ taskBatchResults.batch.successCount }}，需人工
+                  {{ taskBatchResults.batch.manualRequiredCount }}，失败
+                  {{ taskBatchResults.batch.failedCount }}
+                </span>
+              </div>
+              <StatusChip :tone="getStatusTone(taskBatchResults.batch.status)" dot>
+                {{ getStatusLabel(taskBatchResults.batch.status) }}
+              </StatusChip>
             </div>
-            <div>
-              <span>创建时间</span>
-              <strong>{{ formatDate(task.createdAt) }}</strong>
-            </div>
-          </div>
-
-          <div class="mobile-record-card__chips">
-            <StatusChip :tone="getStatusTone(task.status)" dot>
-              {{ getStatusLabel(task.status) }}
-            </StatusChip>
-            <StatusChip v-if="task.manualRequired" tone="orange">人工验证</StatusChip>
-            <StatusChip tone="blue">{{ formatAccountRegion(task.appleAccount.region) }}</StatusChip>
-          </div>
-
-          <div class="mobile-record-card__actions">
-            <AppButton size="small" variant="ghost" @click="openDetail(task)">详情</AppButton>
-            <AppButton
-              size="small"
-              variant="success"
-              :disabled="!canRun(task)"
-              :loading="actionLoadingId === task.id"
-              @click="runPlaceholder(task)"
+            <el-table
+              v-loading="
+                runningAction === 'status' || runningAction === 'balance' || taskBatchPolling
+              "
+              class="desktop-data-table"
+              :data="taskBatchResults.items"
+              row-key="taskId"
+              empty-text="暂无查询结果"
             >
-              执行
-            </AppButton>
-            <AppButton
-              size="small"
-              variant="ghost"
-              :disabled="!canRetry(task)"
-              :loading="actionLoadingId === task.id"
-              @click="retryTask(task)"
-            >
-              重试
-            </AppButton>
-            <AppButton
-              size="small"
-              variant="soft"
-              :disabled="isFinalStatus(task.status)"
-              @click="markManual(task)"
-            >
-              转人工
-            </AppButton>
+              <el-table-column label="Apple ID" min-width="190">
+                <template #default="{ row }">
+                  <strong>{{ row.appleAccount?.appleIdMasked ?? '-' }}</strong>
+                  <div class="muted-block">
+                    {{ formatAccountRegion(row.appleAccount?.region) }} /
+                    {{ row.currency || row.appleAccount?.currency || '-' }}
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="查询结果" min-width="150">
+                <template #default="{ row }">
+                  <StatusChip :tone="getStatusTone(row.status)" dot>
+                    {{ getBatchRowResultLabel(row) }}
+                  </StatusChip>
+                </template>
+              </el-table-column>
+              <el-table-column label="系统余额" width="120">
+                <template #default="{ row }">{{ row.systemBalance ?? '-' }}</template>
+              </el-table-column>
+              <el-table-column label="查询余额" width="120">
+                <template #default="{ row }">{{ row.checkedBalance ?? '-' }}</template>
+              </el-table-column>
+              <el-table-column label="来源" width="130">
+                <template #default="{ row }">{{ getResultSourceLabel(row.resultSource) }}</template>
+              </el-table-column>
+              <el-table-column label="建议" min-width="170">
+                <template #default="{ row }">{{
+                  row.errorMessage || row.suggestedAction
+                }}</template>
+              </el-table-column>
+              <el-table-column label="完成时间" min-width="170">
+                <template #default="{ row }">{{
+                  formatDate(row.finishedAt || row.createdAt)
+                }}</template>
+              </el-table-column>
+            </el-table>
           </div>
-        </article>
 
-        <div v-if="!loading && tasks.length === 0" class="apple-core-empty-state">
-          <strong>暂无自动化任务</strong>
-          <span>可以创建自动化任务，或清空筛选后查看全部任务队列。</span>
-          <div class="apple-core-empty-state__actions">
-            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-            <AppButton variant="primary" @click="openCreateDialog">创建自动化任务</AppButton>
+          <div v-if="officialCheckResults" class="automation-result-block">
+            <div class="automation-result-block__head">
+              <div>
+                <strong>官方价格巡检结果</strong>
+                <span>
+                  没变 {{ officialCheckResults.summary.unchangedCount }}，变动
+                  {{ officialCheckResults.summary.changedCount }}，新套餐
+                  {{ officialCheckResults.summary.newPlanCount }}，下架
+                  {{ officialCheckResults.summary.removedPlanCount }}
+                </span>
+              </div>
+              <StatusChip :tone="getStatusTone(officialCheckResults.batch.status)" dot>
+                {{ getStatusLabel(officialCheckResults.batch.status) }}
+              </StatusChip>
+            </div>
+            <el-table
+              v-loading="runningAction === 'official'"
+              class="desktop-data-table"
+              :data="officialCheckResults.items"
+              row-key="id"
+              empty-text="暂无价格巡检结果"
+            >
+              <el-table-column label="套餐" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <strong>{{ row.serviceName }}</strong>
+                  <div class="muted-block">
+                    {{ getProviderLabel(row.provider) }} · {{ row.category }}
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="国家/币种" width="130">
+                <template #default="{ row }">
+                  {{ formatAccountRegion(row.region) }} / {{ row.currency }}
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="130">
+                <template #default="{ row }">
+                  <StatusChip :tone="getOfficialResultTone(row.status)" dot>
+                    {{ getOfficialResultLabel(row.status) }}
+                  </StatusChip>
+                </template>
+              </el-table-column>
+              <el-table-column label="系统当前" width="130">
+                <template #default="{ row }">{{ row.oldOfficialPrice ?? '-' }}</template>
+              </el-table-column>
+              <el-table-column label="官方最新" width="130">
+                <template #default="{ row }">{{ row.newOfficialPrice ?? '-' }}</template>
+              </el-table-column>
+              <el-table-column label="Apple余额价" width="140">
+                <template #default="{ row }">{{ row.newAppleBalancePrice ?? '-' }}</template>
+              </el-table-column>
+              <el-table-column label="说明" min-width="190" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.message || '-' }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="170" fixed="right">
+                <template #default="{ row }">
+                  <div class="table-action-group">
+                    <AppButton
+                      v-if="row.reviewId && row.reviewStatus === 'pending'"
+                      size="small"
+                      variant="primary"
+                      :loading="officialReviewActionId === row.reviewId"
+                      @click="approveOfficialResult(row)"
+                    >
+                      确认
+                    </AppButton>
+                    <AppButton
+                      v-if="row.reviewId && row.reviewStatus === 'pending'"
+                      size="small"
+                      variant="ghost"
+                      :loading="officialReviewActionId === row.reviewId"
+                      @click="ignoreOfficialResult(row)"
+                    >
+                      忽略
+                    </AppButton>
+                    <span v-if="!row.reviewId || row.reviewStatus !== 'pending'">-</span>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
           </div>
-        </div>
-      </div>
 
-      <PaginationBar
-        v-model:page="query.page"
-        v-model:page-size="query.pageSize"
-        :total="total"
-        @change="loadTasks"
-      />
+          <div v-if="!taskBatchResults && !officialCheckResults" class="apple-core-empty-state">
+            <strong>还没有本次结果</strong>
+            <span>从“开始操作”里选择一个动作，完成后会在这里看到数据表。</span>
+            <div class="apple-core-empty-state__actions">
+              <AppButton variant="primary" @click="activeTab = 'start'">去开始操作</AppButton>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="人工处理" name="manual">
+          <div class="automation-result-block">
+            <div class="automation-result-block__head">
+              <div>
+                <strong>需要人工处理的任务</strong>
+                <span>只放失败、待复核、等待人工验证的任务，避免淹没在全部记录里。</span>
+              </div>
+              <StatusChip :tone="manualTasks.length ? 'orange' : 'green'">
+                {{ manualTasks.length ? `待处理 ${manualTasks.length}` : '已清空' }}
+              </StatusChip>
+            </div>
+            <el-table
+              v-loading="loading"
+              class="desktop-data-table"
+              :data="manualTasks"
+              row-key="id"
+              empty-text="暂无人工待处理任务"
+            >
+              <el-table-column label="任务" min-width="150">
+                <template #default="{ row }">
+                  <strong>{{ getTaskTypeLabel(row.taskType) }}</strong>
+                </template>
+              </el-table-column>
+              <el-table-column label="Apple ID" min-width="180">
+                <template #default="{ row }">
+                  {{ row.appleAccount.appleIdMasked }}
+                  <div class="muted-block">{{ formatAccountRegion(row.appleAccount.region) }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="130">
+                <template #default="{ row }">
+                  <StatusChip :tone="getStatusTone(row.status)" dot>
+                    {{ getStatusLabel(row.status) }}
+                  </StatusChip>
+                </template>
+              </el-table-column>
+              <el-table-column label="原因" min-width="260" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.errorMessage || '-' }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="230" fixed="right">
+                <template #default="{ row }">
+                  <div class="table-action-group table-action-group--wrap">
+                    <AppButton size="small" variant="ghost" @click="openDetail(row)"
+                      >详情</AppButton
+                    >
+                    <AppButton
+                      size="small"
+                      :disabled="!canRetry(row)"
+                      :loading="actionLoadingId === row.id"
+                      @click="retryTask(row)"
+                    >
+                      重试
+                    </AppButton>
+                    <AppButton size="small" variant="primary" @click="openDetail(row)">
+                      回写
+                    </AppButton>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="执行记录" name="history">
+          <div class="automation-history-toolbar">
+            <el-input
+              v-model.trim="query.keyword"
+              class="automation-history-toolbar__search"
+              clearable
+              placeholder="搜索 Apple ID、任务、错误说明"
+              @keyup.enter="handleSearch"
+              @clear="handleSearch"
+            />
+            <el-select
+              v-model="query.taskType"
+              class="automation-history-toolbar__select"
+              clearable
+              placeholder="任务类型"
+              @change="handleSearch"
+            >
+              <el-option
+                v-for="item in taskTypeOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+            <el-select
+              v-model="query.status"
+              class="automation-history-toolbar__select"
+              clearable
+              placeholder="状态"
+              @change="handleSearch"
+            >
+              <el-option
+                v-for="item in statusOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+            <AppButton variant="soft" @click="() => loadTasks()">刷新</AppButton>
+            <AppButton variant="ghost" @click="exportList">导出</AppButton>
+          </div>
+
+          <el-table
+            v-loading="loading"
+            class="desktop-data-table"
+            :data="tasks"
+            row-key="id"
+            empty-text="暂无执行记录"
+            @sort-change="handleSortChange"
+          >
+            <el-table-column label="任务" min-width="150" sortable="custom" prop="taskType">
+              <template #default="{ row }">
+                <strong>{{ getTaskTypeLabel(row.taskType) }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column label="Apple ID" min-width="190">
+              <template #default="{ row }">
+                {{ row.appleAccount.appleIdMasked }}
+                <div class="muted-block">
+                  {{ formatAccountRegion(row.appleAccount.region) }} / 余额
+                  {{ row.appleAccount.currentBalance }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="130" sortable="custom" prop="status">
+              <template #default="{ row }">
+                <StatusChip :tone="getStatusTone(row.status)" dot>
+                  {{ getStatusLabel(row.status) }}
+                </StatusChip>
+              </template>
+            </el-table-column>
+            <el-table-column label="结果/异常" min-width="260" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ row.errorMessage || (row.resultPayload ? '已有结果' : '-') }}
+                <div v-if="row.manualRequired" class="muted-block">等待人工验证</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="时间" min-width="170" sortable="custom" prop="createdAt">
+              <template #default="{ row }">
+                {{ formatDate(row.createdAt) }}
+                <div class="muted-block">完成 {{ formatDate(row.finishedAt) }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="250" fixed="right">
+              <template #default="{ row }">
+                <div class="table-action-group table-action-group--wrap">
+                  <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
+                  <AppButton
+                    size="small"
+                    variant="success"
+                    :disabled="!canRun(row)"
+                    :loading="actionLoadingId === row.id"
+                    @click="runPlaceholder(row)"
+                  >
+                    执行
+                  </AppButton>
+                  <AppButton
+                    size="small"
+                    :disabled="!canRetry(row)"
+                    :loading="actionLoadingId === row.id"
+                    @click="retryTask(row)"
+                  >
+                    重试
+                  </AppButton>
+                  <AppButton
+                    size="small"
+                    variant="soft"
+                    :disabled="isFinalStatus(row.status)"
+                    @click="markManual(row)"
+                  >
+                    转人工
+                  </AppButton>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <PaginationBar
+            v-model:page="query.page"
+            v-model:page-size="query.pageSize"
+            :total="total"
+            @change="loadTasks"
+          />
+        </el-tab-pane>
+      </el-tabs>
     </section>
 
     <AppDrawer
       v-model="detailDrawerVisible"
-      :title="selectedTask ? `自动化任务 · ${getTaskTypeLabel(selectedTask.taskType)}` : '任务详情'"
+      :title="selectedTask ? `任务详情 · ${getTaskTypeLabel(selectedTask.taskType)}` : '任务详情'"
       confirm-text="刷新详情"
       size="760px"
       @confirm="refreshDetail"
@@ -350,18 +637,6 @@
           <span>重试次数</span>
           <strong>{{ selectedTask?.retryCount ?? '-' }}</strong>
         </div>
-      </div>
-
-      <div class="drawer-section">
-        <div class="drawer-section__title">任务信息</div>
-        <el-descriptions class="detail-descriptions" :column="1" border>
-          <el-descriptions-item label="异常说明">
-            {{ selectedTask?.errorMessage ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="创建人">
-            {{ selectedTask?.createdBy?.displayName ?? '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
       </div>
 
       <div class="drawer-section">
@@ -397,6 +672,18 @@
       </div>
 
       <div class="drawer-section">
+        <div class="drawer-section__title">异常说明</div>
+        <el-descriptions class="detail-descriptions" :column="1" border>
+          <el-descriptions-item label="说明">
+            {{ selectedTask?.errorMessage ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="创建人">
+            {{ selectedTask?.createdBy?.displayName ?? '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+
+      <div class="drawer-section">
         <div class="drawer-section__title">任务日志</div>
         <el-table class="desktop-data-table" :data="selectedTask?.logs ?? []" row-key="id">
           <el-table-column label="级别" width="90">
@@ -418,35 +705,6 @@
             <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
           </el-table-column>
         </el-table>
-        <div
-          v-if="selectedTask?.logs?.length"
-          class="mobile-record-list"
-          aria-label="自动化任务日志移动列表"
-        >
-          <article v-for="log in selectedTask.logs" :key="log.id" class="mobile-record-card">
-            <div class="mobile-record-card__head">
-              <div class="mobile-record-card__title">
-                <strong>{{ log.message }}</strong>
-                <span>{{ formatDate(log.createdAt) }}</span>
-              </div>
-              <StatusChip :tone="getLogTone(log.level)" dot>
-                {{ log.level }}
-              </StatusChip>
-            </div>
-            <div v-if="log.screenshotAttachment" class="mobile-record-card__meta">
-              <div>
-                <span>截图</span>
-                <strong>{{ log.screenshotAttachment.originalName }}</strong>
-              </div>
-            </div>
-          </article>
-        </div>
-        <div v-else class="mobile-record-list" aria-label="自动化任务日志空状态">
-          <div class="apple-core-empty-state">
-            <strong>暂无任务日志</strong>
-            <span>任务执行、重试或人工回写后会生成日志。</span>
-          </div>
-        </div>
       </div>
 
       <div
@@ -480,38 +738,14 @@
     </AppDrawer>
 
     <el-dialog
-      v-model="createDialogVisible"
-      title="创建自动化任务"
-      width="min(560px, calc(100vw - 24px))"
+      v-model="advancedDialogVisible"
+      :title="`创建${getTaskTypeLabel(advancedForm.taskType)}任务`"
+      width="min(520px, calc(100vw - 24px))"
     >
       <el-form label-position="top">
-        <el-form-item required>
-          <template #label>
-            <FieldHelpLabel
-              label="任务类型"
-              purpose="选择要让系统或人工队列处理的 Apple ID 自动化动作。"
-              example="查余额选查询余额；需要取消订阅选取消订阅。"
-            />
-          </template>
-          <el-select v-model="createForm.taskType" class="full-width">
-            <el-option
-              v-for="item in taskTypeOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="createForm.taskType !== 'official_price_check'" required>
-          <template #label>
-            <FieldHelpLabel
-              label="Apple ID"
-              purpose="选择这条自动化任务要处理的账号。"
-              example="优先选择余额、地区和业务都匹配的 Apple ID。"
-            />
-          </template>
+        <el-form-item required label="Apple ID">
           <el-select
-            v-model="createForm.appleAccountId"
+            v-model="advancedForm.appleAccountId"
             class="full-width"
             filterable
             placeholder="选择 Apple ID"
@@ -519,37 +753,13 @@
             <el-option
               v-for="account in appleAccounts"
               :key="account.id"
-              :label="`${account.appleIdMasked} / ${formatAccountRegion(account.region)} / 余额 ${account.currentBalance}`"
+              :label="formatAccountOption(account)"
               :value="account.id"
             />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="出口 IP 国家"
-              purpose="选择 Worker 访问 Apple 官网时使用哪个国家的出口 IP。"
-              example="如果账号平时在马来系统用美国 IP 登录，这里选美国。"
-            />
-          </template>
-          <el-select v-model="batchCheckForm.gatewayRegion" class="full-width">
-            <el-option
-              v-for="item in gatewayRegionOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="优先级"
-              purpose="决定任务排队时的紧急程度，越高越应该优先处理。"
-              example="客户正在等待开通选高；日常巡检选中或低。"
-            />
-          </template>
-          <el-select v-model="createForm.priority" class="full-width">
+        <el-form-item label="优先级">
+          <el-select v-model="advancedForm.priority" class="full-width">
             <el-option
               v-for="item in priorityOptions"
               :key="item.value"
@@ -557,103 +767,18 @@
               :value="item.value"
             />
           </el-select>
-        </el-form-item>
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="输入参数 JSON"
-              purpose="给自动化任务传额外参数，只有任务需要特殊输入时才填写。"
-              example='查余额一般可留空；需要指定预期余额时可填 {"expectedBalance":"100"}。'
-            />
-          </template>
-          <el-input
-            v-model="createForm.inputPayloadJson"
-            type="textarea"
-            :rows="5"
-            placeholder='例如 {"expectedBalance":"100"}，不需要可留空'
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <AppButton @click="createDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="saving" @click="createTask">创建任务</AppButton>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="batchCheckDialogVisible"
-      title="批量检查 Apple ID 状态"
-      width="min(640px, calc(100vw - 24px))"
-    >
-      <el-form label-position="top">
-        <el-form-item required>
-          <template #label>
-            <FieldHelpLabel
-              label="Apple ID"
-              purpose="选择要进入 Apple 官网状态检查队列的账号。"
-              example="同一批可以混选多个地区，系统会按每个账号自己的地区匹配出口 IP。"
-            />
-          </template>
-          <el-select
-            v-model="batchCheckForm.appleAccountIds"
-            class="full-width"
-            collapse-tags
-            collapse-tags-tooltip
-            filterable
-            multiple
-            placeholder="选择 Apple ID"
-          >
-            <el-option
-              v-for="account in appleAccounts"
-              :key="account.id"
-              :label="`${account.appleIdMasked} / ${formatAccountRegion(account.region)} / 余额 ${account.currentBalance}`"
-              :value="account.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="优先级"
-              purpose="决定这批状态检查任务的排队紧急程度。"
-              example="客户催处理选高；日常巡检选中。"
-            />
-          </template>
-          <el-select v-model="batchCheckForm.priority" class="full-width">
-            <el-option
-              v-for="item in priorityOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <template #label>
-            <FieldHelpLabel
-              label="备注"
-              purpose="给这批检查任务留下内部说明，不会作为验证码或密码保存。"
-              example="例如：周一巡检、客户投诉前置检查。"
-            />
-          </template>
-          <el-input
-            v-model="batchCheckForm.note"
-            maxlength="120"
-            placeholder="可留空"
-            show-word-limit
-          />
         </el-form-item>
         <el-alert
-          title="系统会按这里选择的出口 IP 国家做门禁；缺少对应出口 IP 时会自动转人工验证。"
+          title="该动作需要真实自动化 Worker 或人工兜底；创建后会进入人工处理/执行记录，不会伪装成已自动完成。"
           type="warning"
           :closable="false"
           show-icon
         />
       </el-form>
       <template #footer>
-        <AppButton @click="batchCheckDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="savingBatchCheck" @click="createBatchStatusCheck">
-          生成检查任务
+        <AppButton @click="advancedDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingAdvanced" @click="createAdvancedTask">
+          创建任务
         </AppButton>
       </template>
     </el-dialog>
@@ -665,31 +790,33 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import {
   appleAutomationTasksApi,
-  userTableViewsApi,
-  type AppleAutomationTaskQuery
+  appleOfficialPricesApi,
+  type AppleAutomationTaskQuery,
+  type AppleOfficialPriceProviderCatalogProvider
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
-import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
-import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { useAuthenticatedPageLoader } from '@/composables/useAuthenticatedPageLoader';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleAccount,
   AppleAutomationTask,
+  AppleAutomationTaskBatchResults,
+  AppleAutomationWorkbenchCapability,
+  AppleAutomationWorkbenchStatus,
+  AppleOfficialPriceCheckBatchResultRow,
+  AppleOfficialPriceCheckBatchResults,
   AutomationTaskPriority,
   AutomationTaskStatus,
   AutomationTaskType,
-  PageResult,
-  TableDensity,
-  UserTableView
+  PageResult
 } from '@/types/system';
-import { buildTechnicalFieldRows } from '@/utils/internalTechnicalFields';
 import { appleAccountRegionOptions, formatAppleRegionLabel } from '@/utils/appleAccountRegion';
+import { buildTechnicalFieldRows } from '@/utils/internalTechnicalFields';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartAppleAccounts } from '@/utils/smartSystemQueries';
 
@@ -697,21 +824,24 @@ const tasks = ref<AppleAutomationTask[]>([]);
 const appleAccounts = ref<AppleAccount[]>([]);
 const total = ref(0);
 const loading = ref(false);
-const saving = ref(false);
-const savingBatchCheck = ref(false);
-const createDialogVisible = ref(false);
-const batchCheckDialogVisible = ref(false);
+const activeTab = ref<'start' | 'results' | 'manual' | 'history'>('start');
+const runningAction = ref<'status' | 'balance' | 'official' | ''>('');
+const taskBatchResults = ref<AppleAutomationTaskBatchResults | null>(null);
+const taskBatchPolling = ref(false);
+const officialCheckResults = ref<AppleOfficialPriceCheckBatchResults | null>(null);
+const workbenchStatus = ref<AppleAutomationWorkbenchStatus | null>(null);
+const workbenchStatusLoading = ref(false);
+const officialProviderOptions = ref<AppleOfficialPriceProviderCatalogProvider[]>([]);
+const officialReviewActionId = ref('');
 const detailDrawerVisible = ref(false);
-const selectedTasks = ref<AppleAutomationTask[]>([]);
 const selectedTask = ref<AppleAutomationTask | null>(null);
 const actionLoadingId = ref('');
-const density = ref<TableDensity>('default');
-const visibleColumns = ref<string[]>([]);
-const savedViews = ref<UserTableView[]>([]);
-const savedViewId = ref('');
+const advancedDialogVisible = ref(false);
+const savingAdvanced = ref(false);
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
-const tableKey = 'apple_automation_tasks';
 const activeTasksQueryKey = ref('');
+let taskBatchPollTimer: ReturnType<typeof setTimeout> | null = null;
+let officialPollTimer: ReturnType<typeof setTimeout> | null = null;
 
 const query = reactive<AppleAutomationTaskQuery>({
   page: 1,
@@ -724,19 +854,7 @@ const query = reactive<AppleAutomationTaskQuery>({
   manualRequired: ''
 });
 
-const createForm = reactive<{
-  taskType: AutomationTaskType;
-  appleAccountId: string;
-  priority: AutomationTaskPriority;
-  inputPayloadJson: string;
-}>({
-  taskType: 'check_balance',
-  appleAccountId: '',
-  priority: 'medium',
-  inputPayloadJson: ''
-});
-
-const batchCheckForm = reactive<{
+const statusCheckForm = reactive<{
   appleAccountIds: string[];
   priority: AutomationTaskPriority;
   gatewayRegion: string;
@@ -746,6 +864,34 @@ const batchCheckForm = reactive<{
   priority: 'medium',
   gatewayRegion: 'US',
   note: ''
+});
+
+const balanceCheckForm = reactive<{
+  appleAccountIds: string[];
+  priority: AutomationTaskPriority;
+  note: string;
+}>({
+  appleAccountIds: [],
+  priority: 'medium',
+  note: ''
+});
+
+const officialCheckForm = reactive<{
+  provider: string;
+  regions: string[];
+}>({
+  provider: 'all',
+  regions: []
+});
+
+const advancedForm = reactive<{
+  taskType: AutomationTaskType;
+  appleAccountId: string;
+  priority: AutomationTaskPriority;
+}>({
+  taskType: 'topup',
+  appleAccountId: '',
+  priority: 'medium'
 });
 
 const taskTypeOptions: Array<{ label: string; value: AutomationTaskType }> = [
@@ -783,47 +929,34 @@ const gatewayRegionOptions = appleAccountRegionOptions.map((item) => ({
   value: item.code
 }));
 
-const manualRequiredOptions = [
-  { label: '需要人工', value: 'true' },
-  { label: '无需人工', value: 'false' }
-];
-
-const automationColumnOptions = [
-  { label: '任务', value: 'task', required: true },
-  { label: 'Apple ID', value: 'appleAccount' },
-  { label: '优先级', value: 'priority' },
-  { label: '状态', value: 'status' },
-  { label: '结果/异常', value: 'result' },
-  { label: '时间', value: 'time' }
-];
-
-const batchActions = [{ label: '批量导出', value: 'export' }];
+const officialRegionOptions = computed(() => {
+  const regions = officialProviderOptions.value.flatMap((provider) => provider.regions);
+  const unique = new Map(regions.map((region) => [region.value, region]));
+  return Array.from(unique.values()).map((region) => ({
+    label: `${region.label} / ${region.currency}`,
+    value: region.value,
+    region: region.region,
+    currency: region.currency
+  }));
+});
 
 const queuedCount = computed(
   () => tasks.value.filter((task) => task.status === 'pending' || task.status === 'queued').length
 );
 const manualCount = computed(() => tasks.value.filter((task) => task.manualRequired).length);
-const successCount = computed(() => tasks.value.filter((task) => task.status === 'success').length);
 const failedCount = computed(
   () =>
     tasks.value.filter((task) => task.status === 'failed' || task.status === 'need_review').length
 );
 const runningCount = computed(() => tasks.value.filter((task) => task.status === 'running').length);
-const tableSize = computed(() =>
-  density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
-);
-const automationFocusTasks = computed(() =>
-  tasks.value
-    .filter(
-      (task) =>
-        task.manualRequired ||
-        task.status === 'failed' ||
-        task.status === 'need_review' ||
-        task.status === 'waiting_manual_verify'
-    )
-    .slice()
-    .sort((a, b) => getAutomationPriorityValue(a) - getAutomationPriorityValue(b))
-    .slice(0, 4)
+const manualTasks = computed(() =>
+  tasks.value.filter(
+    (task) =>
+      task.manualRequired ||
+      task.status === 'failed' ||
+      task.status === 'need_review' ||
+      task.status === 'waiting_manual_verify'
+  )
 );
 const selectedTaskTechnicalRows = computed(() =>
   selectedTask.value
@@ -834,29 +967,14 @@ const selectedTaskTechnicalRows = computed(() =>
       })
     : []
 );
-const filterChips = computed(() => {
-  const chips: Array<{ key: string; label: string; value: string }> = [];
-  const taskTypeLabel = taskTypeOptions.find((item) => item.value === query.taskType)?.label;
-  const priorityLabel = priorityOptions.find((item) => item.value === query.priority)?.label;
-  const manualRequiredLabel = manualRequiredOptions.find(
-    (item) => item.value === query.manualRequired
-  )?.label;
-
-  if (query.taskType && taskTypeLabel) {
-    chips.push({ key: 'taskType', label: '任务类型', value: taskTypeLabel });
-  }
-  if (query.priority && priorityLabel) {
-    chips.push({ key: 'priority', label: '优先级', value: priorityLabel });
-  }
-  if (query.manualRequired && manualRequiredLabel) {
-    chips.push({ key: 'manualRequired', label: '人工验证', value: manualRequiredLabel });
-  }
-
-  return chips;
-});
 
 useAuthenticatedPageLoader(async () => {
-  await Promise.all([initializePage(), loadAppleAccounts()]);
+  await Promise.all([
+    loadTasks({ force: false }),
+    loadAppleAccounts(),
+    loadOfficialProviders(),
+    loadWorkbenchStatus()
+  ]);
 });
 
 function buildTaskParams(): AppleAutomationTaskQuery {
@@ -898,10 +1016,7 @@ async function loadTasks(options: { background?: boolean; force?: boolean } = {}
       force: options.force ?? true
     });
 
-    if (activeTasksQueryKey.value !== key) {
-      return;
-    }
-
+    if (activeTasksQueryKey.value !== key) return;
     if (result.changed || !cached) {
       applyTaskResult(result.data);
     }
@@ -916,9 +1031,44 @@ async function loadTasks(options: { background?: boolean; force?: boolean } = {}
   }
 }
 
-async function initializePage() {
-  await loadTableViews(true);
-  await loadTasks({ force: false });
+async function loadAppleAccounts() {
+  try {
+    const result = await loadSmartAppleAccounts({
+      page: 1,
+      pageSize: 100,
+      keyword: '',
+      status: ''
+    });
+    appleAccounts.value = result.items;
+    const defaultIds = result.items.map((account) => account.id).slice(0, 10);
+    statusCheckForm.appleAccountIds = defaultIds;
+    balanceCheckForm.appleAccountIds = defaultIds;
+    advancedForm.appleAccountId = result.items[0]?.id ?? '';
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 失败');
+  }
+}
+
+async function loadOfficialProviders() {
+  try {
+    const catalog = await appleOfficialPricesApi.listProviders();
+    officialProviderOptions.value = catalog.providers;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载官方价格供应商失败');
+  }
+}
+
+async function loadWorkbenchStatus(options: { background?: boolean } = {}) {
+  workbenchStatusLoading.value = !options.background;
+  try {
+    workbenchStatus.value = await appleAutomationTasksApi.workbenchStatus();
+  } catch (error) {
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载自动化能力状态失败');
+    }
+  } finally {
+    workbenchStatusLoading.value = false;
+  }
 }
 
 async function handleSearch() {
@@ -935,255 +1085,241 @@ async function handleSortChange(payload: {
   await loadTasks();
 }
 
-function handleSelectionChange(rows: AppleAutomationTask[]) {
-  selectedTasks.value = rows;
-}
-
-function clearFilters() {
-  query.page = 1;
-  query.keyword = '';
-  query.taskType = '';
-  query.status = '';
-  query.priority = '';
-  query.appleAccountId = '';
-  query.manualRequired = '';
-  savedViewId.value = '';
-  sortConfig.value = {};
-}
-
-async function clearFiltersAndSearch() {
-  clearFilters();
-  await loadTasks();
-}
-
-function removeFilter(key: string) {
-  if (key === 'taskType') {
-    query.taskType = '';
-  }
-  if (key === 'priority') {
-    query.priority = '';
-  }
-  if (key === 'manualRequired') {
-    query.manualRequired = '';
-  }
-}
-
-function exportList() {
-  ElMessage.info('Apple ID 自动化任务导出会进入数据中心导出任务，后续统一接入');
-}
-
-function handleBatchAction(action: string) {
-  if (action === 'export') {
-    exportList();
-  }
-}
-
-async function loadTableViews(applyDefault = false) {
-  try {
-    const data = await userTableViewsApi.list({
-      page: 1,
-      pageSize: 100,
-      tableKey
-    });
-    savedViews.value = data.items;
-    if (applyDefault) {
-      const defaultView = data.items.find((view) => view.isDefault);
-      if (defaultView) {
-        applyView(defaultView);
-      }
-    }
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载保存视图失败');
-  }
-}
-
-async function saveTableView() {
-  try {
-    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存 Apple ID 自动化任务视图', {
-      inputValue: 'Apple ID 自动化任务常用视图',
-      inputPattern: /^.{1,60}$/,
-      inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
-      confirmButtonText: '保存',
-      cancelButtonText: '取消'
-    });
-    const created = await userTableViewsApi.create({
-      tableKey,
-      viewName: value.trim(),
-      filters: {
-        keyword: query.keyword,
-        taskType: query.taskType,
-        status: query.status,
-        priority: query.priority,
-        appleAccountId: query.appleAccountId,
-        manualRequired: query.manualRequired
-      },
-      sortConfig: sortConfig.value,
-      columns: visibleColumns.value.length
-        ? visibleColumns.value
-        : automationColumnOptions.map((column) => column.value),
-      density: density.value,
-      pageSize: query.pageSize,
-      isDefault: savedViews.value.length === 0
-    });
-    await loadTableViews();
-    savedViewId.value = created.id;
-    ElMessage.success('表格视图已保存');
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    ElMessage.error(error instanceof Error ? error.message : '保存视图失败');
-  }
-}
-
-async function applySavedView(id: string) {
-  const view = savedViews.value.find((item) => item.id === id);
-  if (!view) return;
-  applyView(view);
-  ElMessage.success('已应用保存视图');
-  await loadTasks();
-}
-
-function applyView(view: UserTableView) {
-  const filters = view.filters;
-  query.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
-  query.taskType = isTaskType(filters.taskType) ? filters.taskType : '';
-  query.status = isTaskStatus(filters.status) ? filters.status : '';
-  query.priority = isTaskPriority(filters.priority) ? filters.priority : '';
-  query.appleAccountId = typeof filters.appleAccountId === 'string' ? filters.appleAccountId : '';
-  query.manualRequired = typeof filters.manualRequired === 'string' ? filters.manualRequired : '';
-  query.pageSize = view.pageSize;
-  query.page = 1;
-  density.value = 'default';
-  visibleColumns.value = view.columns.length
-    ? view.columns.filter((column) =>
-        automationColumnOptions.some((option) => option.value === column)
-      )
-    : automationColumnOptions.map((column) => column.value);
-  sortConfig.value = parseSortConfig(view.sortConfig);
-  savedViewId.value = view.id;
-}
-
-function parseSortConfig(value: Record<string, unknown>): {
-  prop?: string;
-  order?: 'ascending' | 'descending' | null;
-} {
-  const prop = typeof value.prop === 'string' ? value.prop : undefined;
-  const order =
-    value.order === 'ascending' || value.order === 'descending' || value.order === null
-      ? value.order
-      : undefined;
-  return prop ? { prop, order } : {};
-}
-
-function mapSortOrder(order?: 'ascending' | 'descending' | null) {
-  if (order === 'ascending') return 'asc';
-  if (order === 'descending') return 'desc';
-  return undefined;
-}
-
-function isColumnVisible(column: string) {
-  return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
-}
-
-function isTaskType(value: unknown): value is AutomationTaskType {
-  return taskTypeOptions.some((item) => item.value === value);
-}
-
-function isTaskStatus(value: unknown): value is AutomationTaskStatus {
-  return statusOptions.some((item) => item.value === value);
-}
-
-function isTaskPriority(value: unknown): value is AutomationTaskPriority {
-  return priorityOptions.some((item) => item.value === value);
-}
-
-async function loadAppleAccounts() {
-  try {
-    const result = await loadSmartAppleAccounts({
-      page: 1,
-      pageSize: 100,
-      keyword: '',
-      status: ''
-    });
-    appleAccounts.value = result.items;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 失败');
-  }
-}
-
-function openCreateDialog() {
-  createForm.taskType = 'check_balance';
-  createForm.appleAccountId = appleAccounts.value[0]?.id ?? '';
-  createForm.priority = 'medium';
-  createForm.inputPayloadJson = '';
-  createDialogVisible.value = true;
-}
-
-function openBatchCheckDialog() {
-  batchCheckForm.appleAccountIds = appleAccounts.value.map((account) => account.id).slice(0, 10);
-  batchCheckForm.priority = 'medium';
-  batchCheckForm.gatewayRegion = 'US';
-  batchCheckForm.note = '';
-  batchCheckDialogVisible.value = true;
-}
-
-async function createTask() {
-  if (createForm.taskType !== 'official_price_check' && !createForm.appleAccountId) {
-    ElMessage.warning('请先选择 Apple ID');
-    return;
-  }
-
-  const inputPayload = parseJsonPayload(createForm.inputPayloadJson);
-  if (inputPayload === false) {
-    return;
-  }
-
-  saving.value = true;
-  try {
-    const created = await appleAutomationTasksApi.create({
-      taskType: createForm.taskType,
-      appleAccountId:
-        createForm.taskType === 'official_price_check' ? null : createForm.appleAccountId,
-      priority: createForm.priority,
-      inputPayload
-    });
-    ElMessage.success('自动化任务已创建');
-    createDialogVisible.value = false;
-    selectedTask.value = created;
-    await loadTasks();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '创建自动化任务失败');
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function createBatchStatusCheck() {
-  if (!batchCheckForm.appleAccountIds.length) {
+async function startStatusCheck() {
+  if (!statusCheckForm.appleAccountIds.length) {
     ElMessage.warning('请先选择要检查的 Apple ID');
     return;
   }
 
-  savingBatchCheck.value = true;
+  runningAction.value = 'status';
   try {
-    const result = await appleAutomationTasksApi.batchStatusCheck({
-      appleAccountIds: batchCheckForm.appleAccountIds,
-      priority: batchCheckForm.priority,
-      gatewayRegion: batchCheckForm.gatewayRegion,
-      note: batchCheckForm.note.trim() || null
+    taskBatchResults.value = await appleAutomationTasksApi.createStatusCheckBatch({
+      appleAccountIds: statusCheckForm.appleAccountIds,
+      priority: statusCheckForm.priority,
+      gatewayRegion: statusCheckForm.gatewayRegion,
+      note: statusCheckForm.note.trim() || null
     });
-    ElMessage.success(
-      `已生成 ${result.createdCount} 个检查任务，排队 ${result.queuedCount} 个，转人工 ${result.manualRequiredCount} 个`
-    );
-    batchCheckDialogVisible.value = false;
-    selectedTask.value = result.items[0] ?? null;
+    activeTab.value = 'results';
     query.taskType = 'check_status';
     query.page = 1;
+    startTaskBatchPolling(taskBatchResults.value.batch.id);
     await loadTasks();
+    await loadWorkbenchStatus({ background: true });
+    ElMessage.success('批量状态查询已创建，结果表会自动刷新');
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '批量检查任务创建失败');
+    ElMessage.error(error instanceof Error ? error.message : '批量状态查询失败');
   } finally {
-    savingBatchCheck.value = false;
+    runningAction.value = '';
   }
+}
+
+async function startBalanceCheck() {
+  if (!balanceCheckForm.appleAccountIds.length) {
+    ElMessage.warning('请先选择要查询余额的 Apple ID');
+    return;
+  }
+
+  clearTaskBatchPollTimer();
+  runningAction.value = 'balance';
+  try {
+    taskBatchResults.value = await appleAutomationTasksApi.createBalanceCheckBatch({
+      appleAccountIds: balanceCheckForm.appleAccountIds,
+      priority: balanceCheckForm.priority,
+      note: balanceCheckForm.note.trim() || null
+    });
+    activeTab.value = 'results';
+    query.taskType = 'check_balance';
+    query.page = 1;
+    await loadTasks();
+    await loadWorkbenchStatus({ background: true });
+    ElMessage.success('批量余额查询已完成');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量余额查询失败');
+  } finally {
+    runningAction.value = '';
+  }
+}
+
+async function startOfficialPriceCheck() {
+  runningAction.value = 'official';
+  clearOfficialPollTimer();
+
+  try {
+    const payload = {
+      trigger: 'manual' as const,
+      scanRemovedPlans: false,
+      regions: buildOfficialRegionsPayload()
+    };
+    const batch =
+      officialCheckForm.provider === 'all'
+        ? await appleOfficialPricesApi.startAllProvidersCheckBatch(payload)
+        : await appleOfficialPricesApi.startProviderCheckBatch(officialCheckForm.provider, payload);
+    activeTab.value = 'results';
+    await pollOfficialBatchResults(batch.id);
+    ElMessage.success(batch.message || '官方价格巡检已开始');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '官方价格巡检失败');
+    runningAction.value = '';
+  }
+}
+
+function buildOfficialRegionsPayload() {
+  const selected = officialRegionOptions.value.filter((region) =>
+    officialCheckForm.regions.includes(region.value)
+  );
+  return selected.length
+    ? selected.map((region) => ({ region: region.region, currency: region.currency }))
+    : undefined;
+}
+
+function startTaskBatchPolling(batchId: string) {
+  clearTaskBatchPollTimer();
+  void pollTaskBatchResults(batchId);
+}
+
+async function pollTaskBatchResults(batchId: string) {
+  taskBatchPolling.value = true;
+  try {
+    const result = await appleAutomationTasksApi.getBatchResults(batchId);
+    taskBatchResults.value = result;
+    await loadWorkbenchStatus({ background: true });
+
+    if (isPollingBatchStatus(result.batch.status)) {
+      taskBatchPollTimer = setTimeout(() => {
+        taskBatchPollTimer = null;
+        void pollTaskBatchResults(batchId);
+      }, 2000);
+      return;
+    }
+
+    await loadTasks({ background: true, force: true });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '刷新批量查询结果失败');
+  } finally {
+    if (!taskBatchPollTimer) {
+      taskBatchPolling.value = false;
+    }
+  }
+}
+
+function isPollingBatchStatus(status: AutomationTaskStatus) {
+  return status === 'pending' || status === 'queued' || status === 'running';
+}
+
+function clearTaskBatchPollTimer() {
+  if (taskBatchPollTimer) {
+    clearTimeout(taskBatchPollTimer);
+    taskBatchPollTimer = null;
+  }
+}
+
+async function pollOfficialBatchResults(batchId: string) {
+  officialCheckResults.value = await appleOfficialPricesApi.getCheckBatchResults(batchId);
+  const status = officialCheckResults.value.batch.status;
+  if (status === 'queued' || status === 'running' || status === 'pending') {
+    officialPollTimer = setTimeout(() => {
+      void pollOfficialBatchResults(batchId);
+    }, 1500);
+    return;
+  }
+  runningAction.value = '';
+}
+
+function clearOfficialPollTimer() {
+  if (officialPollTimer) {
+    clearTimeout(officialPollTimer);
+    officialPollTimer = null;
+  }
+}
+
+function openAdvancedTask(taskType: AutomationTaskType) {
+  advancedForm.taskType = taskType;
+  advancedForm.priority = taskType === 'topup' ? 'high' : 'medium';
+  advancedForm.appleAccountId = advancedForm.appleAccountId || appleAccounts.value[0]?.id || '';
+  advancedDialogVisible.value = true;
+}
+
+async function createAdvancedTask() {
+  if (!advancedForm.appleAccountId) {
+    ElMessage.warning('请先选择 Apple ID');
+    return;
+  }
+
+  savingAdvanced.value = true;
+  try {
+    const created = await appleAutomationTasksApi.create({
+      taskType: advancedForm.taskType,
+      appleAccountId: advancedForm.appleAccountId,
+      priority: advancedForm.priority,
+      inputPayload: {
+        source: 'automation_workbench',
+        requiresRealWorkerOrManualFallback: true
+      }
+    });
+    selectedTask.value = created;
+    advancedDialogVisible.value = false;
+    activeTab.value = 'manual';
+    await loadTasks();
+    ElMessage.success('任务已创建，已进入执行记录/人工处理');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '创建任务失败');
+  } finally {
+    savingAdvanced.value = false;
+  }
+}
+
+async function approveOfficialResult(row: AppleOfficialPriceCheckBatchResultRow) {
+  if (!row.reviewId) return;
+  try {
+    const confirmed = await ElMessageBox.confirm(
+      '确认后会同步 Apple ID 业务设置里的官方价格和 Apple 余额价，确认继续吗？',
+      '确认同步价格',
+      {
+        type: 'warning',
+        confirmButtonText: '确认同步',
+        cancelButtonText: '返回'
+      }
+    );
+    if (!confirmed) return;
+    officialReviewActionId.value = row.reviewId;
+    await appleOfficialPricesApi.approveReview(row.reviewId);
+    ElMessage.success('已同步到业务设置');
+    await refreshCurrentOfficialResults();
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '确认价格变化失败');
+    }
+  } finally {
+    officialReviewActionId.value = '';
+  }
+}
+
+async function ignoreOfficialResult(row: AppleOfficialPriceCheckBatchResultRow) {
+  if (!row.reviewId) return;
+  try {
+    const { value } = await ElMessageBox.prompt('请输入忽略原因，可留空', '忽略官方价格变化', {
+      inputType: 'textarea',
+      confirmButtonText: '忽略',
+      cancelButtonText: '取消'
+    });
+    officialReviewActionId.value = row.reviewId;
+    await appleOfficialPricesApi.ignoreReview(row.reviewId, value || null);
+    ElMessage.success('已忽略该变化');
+    await refreshCurrentOfficialResults();
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '忽略价格变化失败');
+    }
+  } finally {
+    officialReviewActionId.value = '';
+  }
+}
+
+async function refreshCurrentOfficialResults() {
+  if (!officialCheckResults.value) return;
+  officialCheckResults.value = await appleOfficialPricesApi.getCheckBatchResults(
+    officialCheckResults.value.batch.id
+  );
 }
 
 async function openDetail(task: AppleAutomationTask) {
@@ -1313,6 +1449,11 @@ async function runTaskAction(taskId: string, action: () => Promise<void>) {
     if (selectedTask.value?.id === taskId) {
       selectedTask.value = await appleAutomationTasksApi.get(taskId);
     }
+    if (taskBatchResults.value) {
+      taskBatchResults.value = await appleAutomationTasksApi.getBatchResults(
+        taskBatchResults.value.batch.id
+      );
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '任务操作失败');
   } finally {
@@ -1332,6 +1473,16 @@ function parseJsonPayload(value: string) {
   }
 }
 
+function exportList() {
+  ElMessage.info('Apple ID 自动化任务导出会进入数据中心导出任务，后续统一接入');
+}
+
+function mapSortOrder(order?: 'ascending' | 'descending' | null) {
+  if (order === 'ascending') return 'asc';
+  if (order === 'descending') return 'desc';
+  return undefined;
+}
+
 function formatJson(value: Record<string, unknown> | null | undefined) {
   if (!value) return '-';
   return JSON.stringify(value, null, 2);
@@ -1346,6 +1497,12 @@ function formatAccountRegion(region: string | null | undefined) {
   return formatAppleRegionLabel(region);
 }
 
+function formatAccountOption(account: AppleAccount) {
+  return `${account.appleIdMasked} / ${formatAccountRegion(account.region)} / 余额 ${
+    account.currentBalance
+  }`;
+}
+
 function getTaskTypeLabel(value: AutomationTaskType) {
   return taskTypeOptions.find((item) => item.value === value)?.label ?? value;
 }
@@ -1354,15 +1511,10 @@ function getStatusLabel(value: AutomationTaskStatus) {
   return statusOptions.find((item) => item.value === value)?.label ?? value;
 }
 
-function getPriorityLabel(value: AutomationTaskPriority) {
-  return priorityOptions.find((item) => item.value === value)?.label ?? value;
-}
-
-function getPriorityTone(value: AutomationTaskPriority) {
-  if (value === 'urgent') return 'red';
-  if (value === 'high') return 'orange';
-  if (value === 'medium') return 'blue';
-  return 'neutral';
+function getBatchTitle(value: string) {
+  if (value === 'status_check') return '批量状态查询结果';
+  if (value === 'balance_check') return '批量余额查询结果';
+  return '自动化批次结果';
 }
 
 function getStatusTone(value: AutomationTaskStatus) {
@@ -1373,6 +1525,41 @@ function getStatusTone(value: AutomationTaskStatus) {
   return 'blue';
 }
 
+function getCapabilityTone(capability?: AppleAutomationWorkbenchCapability | null) {
+  if (!capability) return 'neutral';
+  if (!capability.enabled || !capability.ready) return 'orange';
+  if (capability.failedCount > 0) return 'red';
+  if (capability.runningCount > 0 || capability.queuedCount > 0) return 'blue';
+  return 'green';
+}
+
+function getStatusCheckAbilityLabel() {
+  const capability = workbenchStatus.value?.statusCheck;
+  if (!capability) return '读取中';
+  if (!capability.enabled) return 'Worker 未开启';
+  if (!capability.gatewayConfigured) return '缺少节点';
+  return '可真查';
+}
+
+function getCapabilityModeLabel(value?: string) {
+  if (value === 'apple_web_worker') return '官网 Worker';
+  if (value === 'system_snapshot') return '系统快照';
+  if (value === 'official_price_sources') return '来源巡检';
+  return '读取中';
+}
+
+function getCapabilityWorkloadLabel(capability?: AppleAutomationWorkbenchCapability | null) {
+  if (!capability) return '任务 -';
+  const active = capability.queuedCount + capability.runningCount;
+  const abnormal = capability.manualRequiredCount + capability.failedCount;
+  return `进行中 ${active} / 待处理 ${abnormal}`;
+}
+
+function formatRegionList(values?: string[] | null) {
+  if (!values?.length) return '-';
+  return values.map((value) => formatAccountRegion(value)).join('、');
+}
+
 function getLogTone(value: string) {
   if (value === 'success') return 'green';
   if (value === 'error') return 'red';
@@ -1380,17 +1567,61 @@ function getLogTone(value: string) {
   return 'neutral';
 }
 
-function getAutomationPriorityValue(task: AppleAutomationTask) {
-  if (task.status === 'failed' || task.status === 'need_review') return 0;
-  if (task.manualRequired || task.status === 'waiting_manual_verify') return 1;
-  if (task.priority === 'urgent') return 2;
-  if (task.priority === 'high') return 3;
-  return getTaskTimeValue(task);
+function getResultSourceLabel(value: string) {
+  if (value === 'system_snapshot') return '系统快照';
+  if (value === 'official_web' || value === 'apple_web_worker') return '官网查询';
+  if (value === 'manual_writeback') return '人工回写';
+  return '任务结果';
 }
 
-function getTaskTimeValue(task: AppleAutomationTask) {
-  const time = new Date(task.createdAt).getTime();
-  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+function getBatchRowResultLabel(row: AppleAutomationTaskBatchResults['items'][number]) {
+  if (row.errorMessage) return '异常';
+  if (row.taskType === 'check_status') {
+    return getAccountStatusLabel(row.resultStatus) || getStatusLabel(row.status);
+  }
+  if (row.taskType === 'check_balance') return row.checkedBalance ?? row.systemBalance ?? '-';
+  return getStatusLabel(row.status);
+}
+
+function getAccountStatusLabel(value?: string | null) {
+  if (!value) return '';
+  return (
+    {
+      normal: '正常',
+      need_verify: '需验证',
+      locked: '已锁定',
+      password_error: '密码错误',
+      risk: '风险',
+      unknown: '未知'
+    }[value] ?? value
+  );
+}
+
+function getProviderLabel(value: string) {
+  const provider = officialProviderOptions.value.find((item) => item.value === value);
+  return provider?.shortLabel || provider?.label || value;
+}
+
+function getOfficialResultLabel(value: string) {
+  return (
+    {
+      unchanged: '没变动',
+      price_changed: '价格变化',
+      new_plan: '新套餐',
+      removed_plan: '疑似下架',
+      period_changed: '周期变化',
+      currency_changed: '币种变化',
+      failed: '失败',
+      manual_required: '需人工'
+    }[value] ?? value
+  );
+}
+
+function getOfficialResultTone(value: string) {
+  if (value === 'unchanged') return 'green';
+  if (value === 'failed') return 'red';
+  if (value === 'manual_required') return 'orange';
+  return 'purple';
 }
 
 function canRun(task: AppleAutomationTask) {
@@ -1410,7 +1641,208 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-automation-tasks'
     background: tasks.value.length > 0,
     force: true
   });
+  void loadWorkbenchStatus({ background: true });
+  if (taskBatchResults.value) {
+    void appleAutomationTasksApi
+      .getBatchResults(taskBatchResults.value.batch.id)
+      .then((result) => {
+        taskBatchResults.value = result;
+      })
+      .catch(() => undefined);
+  }
 });
 
-onBeforeUnmount(stopRealtimeRefresh);
+onBeforeUnmount(() => {
+  stopRealtimeRefresh();
+  clearTaskBatchPollTimer();
+  clearOfficialPollTimer();
+});
 </script>
+
+<style scoped>
+.automation-workbench-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.automation-tabs {
+  width: 100%;
+}
+
+.automation-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.automation-readiness-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--el-fill-color-extra-light);
+}
+
+.automation-readiness-card > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.automation-readiness-card strong {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.automation-readiness-card span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.automation-readiness-card__meta {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.automation-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.automation-action-card {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--el-bg-color);
+}
+
+.automation-action-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.automation-action-card__head > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.automation-action-card__head strong {
+  color: var(--el-text-color-primary);
+  font-size: 15px;
+}
+
+.automation-action-card__head span {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.automation-action-card__button {
+  margin-top: auto;
+  width: 100%;
+}
+
+.automation-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.automation-secondary-actions,
+.automation-result-block {
+  margin-top: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--el-bg-color);
+}
+
+.automation-secondary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.automation-secondary-actions > div:first-child,
+.automation-result-block__head > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.automation-secondary-actions span,
+.automation-result-block__head span {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.automation-result-block__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.automation-history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.automation-history-toolbar__search {
+  width: min(360px, 100%);
+}
+
+.automation-history-toolbar__select {
+  width: 160px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+@media (max-width: 1180px) {
+  .automation-readiness-grid,
+  .automation-action-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .automation-form-row,
+  .automation-secondary-actions,
+  .automation-result-block__head {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-secondary-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-history-toolbar__search,
+  .automation-history-toolbar__select {
+    width: 100%;
+  }
+}
+</style>

@@ -204,7 +204,7 @@
                   </el-select>
                 </el-form-item>
 
-                <el-form-item class="order-entry-field--wide" prop="serviceId">
+                <el-form-item class="order-entry-field--wide" prop="servicePriceId">
                   <template #label>
                     <FieldHelpLabel
                       label="开通业务"
@@ -212,41 +212,52 @@
                       example="客户买 gpt pro 1 个月，就选对应的 gpt pro 月费业务。"
                     />
                   </template>
-                  <el-select
-                    v-model="form.serviceId"
-                    class="full-input"
-                    filterable
-                    :loading="loading"
-                    :disabled="!form.serviceRegion || !form.serviceCategory"
-                    placeholder="请选择业务"
-                    @change="handleServiceChange"
-                  >
-                    <el-option
-                      v-for="service in filteredServices"
-                      :key="service.id"
-                      :label="`${service.name} · ${service.officialCostValue} ${service.currency}`"
-                      :value="service.id"
-                    />
-                    <template #empty>
-                      <div class="order-entry-select-empty">
-                        <span>
-                          {{
-                            loading
-                              ? '正在加载业务...'
-                              : '没有可选业务，请确认 ID 业务设置里已启用后再刷新。'
-                          }}
-                        </span>
-                        <AppButton
-                          v-if="!loading"
-                          size="small"
-                          variant="soft"
-                          @click.stop="loadInitialData({ force: true, dedupeMs: 0 })"
-                        >
-                          刷新业务
-                        </AppButton>
-                      </div>
-                    </template>
-                  </el-select>
+                  <div class="order-entry-service-select-row">
+                    <el-select
+                      v-model="form.servicePriceId"
+                      class="full-input"
+                      filterable
+                      :loading="loading"
+                      :disabled="!form.serviceRegion || !form.serviceCategory"
+                      placeholder="请选择业务套餐"
+                      @change="handleServicePriceChange"
+                    >
+                      <el-option
+                        v-for="price in filteredServicePrices"
+                        :key="price.id"
+                        :label="formatServicePriceOptionLabel(price)"
+                        :value="price.id"
+                      >
+                        <div class="order-entry-service-option">
+                          <span>{{ price.serviceName || price.service.name }}</span>
+                          <strong>{{ price.appleBalancePrice }} {{ price.currency }}</strong>
+                        </div>
+                      </el-option>
+                      <template #empty>
+                        <div class="order-entry-select-empty">
+                          <span>
+                            {{
+                              loading
+                                ? '正在加载业务...'
+                                : '没有可选套餐，请确认当前国家已经采集并确认套餐价格。'
+                            }}
+                          </span>
+                          <AppButton
+                            v-if="!loading"
+                            size="small"
+                            variant="soft"
+                            @click.stop="loadInitialData({ force: true, dedupeMs: 0 })"
+                          >
+                            刷新业务
+                          </AppButton>
+                        </div>
+                      </template>
+                    </el-select>
+                    <div class="order-entry-service-price-pill">
+                      <span>采集价</span>
+                      <strong>{{ selectedServicePriceDisplay }}</strong>
+                    </div>
+                  </div>
                 </el-form-item>
               </div>
             </div>
@@ -422,6 +433,39 @@
                   />
                 </template>
                 <el-input v-model.trim="form.currentPlan" />
+                <div v-if="selectedServicePrice" class="order-entry-selected-plan-card">
+                  <div>
+                    <span>本次开通套餐</span>
+                    <strong>{{
+                      selectedServicePrice.serviceName || selectedServicePrice.service.name
+                    }}</strong>
+                  </div>
+                  <div>
+                    <span>国家/分类</span>
+                    <strong>
+                      {{ formatAppleRegionLabel(selectedServicePrice.region) }} /
+                      {{ selectedServicePrice.category }}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>采集价格</span>
+                    <strong
+                      >{{ selectedServicePrice.officialPrice }}
+                      {{ selectedServicePrice.currency }}</strong
+                    >
+                  </div>
+                  <div>
+                    <span>Apple 消耗</span>
+                    <strong
+                      >{{ selectedServicePrice.appleBalancePrice }}
+                      {{ selectedServicePrice.currency }}</strong
+                    >
+                  </div>
+                  <div>
+                    <span>周期</span>
+                    <strong>{{ formatServicePeriod(selectedServicePrice) }}</strong>
+                  </div>
+                </div>
                 <div v-if="orderContextLoading || orderContext" class="order-entry-history-card">
                   <StatusChip :tone="orderContext ? 'blue' : 'neutral'">
                     {{ orderContext ? '上次记录' : '查询中' }}
@@ -778,7 +822,13 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { appleMatchingApi, appleOrdersApi, customersApi, dataCenterApi } from '@/api/system';
+import {
+  appleMatchingApi,
+  appleOrdersApi,
+  appleServicesApi,
+  customersApi,
+  dataCenterApi
+} from '@/api/system';
 import type { DataDictionaryQuery, SaveCustomerPayload } from '@/api/system';
 import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -798,6 +848,7 @@ import type {
   AppleAccountOwnershipType,
   AppleOrderEntryContext,
   AppleService,
+  AppleServiceRegionPrice,
   AvailableAppleAccount,
   Customer,
   DataDictionary,
@@ -845,6 +896,7 @@ const customerTagDictionaries = ref<DataDictionary[]>([]);
 const appleRegionDictionaries = ref<DataDictionary[]>([]);
 const appleServiceCategoryDictionaries = ref<DataDictionary[]>([]);
 const services = ref<AppleService[]>([]);
+const servicePrices = ref<AppleServiceRegionPrice[]>([]);
 const availableAccounts = ref<AvailableAppleAccount[]>([]);
 const selectedAccount = ref<AvailableAppleAccount | null>(null);
 const orderContext = ref<AppleOrderEntryContext['latestOrder'] | null>(null);
@@ -870,6 +922,7 @@ const form = reactive({
   serviceRegion: '',
   serviceCategory: '',
   serviceId: '',
+  servicePriceId: '',
   appleAccountId: '',
   appleAccountOwnershipType: 'consigned' as AppleAccountOwnershipType,
   serviceAccount: '',
@@ -892,7 +945,7 @@ const newCustomerForm = reactive<CustomerProfileFormModel>(createCustomerProfile
 const rules: FormRules<typeof form> = {
   serviceRegion: [{ required: true, message: '请选择国家', trigger: 'change' }],
   serviceCategory: [{ required: true, message: '请选择分类', trigger: 'change' }],
-  serviceId: [{ required: true, message: '请选择业务', trigger: 'change' }],
+  servicePriceId: [{ required: true, message: '请选择业务套餐', trigger: 'change' }],
   paidAmount: [{ required: true, message: '请输入客户实收', trigger: 'blur' }],
   paidExchangeRateToRmb: [
     {
@@ -921,8 +974,14 @@ const newCustomerRules: FormRules<CustomerProfileFormModel> = {
   name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }]
 };
 
+const selectedServicePrice = computed(
+  () => servicePrices.value.find((price) => price.id === form.servicePriceId) ?? null
+);
 const selectedService = computed(
-  () => services.value.find((service) => service.id === form.serviceId) ?? null
+  () =>
+    selectedServicePrice.value?.service ??
+    services.value.find((service) => service.id === form.serviceId) ??
+    null
 );
 const selectedSourcePlatform = computed(
   () => sourcePlatforms.value.find((platform) => platform.id === form.sourcePlatformId) ?? null
@@ -935,9 +994,7 @@ const appleRegionOptions = computed(() =>
   mergeAppleAccountRegionOptions(appleRegionDictionaries.value)
 );
 const serviceRegionOptions = computed(() => {
-  const serviceRegionCodes = new Set(
-    services.value.flatMap((service) => service.allowedRegions ?? [])
-  );
+  const serviceRegionCodes = new Set(servicePrices.value.map((price) => price.region));
   const baseOptions = serviceRegionCodes.size
     ? appleRegionOptions.value.filter((item) => serviceRegionCodes.has(item.code))
     : appleRegionOptions.value;
@@ -956,13 +1013,8 @@ const serviceRegionOptions = computed(() => {
     }))
   ];
 });
-const regionMatchedServices = computed(() =>
-  services.value.filter(
-    (service) =>
-      !form.serviceRegion ||
-      !service.allowedRegions.length ||
-      service.allowedRegions.includes(form.serviceRegion)
-  )
+const regionMatchedServicePrices = computed(() =>
+  servicePrices.value.filter((price) => !form.serviceRegion || price.region === form.serviceRegion)
 );
 const activeServiceCategoryValues = computed(
   () =>
@@ -974,20 +1026,25 @@ const activeServiceCategoryValues = computed(
 );
 const serviceCategoryOptions = computed(() => [
   ...new Set(
-    regionMatchedServices.value
-      .map((service) => getServiceCategoryLabel(service.category))
+    regionMatchedServicePrices.value
+      .map((price) => getServiceCategoryLabel(price.category || price.service.category))
       .filter((category) => activeServiceCategoryValues.value.has(category))
   )
 ]);
-const filteredServices = computed(() =>
-  regionMatchedServices.value.filter(
-    (service) =>
-      activeServiceCategoryValues.value.has(getServiceCategoryLabel(service.category)) &&
-      getServiceCategoryLabel(service.category) === form.serviceCategory
+const filteredServicePrices = computed(() =>
+  regionMatchedServicePrices.value.filter(
+    (price) =>
+      activeServiceCategoryValues.value.has(getServiceCategoryLabel(price.category)) &&
+      getServiceCategoryLabel(price.category) === form.serviceCategory
   )
 );
 const selectedServiceRegionLabel = computed(
   () => serviceRegionOptions.value.find((item) => item.code === form.serviceRegion)?.label ?? ''
+);
+const selectedServicePriceDisplay = computed(() =>
+  selectedServicePrice.value
+    ? `${selectedServicePrice.value.appleBalancePrice} ${selectedServicePrice.value.currency}`
+    : '-'
 );
 const selectedAccountLabel = computed(() =>
   selectedAccount.value
@@ -1235,6 +1292,27 @@ function getServiceCategoryLabel(category?: string | null) {
   return normalized;
 }
 
+function formatServicePeriod(price: Pick<AppleServiceRegionPrice, 'periodType' | 'periodValue'>) {
+  if (price.periodType === 'manual') {
+    return '手动周期';
+  }
+  return `${price.periodValue}${price.periodType === 'day' ? '天' : '个月'}`;
+}
+
+function formatServicePriceOptionLabel(price: AppleServiceRegionPrice) {
+  return `${price.serviceName || price.service.name} · ${price.appleBalancePrice} ${price.currency}`;
+}
+
+function buildSelectedServicePlanSummary(price: AppleServiceRegionPrice) {
+  return [
+    price.serviceName || price.service.name,
+    formatAppleRegionLabel(price.region),
+    price.category,
+    `${price.appleBalancePrice} ${price.currency}`,
+    formatServicePeriod(price)
+  ].join(' / ');
+}
+
 function calculatePlatformFee() {
   const platform = selectedSourcePlatform.value;
   if (!platform || !form.paidAmount) {
@@ -1277,11 +1355,22 @@ function fillPaidAmountByMargin() {
 }
 
 function syncExpireTimeFromService() {
-  form.expireTime = calculateServiceExpireTime(selectedService.value, form.startTime);
+  form.expireTime = calculateServiceExpireTime(
+    selectedService.value,
+    form.startTime,
+    selectedServicePrice.value
+  );
 }
 
-function calculateServiceExpireTime(service: AppleService | null, startValue: string) {
-  if (!service || service.expireCalcType === 'manual' || service.defaultPeriodType === 'manual') {
+function calculateServiceExpireTime(
+  service: AppleService | null,
+  startValue: string,
+  servicePrice: AppleServiceRegionPrice | null = null
+) {
+  const periodType = servicePrice?.periodType ?? service?.defaultPeriodType;
+  const periodValue = servicePrice?.periodValue ?? service?.defaultPeriodValue ?? 1;
+
+  if (!service || service.expireCalcType === 'manual' || periodType === 'manual') {
     return '';
   }
 
@@ -1291,10 +1380,10 @@ function calculateServiceExpireTime(service: AppleService | null, startValue: st
   }
 
   const expireTime = new Date(startTime);
-  if (service.expireCalcType === 'by_day' || service.defaultPeriodType === 'day') {
-    expireTime.setDate(expireTime.getDate() + service.defaultPeriodValue);
+  if (service.expireCalcType === 'by_day' || periodType === 'day') {
+    expireTime.setDate(expireTime.getDate() + periodValue);
   } else {
-    addCalendarMonths(expireTime, service.defaultPeriodValue);
+    addCalendarMonths(expireTime, periodValue);
   }
   expireTime.setDate(expireTime.getDate() - 1);
 
@@ -1369,6 +1458,7 @@ async function loadOrderEntryBaseData(
       { page: 1, pageSize: 100, status: 'enabled' },
       { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
     ),
+    appleServicesApi.listOrderOptions({ signal: options.signal }),
     dataCenterApi.listDictionaries(buildCustomerTagParams(), { signal: options.signal }),
     dataCenterApi.listDictionaries(buildAppleRegionParams(), { signal: options.signal }),
     dataCenterApi.listDictionaries(buildAppleServiceCategoryParams(), { signal: options.signal })
@@ -1380,6 +1470,7 @@ function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryB
     customerData,
     platformData,
     serviceData,
+    servicePriceData,
     customerTagData,
     appleRegionData,
     appleServiceCategoryData
@@ -1390,6 +1481,7 @@ function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryB
   );
   sourcePlatforms.value = platformData.items;
   services.value = serviceData.items;
+  servicePrices.value = servicePriceData.items;
   applyCustomerTagResult(customerTagData);
   applyAppleRegionResult(appleRegionData);
   applyAppleServiceCategoryResult(appleServiceCategoryData);
@@ -1495,7 +1587,9 @@ async function loadOrderEntryContext() {
   if (!form.customerId || !form.serviceId) {
     orderContext.value = null;
     if (selectedService.value && !form.currentPlan) {
-      form.currentPlan = selectedService.value.name;
+      form.currentPlan = selectedServicePrice.value
+        ? buildSelectedServicePlanSummary(selectedServicePrice.value)
+        : selectedService.value.name;
     }
     return;
   }
@@ -1517,10 +1611,14 @@ async function loadOrderEntryContext() {
       form.currentPlan =
         data.latestOrder.targetPlan ||
         data.latestOrder.currentPlan ||
-        selectedService.value?.name ||
+        (selectedServicePrice.value
+          ? buildSelectedServicePlanSummary(selectedServicePrice.value)
+          : selectedService.value?.name) ||
         '';
     } else if (selectedService.value) {
-      form.currentPlan = selectedService.value.name;
+      form.currentPlan = selectedServicePrice.value
+        ? buildSelectedServicePlanSummary(selectedServicePrice.value)
+        : selectedService.value.name;
     }
   } catch (error) {
     if (requestId === orderContextRequestId) {
@@ -1571,6 +1669,7 @@ function clearSelectedAccount() {
 
 function clearSelectedService() {
   form.serviceId = '';
+  form.servicePriceId = '';
   form.appleCostValue = '';
   form.targetPlan = '';
   form.currentPlan = '';
@@ -1595,19 +1694,24 @@ async function handleAppleAccountOwnershipTypeChange() {
   }
 }
 
-async function handleServiceChange() {
+async function handleServicePriceChange() {
+  const servicePrice = selectedServicePrice.value;
   const service = selectedService.value;
   clearSelectedAccount();
 
-  if (!service) {
+  if (!service || !servicePrice) {
+    form.serviceId = '';
     form.expireTime = '';
     return;
   }
 
+  form.serviceId = service.id;
+  form.serviceRegion = servicePrice.region;
+  form.serviceCategory = getServiceCategoryLabel(servicePrice.category);
   form.paidAmount = service.defaultPrice;
-  form.appleCostValue = service.officialCostValue;
-  form.targetPlan = service.name;
-  form.currentPlan = service.name;
+  form.appleCostValue = servicePrice.appleBalancePrice;
+  form.targetPlan = servicePrice.serviceName || service.name;
+  form.currentPlan = buildSelectedServicePlanSummary(servicePrice);
   syncExpireTimeFromService();
   syncDerivedOrderAmounts();
   await loadOrderEntryContext();
@@ -1669,7 +1773,7 @@ async function loadAvailableAccounts(options: { autoSelect?: boolean } = {}) {
     const data = await appleMatchingApi.listAvailableAccounts({
       serviceId: form.serviceId,
       amountRequired: form.appleCostValue || undefined,
-      currency: selectedService.value?.currency,
+      currency: selectedServicePrice.value?.currency ?? selectedService.value?.currency,
       keyword: matchKeyword.value || undefined,
       ownershipType: form.appleAccountOwnershipType,
       showUnavailable: 'true'
@@ -1730,6 +1834,8 @@ async function submitOrder() {
       sourcePlatformId: form.sourcePlatformId || null,
       externalOrderNo: form.externalOrderNo || null,
       serviceId: form.serviceId,
+      servicePriceId: form.servicePriceId || null,
+      serviceRegion: form.serviceRegion || null,
       appleAccountId: form.appleAccountId || null,
       serviceAccount: form.serviceAccount || null,
       currentPlan: form.currentPlan || null,
@@ -1808,6 +1914,7 @@ function resetOrderForm() {
   form.serviceRegion = '';
   form.serviceCategory = '';
   form.serviceId = '';
+  form.servicePriceId = '';
   form.appleAccountId = '';
   form.appleAccountOwnershipType = 'consigned';
   form.serviceAccount = '';
@@ -2024,6 +2131,91 @@ onBeforeUnmount(() => {
   line-height: 1.4;
 }
 
+.order-entry-service-select-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) 148px;
+  gap: 8px;
+}
+
+.order-entry-service-price-pill {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.order-entry-service-price-pill strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-entry-service-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.order-entry-service-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-entry-service-option strong {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.order-entry-selected-plan-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.order-entry-selected-plan-card div {
+  min-width: 0;
+}
+
+.order-entry-selected-plan-card span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.order-entry-selected-plan-card strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .order-entry-history-card {
   display: flex;
   min-width: 0;
@@ -2121,6 +2313,7 @@ onBeforeUnmount(() => {
   .order-entry-customer-picker,
   .order-entry-money-input,
   .order-entry-money-meta,
+  .order-entry-service-select-row,
   .order-entry-margin-calculator {
     grid-template-columns: 1fr;
     justify-content: stretch;
@@ -2137,7 +2330,12 @@ onBeforeUnmount(() => {
     align-items: flex-start;
   }
 
+  .order-entry-selected-plan-card {
+    grid-template-columns: 1fr;
+  }
+
   .order-entry-history-card span:last-child,
+  .order-entry-selected-plan-card strong,
   .order-entry-margin-calculator__hint {
     white-space: normal;
   }

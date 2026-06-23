@@ -325,16 +325,16 @@ const appleModules: AppModuleItem[] = [
   },
   {
     key: 'apple-automation',
-    title: 'Apple ID 自动化任务',
+    title: 'ID 自动化工作台',
     route: '/apple/automation',
     mark: 'AT',
     group: 'Apple ID 业务',
     phase: 'Phase 8',
     status: 'design-ready',
-    description: '管理查询余额、检测状态、取消订阅、自动充值等自动化任务，高风险任务转人工验证。',
-    features: ['任务队列', '失败转人工', '截图凭证', '结果回写', '执行状态'],
-    primaryAction: '创建自动化任务',
-    tableColumns: ['任务', 'Apple ID', '关联业务', '状态', '结果', '创建时间']
+    description: '按操作场景批量查询 ID 状态、余额和官方价格套餐，失败或高风险任务转人工处理。',
+    features: ['批量查状态', '批量查余额', '价格套餐巡检', '人工处理', '执行记录'],
+    primaryAction: '开始自动化操作',
+    tableColumns: ['操作', 'Apple ID / 套餐', '状态', '来源', '结果', '处理建议']
   },
   {
     key: 'apple-reports',

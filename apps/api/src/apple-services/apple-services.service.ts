@@ -14,6 +14,7 @@ import type {
   AppleServicePlatformFeeType,
   AppleServicePlatformMapping,
   AppleServiceStatus,
+  AppleServiceRegionPriceStatus,
   Prisma
 } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -39,6 +40,32 @@ interface ListAppleServicesQuery extends PaginationQuery {
   sortOrder?: string;
 }
 
+interface ListAppleServiceRegionPricesQuery extends PaginationQuery {
+  region?: string;
+  category?: string;
+  serviceId?: string;
+  status?: string;
+  orderEntryOnly?: string;
+}
+
+interface UpsertAppleServiceRegionPriceInput {
+  serviceId: string;
+  sourceSnapshotId?: string | null;
+  provider?: string | null;
+  serviceName: string;
+  category: string;
+  region: string;
+  currency: string;
+  officialPrice: Prisma.Decimal.Value;
+  appleBalancePrice?: Prisma.Decimal.Value | null;
+  periodType: AppleServicePeriodType;
+  periodValue: number;
+  collectedAt?: Date | null;
+  confirmedAt?: Date | null;
+  status?: AppleServiceRegionPriceStatus;
+  remark?: string | null;
+}
+
 type AppleServicePlatformMappingWithRelations = AppleServicePlatformMapping & {
   sourcePlatform: {
     id: string;
@@ -48,6 +75,19 @@ type AppleServicePlatformMappingWithRelations = AppleServicePlatformMapping & {
     status: string;
   };
 };
+
+type AppleServiceRegionPriceWithRelations = Prisma.AppleServiceRegionPriceGetPayload<{
+  include: {
+    service: true;
+    sourceSnapshot: {
+      select: {
+        id: true;
+        provider: true;
+        collectedAt: true;
+      };
+    };
+  };
+}>;
 
 const APPLE_SERVICE_SORT_FIELDS: Record<string, keyof Prisma.AppleServiceOrderByWithRelationInput> =
   {
@@ -138,10 +178,126 @@ export class AppleServicesService {
     return this.toResponse(service);
   }
 
+  async listRegionPrices(query: ListAppleServiceRegionPricesQuery) {
+    const pagination = getPagination(query);
+    const region = query.region?.trim().toUpperCase();
+    const category = this.normalizeCategoryFilter(query.category);
+    const status = this.parseRegionPriceStatus(query.status, false);
+    const orderEntryOnly = query.orderEntryOnly !== 'false';
+    const where: Prisma.AppleServiceRegionPriceWhereInput = {
+      deletedAt: null,
+      region: region || undefined,
+      category,
+      serviceId: query.serviceId || undefined,
+      status: status ?? (orderEntryOnly ? 'active' : undefined),
+      service: orderEntryOnly
+        ? {
+            deletedAt: null,
+            status: 'enabled'
+          }
+        : {
+            deletedAt: null
+          }
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.appleServiceRegionPrice.findMany({
+        where,
+        include: this.getRegionPriceInclude(),
+        skip: pagination.skip,
+        take: pagination.take,
+        orderBy: [{ region: 'asc' }, { category: 'asc' }, { serviceName: 'asc' }]
+      }),
+      this.prisma.appleServiceRegionPrice.count({ where })
+    ]);
+
+    return {
+      items: items.map((price) => this.toRegionPriceResponse(price)),
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize
+    };
+  }
+
+  async listOrderOptions() {
+    const prices = await this.prisma.appleServiceRegionPrice.findMany({
+      where: {
+        deletedAt: null,
+        status: 'active',
+        service: {
+          deletedAt: null,
+          status: 'enabled'
+        }
+      },
+      include: this.getRegionPriceInclude(),
+      orderBy: [{ region: 'asc' }, { category: 'asc' }, { serviceName: 'asc' }]
+    });
+
+    return {
+      items: prices.map((price) => this.toRegionPriceResponse(price))
+    };
+  }
+
+  async upsertRegionPriceFromOfficial(input: UpsertAppleServiceRegionPriceInput) {
+    const region = this.normalizeCode(input.region, 'US', true);
+    const currency = this.normalizeCode(input.currency, 'USD', true);
+    const officialPrice = new PrismaNamespace.Decimal(input.officialPrice);
+    const appleBalancePrice = new PrismaNamespace.Decimal(
+      input.appleBalancePrice ?? input.officialPrice
+    );
+
+    const price = await this.prisma.appleServiceRegionPrice.upsert({
+      where: {
+        serviceId_region_currency: {
+          serviceId: input.serviceId,
+          region,
+          currency
+        }
+      },
+      update: {
+        sourceSnapshotId: input.sourceSnapshotId ?? null,
+        provider: input.provider || 'official_web',
+        serviceName: input.serviceName.trim(),
+        category: this.normalizeCategory(input.category),
+        officialPrice,
+        appleBalancePrice,
+        periodType: input.periodType,
+        periodValue: input.periodValue,
+        status: input.status ?? 'active',
+        collectedAt: input.collectedAt ?? null,
+        confirmedAt: input.confirmedAt ?? new Date(),
+        deletedAt: null,
+        remark: this.normalizeNullableString(input.remark)
+      },
+      create: {
+        serviceId: input.serviceId,
+        sourceSnapshotId: input.sourceSnapshotId ?? null,
+        provider: input.provider || 'official_web',
+        serviceName: input.serviceName.trim(),
+        category: this.normalizeCategory(input.category),
+        region,
+        currency,
+        officialPrice,
+        appleBalancePrice,
+        periodType: input.periodType,
+        periodValue: input.periodValue,
+        status: input.status ?? 'active',
+        collectedAt: input.collectedAt ?? null,
+        confirmedAt: input.confirmedAt ?? new Date(),
+        remark: this.normalizeNullableString(input.remark)
+      },
+      include: this.getRegionPriceInclude()
+    });
+
+    this.clearListCaches();
+    return this.toRegionPriceResponse(price);
+  }
+
   async create(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
     this.assertRequiredString(dto.name, 'name');
     const data = await this.buildCreateData(dto, operator);
     const service = await this.prisma.appleService.create({ data });
+    await this.syncServiceRegionPricesFromService(service);
 
     await this.auditLogsService.create({
       userId: operator?.id,
@@ -168,10 +324,11 @@ export class AppleServicesService {
     }
 
     const data = await this.buildUpdateData(dto, existingService, operator);
-    await this.prisma.appleService.update({
+    const updatedService = await this.prisma.appleService.update({
       where: { id },
       data
     });
+    await this.syncServiceRegionPricesFromService(updatedService);
 
     await this.auditLogsService.create({
       userId: operator?.id,
@@ -203,6 +360,16 @@ export class AppleServicesService {
       data: {
         deletedAt: new Date(),
         updatedByUserId: operator?.id
+      }
+    });
+    await this.prisma.appleServiceRegionPrice.updateMany({
+      where: {
+        serviceId: id,
+        deletedAt: null
+      },
+      data: {
+        status: 'disabled',
+        deletedAt: new Date()
       }
     });
 
@@ -708,6 +875,19 @@ export class AppleServicesService {
     } satisfies Prisma.AppleServicePlatformMappingInclude;
   }
 
+  private getRegionPriceInclude() {
+    return {
+      service: true,
+      sourceSnapshot: {
+        select: {
+          id: true,
+          provider: true,
+          collectedAt: true
+        }
+      }
+    } satisfies Prisma.AppleServiceRegionPriceInclude;
+  }
+
   private async buildCreateData(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
     const priceData = await this.buildCreatePriceData(dto);
     return {
@@ -831,6 +1011,58 @@ export class AppleServicesService {
     }
 
     return data;
+  }
+
+  private async syncServiceRegionPricesFromService(service: AppleService) {
+    if (!service.allowedRegions.length) {
+      return;
+    }
+
+    const status: AppleServiceRegionPriceStatus =
+      service.status === 'disabled' ? 'disabled' : 'active';
+    const confirmedAt = new Date();
+
+    await this.prisma.$transaction(
+      service.allowedRegions.map((region) =>
+        this.prisma.appleServiceRegionPrice.upsert({
+          where: {
+            serviceId_region_currency: {
+              serviceId: service.id,
+              region,
+              currency: service.currency
+            }
+          },
+          update: {
+            provider: 'service_setting',
+            serviceName: service.name,
+            category: service.category,
+            officialPrice: service.officialBasePrice,
+            appleBalancePrice: service.officialCostValue,
+            periodType: service.defaultPeriodType,
+            periodValue: service.defaultPeriodValue,
+            status,
+            confirmedAt,
+            deletedAt: null,
+            remark: '由 Apple ID 业务设置同步'
+          },
+          create: {
+            serviceId: service.id,
+            provider: 'service_setting',
+            serviceName: service.name,
+            category: service.category,
+            region,
+            currency: service.currency,
+            officialPrice: service.officialBasePrice,
+            appleBalancePrice: service.officialCostValue,
+            periodType: service.defaultPeriodType,
+            periodValue: service.defaultPeriodValue,
+            status,
+            confirmedAt,
+            remark: '由 Apple ID 业务设置同步'
+          }
+        })
+      )
+    );
   }
 
   private assertRequiredString(value: unknown, field: string): asserts value is string {
@@ -966,6 +1198,25 @@ export class AppleServicesService {
     return undefined;
   }
 
+  private parseRegionPriceStatus(
+    value?: string,
+    strict = false
+  ): AppleServiceRegionPriceStatus | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    if (value === 'active' || value === 'disabled' || value === 'needs_review') {
+      return value;
+    }
+
+    if (strict) {
+      throw new BadRequestException('Invalid Apple service region price status');
+    }
+
+    return undefined;
+  }
+
   private parsePeriodType(value: unknown, strict: boolean) {
     if (value === undefined || value === null || value === '') {
       return undefined;
@@ -1067,6 +1318,31 @@ export class AppleServicesService {
       remark: service.remark,
       createdAt: service.createdAt,
       updatedAt: service.updatedAt
+    };
+  }
+
+  private toRegionPriceResponse(price: AppleServiceRegionPriceWithRelations) {
+    return {
+      id: price.id,
+      serviceId: price.serviceId,
+      sourceSnapshotId: price.sourceSnapshotId,
+      sourceSnapshot: price.sourceSnapshot,
+      provider: price.provider,
+      serviceName: price.serviceName,
+      category: price.category,
+      region: price.region,
+      currency: price.currency,
+      officialPrice: price.officialPrice.toString(),
+      appleBalancePrice: price.appleBalancePrice.toString(),
+      periodType: price.periodType,
+      periodValue: price.periodValue,
+      status: price.status,
+      collectedAt: price.collectedAt,
+      confirmedAt: price.confirmedAt,
+      remark: price.remark,
+      service: this.toResponse(price.service),
+      createdAt: price.createdAt,
+      updatedAt: price.updatedAt
     };
   }
 

@@ -119,6 +119,11 @@ export class AppleOfficialPricesController {
     return this.officialPricesService.getCheckBatch(id);
   }
 
+  @Get('check-batches/:id/results')
+  getCheckBatchResults(@Param('id') id: string) {
+    return this.officialPricesService.getCheckBatchResults(id);
+  }
+
   @Get('snapshots')
   listSnapshots(
     @Query('page') page?: string,

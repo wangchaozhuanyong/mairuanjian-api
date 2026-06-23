@@ -1199,6 +1199,7 @@ export class OpsService {
         where: { status: { in: ['waiting_manual_verify', 'need_review'] } }
       })
     ]);
+    const appleWebWorkerEnabled = process.env.APPLE_WEB_CHECK_WORKER_ENABLED === 'true';
     const status =
       failedCount > 0 ? 'error' : waitingCount + runningCount > 0 ? 'warning' : 'normal';
 
@@ -1209,14 +1210,16 @@ export class OpsService {
       message:
         status === 'normal'
           ? 'No pending automation workload'
-          : '真实 Apple ID 自动化 Worker 尚未接入，请关注待处理任务',
+          : appleWebWorkerEnabled
+            ? 'Apple 官网状态 Worker 已开启，请关注运行中、失败和人工验证任务'
+            : 'Apple 官网状态 Worker 未开启，请关注待处理任务或启用独立 Worker',
       checkedAt: new Date().toISOString(),
       metrics: {
         waitingCount,
         runningCount,
         failedCount,
         manualCount,
-        workerMode: 'placeholder'
+        workerMode: appleWebWorkerEnabled ? 'apple_web_worker' : 'manual_or_placeholder'
       }
     };
   }

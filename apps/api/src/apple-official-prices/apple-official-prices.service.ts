@@ -635,6 +635,7 @@ export class AppleOfficialPricesService {
     const newValue = this.parseReviewNewValue(review.newValue);
     await this.assertOfficialCategoryActive(newValue.category);
     let serviceId = review.appleServiceId;
+    const confirmedAt = new Date();
 
     if (review.changeType === 'new_plan' || !review.appleServiceId) {
       const createdService = await this.appleServicesService.create(
@@ -668,16 +669,37 @@ export class AppleOfficialPricesService {
       );
     }
 
+    if (!serviceId) {
+      throw new ConflictException('Official price review has no matched Apple service');
+    }
+
     const updated = await this.prisma.applePriceChangeReview.update({
       where: { id: review.id },
       data: {
         status: 'approved',
         reviewedByUserId: operator?.id,
-        reviewedAt: new Date(),
+        reviewedAt: confirmedAt,
         appleServiceId: serviceId,
         remark: this.normalizeNullableString(review.remark) ?? '已确认同步到 Apple ID 业务设置'
       },
       include: this.getReviewInclude()
+    });
+
+    await this.appleServicesService.upsertRegionPriceFromOfficial({
+      serviceId,
+      sourceSnapshotId: review.snapshotId,
+      provider: review.snapshot?.provider ?? review.source?.provider ?? 'official_web',
+      serviceName: newValue.serviceName,
+      category: newValue.category,
+      region: newValue.region,
+      currency: newValue.currency,
+      officialPrice: newValue.officialPrice,
+      appleBalancePrice: newValue.appleBalancePrice,
+      periodType: newValue.periodType,
+      periodValue: newValue.periodValue,
+      collectedAt: review.snapshot?.collectedAt ?? null,
+      confirmedAt,
+      remark: '官方价格审核确认后同步'
     });
 
     await this.auditLogsService.create({
@@ -946,6 +968,95 @@ export class AppleOfficialPricesService {
     const batch = await this.findCheckBatchOrThrow(id);
     this.scheduleOfficialPriceBatch(batch.id);
     return this.toCheckBatchResponse(batch);
+  }
+
+  async getCheckBatchResults(id: string) {
+    const batch = await this.findCheckBatchOrThrow(id);
+    const taskIds = batch.items
+      .map((item) => item.taskId)
+      .filter((taskId): taskId is string => Boolean(taskId));
+    const snapshots = taskIds.length
+      ? await this.prisma.appleOfficialPriceSnapshot.findMany({
+          where: { automationTaskId: { in: taskIds } },
+          include: this.getSnapshotInclude(),
+          orderBy: [{ collectedAt: 'desc' }]
+        })
+      : [];
+    const snapshotIds = snapshots.map((snapshot) => snapshot.id);
+    const reviewFilters: Prisma.ApplePriceChangeReviewWhereInput[] = [];
+    if (taskIds.length) {
+      reviewFilters.push({ automationTaskId: { in: taskIds } });
+    }
+    if (snapshotIds.length) {
+      reviewFilters.push({ snapshotId: { in: snapshotIds } });
+    }
+    const reviews = reviewFilters.length
+      ? await this.prisma.applePriceChangeReview.findMany({
+          where: {
+            OR: reviewFilters
+          },
+          include: this.getReviewInclude(),
+          orderBy: [{ createdAt: 'desc' }]
+        })
+      : [];
+    const reviewsBySnapshotId = new Map(
+      reviews.filter((review) => review.snapshotId).map((review) => [review.snapshotId!, review])
+    );
+    const snapshotRows = snapshots.map((snapshot) => {
+      const review = reviewsBySnapshotId.get(snapshot.id) ?? null;
+      return this.toCheckBatchResultRow({
+        batchItem: batch.items.find((item) => item.taskId === snapshot.automationTaskId) ?? null,
+        snapshot,
+        review
+      });
+    });
+    const snapshotRowKeys = new Set(
+      snapshotRows.map((row) => `${row.reviewId ?? ''}:${row.snapshotId ?? ''}`)
+    );
+    const reviewRows = reviews
+      .filter((review) => !review.snapshotId)
+      .map((review) =>
+        this.toCheckBatchResultRow({
+          batchItem: batch.items.find((item) => item.taskId === review.automationTaskId) ?? null,
+          snapshot: null,
+          review
+        })
+      )
+      .filter((row) => {
+        const key = `${row.reviewId ?? ''}:${row.snapshotId ?? ''}`;
+        if (snapshotRowKeys.has(key)) return false;
+        snapshotRowKeys.add(key);
+        return true;
+      });
+    const problemRows = batch.items
+      .filter(
+        (item) =>
+          !item.taskId || item.status === 'failed' || item.status === 'waiting_manual_verify'
+      )
+      .map((item) =>
+        this.toCheckBatchResultRow({
+          batchItem: item,
+          snapshot: null,
+          review: null
+        })
+      );
+    const items = [...snapshotRows, ...reviewRows, ...problemRows];
+
+    return {
+      batch: this.toCheckBatchResponse(batch),
+      summary: {
+        totalCount: items.length,
+        unchangedCount: items.filter((item) => item.status === 'unchanged').length,
+        changedCount: items.filter((item) =>
+          ['price_changed', 'period_changed', 'currency_changed'].includes(item.status)
+        ).length,
+        newPlanCount: items.filter((item) => item.status === 'new_plan').length,
+        removedPlanCount: items.filter((item) => item.status === 'removed_plan').length,
+        failedCount: items.filter((item) => item.status === 'failed').length,
+        manualRequiredCount: items.filter((item) => item.status === 'manual_required').length
+      },
+      items
+    };
   }
 
   private async buildOfficialPriceBatchPlan(
@@ -1336,6 +1447,112 @@ export class AppleOfficialPricesService {
         updatedAt: item.updatedAt
       }))
     };
+  }
+
+  private toCheckBatchResultRow(input: {
+    batchItem: AppleOfficialPriceCheckBatchItem | null;
+    snapshot: OfficialPriceSnapshotWithRelations | null;
+    review: PriceChangeReviewWithRelations | null;
+  }) {
+    const snapshot = input.snapshot;
+    const review = input.review;
+    const newValue = review ? this.parseReviewNewValue(review.newValue) : null;
+    const oldValue =
+      review?.oldValue && typeof review.oldValue === 'object'
+        ? (review.oldValue as Record<string, unknown>)
+        : null;
+    const status = this.getCheckBatchResultStatus(input.batchItem, review, snapshot);
+    const provider =
+      snapshot?.provider ??
+      review?.snapshot?.provider ??
+      input.batchItem?.provider ??
+      review?.source?.provider ??
+      '-';
+    const serviceName =
+      snapshot?.serviceName ??
+      newValue?.serviceName ??
+      review?.appleService?.name ??
+      input.batchItem?.sourceName ??
+      '-';
+    const category =
+      snapshot?.category ??
+      newValue?.category ??
+      (typeof oldValue?.category === 'string' ? oldValue.category : null) ??
+      review?.appleService?.category ??
+      '通用';
+    const region =
+      snapshot?.region ??
+      newValue?.region ??
+      review?.snapshot?.region ??
+      input.batchItem?.region ??
+      review?.source?.region ??
+      '-';
+    const currency =
+      snapshot?.currency ??
+      newValue?.currency ??
+      review?.snapshot?.currency ??
+      input.batchItem?.currency ??
+      review?.source?.currency ??
+      '-';
+
+    return {
+      id:
+        review?.id ?? snapshot?.id ?? input.batchItem?.id ?? `${provider}:${region}:${serviceName}`,
+      batchItemId: input.batchItem?.id ?? null,
+      taskId:
+        input.batchItem?.taskId ?? snapshot?.automationTaskId ?? review?.automationTaskId ?? null,
+      snapshotId: snapshot?.id ?? review?.snapshotId ?? null,
+      reviewId: review?.id ?? null,
+      sourceId: input.batchItem?.sourceId ?? review?.sourceId ?? snapshot?.sourceId ?? null,
+      sourceName:
+        input.batchItem?.sourceName ?? review?.source?.name ?? snapshot?.source?.name ?? '-',
+      provider,
+      serviceName,
+      category,
+      region,
+      currency,
+      status,
+      reviewStatus: review?.status ?? null,
+      oldOfficialPrice:
+        typeof oldValue?.officialPrice === 'string' || typeof oldValue?.officialPrice === 'number'
+          ? String(oldValue.officialPrice)
+          : (review?.appleService?.officialBasePrice.toString() ?? null),
+      newOfficialPrice: snapshot?.officialPrice.toString() ?? newValue?.officialPrice ?? null,
+      oldAppleBalancePrice:
+        typeof oldValue?.appleBalancePrice === 'string' ||
+        typeof oldValue?.appleBalancePrice === 'number'
+          ? String(oldValue.appleBalancePrice)
+          : (review?.appleService?.officialCostValue.toString() ?? null),
+      newAppleBalancePrice:
+        snapshot?.appleBalancePrice?.toString() ?? newValue?.appleBalancePrice ?? null,
+      periodType:
+        snapshot?.periodType ??
+        newValue?.periodType ??
+        review?.appleService?.defaultPeriodType ??
+        null,
+      periodValue:
+        snapshot?.periodValue ??
+        newValue?.periodValue ??
+        review?.appleService?.defaultPeriodValue ??
+        null,
+      message:
+        input.batchItem?.errorMessage ??
+        input.batchItem?.message ??
+        (status === 'unchanged' ? '本次巡检未发现变化' : null),
+      collectedAt: snapshot?.collectedAt ?? review?.snapshot?.collectedAt ?? null
+    };
+  }
+
+  private getCheckBatchResultStatus(
+    batchItem: AppleOfficialPriceCheckBatchItem | null,
+    review: PriceChangeReviewWithRelations | null,
+    snapshot: OfficialPriceSnapshotWithRelations | null
+  ) {
+    if (batchItem?.status === 'failed') return 'failed';
+    if (batchItem?.status === 'waiting_manual_verify') return 'manual_required';
+    if (review) return review.changeType;
+    if (snapshot) return 'unchanged';
+    return batchItem?.status === 'success' ? 'unchanged' : 'manual_required';
   }
 
   private async collectSourceItems(
@@ -2164,6 +2381,7 @@ export class AppleOfficialPricesService {
           data: {
             sourceId: input.source.id,
             appleServiceId: matchedService?.id ?? null,
+            automationTaskId: input.taskId,
             provider: item.provider,
             planCode: item.planCode ?? null,
             serviceName: item.serviceName,
@@ -2181,12 +2399,57 @@ export class AppleOfficialPricesService {
         snapshots.push(snapshot);
 
         const change = this.detectChange(matchedService, item);
+        if (!change && matchedService) {
+          await tx.appleServiceRegionPrice.upsert({
+            where: {
+              serviceId_region_currency: {
+                serviceId: matchedService.id,
+                region: item.region,
+                currency: item.currency
+              }
+            },
+            update: {
+              sourceSnapshotId: snapshot.id,
+              provider: item.provider,
+              serviceName: item.serviceName,
+              category: item.category,
+              officialPrice: item.officialPrice,
+              appleBalancePrice,
+              periodType: item.periodType,
+              periodValue: item.periodValue,
+              status: 'active',
+              collectedAt: snapshot.collectedAt,
+              confirmedAt: snapshot.collectedAt,
+              deletedAt: null,
+              remark: '官方价格采集无变化自动同步'
+            },
+            create: {
+              serviceId: matchedService.id,
+              sourceSnapshotId: snapshot.id,
+              provider: item.provider,
+              serviceName: item.serviceName,
+              category: item.category,
+              region: item.region,
+              currency: item.currency,
+              officialPrice: item.officialPrice,
+              appleBalancePrice,
+              periodType: item.periodType,
+              periodValue: item.periodValue,
+              status: 'active',
+              collectedAt: snapshot.collectedAt,
+              confirmedAt: snapshot.collectedAt,
+              remark: '官方价格采集无变化自动同步'
+            }
+          });
+        }
+
         if (change) {
           const review = await tx.applePriceChangeReview.create({
             data: {
               sourceId: input.source.id,
               snapshotId: snapshot.id,
               appleServiceId: matchedService?.id ?? null,
+              automationTaskId: input.taskId,
               changeType: change,
               oldValue: matchedService
                 ? this.toJson(this.buildServiceValue(matchedService))
@@ -2218,6 +2481,7 @@ export class AppleOfficialPricesService {
             data: {
               sourceId: input.source.id,
               appleServiceId: service.id,
+              automationTaskId: input.taskId,
               changeType: 'removed_plan',
               oldValue: this.toJson(this.buildServiceValue(service)),
               newValue: this.toJson({
@@ -2496,6 +2760,7 @@ export class AppleOfficialPricesService {
     return {
       serviceName,
       category: this.normalizeCategory(typeof data.category === 'string' ? data.category : '通用'),
+      region: this.normalizeCode(typeof data.region === 'string' ? data.region : 'US', 'US'),
       currency: this.normalizeCode(
         typeof data.currency === 'string' ? data.currency : 'USD',
         'USD'
@@ -2503,6 +2768,11 @@ export class AppleOfficialPricesService {
       officialPrice: this.normalizeDecimal(
         data.officialPrice as string | number,
         'newValue.officialPrice',
+        '0'
+      ),
+      appleBalancePrice: this.normalizeDecimal(
+        (data.appleBalancePrice ?? data.officialPrice) as string | number,
+        'newValue.appleBalancePrice',
         '0'
       ),
       periodType: this.parsePeriodType(data.periodType, true) ?? 'month',

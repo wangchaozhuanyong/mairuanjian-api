@@ -7,6 +7,7 @@ import {
 import type {
   AppleAccount,
   AutomationTask,
+  AutomationTaskBatch,
   AutomationTaskLog,
   AutomationTaskLogLevel,
   AutomationTaskPriority,
@@ -21,6 +22,7 @@ import { FieldEncryptionService } from '../common/crypto/field-encryption.servic
 import { getPagination, type PaginationQuery } from '../common/pagination';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
+import type { BatchBalanceCheckDto } from './dto/batch-balance-check.dto';
 import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
@@ -158,6 +160,14 @@ type AutomationTaskWithRelations = AutomationTask & {
     displayName: string;
   } | null;
   logs?: AutomationTaskLogWithRelations[];
+};
+
+type AutomationTaskBatchWithRelations = AutomationTaskBatch & {
+  createdBy?: {
+    id: string;
+    username: string;
+    displayName: string;
+  } | null;
 };
 
 type AutomationTaskLogWithRelations = AutomationTaskLog & {
@@ -441,6 +451,242 @@ export class AppleAutomationTasksService {
     };
   }
 
+  async createStatusCheckBatch(dto: BatchStatusCheckDto, operator?: AuthenticatedUser) {
+    const appleAccountIds = this.normalizeAccountIdList(dto.appleAccountIds);
+    const note = this.normalizeNullableString(dto.note);
+    const startedAt = new Date();
+    const batch = await this.prisma.automationTaskBatch.create({
+      data: {
+        batchType: 'status_check',
+        status: 'queued',
+        totalCount: appleAccountIds.length,
+        note,
+        createdByUserId: operator?.id,
+        startedAt
+      },
+      include: this.getBatchInclude()
+    });
+
+    try {
+      const result = await this.batchStatusCheck({ ...dto, appleAccountIds, note }, operator);
+      const taskIds = result.items.map((item) => item.id);
+
+      if (taskIds.length) {
+        await this.prisma.automationTask.updateMany({
+          where: { id: { in: taskIds } },
+          data: { batchId: batch.id }
+        });
+      }
+
+      await this.refreshBatchStats(batch.id);
+      return this.getBatchResults(batch.id);
+    } catch (error) {
+      await this.prisma.automationTaskBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: 'failed',
+          failedCount: appleAccountIds.length,
+          finishedAt: new Date(),
+          note: note ?? (error instanceof Error ? error.message : '批量状态查询失败')
+        }
+      });
+      throw error;
+    }
+  }
+
+  async createBalanceCheckBatch(dto: BatchBalanceCheckDto, operator?: AuthenticatedUser) {
+    const appleAccountIds = this.normalizeAccountIdList(dto.appleAccountIds);
+    const priority = this.parsePriority(dto.priority ?? 'medium', true);
+    const note = this.normalizeNullableString(dto.note);
+    const accounts = await this.prisma.appleAccount.findMany({
+      where: {
+        id: { in: appleAccountIds },
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        appleId: true,
+        region: true,
+        currency: true,
+        currentBalance: true,
+        status: true
+      }
+    });
+    const accountsById = new Map(accounts.map((account) => [account.id, account]));
+    const missingIds = appleAccountIds.filter((id) => !accountsById.has(id));
+
+    if (missingIds.length) {
+      throw new NotFoundException(`Apple account not found: ${missingIds.join(', ')}`);
+    }
+
+    const now = new Date();
+    const batch = await this.prisma.$transaction(async (tx) => {
+      const createdBatch = await tx.automationTaskBatch.create({
+        data: {
+          batchType: 'balance_check',
+          status: 'success',
+          totalCount: appleAccountIds.length,
+          successCount: appleAccountIds.length,
+          note,
+          createdByUserId: operator?.id,
+          startedAt: now,
+          finishedAt: now
+        },
+        include: this.getBatchInclude()
+      });
+
+      for (const appleAccountId of appleAccountIds) {
+        const account = accountsById.get(appleAccountId)!;
+        const queueJobId = this.createQueueJobId('check_balance');
+        const payload = this.toAuditJson({
+          balanceSnapshot: account.currentBalance.toString(),
+          currency: account.currency,
+          source: 'system_snapshot'
+        });
+        const task = await tx.automationTask.create({
+          data: {
+            batchId: createdBatch.id,
+            taskType: 'check_balance',
+            appleAccountId,
+            priority,
+            status: 'success',
+            inputPayloadEncrypted: this.encryptPayload({
+              automationIntent: 'apple_balance_snapshot',
+              operatorNote: note
+            }),
+            resultPayload: payload,
+            manualRequired: false,
+            queueJobId,
+            createdByUserId: operator?.id,
+            startedAt: now,
+            finishedAt: now
+          },
+          include: this.getInclude(false)
+        });
+
+        await this.createLog(tx, task.id, 'success', '批量余额查询已使用系统当前余额快照完成', {
+          queueJobId,
+          balanceSnapshot: account.currentBalance.toString(),
+          currency: account.currency,
+          source: 'system_snapshot'
+        });
+      }
+
+      return createdBatch;
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.batch_balance_check',
+      objectType: 'automation_task_batch',
+      objectId: batch.id,
+      afterData: this.toAuditJson({
+        batchId: batch.id,
+        createdCount: appleAccountIds.length,
+        source: 'system_snapshot',
+        hasOperatorNote: Boolean(note)
+      }),
+      remark: `Created ${appleAccountIds.length} Apple balance check tasks`
+    });
+
+    return this.getBatchResults(batch.id);
+  }
+
+  async getBatch(id: string) {
+    const batch = await this.findBatchOrThrow(id);
+    return this.toBatchResponse(batch);
+  }
+
+  async getBatchResults(id: string) {
+    const batch = await this.findBatchOrThrow(id);
+    const tasks = await this.prisma.automationTask.findMany({
+      where: { batchId: batch.id },
+      include: this.getInclude(false),
+      orderBy: [{ createdAt: 'asc' }]
+    });
+
+    return {
+      batch: this.toBatchResponse(batch),
+      items: tasks.map((task) => this.toBatchResultResponse(task))
+    };
+  }
+
+  async workbenchStatus() {
+    const [storedNodes, taskCounts] = await Promise.all([
+      this.getAppleWebGatewayStoredNodes(),
+      this.prisma.automationTask.groupBy({
+        by: ['taskType', 'status'],
+        _count: { _all: true },
+        where: {
+          taskType: { in: ['check_status', 'check_balance', 'official_price_check'] },
+          status: { in: ['pending', 'queued', 'running', 'waiting_manual_verify', 'failed'] }
+        }
+      })
+    ]);
+    const configuredRegions = Array.from(this.getConfiguredWebCheckGatewayRegions()).sort();
+    const availableGatewayCountries = Array.from(
+      new Set(
+        storedNodes
+          .filter((node) => node.status !== 'unavailable')
+          .map((node) => node.countryCode)
+          .filter(Boolean)
+      )
+    ).sort();
+    const gatewayCountries = Array.from(
+      new Set([...configuredRegions, ...availableGatewayCountries])
+    ).sort();
+    const statusWorkerEnabled = process.env.APPLE_WEB_CHECK_WORKER_ENABLED === 'true';
+    const gatewayConfigured = gatewayCountries.length > 0;
+    const statusReady = statusWorkerEnabled && gatewayConfigured;
+    const statusCounts = this.getTaskCountSnapshot(taskCounts, 'check_status');
+    const balanceCounts = this.getTaskCountSnapshot(taskCounts, 'check_balance');
+    const officialCounts = this.getTaskCountSnapshot(taskCounts, 'official_price_check');
+
+    return {
+      checkedAt: new Date().toISOString(),
+      statusCheck: {
+        mode: 'apple_web_worker',
+        enabled: statusWorkerEnabled,
+        ready: statusReady,
+        gatewayConfigured,
+        configuredRegions,
+        availableGatewayCountries,
+        workerIntervalMs: this.getNumberFromEnv('APPLE_WEB_CHECK_WORKER_INTERVAL_MS', 60000),
+        workerMaxBatch: this.getNumberFromEnv('APPLE_WEB_CHECK_WORKER_MAX_BATCH', 3),
+        queuedCount: statusCounts.queuedCount,
+        runningCount: statusCounts.runningCount,
+        manualRequiredCount: statusCounts.manualRequiredCount,
+        failedCount: statusCounts.failedCount,
+        message: statusReady
+          ? '真实 Apple 官网状态查询 Worker 已就绪'
+          : statusWorkerEnabled
+            ? '真实 Worker 已开启，但还缺少 Apple 出口节点或网关国家配置'
+            : '真实 Worker 未开启；状态查询会进入队列或人工处理'
+      },
+      balanceCheck: {
+        mode: 'system_snapshot',
+        enabled: true,
+        ready: true,
+        queuedCount: balanceCounts.queuedCount,
+        runningCount: balanceCounts.runningCount,
+        manualRequiredCount: balanceCounts.manualRequiredCount,
+        failedCount: balanceCounts.failedCount,
+        message: '余额查询当前返回系统记录的余额快照，不伪装成 Apple 官网实时余额'
+      },
+      officialPriceCheck: {
+        mode: 'official_price_sources',
+        enabled: true,
+        ready: true,
+        queuedCount: officialCounts.queuedCount,
+        runningCount: officialCounts.runningCount,
+        manualRequiredCount: officialCounts.manualRequiredCount,
+        failedCount: officialCounts.failedCount,
+        message: '官方价格巡检按已配置来源执行；有变动后需要人工确认同步'
+      }
+    };
+  }
+
   async runPlaceholder(id: string, operator?: AuthenticatedUser) {
     const task = await this.findTaskOrThrow(id, false);
 
@@ -502,6 +748,7 @@ export class AppleAutomationTasksService {
         }
       });
 
+      await this.refreshBatchStats(task.batchId);
       return this.toResponse(updated);
     }
 
@@ -557,6 +804,7 @@ export class AppleAutomationTasksService {
       remark: `Ran placeholder automation task ${task.id}`
     });
 
+    await this.refreshBatchStats(task.batchId);
     return this.toResponse(updated);
   }
 
@@ -596,6 +844,7 @@ export class AppleAutomationTasksService {
       remark: `Cancelled automation task ${task.id}`
     });
 
+    await this.refreshBatchStats(task.batchId);
     return this.toResponse(updated);
   }
 
@@ -636,6 +885,7 @@ export class AppleAutomationTasksService {
       }
     });
 
+    await this.refreshBatchStats(task.batchId);
     return this.toResponse(updated);
   }
 
@@ -663,6 +913,7 @@ export class AppleAutomationTasksService {
       }
     });
 
+    await this.refreshBatchStats(task.batchId);
     return this.toResponse(updated);
   }
 
@@ -730,6 +981,7 @@ export class AppleAutomationTasksService {
     });
 
     const updated = await this.findTaskOrThrow(task.id, true);
+    await this.refreshBatchStats(task.batchId);
     return this.toResponse(updated);
   }
 
@@ -849,6 +1101,7 @@ export class AppleAutomationTasksService {
       remark: `Recorded Apple web gateway attempt for task ${task.id}`
     });
 
+    await this.refreshBatchStats(task.batchId);
     return {
       task: this.toResponse(updated),
       gatewayAttempt,
@@ -867,6 +1120,102 @@ export class AppleAutomationTasksService {
 
     return {
       items: logs.map((log) => this.toLogResponse(log))
+    };
+  }
+
+  private async findBatchOrThrow(id: string) {
+    const batchId = this.normalizeRequiredUuid(id, 'id');
+    const batch = await this.prisma.automationTaskBatch.findUnique({
+      where: { id: batchId },
+      include: this.getBatchInclude()
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Automation task batch not found');
+    }
+
+    return batch;
+  }
+
+  private async refreshBatchStats(batchId?: string | null) {
+    if (!batchId) return;
+
+    const tasks = await this.prisma.automationTask.findMany({
+      where: { batchId },
+      select: {
+        status: true,
+        manualRequired: true
+      }
+    });
+
+    const totalCount = tasks.length;
+    const queuedCount = tasks.filter((task) => ['pending', 'queued'].includes(task.status)).length;
+    const runningCount = tasks.filter((task) => task.status === 'running').length;
+    const successCount = tasks.filter((task) => task.status === 'success').length;
+    const failedCount = tasks.filter((task) =>
+      ['failed', 'need_review'].includes(task.status)
+    ).length;
+    const manualRequiredCount = tasks.filter(
+      (task) => task.manualRequired || task.status === 'waiting_manual_verify'
+    ).length;
+    const status = this.getBatchStatus({
+      totalCount,
+      queuedCount,
+      runningCount,
+      successCount,
+      failedCount,
+      manualRequiredCount
+    });
+
+    await this.prisma.automationTaskBatch.update({
+      where: { id: batchId },
+      data: {
+        status,
+        totalCount,
+        queuedCount,
+        runningCount,
+        successCount,
+        failedCount,
+        manualRequiredCount,
+        finishedAt:
+          totalCount > 0 && queuedCount === 0 && runningCount === 0 ? new Date() : undefined
+      }
+    });
+  }
+
+  private getBatchStatus(input: {
+    totalCount: number;
+    queuedCount: number;
+    runningCount: number;
+    successCount: number;
+    failedCount: number;
+    manualRequiredCount: number;
+  }): AutomationTaskStatus {
+    if (input.runningCount > 0) return 'running';
+    if (input.queuedCount > 0) return 'queued';
+    if (input.failedCount > 0) return 'failed';
+    if (input.manualRequiredCount > 0) return 'waiting_manual_verify';
+    if (input.totalCount > 0 && input.successCount >= input.totalCount) return 'success';
+    return 'pending';
+  }
+
+  private getTaskCountSnapshot(
+    items: Array<{
+      taskType: AutomationTaskType;
+      status: AutomationTaskStatus;
+      _count: { _all: number };
+    }>,
+    taskType: AutomationTaskType
+  ) {
+    const filtered = items.filter((item) => item.taskType === taskType);
+    const countByStatus = new Map(
+      filtered.map((item) => [item.status, Number(item._count._all || 0)])
+    );
+    return {
+      queuedCount: (countByStatus.get('pending') ?? 0) + (countByStatus.get('queued') ?? 0),
+      runningCount: countByStatus.get('running') ?? 0,
+      manualRequiredCount: countByStatus.get('waiting_manual_verify') ?? 0,
+      failedCount: countByStatus.get('failed') ?? 0
     };
   }
 
@@ -1035,6 +1384,18 @@ export class AppleAutomationTasksService {
           }
         : false
     } satisfies Prisma.AutomationTaskInclude;
+  }
+
+  private getBatchInclude() {
+    return {
+      createdBy: {
+        select: {
+          id: true,
+          username: true,
+          displayName: true
+        }
+      }
+    } satisfies Prisma.AutomationTaskBatchInclude;
   }
 
   private getLogInclude() {
@@ -1278,6 +1639,11 @@ export class AppleAutomationTasksService {
         .map((item) => this.normalizeRegionCode(item))
         .filter(Boolean)
     );
+  }
+
+  private getNumberFromEnv(key: string, fallback: number) {
+    const value = Number(process.env[key]);
+    return Number.isFinite(value) ? value : fallback;
   }
 
   private async getAppleWebGatewayNodeCandidatesByCountry() {
@@ -1663,9 +2029,97 @@ export class AppleAutomationTasksService {
     };
   }
 
+  private toBatchResponse(batch: AutomationTaskBatchWithRelations) {
+    return {
+      id: batch.id,
+      batchType: batch.batchType,
+      status: batch.status,
+      totalCount: batch.totalCount,
+      queuedCount: batch.queuedCount,
+      runningCount: batch.runningCount,
+      successCount: batch.successCount,
+      failedCount: batch.failedCount,
+      manualRequiredCount: batch.manualRequiredCount,
+      note: batch.note,
+      createdBy: batch.createdBy,
+      startedAt: batch.startedAt,
+      finishedAt: batch.finishedAt,
+      createdAt: batch.createdAt,
+      updatedAt: batch.updatedAt
+    };
+  }
+
+  private toBatchResultResponse(task: AutomationTaskWithRelations) {
+    const resultPayload = this.toObject(task.resultPayload);
+    const resultStatus = this.getObjectString(resultPayload, 'resultStatus');
+    const balanceSnapshot = this.getObjectString(resultPayload, 'balanceSnapshot');
+    const resultSource = this.getObjectString(resultPayload, 'source') ?? 'task_result';
+    const accountBalance = task.appleAccount?.currentBalance.toString() ?? null;
+    const currency =
+      this.getObjectString(resultPayload, 'currency') ?? task.appleAccount?.currency ?? null;
+
+    return {
+      taskId: task.id,
+      batchId: task.batchId,
+      taskType: task.taskType,
+      appleAccountId: task.appleAccountId,
+      appleAccount: task.appleAccount
+        ? {
+            id: task.appleAccount.id,
+            appleIdMasked: this.maskAppleId(task.appleAccount.appleId),
+            region: task.appleAccount.region,
+            currency: task.appleAccount.currency,
+            currentBalance: task.appleAccount.currentBalance.toString(),
+            status: task.appleAccount.status
+          }
+        : null,
+      status: task.status,
+      manualRequired: task.manualRequired,
+      resultStatus: resultStatus ?? task.appleAccount?.status ?? null,
+      systemBalance: accountBalance,
+      checkedBalance: balanceSnapshot,
+      currency,
+      resultSource,
+      errorCode: task.errorCode,
+      errorMessage: task.errorMessage,
+      suggestedAction: this.getBatchResultSuggestedAction(task, {
+        resultStatus,
+        balanceSnapshot,
+        resultSource
+      }),
+      startedAt: task.startedAt,
+      finishedAt: task.finishedAt,
+      createdAt: task.createdAt
+    };
+  }
+
+  private getBatchResultSuggestedAction(
+    task: AutomationTaskWithRelations,
+    result: {
+      resultStatus: string | null;
+      balanceSnapshot: string | null;
+      resultSource: string;
+    }
+  ) {
+    if (task.manualRequired || task.status === 'waiting_manual_verify') {
+      return '需要人工确认';
+    }
+    if (task.status === 'failed' || task.status === 'need_review') {
+      return '查看失败原因';
+    }
+    if (task.taskType === 'check_status') {
+      return result.resultStatus && result.resultStatus !== 'normal' ? '处理账号异常' : '无需处理';
+    }
+    if (task.taskType === 'check_balance') {
+      return result.resultSource === 'system_snapshot' ? '仅作系统余额快照参考' : '核对余额差异';
+    }
+    return '查看任务详情';
+  }
+
   private toResponse(task: AutomationTaskWithRelations) {
     return {
       id: task.id,
+      batchId: task.batchId,
       taskType: task.taskType,
       appleAccountId: task.appleAccountId,
       appleAccount: task.appleAccount

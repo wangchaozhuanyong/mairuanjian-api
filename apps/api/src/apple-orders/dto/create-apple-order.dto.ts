@@ -3,6 +3,8 @@ export interface CreateAppleOrderDto {
   sourcePlatformId?: string | null;
   externalOrderNo?: string | null;
   serviceId: string;
+  servicePriceId?: string | null;
+  serviceRegion?: string | null;
   appleAccountId?: string | null;
   serviceAccount?: string | null;
   currentPlan?: string | null;

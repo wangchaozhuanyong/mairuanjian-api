@@ -1607,12 +1607,9 @@
             <template #default="{ row }">
               <strong>{{ row.name }}</strong>
               <div class="muted-block">
-                {{ row.currency }} · {{ getAppleServicePeriodLabel(row) }}
+                {{ getAppleServicePeriodLabel(row) }}
               </div>
             </template>
-          </el-table-column>
-          <el-table-column label="Apple余额价" width="130">
-            <template #default="{ row }">{{ row.officialCostValue }} {{ row.currency }}</template>
           </el-table-column>
           <el-table-column label="状态" width="90">
             <template #default="{ row }">
@@ -1677,15 +1674,9 @@
             <template #default="{ row }">
               <strong>{{ row.name }}</strong>
               <div class="muted-block">
-                {{ row.currency }} · {{ getAppleServicePeriodLabel(row) }}
+                {{ getAppleServicePeriodLabel(row) }}
               </div>
             </template>
-          </el-table-column>
-          <el-table-column label="官网价" width="120">
-            <template #default="{ row }">{{ row.officialBasePrice }} {{ row.currency }}</template>
-          </el-table-column>
-          <el-table-column label="Apple余额价" width="130">
-            <template #default="{ row }">{{ row.officialCostValue }} {{ row.currency }}</template>
           </el-table-column>
           <el-table-column label="状态" width="90">
             <template #default="{ row }">
