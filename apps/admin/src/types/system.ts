@@ -892,6 +892,15 @@ export interface AppleAccount {
   updatedAt: string;
 }
 
+export interface AppleAccountOption {
+  id: string;
+  appleIdMasked: string;
+  region: string;
+  currency: string;
+  currentBalance: string;
+  status: AppleAccount['status'];
+}
+
 export type AppleAccountSecretField =
   | 'appleId'
   | 'password'

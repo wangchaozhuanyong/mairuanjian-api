@@ -51,6 +51,8 @@
     "release:review": "node scripts/release-review.mjs",
     "release:ready": "node scripts/release-review.mjs --strict",
     "release:blockers": "node scripts/release-blockers.mjs",
+    "deploy:api": "bash scripts/deploy-pm2-api.sh",
+    "deploy:admin": "bash .deploy/deploy-pages.sh",
     "apple-web:sing-box-config": "node scripts/generate-apple-web-sing-box-config.mjs",
     "apple-web:runtime-check": "node scripts/apple-web-worker-runtime-check.mjs",
     "clean:dev-data": "node scripts/cleanup-development-data.mjs"

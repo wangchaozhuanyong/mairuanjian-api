@@ -183,6 +183,18 @@ http://localhost:5374
 docs/DEPLOYMENT.md
 ```
 
+当前公网线上入口不是本地 Docker Compose 入口：前端在 Cloudflare Pages，后端 API 由 AWS 服务器上的 PM2 应用 `mairuanjian-api` 承载，Nginx 反代到服务器本机 `127.0.0.1:3100`。后端线上发布使用 `npm run deploy:api`，它会同步 API 构建产物、执行 Prisma migration、重启 PM2，并验证公网 API 新路由返回 401 而不是 404。
+
+```bash
+npm run deploy:api
+```
+
+前端 Pages 发布使用：
+
+```bash
+npm run deploy:admin
+```
+
 第一版生产部署底座已包含：
 
 - `docker-compose.prod.yml`

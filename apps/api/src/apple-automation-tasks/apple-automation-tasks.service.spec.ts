@@ -124,6 +124,10 @@ describe('AppleAutomationTasksService', () => {
         findUnique: jest.fn().mockResolvedValue(task),
         findMany: jest.fn().mockResolvedValue([task]),
         count: jest.fn().mockResolvedValue(1),
+        groupBy: jest.fn().mockResolvedValue([
+          { taskType: 'check_status', status: 'queued', _count: { _all: 1 } },
+          { taskType: 'check_balance', status: 'failed', _count: { _all: 1 } }
+        ]),
         update: jest.fn().mockResolvedValue(task)
       },
       automationTaskLog: {
@@ -193,6 +197,30 @@ describe('AppleAutomationTasksService', () => {
       })
     );
     expect(prisma.automationTask.count).toHaveBeenCalled();
+  });
+
+  it('caches workbench status briefly and invalidates it after task creation', async () => {
+    const { service, prisma } = createService();
+
+    const first = await service.workbenchStatus();
+    const second = await service.workbenchStatus();
+
+    expect(second).toBe(first);
+    expect(prisma.automationTask.groupBy).toHaveBeenCalledTimes(1);
+
+    await service.create(
+      {
+        taskType: 'check_balance',
+        appleAccountId,
+        priority: 'medium'
+      },
+      operator
+    );
+
+    const refreshed = await service.workbenchStatus();
+
+    expect(refreshed).not.toBe(first);
+    expect(prisma.automationTask.groupBy).toHaveBeenCalledTimes(2);
   });
 
   it('creates a queued automation task with encrypted input payload and audit log', async () => {

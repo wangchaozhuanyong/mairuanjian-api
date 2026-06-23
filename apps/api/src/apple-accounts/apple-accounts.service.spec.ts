@@ -101,6 +101,63 @@ describe('AppleAccountsService', () => {
     );
   });
 
+  it('lists lightweight Apple ID options without exposing secrets or full account fields', async () => {
+    const account = {
+      id: '11111111-1111-4111-8111-111111111111',
+      appleId: 'secure@example.com',
+      region: 'US',
+      currency: 'USD',
+      currentBalance: new Prisma.Decimal('12.34'),
+      status: 'normal'
+    };
+    const prisma = {
+      appleAccount: {
+        findMany: jest.fn().mockResolvedValue([account]),
+        count: jest.fn().mockResolvedValue(1)
+      }
+    } as unknown as PrismaService;
+    const optionsService = new AppleAccountsService(
+      prisma,
+      {} as AuditLogsService,
+      {} as FieldEncryptionService
+    );
+
+    const result = await optionsService.listOptions({
+      page: '1',
+      pageSize: '20',
+      keyword: 'secure'
+    });
+
+    expect(prisma.appleAccount.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          id: true,
+          appleId: true,
+          region: true,
+          currency: true,
+          currentBalance: true,
+          status: true
+        },
+        take: 20
+      })
+    );
+    expect(result.items).toEqual([
+      {
+        id: account.id,
+        appleIdMasked: 'se****@example.com',
+        region: 'US',
+        currency: 'USD',
+        currentBalance: '12.34',
+        status: 'normal'
+      }
+    ]);
+    expect(JSON.stringify(result)).not.toContain('secure@example.com');
+    expect(JSON.stringify(result)).not.toContain('password');
+    expect(JSON.stringify(result)).not.toContain('token');
+    expect(result.items[0]).not.toHaveProperty('appleIdTail');
+    expect(result.items[0]).not.toHaveProperty('hasPassword');
+  });
+
   it('reveals encrypted Apple ID secret and writes redacted logs', async () => {
     const now = new Date('2026-06-18T00:00:00.000Z');
     const account = {

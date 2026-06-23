@@ -55,6 +55,7 @@ const AUTOMATION_TASK_SORT_FIELDS: Record<
   updatedAt: 'updatedAt'
 };
 const APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY = 'apple_web_gateway_nodes';
+const WORKBENCH_STATUS_CACHE_TTL_MS = 10_000;
 
 interface AppleWebCheckRegionProfile {
   countryCode: string;
@@ -98,6 +99,32 @@ export interface AppleWebGatewayCandidateResponse extends AppleWebGatewayNodeCan
   latencyMs: number | null;
   lastCheckedAt: string | null;
   failureReason: string | null;
+}
+
+interface WorkbenchCapabilityStatus {
+  mode: string;
+  enabled: boolean;
+  ready: boolean;
+  queuedCount: number;
+  runningCount: number;
+  manualRequiredCount: number;
+  failedCount: number;
+  message: string;
+}
+
+interface WorkbenchStatusCheckCapability extends WorkbenchCapabilityStatus {
+  gatewayConfigured: boolean;
+  configuredRegions: string[];
+  availableGatewayCountries: string[];
+  workerIntervalMs: number;
+  workerMaxBatch: number;
+}
+
+export interface WorkbenchStatusResponse {
+  checkedAt: string;
+  statusCheck: WorkbenchStatusCheckCapability;
+  balanceCheck: WorkbenchCapabilityStatus;
+  officialPriceCheck: WorkbenchCapabilityStatus;
 }
 
 const APPLE_WEB_CHECK_REGION_PROFILES: Record<string, AppleWebCheckRegionProfile> = {
@@ -182,6 +209,8 @@ type AutomationTaskLogWithRelations = AutomationTaskLog & {
 
 @Injectable()
 export class AppleAutomationTasksService {
+  private workbenchStatusCache: { expiresAt: number; data: WorkbenchStatusResponse } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -306,6 +335,7 @@ export class AppleAutomationTasksService {
       remark: `Created Apple automation task ${created.id}`
     });
 
+    this.invalidateWorkbenchStatusCache();
     return this.toResponse(created);
   }
 
@@ -443,6 +473,7 @@ export class AppleAutomationTasksService {
       remark: `Created ${created.length} Apple web status check tasks`
     });
 
+    this.invalidateWorkbenchStatusCache();
     return {
       createdCount: created.length,
       queuedCount,
@@ -590,6 +621,7 @@ export class AppleAutomationTasksService {
       remark: `Created ${appleAccountIds.length} Apple balance check tasks`
     });
 
+    this.invalidateWorkbenchStatusCache();
     return this.getBatchResults(batch.id);
   }
 
@@ -613,6 +645,20 @@ export class AppleAutomationTasksService {
   }
 
   async workbenchStatus() {
+    const now = Date.now();
+    if (this.workbenchStatusCache && this.workbenchStatusCache.expiresAt > now) {
+      return this.workbenchStatusCache.data;
+    }
+
+    const data = await this.buildWorkbenchStatus();
+    this.workbenchStatusCache = {
+      data,
+      expiresAt: now + WORKBENCH_STATUS_CACHE_TTL_MS
+    };
+    return data;
+  }
+
+  private async buildWorkbenchStatus(): Promise<WorkbenchStatusResponse> {
     const [storedNodes, taskCounts] = await Promise.all([
       this.getAppleWebGatewayStoredNodes(),
       this.prisma.automationTask.groupBy({
@@ -687,6 +733,10 @@ export class AppleAutomationTasksService {
     };
   }
 
+  private invalidateWorkbenchStatusCache() {
+    this.workbenchStatusCache = null;
+  }
+
   async runPlaceholder(id: string, operator?: AuthenticatedUser) {
     const task = await this.findTaskOrThrow(id, false);
 
@@ -706,6 +756,7 @@ export class AppleAutomationTasksService {
         errorMessage: null
       }
     });
+    this.invalidateWorkbenchStatusCache();
 
     await this.prisma.automationTaskLog.create({
       data: {
@@ -749,6 +800,7 @@ export class AppleAutomationTasksService {
       });
 
       await this.refreshBatchStats(task.batchId);
+      this.invalidateWorkbenchStatusCache();
       return this.toResponse(updated);
     }
 
@@ -805,6 +857,7 @@ export class AppleAutomationTasksService {
     });
 
     await this.refreshBatchStats(task.batchId);
+    this.invalidateWorkbenchStatusCache();
     return this.toResponse(updated);
   }
 
@@ -845,6 +898,7 @@ export class AppleAutomationTasksService {
     });
 
     await this.refreshBatchStats(task.batchId);
+    this.invalidateWorkbenchStatusCache();
     return this.toResponse(updated);
   }
 
@@ -886,6 +940,7 @@ export class AppleAutomationTasksService {
     });
 
     await this.refreshBatchStats(task.batchId);
+    this.invalidateWorkbenchStatusCache();
     return this.toResponse(updated);
   }
 
@@ -914,6 +969,7 @@ export class AppleAutomationTasksService {
     });
 
     await this.refreshBatchStats(task.batchId);
+    this.invalidateWorkbenchStatusCache();
     return this.toResponse(updated);
   }
 
@@ -982,6 +1038,7 @@ export class AppleAutomationTasksService {
 
     const updated = await this.findTaskOrThrow(task.id, true);
     await this.refreshBatchStats(task.batchId);
+    this.invalidateWorkbenchStatusCache();
     return this.toResponse(updated);
   }
 
@@ -1102,6 +1159,7 @@ export class AppleAutomationTasksService {
     });
 
     await this.refreshBatchStats(task.batchId);
+    this.invalidateWorkbenchStatusCache();
     return {
       task: this.toResponse(updated),
       gatewayAttempt,

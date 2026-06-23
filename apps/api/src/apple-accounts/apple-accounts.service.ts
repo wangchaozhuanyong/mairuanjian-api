@@ -173,31 +173,7 @@ export class AppleAccountsService {
       APPLE_ACCOUNT_LIST_CACHE_TTL_MS,
       async () => {
         const pagination = getPagination(query);
-        const keyword = query.keyword?.trim().toLowerCase();
-        const status = this.parseStatus(query.status, false);
-        const ownershipType = this.parseOwnershipType(query.ownershipType, false);
-        const keywordOwnershipTypes = this.getOwnershipTypesFromKeyword(keyword);
-        const locked = this.parseBoolean(query.locked);
-        const where: Prisma.AppleAccountWhereInput = {
-          deletedAt: null,
-          status: status ?? undefined,
-          ownershipType: ownershipType ?? undefined,
-          currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
-          region: query.region ? query.region.trim().toUpperCase() : undefined,
-          isManuallyLocked: locked,
-          sourceChannelId: this.normalizeNullableString(query.sourceChannelId) ?? undefined,
-          OR: keyword
-            ? [
-                { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
-                { region: { contains: keyword, mode: 'insensitive' } },
-                { currency: { contains: keyword, mode: 'insensitive' } },
-                { remark: { contains: keyword, mode: 'insensitive' } },
-                ...(keywordOwnershipTypes.length
-                  ? [{ ownershipType: { in: keywordOwnershipTypes } }]
-                  : [])
-              ]
-            : undefined
-        };
+        const where = this.buildListWhere(query);
 
         const [items, total] = await Promise.all([
           this.prisma.appleAccount.findMany({
@@ -218,6 +194,46 @@ export class AppleAccountsService {
         };
       }
     );
+  }
+
+  async listOptions(query: ListAppleAccountsQuery) {
+    const pagination = getPagination({
+      ...query,
+      pageSize: query.pageSize ?? 20
+    });
+    const where = this.buildListWhere(query);
+
+    const [items, total] = await Promise.all([
+      this.prisma.appleAccount.findMany({
+        where,
+        select: {
+          id: true,
+          appleId: true,
+          region: true,
+          currency: true,
+          currentBalance: true,
+          status: true
+        },
+        skip: pagination.skip,
+        take: pagination.take,
+        orderBy: this.getListOrderBy(query)
+      }),
+      this.prisma.appleAccount.count({ where })
+    ]);
+
+    return {
+      items: items.map((account) => ({
+        id: account.id,
+        appleIdMasked: this.maskAppleId(account.appleId),
+        region: account.region,
+        currency: account.currency,
+        currentBalance: account.currentBalance.toString(),
+        status: account.status
+      })),
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize
+    };
   }
 
   async get(id: string) {
@@ -1113,6 +1129,35 @@ export class AppleAccountsService {
     }
 
     return [{ [sortField]: sortOrder }, { createdAt: 'desc' }];
+  }
+
+  private buildListWhere(query: ListAppleAccountsQuery): Prisma.AppleAccountWhereInput {
+    const keyword = query.keyword?.trim().toLowerCase();
+    const status = this.parseStatus(query.status, false);
+    const ownershipType = this.parseOwnershipType(query.ownershipType, false);
+    const keywordOwnershipTypes = this.getOwnershipTypesFromKeyword(keyword);
+    const locked = this.parseBoolean(query.locked);
+
+    return {
+      deletedAt: null,
+      status: status ?? undefined,
+      ownershipType: ownershipType ?? undefined,
+      currency: query.currency ? query.currency.trim().toUpperCase() : undefined,
+      region: query.region ? query.region.trim().toUpperCase() : undefined,
+      isManuallyLocked: locked,
+      sourceChannelId: this.normalizeNullableString(query.sourceChannelId) ?? undefined,
+      OR: keyword
+        ? [
+            { appleIdNormalized: { contains: keyword, mode: 'insensitive' } },
+            { region: { contains: keyword, mode: 'insensitive' } },
+            { currency: { contains: keyword, mode: 'insensitive' } },
+            { remark: { contains: keyword, mode: 'insensitive' } },
+            ...(keywordOwnershipTypes.length
+              ? [{ ownershipType: { in: keywordOwnershipTypes } }]
+              : [])
+          ]
+        : undefined
+    };
   }
 
   private parseSortOrder(value?: string): Prisma.SortOrder | null {

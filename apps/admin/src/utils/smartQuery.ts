@@ -35,6 +35,7 @@ interface RefreshSmartQueryOptions<TData> {
   dedupeMs?: number;
   staleMs?: number;
   cancelPrevious?: boolean;
+  trackActivity?: boolean;
 }
 
 interface RefreshSmartQueryResourceOptions<TData> extends RefreshSmartQueryOptions<TData> {
@@ -180,7 +181,8 @@ export async function refreshSmartQuery<TData>({
   force = true,
   dedupeMs = DEFAULT_FORCE_DEDUPE_MS,
   staleMs = DEFAULT_STALE_MS,
-  cancelPrevious = false
+  cancelPrevious = false,
+  trackActivity = true
 }: RefreshSmartQueryOptions<TData>): Promise<SmartQueryResult<TData>> {
   const cached = queryCache.get(key) as SmartQueryCacheEntry<TData> | undefined;
   const now = Date.now();
@@ -239,7 +241,8 @@ export async function refreshSmartQuery<TData>({
           force,
           dedupeMs: 0,
           staleMs,
-          cancelPrevious
+          cancelPrevious,
+          trackActivity
         })
       );
     }
@@ -249,7 +252,9 @@ export async function refreshSmartQuery<TData>({
   const revision = getSmartQueryRevision(key);
   const controller = new AbortController();
   const cleanupAuthAbort = bindAuthAbortSignal(controller);
-  markSmartQueryStarted(key, startedAt);
+  if (trackActivity) {
+    markSmartQueryStarted(key, startedAt);
+  }
   const promise = fetcher({
     key,
     signal: controller.signal,
@@ -283,7 +288,9 @@ export async function refreshSmartQuery<TData>({
           staleQueryKeys.delete(key);
         }
 
-        markSmartQuerySucceeded(key, updatedAt);
+        if (trackActivity) {
+          markSmartQuerySucceeded(key, updatedAt);
+        }
 
         return {
           data: previous.data,
@@ -304,7 +311,9 @@ export async function refreshSmartQuery<TData>({
         staleQueryKeys.delete(key);
       }
 
-      markSmartQuerySucceeded(key, updatedAt);
+      if (trackActivity) {
+        markSmartQuerySucceeded(key, updatedAt);
+      }
 
       return {
         data,
@@ -315,7 +324,7 @@ export async function refreshSmartQuery<TData>({
       };
     })
     .catch((error: unknown) => {
-      if (!isSmartQueryCanceledError(error) && !isAuthSessionExpiredError(error)) {
+      if (trackActivity && !isSmartQueryCanceledError(error) && !isAuthSessionExpiredError(error)) {
         markSmartQueryFailed(key, error);
       }
 
@@ -326,7 +335,9 @@ export async function refreshSmartQuery<TData>({
         inFlightQueries.delete(key);
       }
       cleanupAuthAbort();
-      markSmartQueryFinished(key);
+      if (trackActivity) {
+        markSmartQueryFinished(key);
+      }
     });
 
   inFlightQueries.set(key, {

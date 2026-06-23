@@ -39,6 +39,7 @@ export interface SmartSystemQueryOptions {
   dedupeMs?: number;
   signal?: AbortSignal;
   staleMs?: number;
+  trackActivity?: boolean;
 }
 
 export function loadSmartUserTableViews(
@@ -168,7 +169,8 @@ async function loadSmartSystemQuery<TData>(
     fetcher: ({ signal }) => fetcher(options.signal ?? signal),
     force: options.force ?? false,
     dedupeMs: options.dedupeMs,
-    staleMs: options.staleMs
+    staleMs: options.staleMs,
+    trackActivity: options.trackActivity
   });
 
   return result.data;

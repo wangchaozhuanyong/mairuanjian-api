@@ -2,6 +2,47 @@
 
 ## 1. 当前部署定位
 
+当前线上运行形态分两层：
+
+- 前端管理后台：Cloudflare Pages，生产构建时通过 `VITE_API_BASE_URL` 指向公网 API。
+- 后端 API：AWS 服务器上的 PM2 进程 `mairuanjian-api`，Nginx 将 `mrx-api-bfccd96d.damatong.net` 反代到服务器本机 `127.0.0.1:3100`。
+
+因此当前真实线上 API 发布必须更新 PM2 进程使用的：
+
+```text
+/var/www/mairuanjian-api/apps/api/dist/main.js
+```
+
+`scripts/deploy-pm2-api.sh` 已按这个真实入口部署：本机构建 API、同步 `dist`、远端使用服务器 `.env` 执行 Prisma migration、重启 PM2，并验证公网 API 新路由不再返回 404。不要把 `docker-compose.prod.yml` 的 API 容器当作当前公网 API 入口。
+
+前端发布使用：
+
+```bash
+npm run deploy:admin
+```
+
+后端发布使用：
+
+```bash
+npm run deploy:api
+```
+
+后端发布完成后必须至少看到：
+
+- `/api/health/ready` 返回 200。
+- 受保护的新接口未登录时返回 401，而不是 `Cannot POST ...` 或 404。
+
+例如：
+
+```text
+POST /api/apple/automation-tasks/batches/status-check -> 401
+POST /api/apple/automation-tasks/batches/balance-check -> 401
+```
+
+这表示公网后端已经加载了新版路由；登录后的业务请求才会继续进入权限和业务校验。
+
+## 1.1 Docker Compose 生产底座
+
 第一版生产部署采用单服务器 Docker Compose：
 
 - `postgres`：PostgreSQL 16
@@ -9,6 +50,8 @@
 - `minio`：附件对象存储
 - `api`：NestJS 后端
 - `admin`：Nginx 托管 Vue 管理后台，并代理 `/api`
+
+这套 Compose 配置仍保留为生产底座、镜像构建和等效验收参考；如果未来切回容器承载公网 API，必须先更新 Nginx 反代和 `scripts/deploy-pm2-api.sh`，并用公网接口验证确认真实入口已经切换。
 
 本文件只定义生产部署底座和上线检查流程，不代表已经接入真实 Apple ID 自动化 Worker、真实物理备份执行器。
 
@@ -146,7 +189,9 @@ npm run prod:config:example
 npm run prod:config
 ```
 
-## 5. 构建和启动
+## 5. Docker Compose 构建和启动参考
+
+当前公网 API 使用 PM2。以下 Docker Compose 命令用于容器化部署参考、镜像构建验收或未来切换容器入口时使用；不要用它们替代当前 PM2 线上 API 发布。
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml build

@@ -18,7 +18,7 @@
           help="先选一个要做的动作，再选 Apple ID 或国家地区，点开始后直接看结果表。"
         />
         <div class="inline-actions">
-          <StatusChip tone="blue" dot>任务 {{ total }}</StatusChip>
+          <StatusChip tone="blue" dot>任务 {{ displayTaskTotal }}</StatusChip>
           <StatusChip tone="orange">队列 {{ queuedCount }}</StatusChip>
           <StatusChip tone="purple">运行 {{ runningCount }}</StatusChip>
           <StatusChip :tone="failedCount > 0 ? 'red' : 'green'">
@@ -91,9 +91,14 @@
                     filterable
                     multiple
                     placeholder="选择要检查的 Apple ID"
+                    remote
+                    remote-show-suffix
+                    :loading="accountOptionsLoading"
+                    :remote-method="searchAppleAccountOptions"
+                    @visible-change="handleAppleAccountOptionsVisible"
                   >
                     <el-option
-                      v-for="account in appleAccounts"
+                      v-for="account in appleAccountOptions"
                       :key="account.id"
                       :label="formatAccountOption(account)"
                       :value="account.id"
@@ -159,9 +164,14 @@
                     filterable
                     multiple
                     placeholder="选择要查询余额的 Apple ID"
+                    remote
+                    remote-show-suffix
+                    :loading="accountOptionsLoading"
+                    :remote-method="searchAppleAccountOptions"
+                    @visible-change="handleAppleAccountOptionsVisible"
                   >
                     <el-option
-                      v-for="account in appleAccounts"
+                      v-for="account in appleAccountOptions"
                       :key="account.id"
                       :label="formatAccountOption(account)"
                       :value="account.id"
@@ -749,9 +759,14 @@
             class="full-width"
             filterable
             placeholder="选择 Apple ID"
+            remote
+            remote-show-suffix
+            :loading="accountOptionsLoading"
+            :remote-method="searchAppleAccountOptions"
+            @visible-change="handleAppleAccountOptionsVisible"
           >
             <el-option
-              v-for="account in appleAccounts"
+              v-for="account in appleAccountOptions"
               :key="account.id"
               :label="formatAccountOption(account)"
               :value="account.id"
@@ -787,8 +802,9 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onBeforeUnmount, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import {
+  appleAccountsApi,
   appleAutomationTasksApi,
   appleOfficialPricesApi,
   type AppleAutomationTaskQuery,
@@ -803,7 +819,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import { useAuthenticatedPageLoader } from '@/composables/useAuthenticatedPageLoader';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
-  AppleAccount,
+  AppleAccountOption,
   AppleAutomationTask,
   AppleAutomationTaskBatchResults,
   AppleAutomationWorkbenchCapability,
@@ -818,10 +834,46 @@ import type {
 import { appleAccountRegionOptions, formatAppleRegionLabel } from '@/utils/appleAccountRegion';
 import { buildTechnicalFieldRows } from '@/utils/internalTechnicalFields';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
-import { loadSmartAppleAccounts } from '@/utils/smartSystemQueries';
+
+const ACCOUNT_OPTIONS_PAGE_SIZE = 20;
+const ACCOUNT_OPTIONS_DEBOUNCE_MS = 300;
+const fallbackOfficialRegionOptions: AppleOfficialPriceProviderCatalogProvider['regions'] = [
+  { label: '美国 USD', value: 'US:USD', region: 'US', currency: 'USD', sourceUrl: '' },
+  { label: '马来西亚 MYR', value: 'MY:MYR', region: 'MY', currency: 'MYR', sourceUrl: '' },
+  { label: '新加坡 SGD', value: 'SG:SGD', region: 'SG', currency: 'SGD', sourceUrl: '' },
+  { label: '中国香港 HKD', value: 'HK:HKD', region: 'HK', currency: 'HKD', sourceUrl: '' },
+  { label: '日本 JPY', value: 'JP:JPY', region: 'JP', currency: 'JPY', sourceUrl: '' },
+  { label: '英国 GBP', value: 'GB:GBP', region: 'GB', currency: 'GBP', sourceUrl: '' }
+];
+const fallbackOfficialProviderOptions: AppleOfficialPriceProviderCatalogProvider[] = [
+  {
+    label: 'ChatGPT / OpenAI',
+    shortLabel: 'ChatGPT',
+    value: 'chatgpt',
+    sourceUrl: 'https://openai.com/chatgpt/pricing/',
+    regions: fallbackOfficialRegionOptions
+  },
+  {
+    label: 'Gemini / Google',
+    shortLabel: 'Gemini',
+    value: 'gemini',
+    sourceUrl: 'https://gemini.google/advanced/',
+    regions: fallbackOfficialRegionOptions
+  },
+  {
+    label: 'Claude / Anthropic',
+    shortLabel: 'Claude',
+    value: 'claude',
+    sourceUrl: 'https://www.anthropic.com/pricing',
+    regions: fallbackOfficialRegionOptions
+  }
+];
 
 const tasks = ref<AppleAutomationTask[]>([]);
-const appleAccounts = ref<AppleAccount[]>([]);
+const tasksLoaded = ref(false);
+const appleAccountOptions = ref<AppleAccountOption[]>([]);
+const accountOptionsLoading = ref(false);
+const accountOptionsLoaded = ref(false);
 const total = ref(0);
 const loading = ref(false);
 const activeTab = ref<'start' | 'results' | 'manual' | 'history'>('start');
@@ -831,7 +883,9 @@ const taskBatchPolling = ref(false);
 const officialCheckResults = ref<AppleOfficialPriceCheckBatchResults | null>(null);
 const workbenchStatus = ref<AppleAutomationWorkbenchStatus | null>(null);
 const workbenchStatusLoading = ref(false);
-const officialProviderOptions = ref<AppleOfficialPriceProviderCatalogProvider[]>([]);
+const officialProviderOptions = ref<AppleOfficialPriceProviderCatalogProvider[]>(
+  fallbackOfficialProviderOptions
+);
 const officialReviewActionId = ref('');
 const detailDrawerVisible = ref(false);
 const selectedTask = ref<AppleAutomationTask | null>(null);
@@ -842,6 +896,7 @@ const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | nul
 const activeTasksQueryKey = ref('');
 let taskBatchPollTimer: ReturnType<typeof setTimeout> | null = null;
 let officialPollTimer: ReturnType<typeof setTimeout> | null = null;
+let accountOptionsSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const query = reactive<AppleAutomationTaskQuery>({
   page: 1,
@@ -942,15 +997,53 @@ const officialRegionOptions = computed(() => {
   }));
 });
 
-const queuedCount = computed(
+const listQueuedCount = computed(
   () => tasks.value.filter((task) => task.status === 'pending' || task.status === 'queued').length
 );
-const manualCount = computed(() => tasks.value.filter((task) => task.manualRequired).length);
-const failedCount = computed(
+const listManualCount = computed(() => tasks.value.filter((task) => task.manualRequired).length);
+const listFailedCount = computed(
   () =>
     tasks.value.filter((task) => task.status === 'failed' || task.status === 'need_review').length
 );
-const runningCount = computed(() => tasks.value.filter((task) => task.status === 'running').length);
+const listRunningCount = computed(
+  () => tasks.value.filter((task) => task.status === 'running').length
+);
+const workbenchCapabilities = computed(() =>
+  [
+    workbenchStatus.value?.statusCheck,
+    workbenchStatus.value?.balanceCheck,
+    workbenchStatus.value?.officialPriceCheck
+  ].filter((item): item is AppleAutomationWorkbenchCapability => Boolean(item))
+);
+const workbenchQueuedCount = computed(() =>
+  workbenchCapabilities.value.reduce((sum, item) => sum + item.queuedCount, 0)
+);
+const workbenchRunningCount = computed(() =>
+  workbenchCapabilities.value.reduce((sum, item) => sum + item.runningCount, 0)
+);
+const workbenchManualCount = computed(() =>
+  workbenchCapabilities.value.reduce((sum, item) => sum + item.manualRequiredCount, 0)
+);
+const workbenchFailedCount = computed(() =>
+  workbenchCapabilities.value.reduce((sum, item) => sum + item.failedCount, 0)
+);
+const queuedCount = computed(() =>
+  tasksLoaded.value ? listQueuedCount.value : workbenchQueuedCount.value
+);
+const manualCount = computed(() =>
+  tasksLoaded.value ? listManualCount.value : workbenchManualCount.value
+);
+const failedCount = computed(() =>
+  tasksLoaded.value ? listFailedCount.value : workbenchFailedCount.value
+);
+const runningCount = computed(() =>
+  tasksLoaded.value ? listRunningCount.value : workbenchRunningCount.value
+);
+const displayTaskTotal = computed(() =>
+  tasksLoaded.value
+    ? total.value
+    : queuedCount.value + runningCount.value + manualCount.value + failedCount.value
+);
 const manualTasks = computed(() =>
   tasks.value.filter(
     (task) =>
@@ -969,14 +1062,15 @@ const selectedTaskTechnicalRows = computed(() =>
       })
     : []
 );
-
 useAuthenticatedPageLoader(async () => {
-  await Promise.all([
-    loadTasks({ force: false }),
-    loadAppleAccounts(),
-    loadOfficialProviders(),
-    loadWorkbenchStatus()
-  ]);
+  void loadOfficialProviders({ background: true });
+  await loadWorkbenchStatus();
+});
+
+watch(activeTab, (tab) => {
+  if (tab === 'manual' || tab === 'history') {
+    void loadTasks({ force: false });
+  }
 });
 
 function buildTaskParams(): AppleAutomationTaskQuery {
@@ -996,6 +1090,7 @@ function buildTaskParams(): AppleAutomationTaskQuery {
 function applyTaskResult(data: PageResult<AppleAutomationTask>) {
   tasks.value = Array.isArray(data.items) ? data.items : [];
   total.value = Number.isFinite(Number(data.total)) ? data.total : tasks.value.length;
+  tasksLoaded.value = true;
 }
 
 async function loadTasks(options: { background?: boolean; force?: boolean } = {}) {
@@ -1012,10 +1107,11 @@ async function loadTasks(options: { background?: boolean; force?: boolean } = {}
   loading.value = !cached && !options.background;
 
   try {
-    const result = await refreshSmartQuery({
+    const result = await refreshSmartQuery<PageResult<AppleAutomationTask>>({
       key,
-      fetcher: () => appleAutomationTasksApi.list(params),
-      force: options.force ?? true
+      fetcher: ({ signal }) => appleAutomationTasksApi.list(params, { signal }),
+      force: options.force ?? true,
+      trackActivity: !options.background
     });
 
     if (activeTasksQueryKey.value !== key) return;
@@ -1033,32 +1129,120 @@ async function loadTasks(options: { background?: boolean; force?: boolean } = {}
   }
 }
 
-async function loadAppleAccounts() {
+async function loadAppleAccountOptions(
+  keyword = '',
+  options: { force?: boolean; background?: boolean } = {}
+) {
+  const params = {
+    page: 1,
+    pageSize: ACCOUNT_OPTIONS_PAGE_SIZE,
+    keyword,
+    status: '',
+    sortBy: 'createdAt',
+    sortOrder: 'desc' as const
+  };
+  const key = createSmartQueryKey('apple-account-options', params);
+  const cached = getSmartQueryData<PageResult<AppleAccountOption>>(key);
+
+  if (cached) {
+    mergeAppleAccountOptions(cached.items);
+  }
+
+  accountOptionsLoading.value = !cached && !options.background;
   try {
-    const result = await loadSmartAppleAccounts({
-      page: 1,
-      pageSize: 100,
-      keyword: '',
-      status: ''
+    const result = await refreshSmartQuery<PageResult<AppleAccountOption>>({
+      key,
+      fetcher: ({ signal }) => appleAccountsApi.options(params, { signal }),
+      force: options.force ?? false,
+      staleMs: 60_000,
+      trackActivity: false
     });
-    const accounts = Array.isArray(result.items) ? result.items : [];
-    appleAccounts.value = accounts;
-    const defaultIds = accounts.map((account) => account.id).slice(0, 10);
-    statusCheckForm.appleAccountIds = defaultIds;
-    balanceCheckForm.appleAccountIds = defaultIds;
-    advancedForm.appleAccountId = accounts[0]?.id ?? '';
+    mergeAppleAccountOptions(result.data.items);
+    accountOptionsLoaded.value = true;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 选项失败');
+    }
+  } finally {
+    accountOptionsLoading.value = false;
   }
 }
 
-async function loadOfficialProviders() {
+function mergeAppleAccountOptions(options: AppleAccountOption[]) {
+  const selectedIds = new Set(
+    [
+      ...statusCheckForm.appleAccountIds,
+      ...balanceCheckForm.appleAccountIds,
+      advancedForm.appleAccountId
+    ].filter(Boolean)
+  );
+  const selectedOptions = appleAccountOptions.value.filter((account) =>
+    selectedIds.has(account.id)
+  );
+  const merged = new Map<string, AppleAccountOption>();
+
+  for (const account of [...selectedOptions, ...options]) {
+    merged.set(account.id, account);
+  }
+
+  appleAccountOptions.value = Array.from(merged.values());
+}
+
+function searchAppleAccountOptions(keyword: string) {
+  if (accountOptionsSearchTimer) {
+    clearTimeout(accountOptionsSearchTimer);
+  }
+
+  accountOptionsSearchTimer = setTimeout(() => {
+    accountOptionsSearchTimer = null;
+    void loadAppleAccountOptions(keyword.trim(), { force: true });
+  }, ACCOUNT_OPTIONS_DEBOUNCE_MS);
+}
+
+function handleAppleAccountOptionsVisible(visible: boolean) {
+  if (visible && !accountOptionsLoaded.value) {
+    void loadAppleAccountOptions('', { force: false });
+  }
+}
+
+async function loadOfficialProviders(options: { background?: boolean } = {}) {
   try {
     const catalog = await appleOfficialPricesApi.listProviders();
-    officialProviderOptions.value = Array.isArray(catalog.providers) ? catalog.providers : [];
+    const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
+    officialProviderOptions.value = providers.length
+      ? mergeOfficialProviderOptions(providers)
+      : fallbackOfficialProviderOptions;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载官方价格供应商失败');
+    officialProviderOptions.value = fallbackOfficialProviderOptions;
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载官方价格供应商失败');
+    }
   }
+}
+
+function mergeOfficialProviderOptions(
+  providers: AppleOfficialPriceProviderCatalogProvider[]
+): AppleOfficialPriceProviderCatalogProvider[] {
+  const merged = new Map<string, AppleOfficialPriceProviderCatalogProvider>();
+
+  for (const provider of fallbackOfficialProviderOptions) {
+    merged.set(provider.value, provider);
+  }
+
+  for (const provider of providers) {
+    const fallback = merged.get(provider.value);
+    const regions =
+      Array.isArray(provider.regions) && provider.regions.length
+        ? provider.regions
+        : (fallback?.regions ?? fallbackOfficialRegionOptions);
+    merged.set(provider.value, {
+      ...fallback,
+      ...provider,
+      regions
+    });
+  }
+
+  return Array.from(merged.values());
 }
 
 async function loadWorkbenchStatus(options: { background?: boolean } = {}) {
@@ -1106,8 +1290,8 @@ async function startStatusCheck() {
     query.taskType = 'check_status';
     query.page = 1;
     startTaskBatchPolling(taskBatchResults.value.batch.id);
-    await loadTasks();
-    await loadWorkbenchStatus({ background: true });
+    void loadTasks({ background: true, force: true });
+    void loadWorkbenchStatus({ background: true });
     ElMessage.success('批量状态查询已创建，结果表会自动刷新');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '批量状态查询失败');
@@ -1133,8 +1317,8 @@ async function startBalanceCheck() {
     activeTab.value = 'results';
     query.taskType = 'check_balance';
     query.page = 1;
-    await loadTasks();
-    await loadWorkbenchStatus({ background: true });
+    void loadTasks({ background: true, force: true });
+    void loadWorkbenchStatus({ background: true });
     ElMessage.success('批量余额查询已完成');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '批量余额查询失败');
@@ -1218,6 +1402,7 @@ function clearTaskBatchPollTimer() {
 
 async function pollOfficialBatchResults(batchId: string) {
   officialCheckResults.value = await appleOfficialPricesApi.getCheckBatchResults(batchId);
+  void loadWorkbenchStatus({ background: true });
   const status = officialCheckResults.value.batch.status;
   if (status === 'queued' || status === 'running' || status === 'pending') {
     officialPollTimer = setTimeout(() => {
@@ -1238,7 +1423,7 @@ function clearOfficialPollTimer() {
 function openAdvancedTask(taskType: AutomationTaskType) {
   advancedForm.taskType = taskType;
   advancedForm.priority = taskType === 'topup' ? 'high' : 'medium';
-  advancedForm.appleAccountId = advancedForm.appleAccountId || appleAccounts.value[0]?.id || '';
+  void loadAppleAccountOptions('', { force: false });
   advancedDialogVisible.value = true;
 }
 
@@ -1262,7 +1447,8 @@ async function createAdvancedTask() {
     selectedTask.value = created;
     advancedDialogVisible.value = false;
     activeTab.value = 'manual';
-    await loadTasks();
+    await loadTasks({ force: true });
+    void loadWorkbenchStatus({ background: true });
     ElMessage.success('任务已创建，已进入执行记录/人工处理');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '创建任务失败');
@@ -1500,7 +1686,7 @@ function formatAccountRegion(region: string | null | undefined) {
   return formatAppleRegionLabel(region);
 }
 
-function formatAccountOption(account: AppleAccount) {
+function formatAccountOption(account: AppleAccountOption) {
   return `${account.appleIdMasked} / ${formatAccountRegion(account.region)} / 余额 ${
     account.currentBalance
   }`;
@@ -1640,10 +1826,12 @@ function isFinalStatus(value: AutomationTaskStatus) {
 }
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-automation-tasks'], () => {
-  void loadTasks({
-    background: tasks.value.length > 0,
-    force: true
-  });
+  if (tasksLoaded.value || activeTab.value === 'manual' || activeTab.value === 'history') {
+    void loadTasks({
+      background: tasks.value.length > 0,
+      force: true
+    });
+  }
   void loadWorkbenchStatus({ background: true });
   if (taskBatchResults.value?.batch.id) {
     void appleAutomationTasksApi
@@ -1659,6 +1847,10 @@ onBeforeUnmount(() => {
   stopRealtimeRefresh();
   clearTaskBatchPollTimer();
   clearOfficialPollTimer();
+  if (accountOptionsSearchTimer) {
+    clearTimeout(accountOptionsSearchTimer);
+    accountOptionsSearchTimer = null;
+  }
 });
 </script>
 

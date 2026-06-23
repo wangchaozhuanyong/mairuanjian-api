@@ -7,6 +7,7 @@ import type {
   AppleActionPlanItem,
   AppleAccount,
   AppleAccountImportResult,
+  AppleAccountOption,
   AppleAccountOwnershipReport,
   AppleAccountOwnershipType,
   AppleAccountSecretField,
@@ -202,8 +203,9 @@ function markMutatedSmartQueriesStale(url?: string) {
     scopes.add('system-users');
   }
 
-  if (path.startsWith('/apple-accounts')) {
+  if (path.startsWith('/apple/accounts') || path.startsWith('/apple-accounts')) {
     scopes.add('apple-accounts');
+    scopes.add('apple-account-options');
     scopes.add('dashboard-overview');
   }
 
@@ -2255,6 +2257,11 @@ export const appleAccountsApi = {
       http.get('/apple/accounts', { params, signal: options.signal })
     );
   },
+  options(params: AppleAccountQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<AppleAccountOption>>(
+      http.get('/apple/accounts/options', { params, signal: options.signal })
+    ).then((result) => normalizePageResult(result));
+  },
   ownershipReport() {
     return request<AppleAccountOwnershipReport>(http.get('/apple/accounts/ownership-report'));
   },
@@ -2691,9 +2698,9 @@ export const appleActionPlansApi = {
 };
 
 export const appleAutomationTasksApi = {
-  list(params: AppleAutomationTaskQuery) {
+  list(params: AppleAutomationTaskQuery, options: ApiRequestOptions = {}) {
     return request<PageResult<AppleAutomationTask>>(
-      http.get('/apple/automation-tasks', { params })
+      http.get('/apple/automation-tasks', { params, signal: options.signal })
     ).then((result) => normalizePageResult(result, normalizeAutomationTask));
   },
   get(id: string) {

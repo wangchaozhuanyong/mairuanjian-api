@@ -62,6 +62,37 @@ export class AppleAccountsController {
     });
   }
 
+  @Get('options')
+  @RequirePermissions('apple.account.view')
+  options(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('keyword') keyword?: string,
+    @Query('status') status?: string,
+    @Query('currency') currency?: string,
+    @Query('region') region?: string,
+    @Query('ownershipType') ownershipType?: string,
+    @Query('locked') locked?: string,
+    @Query('sourceChannelId') sourceChannelId?: string,
+    @Query('sourcePlatformId') sourcePlatformId?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string
+  ) {
+    return this.appleAccountsService.listOptions({
+      page,
+      pageSize,
+      keyword,
+      status,
+      currency,
+      region,
+      ownershipType,
+      locked,
+      sourceChannelId: sourceChannelId ?? sourcePlatformId,
+      sortBy,
+      sortOrder
+    });
+  }
+
   @Get('ownership-report')
   @RequirePermissions('apple.account.view')
   ownershipReport() {
