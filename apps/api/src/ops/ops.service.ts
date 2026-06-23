@@ -745,7 +745,7 @@ export class OpsService {
         sourceHash: this.hashText(content)
       };
 
-      await this.saveAppleWebGatewayNodesValue(nodesValue, operator);
+      const nodesParameter = await this.saveAppleWebGatewayNodesValue(nodesValue, operator);
       await this.prisma.systemParameter.upsert({
         where: { key: APPLE_WEB_GATEWAY_SUBSCRIPTION_PARAMETER_KEY },
         update: {
@@ -794,7 +794,7 @@ export class OpsService {
         module: 'ops',
         action: 'ops.apple_web_gateway.nodes.sync',
         objectType: 'system_parameter',
-        objectId: APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY,
+        objectId: nodesParameter.id,
         afterData: this.toAuditJson({
           nodeCount: nodes.length,
           countryCodes: this.getAppleWebGatewayCountryCodes(nodes)

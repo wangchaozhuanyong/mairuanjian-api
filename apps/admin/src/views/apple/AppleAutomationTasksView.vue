@@ -43,6 +43,11 @@
             >
             <span>{{ getCapabilityWorkloadLabel(workbenchStatus?.statusCheck) }}</span>
           </div>
+          <div class="automation-readiness-card__actions">
+            <AppButton size="small" variant="soft" @click="openGatewaySubscriptionDialog">
+              {{ needsGatewaySubscription ? '粘贴节点订阅' : '更新节点订阅' }}
+            </AppButton>
+          </div>
         </section>
         <section class="automation-readiness-card">
           <div>
@@ -748,6 +753,34 @@
     </AppDrawer>
 
     <el-dialog
+      v-model="gatewaySubscriptionDialogVisible"
+      title="Apple 出口节点订阅"
+      width="min(600px, calc(100vw - 24px))"
+    >
+      <el-form label-position="top">
+        <el-form-item required label="订阅 URL">
+          <el-input
+            v-model="gatewaySubscriptionForm.url"
+            type="password"
+            show-password
+            placeholder="https://example.com/sub?token=..."
+            @keyup.enter="saveGatewaySubscription"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <AppButton @click="gatewaySubscriptionDialogVisible = false">取消</AppButton>
+        <AppButton
+          variant="primary"
+          :loading="gatewaySubscriptionSaving"
+          @click="saveGatewaySubscription"
+        >
+          保存并同步
+        </AppButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="advancedDialogVisible"
       :title="`创建${getTaskTypeLabel(advancedForm.taskType)}任务`"
       width="min(520px, calc(100vw - 24px))"
@@ -803,10 +836,12 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { getApiErrorMessage } from '@/api/client';
 import {
   appleAccountsApi,
   appleAutomationTasksApi,
   appleOfficialPricesApi,
+  opsApi,
   type AppleAutomationTaskQuery,
   type AppleOfficialPriceProviderCatalogProvider
 } from '@/api/system';
@@ -833,7 +868,12 @@ import type {
 } from '@/types/system';
 import { appleAccountRegionOptions, formatAppleRegionLabel } from '@/utils/appleAccountRegion';
 import { buildTechnicalFieldRows } from '@/utils/internalTechnicalFields';
-import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import {
+  createSmartQueryKey,
+  getSmartQueryData,
+  invalidateSmartQueries,
+  refreshSmartQuery
+} from '@/utils/smartQuery';
 
 const ACCOUNT_OPTIONS_PAGE_SIZE = 20;
 const ACCOUNT_OPTIONS_DEBOUNCE_MS = 300;
@@ -892,6 +932,8 @@ const selectedTask = ref<AppleAutomationTask | null>(null);
 const actionLoadingId = ref('');
 const advancedDialogVisible = ref(false);
 const savingAdvanced = ref(false);
+const gatewaySubscriptionDialogVisible = ref(false);
+const gatewaySubscriptionSaving = ref(false);
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const activeTasksQueryKey = ref('');
 let taskBatchPollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -947,6 +989,10 @@ const advancedForm = reactive<{
   taskType: 'topup',
   appleAccountId: '',
   priority: 'medium'
+});
+
+const gatewaySubscriptionForm = reactive({
+  url: ''
 });
 
 const taskTypeOptions: Array<{ label: string; value: AutomationTaskType }> = [
@@ -1062,6 +1108,10 @@ const selectedTaskTechnicalRows = computed(() =>
       })
     : []
 );
+const needsGatewaySubscription = computed(() => {
+  const capability = workbenchStatus.value?.statusCheck;
+  return Boolean(capability && !capability.gatewayConfigured);
+});
 useAuthenticatedPageLoader(async () => {
   void loadOfficialProviders({ background: true });
   await loadWorkbenchStatus();
@@ -1347,6 +1397,48 @@ async function startOfficialPriceCheck() {
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '官方价格巡检失败');
     runningAction.value = '';
+  }
+}
+
+function openGatewaySubscriptionDialog() {
+  gatewaySubscriptionForm.url = '';
+  gatewaySubscriptionDialogVisible.value = true;
+}
+
+async function saveGatewaySubscription() {
+  const subscriptionUrl = gatewaySubscriptionForm.url.trim();
+  if (!subscriptionUrl) {
+    ElMessage.warning('请先粘贴节点订阅 URL');
+    return;
+  }
+
+  gatewaySubscriptionSaving.value = true;
+  try {
+    await opsApi.saveAppleWebGatewaySubscription({ subscriptionUrl });
+    invalidateSmartQueries('ops-apple-web-gateways');
+
+    const gatewayStatus = await opsApi.syncAppleWebGateways();
+    invalidateSmartQueries('ops-apple-web-gateways');
+    invalidateSmartQueries('ops-platform-sync');
+    await loadWorkbenchStatus({ background: true });
+
+    const usNodeCount = gatewayStatus.nodes.filter(
+      (node) => node.countryCode === 'US' && node.status !== 'unavailable'
+    ).length;
+
+    gatewaySubscriptionDialogVisible.value = false;
+    gatewaySubscriptionForm.url = '';
+
+    if (usNodeCount > 0) {
+      ElMessage.success(`节点订阅已同步，识别到 ${usNodeCount} 个 US 节点`);
+      return;
+    }
+
+    ElMessage.warning('订阅已同步，但没有识别到可用 US 节点');
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error));
+  } finally {
+    gatewaySubscriptionSaving.value = false;
   }
 }
 
@@ -1904,6 +1996,12 @@ onBeforeUnmount(() => {
   grid-column: 1 / -1;
   flex-wrap: wrap;
   gap: 8px 14px;
+}
+
+.automation-readiness-card__actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-start;
 }
 
 .automation-action-grid {

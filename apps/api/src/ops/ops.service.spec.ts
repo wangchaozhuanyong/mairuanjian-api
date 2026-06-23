@@ -461,6 +461,15 @@ describe('OpsService', () => {
     );
     const apiPayload = JSON.stringify(result);
     const auditPayload = JSON.stringify((auditLogsService.create as jest.Mock).mock.calls);
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ops.apple_web_gateway.nodes.sync',
+        objectType: 'system_parameter',
+        objectId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        )
+      })
+    );
     expect(apiPayload).not.toContain('password@us.example.com');
     expect(apiPayload).not.toContain('secret-token');
     expect(auditPayload).not.toContain('password@us.example.com');
