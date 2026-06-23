@@ -511,7 +511,7 @@
                 </StatusChip>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="220" fixed="right">
+            <el-table-column label="操作" width="280" fixed="right">
               <template #default="{ row }">
                 <div class="table-action-group official-review-actions">
                   <el-popover
@@ -566,6 +566,14 @@
                     @click="ignoreOfficialReview(row)"
                   >
                     忽略
+                  </AppButton>
+                  <AppButton
+                    size="small"
+                    variant="danger"
+                    :loading="officialRecordDeleteKey === `review:${row.id}`"
+                    @click="removeOfficialReview(row)"
+                  >
+                    删除
                   </AppButton>
                 </div>
               </template>
@@ -631,7 +639,13 @@
                     {{ getOfficialSourceCheckLabel(row) }}
                   </AppButton>
                   <AppButton variant="ghost" @click="openEditOfficialSource(row)">编辑</AppButton>
-                  <AppButton variant="danger" @click="removeOfficialSource(row)">删除</AppButton>
+                  <AppButton
+                    variant="danger"
+                    :loading="officialRecordDeleteKey === `source:${row.id}`"
+                    @click="removeOfficialSource(row)"
+                  >
+                    删除
+                  </AppButton>
                 </div>
               </template>
             </el-table-column>
@@ -687,6 +701,18 @@
             <el-table-column label="完成时间" min-width="170">
               <template #default="{ row }">
                 {{ formatDate(row.finishedAt || row.updatedAt || row.createdAt) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <AppButton
+                  size="small"
+                  variant="danger"
+                  :loading="officialRecordDeleteKey === `batch-item:${row.id}`"
+                  @click="removeOfficialBatchItem(row)"
+                >
+                  删除
+                </AppButton>
               </template>
             </el-table-column>
           </el-table>
@@ -747,6 +773,18 @@
                 {{ formatDate(row.confirmedAt || row.collectedAt || row.updatedAt) }}
               </template>
             </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <AppButton
+                  size="small"
+                  variant="danger"
+                  :loading="officialRecordDeleteKey === `region-price:${row.id}`"
+                  @click="removeOfficialRegionPrice(row)"
+                >
+                  删除
+                </AppButton>
+              </template>
+            </el-table-column>
           </el-table>
         </el-tab-pane>
 
@@ -784,6 +822,18 @@
             </el-table-column>
             <el-table-column label="采集时间" min-width="170">
               <template #default="{ row }">{{ formatDate(row.collectedAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <AppButton
+                  size="small"
+                  variant="danger"
+                  :loading="officialRecordDeleteKey === `snapshot:${row.id}`"
+                  @click="removeOfficialSnapshot(row)"
+                >
+                  删除
+                </AppButton>
+              </template>
             </el-table-column>
           </el-table>
           <PaginationBar
@@ -1293,6 +1343,7 @@ import type {
   AppleService,
   AppleBalancePriceRuleType,
   AppleOfficialPriceCheckBatch,
+  AppleOfficialPriceCheckBatchItem,
   AppleOfficialPriceSource,
   AppleOfficialPriceSnapshot,
   ApplePriceChangeReview,
@@ -1345,6 +1396,7 @@ const serviceColumnOptions = [
 const batchActions = [
   { label: '一键开启选中', value: 'enable' },
   { label: '一键暂停选中', value: 'pause' },
+  { label: '一键删除选中', value: 'delete' },
   { label: '批量导出', value: 'export' }
 ];
 
@@ -1488,6 +1540,7 @@ const total = ref(0);
 const serviceAdvancedPanels = ref<string[]>([]);
 const officialPriceTab = ref('reviews');
 const officialReviewActionId = ref('');
+const officialRecordDeleteKey = ref('');
 const selectedOfficialAutoRegions = ref<string[]>(
   fallbackOfficialAutoRegionOptions
     .filter((region) => defaultOfficialAutoRegions.has(region.region))
@@ -2542,6 +2595,10 @@ async function handleBatchAction(action: string) {
     await updateSelectedServiceStatus('paused');
     return;
   }
+  if (action === 'delete') {
+    await deleteSelectedServices();
+    return;
+  }
   if (action === 'export') {
     exportList();
   }
@@ -2586,6 +2643,75 @@ async function updateSelectedServiceStatus(status: AppleService['status']) {
     await loadServices({ force: true, dedupeMs: 0 });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : `${actionLabel}失败`);
+  }
+}
+
+async function deleteSelectedServices() {
+  if (!selectedServices.value.length) {
+    ElMessage.warning('请先选择要删除的业务');
+    return;
+  }
+
+  const targetServices = [...selectedServices.value];
+  const previewNames = targetServices
+    .slice(0, 5)
+    .map((service) => `「${service.name}」`)
+    .join('、');
+  const overflowText =
+    targetServices.length > 5 ? `，另外还有 ${targetServices.length - 5} 个业务` : '';
+
+  const confirmed = await confirmAction({
+    title: '确认一键删除选中业务？',
+    actionName: '一键删除选中',
+    description: `将删除 ${targetServices.length} 个选中业务：${previewNames}${overflowText}。`,
+    expectedCount: targetServices.length,
+    impact: [
+      '删除后新订单不能再选择这些业务，自动匹配也不会再使用这些业务。',
+      '历史订单、开通记录和报表不会被物理删除。',
+      '这是批量危险操作，请确认选中的都是不再需要的业务。'
+    ],
+    irreversible: true,
+    risk: 'strong',
+    confirmButtonText: '确认删除选中'
+  });
+
+  if (!confirmed) return;
+
+  try {
+    const results = await Promise.allSettled(
+      targetServices.map((service) => appleServicesApi.remove(service.id))
+    );
+    const failedResults = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    const deletedCount = targetServices.length - failedResults.length;
+
+    if (deletedCount > 0) {
+      const deletedIds = new Set(
+        targetServices
+          .filter((_, index) => results[index]?.status === 'fulfilled')
+          .map((service) => service.id)
+      );
+      selectedServices.value = selectedServices.value.filter(
+        (service) => !deletedIds.has(service.id)
+      );
+      invalidateAppleServiceConsumers();
+      await loadServices({ force: true, dedupeMs: 0 });
+    }
+
+    if (failedResults.length) {
+      const firstError = failedResults[0]?.reason;
+      const errorMessage = firstError instanceof Error ? firstError.message : '部分业务删除失败';
+      ElMessage.error(
+        `已删除 ${deletedCount} 个，${failedResults.length} 个删除失败：${errorMessage}`
+      );
+      return;
+    }
+
+    ElMessage.success(`已删除 ${deletedCount} 个业务`);
+    selectedServices.value = [];
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '一键删除选中失败');
   }
 }
 
@@ -3388,6 +3514,8 @@ async function saveOfficialSource() {
 }
 
 async function removeOfficialSource(source: AppleOfficialPriceSource) {
+  if (officialRecordDeleteKey.value) return;
+
   try {
     const confirmed = await confirmAction({
       title: '确认删除官方来源？',
@@ -3396,20 +3524,155 @@ async function removeOfficialSource(source: AppleOfficialPriceSource) {
       impact: [
         `供应商：${getProviderLabel(source.provider)}`,
         `地区/币种：${getOfficialSourceRegionSummary(source)}`,
-        '删除后该来源不再参与后续官方价格采集'
+        '该来源关联的采集记录、待确认变化和来源生成的当前价格会一起清理',
+        '同供应商、同地区、同币种的默认来源不会自动恢复'
       ],
-      riskNotes: '历史采集记录不会直接覆盖业务价格，但后续自动采集会少一个来源。',
+      riskNotes: '这是数据库记录彻底删除；需要重新使用时请手动新增来源。',
       irreversible: true,
       risk: 'strong',
       confirmButtonText: '确认删除来源'
     });
     if (!confirmed) return;
 
+    officialRecordDeleteKey.value = `source:${source.id}`;
     await appleOfficialPricesApi.removeSource(source.id);
-    ElMessage.success('官方来源已删除');
+    ElMessage.success('官方来源已彻底删除');
+    invalidateAppleServiceConsumers();
     await loadOfficialPricePanel();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '删除官方来源失败');
+  } finally {
+    officialRecordDeleteKey.value = '';
+  }
+}
+
+async function removeOfficialReview(review: ApplePriceChangeReview) {
+  if (officialRecordDeleteKey.value) return;
+
+  try {
+    const confirmed = await confirmAction({
+      title: '确认删除待确认变化？',
+      actionName: '删除待确认变化记录',
+      description: `将彻底删除「${getOfficialReviewServiceName(review)}」这条待确认变化。`,
+      impact: [
+        `国家/地区：${getOfficialReviewRegionLabel(review)}`,
+        `系统当前：${getOfficialReviewOldSummary(review)}`,
+        `官方最新：${getOfficialReviewNewSummary(review)}`,
+        '删除后不会再出现在历史待确认变化列表'
+      ],
+      riskNotes: '这是数据库记录彻底删除，不会同步价格，也不能从列表直接恢复。',
+      irreversible: true,
+      risk: 'strong',
+      confirmButtonText: '确认删除记录'
+    });
+    if (!confirmed) return;
+
+    officialRecordDeleteKey.value = `review:${review.id}`;
+    await appleOfficialPricesApi.removeReview(review.id);
+    ElMessage.success('待确认变化已彻底删除');
+    await loadOfficialPricePanel();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除待确认变化失败');
+  } finally {
+    officialRecordDeleteKey.value = '';
+  }
+}
+
+async function removeOfficialBatchItem(item: AppleOfficialPriceCheckBatchItem) {
+  if (officialRecordDeleteKey.value) return;
+
+  try {
+    const confirmed = await confirmAction({
+      title: '确认删除当前批次结果？',
+      actionName: '删除当前批次结果记录',
+      description: `将彻底删除「${getProviderLabel(item.provider)} / ${getOfficialBatchItemRegionLabel(item)}」这条批次结果。`,
+      impact: [
+        `状态：${getOfficialBatchItemStatusLabel(item.status)}`,
+        `产出：快照 ${item.snapshotCount} / 待确认 ${item.reviewCount}`,
+        '删除后会从当前批次结果列表移除'
+      ],
+      riskNotes: '这是采集批次明细表记录彻底删除，批次统计会重新计算。',
+      irreversible: true,
+      risk: 'strong',
+      confirmButtonText: '确认删除结果'
+    });
+    if (!confirmed) return;
+
+    officialRecordDeleteKey.value = `batch-item:${item.id}`;
+    await appleOfficialPricesApi.removeCheckBatchItem(item.id);
+    ElMessage.success('当前批次结果已彻底删除');
+    await loadLatestOfficialPriceBatch();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除当前批次结果失败');
+  } finally {
+    officialRecordDeleteKey.value = '';
+  }
+}
+
+async function removeOfficialRegionPrice(price: AppleServiceRegionPrice) {
+  if (officialRecordDeleteKey.value) return;
+
+  try {
+    const confirmed = await confirmAction({
+      title: '确认删除当前价格？',
+      actionName: '删除当前价格记录',
+      description: `将彻底删除「${getRegionPriceServiceName(price)}」的当前价格记录。`,
+      impact: [
+        `国家/币种：${formatOfficialRegionCurrency(price.region, price.currency)}`,
+        `官网价：${price.officialPrice} ${price.currency}`,
+        `Apple 消耗价：${price.appleBalancePrice} ${price.currency}`,
+        '删除后订单录入不会再使用这条当前价格',
+        '同业务、同国家、同币种的旧价格不会被自动同步恢复'
+      ],
+      riskNotes: '这是数据库记录彻底删除；需要重新使用时请重新确认官方价格或编辑业务设置。',
+      irreversible: true,
+      risk: 'strong',
+      confirmButtonText: '确认删除价格'
+    });
+    if (!confirmed) return;
+
+    officialRecordDeleteKey.value = `region-price:${price.id}`;
+    await appleServicesApi.removeRegionPrice(price.id);
+    ElMessage.success('当前价格已彻底删除');
+    invalidateAppleServiceConsumers();
+    await loadOfficialPricePanel();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除当前价格失败');
+  } finally {
+    officialRecordDeleteKey.value = '';
+  }
+}
+
+async function removeOfficialSnapshot(snapshot: AppleOfficialPriceSnapshot) {
+  if (officialRecordDeleteKey.value) return;
+
+  try {
+    const confirmed = await confirmAction({
+      title: '确认删除采集记录？',
+      actionName: '删除采集记录',
+      description: `将彻底删除「${snapshot.serviceName}」这条采集记录。`,
+      impact: [
+        `来源：${snapshot.source?.name || getProviderLabel(snapshot.provider)}`,
+        `地区/币种：${formatOfficialRegionCurrency(snapshot.region, snapshot.currency)}`,
+        `官网价：${snapshot.officialPrice} ${snapshot.currency}`,
+        '关联的待确认变化会一起删除'
+      ],
+      riskNotes:
+        '这是数据库记录彻底删除；已确认到当前价格表的记录不会被自动删除，请在当前价格表单独删除。',
+      irreversible: true,
+      risk: 'strong',
+      confirmButtonText: '确认删除采集记录'
+    });
+    if (!confirmed) return;
+
+    officialRecordDeleteKey.value = `snapshot:${snapshot.id}`;
+    await appleOfficialPricesApi.removeSnapshot(snapshot.id);
+    ElMessage.success('采集记录已彻底删除');
+    await loadOfficialPricePanel();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除采集记录失败');
+  } finally {
+    officialRecordDeleteKey.value = '';
   }
 }
 

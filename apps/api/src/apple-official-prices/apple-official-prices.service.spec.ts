@@ -249,6 +249,10 @@ describe('AppleOfficialPricesService', () => {
       appleOfficialPriceSource: {
         update: jest.fn().mockResolvedValue({ ...currentSource, lastCheckedAt: now })
       },
+      systemParameter: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({})
+      },
       automationTask: {
         update: jest.fn().mockResolvedValue(task)
       },
@@ -294,6 +298,10 @@ describe('AppleOfficialPricesService', () => {
         findFirst: jest.fn().mockResolvedValue(categoryDictionary),
         create: jest.fn().mockResolvedValue(categoryDictionary),
         update: jest.fn().mockResolvedValue(categoryDictionary)
+      },
+      systemParameter: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({})
       }
     } as unknown as PrismaService;
 

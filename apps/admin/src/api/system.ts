@@ -5,6 +5,7 @@ import type {
   ActiveSession,
   AppleActionPlan,
   AppleActionPlanItem,
+  AppleExpiringCustomer,
   AppleAccount,
   AppleAccountImportResult,
   AppleAccountOption,
@@ -856,6 +857,29 @@ export interface AppleActionPlanQuery extends CommonPageQuery {
   hasWrongChargeRisk?: string;
   planDateFrom?: string;
   planDateTo?: string;
+}
+
+export interface AppleExpiringCustomerQuery extends CommonPageQuery {
+  expiresInDays?: string | number;
+  expireFrom?: string;
+  expireTo?: string;
+  customerId?: string;
+  appleAccountId?: string;
+  serviceId?: string;
+  category?: string;
+  region?: string;
+  ownershipType?: AppleAccountOwnershipType | '';
+  appleAccountStatus?: AppleAccount['status'] | '';
+  renewalSubmitted?: string;
+}
+
+export interface SubmitExpiringCustomerPayload {
+  decision: 'renew' | 'stop';
+  targetRegion?: string | null;
+  targetCategory?: string | null;
+  targetServiceId?: string | null;
+  targetServicePriceId?: string | null;
+  note?: string | null;
 }
 
 export interface AppleAutomationTaskQuery {
@@ -2425,6 +2449,9 @@ export const appleServicesApi = {
       http.get('/apple/services/region-prices', { params, signal: options.signal })
     ).then((result) => normalizePageResult(result));
   },
+  removeRegionPrice(id: string) {
+    return request<{ deleted: boolean }>(http.delete(`/apple/services/region-prices/${id}`));
+  },
   updateBalancePriceRule(payload: AppleBalancePriceRule) {
     return request<AppleBalancePriceRule>(
       http.patch('/apple/services/balance-price-rule', payload)
@@ -2529,15 +2556,26 @@ export const appleOfficialPricesApi = {
       http.get(`/apple/official-prices/check-batches/${id}/results`)
     ).then(normalizeOfficialPriceCheckBatchResults);
   },
+  removeCheckBatchItem(id: string) {
+    return request<{ deleted: boolean }>(
+      http.delete(`/apple/official-prices/check-batch-items/${id}`)
+    );
+  },
   listSnapshots(params: AppleOfficialPriceSnapshotQuery) {
     return request<PageResult<AppleOfficialPriceSnapshot>>(
       http.get('/apple/official-prices/snapshots', { params })
     ).then((result) => normalizePageResult(result));
   },
+  removeSnapshot(id: string) {
+    return request<{ deleted: boolean }>(http.delete(`/apple/official-prices/snapshots/${id}`));
+  },
   listReviews(params: ApplePriceChangeReviewQuery) {
     return request<PageResult<ApplePriceChangeReview>>(
       http.get('/apple/official-prices/reviews', { params })
     ).then((result) => normalizePageResult(result));
+  },
+  removeReview(id: string) {
+    return request<{ deleted: boolean }>(http.delete(`/apple/official-prices/reviews/${id}`));
   },
   approveReview(id: string) {
     return request<ApplePriceChangeReview>(
@@ -2749,6 +2787,19 @@ export const appleRenewalTasksApi = {
 export const appleActionPlansApi = {
   list(params: AppleActionPlanQuery) {
     return request<PageResult<AppleActionPlan>>(http.get('/apple/action-plans', { params }));
+  },
+  listExpiringCustomers(params: AppleExpiringCustomerQuery, options: ApiRequestOptions = {}) {
+    return request<PageResult<AppleExpiringCustomer>>(
+      http.get('/apple/action-plans/expiring-customers', { params, signal: options.signal })
+    ).then((result) => normalizePageResult(result));
+  },
+  submitExpiringCustomer(activationId: string, payload: SubmitExpiringCustomerPayload) {
+    return request<{
+      submitted: boolean;
+      decision: SubmitExpiringCustomerPayload['decision'];
+      task: AppleExpiringCustomer['renewalTask'];
+      row: AppleExpiringCustomer | null;
+    }>(http.post(`/apple/action-plans/expiring-customers/${activationId}/submit`, payload));
   },
   get(id: string) {
     return request<AppleActionPlan>(http.get(`/apple/action-plans/${id}`));

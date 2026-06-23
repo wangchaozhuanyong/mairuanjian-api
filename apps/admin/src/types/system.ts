@@ -1596,6 +1596,85 @@ export interface AppleActionPlan {
   items?: AppleActionPlanItem[];
 }
 
+export interface AppleExpiringCustomerTask {
+  id: string;
+  taskType: RenewalTask['taskType'];
+  title: string;
+  status: RenewalTask['status'];
+  priority: RenewalTask['priority'];
+  customerDecision: RenewalTask['customerDecision'];
+  currentBalance: string;
+  expectedChargeAmount: string;
+  suggestedTopupAmount: string;
+  dueAt?: string | null;
+  targetPlan?: string | null;
+  createdAt: string;
+}
+
+export interface AppleExpiringCustomer {
+  id: string;
+  activationId: string;
+  orderId: string;
+  orderNo: string;
+  externalOrderNo?: string | null;
+  sourcePlatform?: Pick<SourcePlatform, 'id' | 'name'> | null;
+  customer: Pick<Customer, 'id' | 'name' | 'wechat'> & {
+    phoneMasked?: string | null;
+    phoneTail?: string | null;
+  };
+  service: Pick<AppleService, 'id' | 'name' | 'category' | 'currency' | 'officialCostValue'>;
+  servicePrice?: Pick<
+    AppleServiceRegionPrice,
+    | 'id'
+    | 'serviceId'
+    | 'serviceName'
+    | 'category'
+    | 'region'
+    | 'currency'
+    | 'officialPrice'
+    | 'appleBalancePrice'
+    | 'periodType'
+    | 'periodValue'
+    | 'status'
+  > | null;
+  appleAccount?: {
+    id: string;
+    appleIdMasked: string;
+    region: string;
+    currency: string;
+    currentBalance: string;
+    averageCost: string;
+    ownershipType: AppleAccountOwnershipType;
+    status: AppleAccount['status'];
+  } | null;
+  appleAccountOwnershipType: AppleAccountOwnershipType;
+  serviceRegion?: string | null;
+  serviceAccount?: string | null;
+  currentPlan?: string | null;
+  targetPlan?: string | null;
+  currentPackageSummary: string;
+  startTime?: string | null;
+  expireTime?: string | null;
+  daysUntilExpire?: number | null;
+  consumedValue: string;
+  currency: string;
+  paidAmount: string;
+  paidCurrency: string;
+  paidAmountRmb: string;
+  lastPaidAmount: string;
+  lastPaidCurrency: string;
+  lastPaidAmountRmb: string;
+  status: ServiceActivation['status'];
+  autoRenewStatus: ServiceActivation['autoRenewStatus'];
+  renewalDecision: ServiceActivation['renewalDecision'];
+  renewalNote?: string | null;
+  renewalSubmitted: boolean;
+  renewalTask?: AppleExpiringCustomerTask | null;
+  renewalTasks: AppleExpiringCustomerTask[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type AutomationTaskType =
   | 'check_status'
   | 'check_balance'

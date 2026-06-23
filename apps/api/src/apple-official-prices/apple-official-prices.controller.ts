@@ -124,6 +124,11 @@ export class AppleOfficialPricesController {
     return this.officialPricesService.getCheckBatchResults(id);
   }
 
+  @Delete('check-batch-items/:id')
+  removeCheckBatchItem(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    return this.officialPricesService.removeCheckBatchItem(id, operator);
+  }
+
   @Get('snapshots')
   listSnapshots(
     @Query('page') page?: string,
@@ -143,6 +148,11 @@ export class AppleOfficialPricesController {
       sortBy,
       sortOrder
     });
+  }
+
+  @Delete('snapshots/:id')
+  removeSnapshot(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    return this.officialPricesService.removeSnapshot(id, operator);
   }
 
   @Get('reviews')
@@ -173,6 +183,11 @@ export class AppleOfficialPricesController {
   @Post('reviews/:id/approve')
   approveReview(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
     return this.officialPricesService.approveReview(id, operator);
+  }
+
+  @Delete('reviews/:id')
+  removeReview(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    return this.officialPricesService.removeReview(id, operator);
   }
 
   @Post('reviews/:id/ignore')

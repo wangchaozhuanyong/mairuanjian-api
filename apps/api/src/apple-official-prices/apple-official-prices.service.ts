@@ -176,6 +176,7 @@ const FINAL_OFFICIAL_PRICE_BATCH_ITEM_STATUSES: AutomationTaskStatus[] = [
 const APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP = 'apple.service.categories';
 const OFFICIAL_CATEGORY_REMARK = '官方价格采集自动生成';
 const OFFICIAL_DISABLED_CATEGORY_REMARK = '官方价格采集发现但当前停用';
+const DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER = 'apple_official_price_deleted_source_keys';
 
 type DataDictionaryClient = {
   dataDictionary: {
@@ -293,6 +294,7 @@ export class AppleOfficialPricesService {
       remark: `Created Apple official price source ${source.name}`
     });
 
+    await this.unmarkOfficialSourceAutoRestoreBlocked(source, operator);
     this.publishChanged('apple.official_price.source_created', 'source', 'created', source.id);
     return this.toSourceResponse(source);
   }
@@ -325,14 +327,56 @@ export class AppleOfficialPricesService {
   async removeSource(id: string, operator?: AuthenticatedUser) {
     const sourceId = this.normalizeRequiredUuid(id, 'id');
     const existing = await this.findSourceOrThrow(sourceId);
+    const sourceSnapshotIds = (
+      await this.prisma.appleOfficialPriceSnapshot.findMany({
+        where: { sourceId },
+        select: { id: true }
+      })
+    ).map((snapshot) => snapshot.id);
+    const blockedKeys = await this.getBlockedOfficialSourceAutoRestoreKeys();
+    const blockedKey = this.buildOfficialSourceKey(
+      existing.provider,
+      existing.region,
+      existing.currency
+    );
+    blockedKeys.add(blockedKey);
+    const blockedValue = this.toJson({ keys: [...blockedKeys].sort() });
+    const reviewDeleteFilters: Prisma.ApplePriceChangeReviewWhereInput[] = [{ sourceId }];
+    if (sourceSnapshotIds.length) {
+      reviewDeleteFilters.push({ snapshotId: { in: sourceSnapshotIds } });
+    }
 
-    await this.prisma.appleOfficialPriceSource.update({
-      where: { id: sourceId },
-      data: {
-        status: 'disabled',
-        deletedAt: new Date(),
-        updatedByUserId: operator?.id
+    await this.prisma.$transaction(async (tx) => {
+      await tx.systemParameter.upsert({
+        where: { key: DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER },
+        update: {
+          value: blockedValue,
+          group: 'apple_official_price',
+          remark: '官方价格来源手动删除记录，阻止默认来源自动恢复',
+          updatedByUserId: operator?.id
+        },
+        create: {
+          key: DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER,
+          value: blockedValue,
+          group: 'apple_official_price',
+          remark: '官方价格来源手动删除记录，阻止默认来源自动恢复',
+          updatedByUserId: operator?.id
+        }
+      });
+      if (sourceSnapshotIds.length) {
+        await tx.appleServiceRegionPrice.deleteMany({
+          where: { sourceSnapshotId: { in: sourceSnapshotIds } }
+        });
       }
+      await tx.applePriceChangeReview.deleteMany({
+        where: { OR: reviewDeleteFilters }
+      });
+      if (sourceSnapshotIds.length) {
+        await tx.appleOfficialPriceSnapshot.deleteMany({
+          where: { id: { in: sourceSnapshotIds } }
+        });
+      }
+      await tx.appleOfficialPriceSource.delete({ where: { id: sourceId } });
     });
 
     await this.auditLogsService.create({
@@ -342,7 +386,7 @@ export class AppleOfficialPricesService {
       objectType: 'apple_official_price_source',
       objectId: sourceId,
       beforeData: this.toJson(this.toSourceResponse(existing)),
-      remark: `Deleted Apple official price source ${existing.name}`
+      remark: `Permanently deleted Apple official price source ${existing.name}`
     });
 
     this.publishChanged('apple.official_price.source_deleted', 'source', 'deleted', sourceId);
@@ -759,6 +803,99 @@ export class AppleOfficialPricesService {
     );
 
     return this.toReviewResponse(updated);
+  }
+
+  async removeReview(id: string, operator?: AuthenticatedUser) {
+    const review = await this.findReviewOrThrow(id);
+
+    await this.prisma.applePriceChangeReview.delete({ where: { id: review.id } });
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_official_price',
+      action: 'apple_official_price.review.delete',
+      objectType: 'apple_price_change_review',
+      objectId: review.id,
+      beforeData: this.toJson(this.toReviewResponse(review)),
+      remark: `Permanently deleted Apple official price review ${review.id}`
+    });
+
+    this.publishChanged(
+      'apple.official_price.review_deleted',
+      'price_change_review',
+      'deleted',
+      review.id
+    );
+
+    return { deleted: true };
+  }
+
+  async removeSnapshot(id: string, operator?: AuthenticatedUser) {
+    const snapshotId = this.normalizeRequiredUuid(id, 'id');
+    const snapshot = await this.prisma.appleOfficialPriceSnapshot.findUnique({
+      where: { id: snapshotId },
+      include: this.getSnapshotInclude()
+    });
+
+    if (!snapshot) {
+      throw new NotFoundException('Apple official price snapshot not found');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.applePriceChangeReview.deleteMany({ where: { snapshotId } }),
+      this.prisma.appleOfficialPriceSnapshot.delete({ where: { id: snapshotId } })
+    ]);
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_official_price',
+      action: 'apple_official_price.snapshot.delete',
+      objectType: 'apple_official_price_snapshot',
+      objectId: snapshot.id,
+      beforeData: this.toJson(this.toSnapshotResponse(snapshot)),
+      remark: `Permanently deleted Apple official price snapshot ${snapshot.serviceName}`
+    });
+
+    this.publishChanged(
+      'apple.official_price.snapshot_deleted',
+      'official_price_snapshot',
+      'deleted',
+      snapshot.id
+    );
+
+    return { deleted: true };
+  }
+
+  async removeCheckBatchItem(id: string, operator?: AuthenticatedUser) {
+    const itemId = this.normalizeRequiredUuid(id, 'id');
+    const item = await this.prisma.appleOfficialPriceCheckBatchItem.findUnique({
+      where: { id: itemId }
+    });
+
+    if (!item) {
+      throw new NotFoundException('Apple official price check batch item not found');
+    }
+
+    await this.prisma.appleOfficialPriceCheckBatchItem.delete({ where: { id: item.id } });
+    const batch = await this.refreshOfficialPriceBatchProgress(item.batchId, true);
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_official_price',
+      action: 'apple_official_price.batch_item.delete',
+      objectType: 'apple_official_price_check_batch_item',
+      objectId: item.id,
+      beforeData: this.toJson(item),
+      afterData: this.toJson(this.toCheckBatchResponse(batch)),
+      remark: `Permanently deleted Apple official price batch item ${item.sourceName}`
+    });
+
+    this.publishChanged(
+      'apple.official_price.batch_item_deleted',
+      'official_price_check_batch_item',
+      'deleted',
+      item.id,
+      { batchId: item.batchId }
+    );
+
+    return { deleted: true };
   }
 
   async runDueSourceChecks(
@@ -1662,12 +1799,19 @@ export class AppleOfficialPricesService {
 
   private async ensureDefaultProviderSources() {
     let createdCount = 0;
+    const blockedKeys = await this.getBlockedOfficialSourceAutoRestoreKeys();
 
     for (const provider of OFFICIAL_PRICE_PROVIDER_KEYS) {
       const profile = OFFICIAL_PRICE_PROVIDER_PROFILES[provider];
 
       for (const region of profile.defaultRegions) {
         const preset = buildOfficialPriceProviderPreset(provider, region);
+        if (
+          blockedKeys.has(this.buildOfficialSourceKey(provider, preset.region, preset.currency))
+        ) {
+          continue;
+        }
+
         const existing = await this.prisma.appleOfficialPriceSource.findFirst({
           where: {
             deletedAt: null,
@@ -1692,6 +1836,10 @@ export class AppleOfficialPricesService {
     regions?: CheckOfficialPriceProviderDto['regions']
   ): Promise<OfficialPriceProviderRegion[]> {
     const profile = OFFICIAL_PRICE_PROVIDER_PROFILES[provider];
+    const blockedKeys = await this.getBlockedOfficialSourceAutoRestoreKeys();
+    const isBlocked = (region: OfficialPriceProviderRegion) =>
+      blockedKeys.has(this.buildOfficialSourceKey(provider, region.region, region.currency));
+
     if (!Array.isArray(regions) || regions.length === 0) {
       const configuredSources = await this.prisma.appleOfficialPriceSource.findMany({
         where: {
@@ -1712,7 +1860,7 @@ export class AppleOfficialPricesService {
         );
       }
 
-      return profile.defaultRegions;
+      return profile.defaultRegions.filter((region) => !isBlocked(region));
     }
 
     return this.dedupeProviderRegions(
@@ -1722,7 +1870,7 @@ export class AppleOfficialPricesService {
         sourceUrl:
           item.sourceUrl === undefined ? null : (this.normalizeNullableUrl(item.sourceUrl) ?? null)
       }))
-    );
+    ).filter((region) => !isBlocked(region));
   }
 
   private dedupeProviderRegions(regions: OfficialPriceProviderRegion[]) {
@@ -2808,6 +2956,63 @@ export class AppleOfficialPricesService {
     const note = `官方价格巡检已确认更新，来源：${sourceName ?? '未知来源'}`;
     if (!existingRemark) return note;
     return existingRemark.includes(note) ? existingRemark : `${existingRemark}\n${note}`;
+  }
+
+  private buildOfficialSourceKey(provider: string, region: string, currency: string) {
+    return `${provider.trim().toLowerCase()}:${region.trim().toUpperCase()}:${currency.trim().toUpperCase()}`;
+  }
+
+  private async getBlockedOfficialSourceAutoRestoreKeys() {
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER },
+      select: { value: true }
+    });
+    return this.parseStringSetParameter(parameter?.value);
+  }
+
+  private async unmarkOfficialSourceAutoRestoreBlocked(
+    source: Pick<AppleOfficialPriceSource, 'provider' | 'region' | 'currency'>,
+    operator?: AuthenticatedUser
+  ) {
+    const keys = await this.getBlockedOfficialSourceAutoRestoreKeys();
+    keys.delete(this.buildOfficialSourceKey(source.provider, source.region, source.currency));
+    await this.saveBlockedOfficialSourceAutoRestoreKeys(keys, operator);
+  }
+
+  private async saveBlockedOfficialSourceAutoRestoreKeys(
+    keys: Set<string>,
+    operator?: AuthenticatedUser
+  ) {
+    const value = this.toJson({ keys: [...keys].sort() });
+    await this.prisma.systemParameter.upsert({
+      where: { key: DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER },
+      update: {
+        value,
+        group: 'apple_official_price',
+        remark: '官方价格来源手动删除记录，阻止默认来源自动恢复',
+        updatedByUserId: operator?.id
+      },
+      create: {
+        key: DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER,
+        value,
+        group: 'apple_official_price',
+        remark: '官方价格来源手动删除记录，阻止默认来源自动恢复',
+        updatedByUserId: operator?.id
+      }
+    });
+  }
+
+  private parseStringSetParameter(value: Prisma.JsonValue | null | undefined) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return new Set<string>();
+    }
+
+    const keys = (value as { keys?: unknown }).keys;
+    if (!Array.isArray(keys)) {
+      return new Set<string>();
+    }
+
+    return new Set(keys.filter((key): key is string => typeof key === 'string' && key.length > 0));
   }
 
   private async findSourceOrThrow(id: string) {

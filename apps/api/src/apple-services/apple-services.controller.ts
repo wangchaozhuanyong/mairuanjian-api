@@ -72,6 +72,12 @@ export class AppleServicesController {
     });
   }
 
+  @Delete('region-prices/:id')
+  @RequirePermissions('apple.service.manage')
+  removeRegionPrice(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    return this.appleServicesService.removeRegionPrice(id, operator);
+  }
+
   @Get(':id')
   @RequirePermissions('apple.service.manage')
   get(@Param('id') id: string) {

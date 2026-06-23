@@ -262,6 +262,10 @@ export class AppleRenewalTasksService {
     private readonly notificationsService: NotificationsService
   ) {}
 
+  clearListCache() {
+    this.listCache.clear();
+  }
+
   async list(query: ListRenewalTasksQuery) {
     return this.listCache.getOrSet(
       getListCacheKey('apple-renewal-tasks', query),

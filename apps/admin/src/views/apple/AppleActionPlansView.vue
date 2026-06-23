@@ -1,81 +1,27 @@
 <template>
   <PageScaffold
-    title="Apple ID 操作计划"
+    title="到期客户处理台"
     group="工作台"
     phase="Phase 5"
-    description="按 Apple ID 聚合临期业务、续费、取消订阅、待客户确认和误扣费风险，形成当天操作清单。"
+    description="按订单开通记录筛选临近到期客户，集中处理 Apple ID 充值、续费和停止续费。"
   >
     <div class="action-plan-overview">
-      <div class="action-plan-notice" :class="{ 'action-plan-notice--safe': riskCount === 0 }">
-        <StatusChip :tone="riskCount ? 'red' : 'green'" dot>
-          {{ riskCount ? '误扣费风险' : '风险正常' }}
+      <div class="action-plan-notice" :class="{ 'action-plan-notice--safe': urgentCount === 0 }">
+        <StatusChip :tone="urgentCount ? 'orange' : 'green'" dot>
+          {{ selectedExpiresLabel }}
         </StatusChip>
         <div>
-          <strong>
-            {{
-              riskCount
-                ? `${riskCount} 个操作计划存在误扣费风险`
-                : '当前筛选范围内没有误扣费风险计划'
-            }}
-          </strong>
-          <p>余额足够但不续费业务未取消时，先处理取消订阅，再处理充值或等待自动扣费。</p>
+          <strong>当前筛选 {{ total }} 条到期记录</strong>
+          <p>
+            今日/已过期 {{ urgentCount }} 条 · 余额不足 {{ balanceShortageCount }} 条 · 已提交
+            {{ submittedCount }} 条
+          </p>
         </div>
         <div class="action-plan-notice__stats">
-          <span>计划 {{ total }}</span>
-          <span>待处理 {{ openPlanCount }}</span>
-          <span>建议充值 {{ suggestedTopupSum }}</span>
-          <span>操作项 {{ itemCountSum }}</span>
-        </div>
-      </div>
-
-      <div class="action-plan-card-list">
-        <article v-for="plan in featuredPlans" :key="plan.id" class="action-plan-card">
-          <div class="action-plan-card__top">
-            <div>
-              <strong class="mono">{{ plan.appleAccount.appleIdMasked }}</strong>
-              <p>
-                当前余额 {{ plan.currentBalance }} · 平均成本
-                {{ formatAverageCost(plan.avgUnitCost) }} · 建议充值
-                {{ plan.suggestedTopupAmount }}
-              </p>
-            </div>
-            <div class="action-plan-card__chips">
-              <StatusChip :tone="plan.hasWrongChargeRisk ? 'red' : 'green'" dot>
-                {{ plan.hasWrongChargeRisk ? '误扣费风险' : '风险正常' }}
-              </StatusChip>
-              <StatusChip tone="orange">需取消 {{ plan.cancelServicesCount }}</StatusChip>
-              <StatusChip tone="green">续费 {{ plan.renewServicesCount }}</StatusChip>
-            </div>
-            <AppButton
-              :variant="plan.hasWrongChargeRisk ? 'primary' : 'soft'"
-              @click="openDetail(plan)"
-            >
-              处理计划
-            </AppButton>
-          </div>
-
-          <div class="action-plan-services">
-            <div
-              v-for="service in getPlanPreviewServices(plan)"
-              :key="service.label"
-              class="action-plan-service"
-            >
-              <h4>{{ service.title }}</h4>
-              <p>{{ service.description }}</p>
-              <StatusChip :tone="service.tone">{{ service.label }}</StatusChip>
-            </div>
-          </div>
-        </article>
-
-        <div v-if="!loading && featuredPlans.length === 0" class="apple-core-empty-state">
-          <strong>暂无操作计划</strong>
-          <span>可以重新生成未来 7 天 Apple ID 操作计划，或调整筛选条件。</span>
-          <div class="apple-core-empty-state__actions">
-            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-            <AppButton variant="primary" :loading="generating" @click="generatePlans">
-              生成操作计划
-            </AppButton>
-          </div>
+          <span>当前页 {{ customers.length }}</span>
+          <span>待提交 {{ pendingSubmitCount }}</span>
+          <span>售出 {{ soldCount }}</span>
+          <span>寄存 {{ consignedCount }}</span>
         </div>
       </div>
     </div>
@@ -83,13 +29,11 @@
     <section class="content-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
-          title="操作计划队列"
-          help="这里把当天该做的事情按 Apple ID 汇总起来。先处理可能误扣费、需要人工确认或快到期的计划。"
+          title="到期客户"
+          help="这里按订单开通记录显示临近到期客户，充值只更新 Apple ID 余额，提交后会写入续费工作台。"
         />
         <div class="inline-actions">
-          <StatusChip :tone="riskCount ? 'red' : 'blue'" dot>
-            {{ riskCount ? '存在风险' : '计划正常' }}
-          </StatusChip>
+          <StatusChip tone="blue" dot>默认 3 天内</StatusChip>
         </div>
       </div>
 
@@ -97,55 +41,84 @@
         v-model:keyword="query.keyword"
         v-model:status="query.status"
         v-model:visible-columns="visibleColumns"
-        v-model:saved-view-id="savedViewId"
-        :column-options="actionPlanColumnOptions"
-        :status-options="statusOptions"
-        :saved-views="savedViews"
+        :column-options="columnOptions"
+        :status-options="activationStatusOptions"
         :filter-chips="filterChips"
-        :selected-count="selectedPlans.length"
+        :selected-count="selectedRows.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
-        :primary-loading="generating"
-        primary-label="生成操作计划"
-        placeholder="搜索 Apple ID、客户、业务、计划备注"
+        :show-save-view="false"
+        :show-primary="false"
+        show-filter-chips
+        placeholder="搜索客户、电话尾号、微信、网站账号、订单号、Apple ID、业务"
         @search="handleSearch"
-        @refresh="loadPlans"
-        @primary="generatePlans"
-        @clear-filters="clearFilters"
+        @refresh="loadCustomers"
+        @clear-filters="clearFiltersAndSearch"
         @remove-filter="removeFilter"
-        @save-view="saveTableView"
-        @apply-view="applySavedView"
         @export="exportList"
         @batch-action="handleBatchAction"
       >
         <template #filters>
           <el-select
-            v-model="query.hasWrongChargeRisk"
+            v-model="expiresPreset"
+            class="table-toolbar__select"
+            placeholder="到期时间"
+            @change="handleExpiresPresetChange"
+          >
+            <el-option
+              v-for="item in expiresPresetOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+          <el-date-picker
+            v-if="expiresPreset === 'custom'"
+            v-model="expireDateRange"
+            class="table-toolbar__date-range"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="开始到期"
+            end-placeholder="结束到期"
+            @change="handleSearch"
+          />
+          <el-select
+            v-model="query.ownershipType"
             class="table-toolbar__select"
             clearable
-            placeholder="误扣费风险"
+            placeholder="售出/寄存"
             @change="handleSearch"
           >
             <el-option
-              v-for="item in riskOptions"
+              v-for="item in ownershipOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
             />
           </el-select>
           <el-select
-            v-model="quickDate"
+            v-model="query.appleAccountStatus"
             class="table-toolbar__select"
             clearable
-            placeholder="计划日期"
-            @change="applyQuickDate"
+            placeholder="ID 状态"
+            @change="handleSearch"
           >
             <el-option
-              v-for="item in quickDateOptions"
+              v-for="item in accountStatusOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
             />
+          </el-select>
+          <el-select
+            v-model="query.renewalSubmitted"
+            class="table-toolbar__select"
+            clearable
+            placeholder="续费任务"
+            @change="handleSearch"
+          >
+            <el-option label="已提交" value="true" />
+            <el-option label="未提交" value="false" />
           </el-select>
         </template>
       </TableToolbar>
@@ -153,556 +126,658 @@
       <el-table
         v-loading="loading"
         class="desktop-data-table"
-        :data="plans"
+        :data="customers"
         :size="tableSize"
         row-key="id"
-        empty-text="暂无操作计划"
+        empty-text="暂无到期客户"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
         <template #empty>
           <div class="apple-core-empty-state">
-            <strong>暂无操作计划</strong>
-            <span>可以重新生成未来 7 天 Apple ID 操作计划，或清空筛选后查看全部。</span>
+            <strong>暂无到期客户</strong>
+            <span>可以切换到期时间或清空筛选后重新查看。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-              <AppButton variant="primary" :loading="generating" @click="generatePlans">
-                生成操作计划
-              </AppButton>
+              <AppButton variant="primary" @click="refreshCustomers">刷新</AppButton>
             </div>
           </div>
         </template>
         <el-table-column type="selection" width="46" />
-        <el-table-column v-if="isColumnVisible('appleAccount')" label="Apple ID" min-width="190">
+        <el-table-column v-if="isColumnVisible('customer')" label="客户" min-width="210">
           <template #default="{ row }">
-            <strong>{{ row.appleAccount.appleIdMasked }}</strong>
+            <strong>{{ row.customer.name }}</strong>
             <div class="muted-block">
-              {{ formatAccountRegionCurrency(row.appleAccount.region, row.appleAccount.currency) }}
+              电话 {{ row.customer.phoneMasked || '-' }} · 微信 {{ row.customer.wechat || '-' }}
+            </div>
+            <div class="muted-block">网站账号 {{ row.serviceAccount || '-' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isColumnVisible('service')" label="开通业务" min-width="260">
+          <template #default="{ row }">
+            <strong>{{ row.currentPackageSummary }}</strong>
+            <div class="muted-block">
+              {{ row.service.category }} · 订单 {{ row.orderNo }}
+              <span v-if="row.externalOrderNo"> / {{ row.externalOrderNo }}</span>
+            </div>
+            <div class="muted-block">{{ row.sourcePlatform?.name || '未记录来源平台' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isColumnVisible('appleId')" label="使用 ID" min-width="210">
+          <template #default="{ row }">
+            <strong>{{ row.appleAccount?.appleIdMasked || '-' }}</strong>
+            <div class="muted-block">
+              {{ row.appleAccount?.region || row.serviceRegion || '-' }} /
+              {{ row.appleAccount?.currency || row.currency }}
+            </div>
+            <div class="table-action-group table-action-group--wrap">
+              <StatusChip :tone="getAccountStatusTone(row.appleAccount?.status)" dot>
+                {{ getAccountStatusLabel(row.appleAccount?.status) }}
+              </StatusChip>
+              <StatusChip :tone="row.appleAccountOwnershipType === 'sold' ? 'purple' : 'cyan'">
+                {{ getOwnershipLabel(row.appleAccountOwnershipType) }}
+              </StatusChip>
             </div>
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('balance')"
-          prop="currentBalance"
-          label="余额/建议充值"
-          min-width="160"
+          v-if="isColumnVisible('expire')"
+          prop="expireTime"
+          label="到期时间"
+          min-width="170"
           sortable="custom"
         >
           <template #default="{ row }">
-            {{ row.currentBalance }} / {{ row.suggestedTopupAmount }}
-            <div class="muted-block">预计续费 {{ row.requiredRenewalAmount }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="isColumnVisible('services')" label="业务分布" min-width="190">
-          <template #default="{ row }">
-            开通 {{ row.activeServiceCount }} · 续费 {{ row.renewServicesCount }} · 取消
-            {{ row.cancelServicesCount }}
-            <div class="muted-block">等客户 {{ row.pendingCustomerCount }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('risk')"
-          prop="hasWrongChargeRisk"
-          label="风险"
-          width="110"
-          sortable="custom"
-        >
-          <template #default="{ row }">
-            <StatusChip :tone="row.hasWrongChargeRisk ? 'red' : 'green'" dot>
-              {{ row.hasWrongChargeRisk ? '有风险' : '正常' }}
+            <StatusChip :tone="getExpireTone(row.daysUntilExpire)" dot>
+              {{ formatExpireDelta(row.daysUntilExpire) }}
             </StatusChip>
+            <div class="muted-block">{{ formatDate(row.expireTime, true) }}</div>
           </template>
         </el-table-column>
         <el-table-column
-          v-if="isColumnVisible('itemCount')"
-          prop="itemCount"
-          label="操作项"
-          width="100"
-          sortable="custom"
-        >
-          <template #default="{ row }">{{ row.itemCount }}</template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('planDate')"
-          prop="planDate"
-          label="计划日期"
-          min-width="140"
-          sortable="custom"
-        >
-          <template #default="{ row }">{{ formatDate(row.planDate, true) }}</template>
-        </el-table-column>
-        <el-table-column
-          v-if="isColumnVisible('status')"
-          prop="status"
-          label="状态"
-          width="100"
+          v-if="isColumnVisible('lastPrice')"
+          prop="paidAmountRmb"
+          label="上一次开通价格"
+          min-width="170"
           sortable="custom"
         >
           <template #default="{ row }">
-            <StatusChip :tone="getStatusTone(row.status)" dot>
-              {{ getStatusLabel(row.status) }}
-            </StatusChip>
+            <strong>{{ row.lastPaidAmount }} {{ row.lastPaidCurrency }}</strong>
+            <div class="muted-block">折合 {{ row.lastPaidAmountRmb }} CNY</div>
+            <div class="muted-block">
+              消耗 {{ row.consumedValue }} {{ row.currency }} · 余额
+              {{ row.appleAccount?.currentBalance || '-' }}
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column v-if="isColumnVisible('renewal')" label="续费任务" min-width="180">
+          <template #default="{ row }">
+            <StatusChip :tone="row.renewalSubmitted ? 'green' : 'orange'" dot>
+              {{ row.renewalSubmitted ? '已提交' : '未提交' }}
+            </StatusChip>
+            <div class="muted-block">{{ row.renewalTask?.title || row.renewalNote || '-' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
-              <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
               <AppButton
                 size="small"
-                variant="success"
-                :disabled="row.status === 'completed'"
-                @click="completePlan(row)"
+                variant="soft"
+                :disabled="!row.appleAccount"
+                @click="openTopupDialog(row)"
               >
-                完成
+                充值
+              </AppButton>
+              <AppButton size="small" variant="primary" @click="openSubmitDialog(row)">
+                提交续费工作台
               </AppButton>
             </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="mobile-record-list" aria-label="操作计划移动列表">
-        <article v-for="plan in plans" :key="plan.id" class="mobile-record-card">
+      <div class="mobile-record-list">
+        <article v-for="row in customers" :key="row.id" class="mobile-record-card">
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
-              <strong>{{ plan.appleAccount.appleIdMasked }}</strong>
-              <span>
-                {{
-                  formatAccountRegionCurrency(plan.appleAccount.region, plan.appleAccount.currency)
-                }}
-                ·
-                {{ formatDate(plan.planDate, true) }}
-              </span>
+              <strong>{{ row.customer.name }}</strong>
+              <span>{{ row.currentPackageSummary }}</span>
             </div>
-            <StatusChip :tone="getStatusTone(plan.status)" dot>
-              {{ getStatusLabel(plan.status) }}
+            <StatusChip :tone="getExpireTone(row.daysUntilExpire)" dot>
+              {{ formatExpireDelta(row.daysUntilExpire) }}
             </StatusChip>
           </div>
-
-          <div class="mobile-record-card__stats">
-            <div>
-              <span>当前余额</span>
-              <strong>{{ plan.currentBalance }}</strong>
-            </div>
-            <div>
-              <span>建议充值</span>
-              <strong>{{ plan.suggestedTopupAmount }}</strong>
-            </div>
-            <div>
-              <span>操作项</span>
-              <strong>{{ plan.itemCount }}</strong>
-            </div>
-          </div>
-
           <div class="mobile-record-card__meta">
             <div>
-              <span>业务分布</span>
-              <strong>
-                开通 {{ plan.activeServiceCount }} · 续费 {{ plan.renewServicesCount }} · 取消
-                {{ plan.cancelServicesCount }}
-              </strong>
+              <span>电话/微信</span>
+              <strong
+                >{{ row.customer.phoneMasked || '-' }} / {{ row.customer.wechat || '-' }}</strong
+              >
             </div>
             <div>
-              <span>预计续费</span>
-              <strong>{{ plan.requiredRenewalAmount }}</strong>
+              <span>网站账号</span>
+              <strong>{{ row.serviceAccount || '-' }}</strong>
+            </div>
+            <div>
+              <span>使用 ID</span>
+              <strong>{{ row.appleAccount?.appleIdMasked || '-' }}</strong>
+            </div>
+            <div>
+              <span>上次价格</span>
+              <strong>{{ row.lastPaidAmount }} {{ row.lastPaidCurrency }}</strong>
             </div>
           </div>
-
-          <div class="mobile-record-card__chips">
-            <StatusChip :tone="plan.hasWrongChargeRisk ? 'red' : 'green'" dot>
-              {{ plan.hasWrongChargeRisk ? '误扣费风险' : '风险正常' }}
-            </StatusChip>
-            <StatusChip tone="orange">等客户 {{ plan.pendingCustomerCount }}</StatusChip>
-            <StatusChip tone="blue">平均成本 {{ formatAverageCost(plan.avgUnitCost) }}</StatusChip>
-          </div>
-
           <div class="mobile-record-card__actions">
-            <AppButton size="small" variant="ghost" @click="openDetail(plan)">详情</AppButton>
             <AppButton
               size="small"
-              variant="success"
-              :disabled="plan.status === 'completed'"
-              @click="completePlan(plan)"
+              variant="soft"
+              :disabled="!row.appleAccount"
+              @click="openTopupDialog(row)"
             >
-              完成
+              充值
+            </AppButton>
+            <AppButton size="small" variant="primary" @click="openSubmitDialog(row)">
+              提交续费工作台
             </AppButton>
           </div>
         </article>
-
-        <div v-if="!loading && plans.length === 0" class="apple-core-empty-state">
-          <strong>暂无操作计划</strong>
-          <span>可以重新生成未来 7 天 Apple ID 操作计划，或清空筛选后查看全部。</span>
-          <div class="apple-core-empty-state__actions">
-            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-            <AppButton variant="primary" :loading="generating" @click="generatePlans">
-              生成操作计划
-            </AppButton>
-          </div>
-        </div>
       </div>
 
       <PaginationBar
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
-        @change="loadPlans"
+        @change="loadCustomers"
       />
     </section>
 
-    <AppDrawer
-      v-model="detailDrawerVisible"
-      :title="
-        selectedPlan ? `操作计划 · ${selectedPlan.appleAccount.appleIdMasked}` : '操作计划详情'
-      "
-      confirm-text="刷新详情"
-      size="720px"
-      @confirm="refreshDetail"
-    >
-      <div class="drawer-detail-grid">
-        <div>
-          <span>Apple ID</span>
-          <strong>{{ selectedPlan?.appleAccount.appleIdMasked ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>当前余额</span>
-          <strong>{{ selectedPlan?.currentBalance ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>建议充值</span>
-          <strong>{{ selectedPlan?.suggestedTopupAmount ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>续费项</span>
-          <strong>{{ selectedPlan?.renewServicesCount ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>取消项</span>
-          <strong>{{ selectedPlan?.cancelServicesCount ?? '-' }}</strong>
-        </div>
-        <div>
-          <span>风险</span>
-          <strong>{{ selectedPlan?.hasWrongChargeRisk ? '有误扣费风险' : '正常' }}</strong>
-        </div>
-      </div>
-
-      <div
-        v-if="selectedPlan?.hasWrongChargeRisk"
-        class="detail-alert apple-core-alert apple-core-alert--red"
-      >
-        <StatusChip tone="red">风险</StatusChip>
-        <div>
-          <strong>存在误扣费风险</strong>
-          <p>
-            该 Apple ID 中存在客户不续费但自动续费未明确关闭，或临期未确认且自动续费开启的业务。
-          </p>
-        </div>
-      </div>
-
-      <div class="drawer-section">
-        <div class="drawer-section__title">计划信息</div>
-        <el-descriptions class="detail-descriptions" :column="1" border>
-          <el-descriptions-item label="计划备注">
-            {{ selectedPlan?.mainNote ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="计划日期">
-            {{ formatDate(selectedPlan?.planDate, true) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="平均成本">
-            {{ formatAverageCost(selectedPlan?.avgUnitCost) }}
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-
-      <div class="drawer-section">
-        <div class="drawer-section__title">操作项</div>
-        <el-table class="desktop-data-table" :data="selectedPlan?.items ?? []" row-key="id">
-          <el-table-column label="客户/业务" min-width="170">
-            <template #default="{ row }">
-              {{ row.customer.name }}
-              <div class="muted-block">{{ row.service.name }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="动作" width="120">
-            <template #default="{ row }">
-              <StatusChip :tone="getActionTone(row.actionType)">
-                {{ getActionLabel(row.actionType) }}
-              </StatusChip>
-            </template>
-          </el-table-column>
-          <el-table-column label="到期/截止" min-width="170">
-            <template #default="{ row }">
-              {{ formatDate(row.expireTime) }}
-              <div class="muted-block">取消截止 {{ formatDate(row.cancelDeadline) }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="预计扣费" width="110">
-            <template #default="{ row }">{{ row.expectedChargeAmount }}</template>
-          </el-table-column>
-          <el-table-column label="关联任务" min-width="150">
-            <template #default="{ row }">
-              {{ row.task?.title ?? '-' }}
-              <div v-if="row.task" class="muted-block">{{ row.task.status }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="说明" min-width="220">
-            <template #default="{ row }">{{ row.note ?? '-' }}</template>
-          </el-table-column>
-        </el-table>
-        <div
-          v-if="selectedPlan?.items?.length"
-          class="mobile-record-list"
-          aria-label="操作计划详情移动列表"
-        >
-          <article v-for="item in selectedPlan.items" :key="item.id" class="mobile-record-card">
-            <div class="mobile-record-card__head">
-              <div class="mobile-record-card__title">
-                <strong>{{ item.customer.name }} · {{ item.service.name }}</strong>
-                <span>{{ item.note ?? '暂无说明' }}</span>
-              </div>
-              <StatusChip :tone="getActionTone(item.actionType)">
-                {{ getActionLabel(item.actionType) }}
-              </StatusChip>
-            </div>
-            <div class="mobile-record-card__stats">
-              <div>
-                <span>到期时间</span>
-                <strong>{{ formatDate(item.expireTime) }}</strong>
-              </div>
-              <div>
-                <span>取消截止</span>
-                <strong>{{ formatDate(item.cancelDeadline) }}</strong>
-              </div>
-              <div>
-                <span>预计扣费</span>
-                <strong>{{ item.expectedChargeAmount }}</strong>
-              </div>
-            </div>
-            <div class="mobile-record-card__meta">
-              <div>
-                <span>关联任务</span>
-                <strong>{{ item.task?.title ?? '-' }}</strong>
-              </div>
-            </div>
-          </article>
-        </div>
-        <div v-else class="mobile-record-list" aria-label="操作计划详情空状态">
-          <div class="apple-core-empty-state">
-            <strong>暂无操作项</strong>
-            <span>该操作计划还没有生成具体客户业务动作。</span>
+    <el-dialog v-model="topupDialogVisible" title="Apple ID 充值" width="520px" destroy-on-close>
+      <el-form ref="topupFormRef" :model="topupForm" :rules="topupRules" label-position="top">
+        <el-form-item label="Apple ID">
+          <el-input :model-value="selectedRow?.appleAccount?.appleIdMasked || '-'" disabled />
+        </el-form-item>
+        <el-form-item label="充值面值" prop="faceValue">
+          <el-input v-model="topupForm.faceValue" placeholder="例如 20" />
+        </el-form-item>
+        <el-form-item label="人民币成本单价" prop="unitCost">
+          <el-input v-model="topupForm.unitCost" placeholder="例如 7.25" />
+        </el-form-item>
+        <div class="drawer-detail-grid">
+          <div>
+            <span>总人民币成本</span>
+            <strong>{{ topupTotalCost }} CNY</strong>
+          </div>
+          <div>
+            <span>充值后预估余额</span>
+            <strong>{{ estimatedBalanceAfterTopup }}</strong>
           </div>
         </div>
-      </div>
+        <el-form-item label="礼品卡/凭证" prop="giftCardCode">
+          <el-input v-model="topupForm.giftCardCode" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="备注" prop="remark">
+          <el-input v-model="topupForm.remark" type="textarea" :rows="3" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <AppButton @click="topupDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="savingTopup" @click="saveTopup">保存充值</AppButton>
+      </template>
+    </el-dialog>
 
-      <div class="drawer-section">
-        <div class="drawer-section__title">计划处理</div>
-        <div class="drawer-inline-actions drawer-inline-actions--inside">
-          <AppButton
-            variant="success"
-            :disabled="!selectedPlan || selectedPlan.status === 'completed'"
-            @click="completeSelectedPlan"
-          >
-            标记计划完成
-          </AppButton>
+    <el-dialog v-model="submitDialogVisible" title="提交续费工作台" width="620px" destroy-on-close>
+      <el-form ref="submitFormRef" :model="submitForm" :rules="submitRules" label-position="top">
+        <div class="drawer-detail-grid">
+          <div>
+            <span>客户</span>
+            <strong>{{ selectedRow?.customer.name || '-' }}</strong>
+          </div>
+          <div>
+            <span>当前套餐</span>
+            <strong>{{ selectedRow?.currentPackageSummary || '-' }}</strong>
+          </div>
+          <div>
+            <span>到期时间</span>
+            <strong>{{ formatDate(selectedRow?.expireTime, true) }}</strong>
+          </div>
+          <div>
+            <span>当前余额</span>
+            <strong>{{ selectedRow?.appleAccount?.currentBalance || '-' }}</strong>
+          </div>
         </div>
-      </div>
-    </AppDrawer>
+
+        <el-form-item label="处理方式" prop="decision">
+          <el-radio-group v-model="submitForm.decision">
+            <el-radio-button label="renew">续费</el-radio-button>
+            <el-radio-button label="stop">停止</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <template v-if="submitForm.decision === 'renew'">
+          <el-form-item label="国家/地区" prop="targetRegion">
+            <el-select
+              v-model="submitForm.targetRegion"
+              filterable
+              placeholder="选择国家/地区"
+              @change="handleSubmitRegionChange"
+            >
+              <el-option
+                v-for="item in targetRegionOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="分类" prop="targetCategory">
+            <el-select
+              v-model="submitForm.targetCategory"
+              filterable
+              placeholder="选择分类"
+              @change="handleSubmitCategoryChange"
+            >
+              <el-option
+                v-for="item in targetCategoryOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="业务" prop="targetServicePriceId">
+            <el-select
+              v-model="submitForm.targetServicePriceId"
+              filterable
+              :loading="servicePricesLoading"
+              placeholder="选择续费业务"
+            >
+              <el-option
+                v-for="item in targetServiceOptions"
+                :key="item.id"
+                :label="formatServicePriceOption(item)"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+          <div class="drawer-detail-grid">
+            <div>
+              <span>目标套餐</span>
+              <strong>{{ selectedTargetPriceSummary }}</strong>
+            </div>
+            <div>
+              <span>建议充值</span>
+              <strong>{{ selectedTargetSuggestedTopup }}</strong>
+            </div>
+          </div>
+        </template>
+
+        <el-form-item label="备注" prop="note">
+          <el-input
+            v-model="submitForm.note"
+            type="textarea"
+            :rows="3"
+            placeholder="可填写客户沟通结果、收款说明或停止原因"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <AppButton @click="submitDialogVisible = false">取消</AppButton>
+        <AppButton variant="primary" :loading="submitting" @click="submitToRenewalWorkbench">
+          提交
+        </AppButton>
+      </template>
+    </el-dialog>
   </PageScaffold>
 </template>
 
 <script setup lang="ts">
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { appleActionPlansApi, userTableViewsApi, type AppleActionPlanQuery } from '@/api/system';
+import {
+  appleAccountsApi,
+  appleActionPlansApi,
+  appleServicesApi,
+  type AppleExpiringCustomerQuery
+} from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
-import AppDrawer from '@/components/ui/AppDrawer.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
-import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
+import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
-  AppleActionPlan,
-  AppleActionPlanItem,
+  AppleAccount,
+  AppleAccountOwnershipType,
+  AppleExpiringCustomer,
+  AppleServiceRegionPrice,
   PageResult,
-  TableDensity,
-  UserTableView
+  TableDensity
 } from '@/types/system';
-import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
-import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
-const plans = ref<AppleActionPlan[]>([]);
-const total = ref(0);
-const loading = ref(false);
-const generating = ref(false);
-const quickDate = ref('');
-const selectedPlans = ref<AppleActionPlan[]>([]);
-const selectedPlan = ref<AppleActionPlan | null>(null);
-const detailDrawerVisible = ref(false);
-const density = ref<TableDensity>('default');
-const visibleColumns = ref<string[]>([]);
-const savedViews = ref<UserTableView[]>([]);
-const savedViewId = ref('');
-const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
-const tableKey = 'apple_action_plans';
-const activePlansQueryKey = ref('');
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
-interface PlanPreviewService {
-  title: string;
-  description: string;
-  label: string;
-  tone: ChipTone;
+
+interface SubmitForm {
+  decision: 'renew' | 'stop';
+  targetRegion: string;
+  targetCategory: string;
+  targetServicePriceId: string;
+  note: string;
 }
 
-const query = reactive<AppleActionPlanQuery>({
+const customers = ref<AppleExpiringCustomer[]>([]);
+const total = ref(0);
+const loading = ref(false);
+const servicePricesLoading = ref(false);
+const submitting = ref(false);
+const savingTopup = ref(false);
+const selectedRows = ref<AppleExpiringCustomer[]>([]);
+const selectedRow = ref<AppleExpiringCustomer | null>(null);
+const visibleColumns = ref<string[]>([]);
+const density = ref<TableDensity>('default');
+const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
+const activeQueryKey = ref('');
+const expiresPreset = ref('3');
+const expireDateRange = ref<[string, string] | []>([]);
+const servicePrices = ref<AppleServiceRegionPrice[]>([]);
+const topupDialogVisible = ref(false);
+const submitDialogVisible = ref(false);
+const topupFormRef = ref<FormInstance>();
+const submitFormRef = ref<FormInstance>();
+let stopRealtimeListener: (() => void) | undefined;
+
+const query = reactive<AppleExpiringCustomerQuery>({
   page: 1,
   pageSize: 20,
   keyword: '',
-  status: '',
-  hasWrongChargeRisk: '',
-  planDateFrom: '',
-  planDateTo: ''
+  status: 'active',
+  expiresInDays: '3',
+  ownershipType: '',
+  appleAccountStatus: '',
+  renewalSubmitted: ''
 });
 
-const statusOptions: Array<{ label: string; value: AppleActionPlan['status'] }> = [
-  { label: '待处理', value: 'pending' },
-  { label: '处理中', value: 'processing' },
-  { label: '已完成', value: 'completed' },
+const topupForm = reactive({
+  faceValue: '',
+  unitCost: '',
+  giftCardCode: '',
+  remark: ''
+});
+
+const submitForm = reactive<SubmitForm>({
+  decision: 'renew',
+  targetRegion: '',
+  targetCategory: '',
+  targetServicePriceId: '',
+  note: ''
+});
+
+const positiveAmountRule = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+  if (readAmount(value) > 0) {
+    callback();
+    return;
+  }
+  callback(new Error('请输入大于 0 的金额'));
+};
+
+const topupRules: FormRules = {
+  faceValue: [{ validator: positiveAmountRule, trigger: 'blur' }],
+  unitCost: [{ validator: positiveAmountRule, trigger: 'blur' }]
+};
+
+const submitRules: FormRules = {
+  decision: [{ required: true, message: '请选择处理方式', trigger: 'change' }],
+  targetServicePriceId: [
+    {
+      validator: (_rule, value: string, callback) => {
+        if (submitForm.decision === 'renew' && !value) {
+          callback(new Error('请选择续费业务'));
+          return;
+        }
+        callback();
+      },
+      trigger: 'change'
+    }
+  ]
+};
+
+const activationStatusOptions = [
+  { label: '开通中', value: 'active' },
+  { label: '已到期', value: 'expired' },
+  { label: '已取消', value: 'cancelled' },
   { label: '异常', value: 'abnormal' }
 ];
 
-const riskOptions = [
-  { label: '有风险', value: 'true' },
-  { label: '无风险', value: 'false' }
+const expiresPresetOptions = [
+  { label: '今天到期', value: '0' },
+  { label: '1天内', value: '1' },
+  { label: '3天内', value: '3' },
+  { label: '7天内', value: '7' },
+  { label: '15天内', value: '15' },
+  { label: '自定义', value: 'custom' }
 ];
 
-const quickDateOptions = [
-  { label: '今天', value: 'today' },
-  { label: '昨天', value: 'yesterday' },
-  { label: '近7天', value: 'last7' },
-  { label: '本月', value: 'month' }
+const ownershipOptions: Array<{ label: string; value: AppleAccountOwnershipType }> = [
+  { label: '寄存', value: 'consigned' },
+  { label: '售出', value: 'sold' }
 ];
 
-const actionPlanColumnOptions = [
-  { label: 'Apple ID', value: 'appleAccount', required: true },
-  { label: '余额/建议充值', value: 'balance' },
-  { label: '业务分布', value: 'services' },
+const accountStatusOptions: Array<{ label: string; value: AppleAccount['status'] }> = [
+  { label: '正常', value: 'normal' },
+  { label: '需验证', value: 'need_verify' },
+  { label: '锁定', value: 'locked' },
+  { label: '密码错误', value: 'password_error' },
   { label: '风险', value: 'risk' },
-  { label: '操作项', value: 'itemCount' },
-  { label: '计划日期', value: 'planDate' },
-  { label: '状态', value: 'status' }
+  { label: '未知', value: 'unknown' }
+];
+
+const columnOptions = [
+  { label: '客户', value: 'customer', required: true },
+  { label: '开通业务', value: 'service', required: true },
+  { label: '使用 ID', value: 'appleId' },
+  { label: '到期时间', value: 'expire' },
+  { label: '上一次开通价格', value: 'lastPrice' },
+  { label: '续费任务', value: 'renewal' }
 ];
 
 const batchActions = [{ label: '批量导出', value: 'export' }];
 
-const riskCount = computed(() => plans.value.filter((plan) => plan.hasWrongChargeRisk).length);
-const suggestedTopupSum = computed(() =>
-  plans.value.reduce((sum, plan) => sum + Number(plan.suggestedTopupAmount || 0), 0).toFixed(2)
-);
-const itemCountSum = computed(() =>
-  plans.value.reduce((sum, plan) => sum + Number(plan.itemCount || 0), 0)
-);
-const openPlanCount = computed(
-  () =>
-    plans.value.filter((plan) => plan.status === 'pending' || plan.status === 'processing').length
-);
-const priorityPlans = computed(() =>
-  [...plans.value]
-    .filter((plan) => plan.status !== 'completed')
-    .sort((left, right) => {
-      const riskDiff = Number(right.hasWrongChargeRisk) - Number(left.hasWrongChargeRisk);
-      if (riskDiff !== 0) return riskDiff;
-
-      const itemDiff = Number(right.itemCount || 0) - Number(left.itemCount || 0);
-      if (itemDiff !== 0) return itemDiff;
-
-      return getPlanTimeValue(left.planDate) - getPlanTimeValue(right.planDate);
-    })
-    .slice(0, 3)
-);
-const featuredPlans = computed(() => {
-  const plansToShow = priorityPlans.value.length ? priorityPlans.value : plans.value.slice(0, 2);
-  return plansToShow.slice(0, 2);
-});
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
+const selectedExpiresLabel = computed(
+  () => expiresPresetOptions.find((item) => item.value === expiresPreset.value)?.label ?? '到期筛选'
+);
+const urgentCount = computed(
+  () => customers.value.filter((item) => (item.daysUntilExpire ?? 999) <= 0).length
+);
+const balanceShortageCount = computed(
+  () => customers.value.filter((item) => getSuggestedTopupForRow(item) > 0).length
+);
+const submittedCount = computed(
+  () => customers.value.filter((item) => item.renewalSubmitted).length
+);
+const pendingSubmitCount = computed(
+  () => customers.value.filter((item) => !item.renewalSubmitted).length
+);
+const soldCount = computed(
+  () => customers.value.filter((item) => item.appleAccountOwnershipType === 'sold').length
+);
+const consignedCount = computed(
+  () => customers.value.filter((item) => item.appleAccountOwnershipType === 'consigned').length
+);
+
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
-  const riskLabel = riskOptions.find((item) => item.value === query.hasWrongChargeRisk)?.label;
-  const quickDateLabel = quickDateOptions.find((item) => item.value === quickDate.value)?.label;
+  const expiresLabel = selectedExpiresLabel.value;
+  const ownershipLabel = ownershipOptions.find((item) => item.value === query.ownershipType)?.label;
+  const accountStatusLabel = accountStatusOptions.find(
+    (item) => item.value === query.appleAccountStatus
+  )?.label;
 
-  if (query.hasWrongChargeRisk && riskLabel) {
-    chips.push({ key: 'hasWrongChargeRisk', label: '误扣费风险', value: riskLabel });
-  }
-  if (quickDate.value && quickDateLabel) {
-    chips.push({ key: 'quickDate', label: '计划日期', value: quickDateLabel });
+  if (expiresPreset.value) chips.push({ key: 'expires', label: '到期时间', value: expiresLabel });
+  if (ownershipLabel)
+    chips.push({ key: 'ownershipType', label: '售出/寄存', value: ownershipLabel });
+  if (accountStatusLabel)
+    chips.push({ key: 'appleAccountStatus', label: 'ID 状态', value: accountStatusLabel });
+  if (query.renewalSubmitted) {
+    chips.push({
+      key: 'renewalSubmitted',
+      label: '续费任务',
+      value: query.renewalSubmitted === 'true' ? '已提交' : '未提交'
+    });
   }
 
   return chips;
 });
 
-onMounted(initializePage);
+const targetRegionOptions = computed(() =>
+  uniqueOptions(
+    servicePrices.value,
+    (item) => item.region,
+    (value) => value
+  )
+);
+const targetCategoryOptions = computed(() =>
+  uniqueOptions(
+    servicePrices.value.filter(
+      (item) => !submitForm.targetRegion || item.region === submitForm.targetRegion
+    ),
+    (item) => item.category,
+    (value) => value
+  )
+);
+const targetServiceOptions = computed(() =>
+  servicePrices.value.filter(
+    (item) =>
+      (!submitForm.targetRegion || item.region === submitForm.targetRegion) &&
+      (!submitForm.targetCategory || item.category === submitForm.targetCategory)
+  )
+);
+const selectedTargetPrice = computed(
+  () => servicePrices.value.find((item) => item.id === submitForm.targetServicePriceId) ?? null
+);
+const selectedTargetPriceSummary = computed(() =>
+  selectedTargetPrice.value ? formatServicePriceOption(selectedTargetPrice.value) : '-'
+);
+const selectedTargetSuggestedTopup = computed(() => {
+  if (!selectedTargetPrice.value || !selectedRow.value?.appleAccount) {
+    return '-';
+  }
+  const amount = Math.max(
+    0,
+    readAmount(selectedTargetPrice.value.appleBalancePrice) -
+      readAmount(selectedRow.value.appleAccount.currentBalance)
+  );
+  return `${formatNumber(amount)} ${selectedTargetPrice.value.currency}`;
+});
+const topupTotalCost = computed(() =>
+  formatNumber(readAmount(topupForm.faceValue) * readAmount(topupForm.unitCost))
+);
+const estimatedBalanceAfterTopup = computed(() => {
+  const current = readAmount(selectedRow.value?.appleAccount?.currentBalance);
+  const faceValue = readAmount(topupForm.faceValue);
+  const currency = selectedRow.value?.appleAccount?.currency || selectedRow.value?.currency || '';
+  return `${formatNumber(current + faceValue)} ${currency}`.trim();
+});
 
-function buildPlanParams(): AppleActionPlanQuery {
+onMounted(() => {
+  loadCustomers();
+  loadServicePrices();
+  stopRealtimeListener = onRealtimeQueryInvalidated(
+    ['apple-action-plans', 'apple-renewal-tasks', 'apple-accounts'],
+    () => loadCustomers({ background: true, force: true })
+  );
+});
+
+onBeforeUnmount(() => {
+  stopRealtimeListener?.();
+});
+
+function buildListParams(): AppleExpiringCustomerQuery {
+  const [expireFrom, expireTo] = expireDateRange.value;
   return {
     ...query,
     keyword: query.keyword || undefined,
     status: query.status || undefined,
-    hasWrongChargeRisk: query.hasWrongChargeRisk || undefined,
-    planDateFrom: query.planDateFrom || undefined,
-    planDateTo: query.planDateTo || undefined,
-    sortBy: sortConfig.value.prop,
+    expiresInDays: expiresPreset.value === 'custom' ? undefined : expiresPreset.value,
+    expireFrom: expiresPreset.value === 'custom' ? buildStartDate(expireFrom) : undefined,
+    expireTo: expiresPreset.value === 'custom' ? buildEndDate(expireTo) : undefined,
+    ownershipType: query.ownershipType || undefined,
+    appleAccountStatus: query.appleAccountStatus || undefined,
+    renewalSubmitted: query.renewalSubmitted || undefined,
+    sortBy: mapSortProp(sortConfig.value.prop),
     sortOrder: mapSortOrder(sortConfig.value.order)
   };
 }
 
-function applyPlanResult(data: PageResult<AppleActionPlan>) {
-  plans.value = data.items;
-  total.value = data.total;
-}
-
-async function loadPlans(options: { background?: boolean; force?: boolean } = {}) {
-  const params = buildPlanParams();
-  const key = createSmartQueryKey('apple-action-plans', params);
-  const cached = getSmartQueryData<PageResult<AppleActionPlan>>(key);
-
-  activePlansQueryKey.value = key;
-
-  if (cached) {
-    applyPlanResult(cached);
-  }
-
-  loading.value = !cached && !options.background;
+async function loadCustomers(options: { background?: boolean; force?: boolean } = {}) {
+  const params = buildListParams();
+  const key = createSmartQueryKey('apple-action-plans:expiring-customers', params);
+  activeQueryKey.value = key;
+  loading.value = !options.background;
 
   try {
-    const result = await refreshSmartQuery({
+    const result = await refreshSmartQuery<PageResult<AppleExpiringCustomer>>({
       key,
-      fetcher: () => appleActionPlansApi.list(params),
+      fetcher: () => appleActionPlansApi.listExpiringCustomers(params),
       force: options.force ?? true
     });
 
-    if (activePlansQueryKey.value !== key) {
+    if (activeQueryKey.value !== key) {
       return;
     }
 
-    if (result.changed || !cached) {
-      applyPlanResult(result.data);
-    }
+    applyCustomerResult(result.data);
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载操作计划失败');
+      ElMessage.error(error instanceof Error ? error.message : '加载到期客户失败');
     }
   } finally {
-    if (activePlansQueryKey.value === key) {
+    if (activeQueryKey.value === key) {
       loading.value = false;
     }
   }
 }
 
+function applyCustomerResult(result: PageResult<AppleExpiringCustomer>) {
+  customers.value = result.items;
+  total.value = result.total;
+}
+
+async function loadServicePrices() {
+  servicePricesLoading.value = true;
+  try {
+    const result = await appleServicesApi.listRegionPrices({
+      page: 1,
+      pageSize: 500,
+      status: 'active'
+    });
+    servicePrices.value = result.items;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载业务选项失败');
+  } finally {
+    servicePricesLoading.value = false;
+  }
+}
+
 async function handleSearch() {
   query.page = 1;
-  await loadPlans();
+  await loadCustomers();
+}
+
+async function refreshCustomers() {
+  await loadCustomers();
+}
+
+async function handleExpiresPresetChange() {
+  query.page = 1;
+  if (expiresPreset.value !== 'custom') {
+    expireDateRange.value = [];
+  }
+  await loadCustomers();
 }
 
 async function handleSortChange(payload: {
@@ -711,41 +786,35 @@ async function handleSortChange(payload: {
 }) {
   sortConfig.value = payload.prop ? { prop: payload.prop, order: payload.order } : {};
   query.page = 1;
-  await loadPlans();
+  await loadCustomers();
 }
 
-function handleSelectionChange(rows: AppleActionPlan[]) {
-  selectedPlans.value = rows;
-}
-
-function clearFilters() {
-  query.page = 1;
-  query.keyword = '';
-  query.status = '';
-  query.hasWrongChargeRisk = '';
-  quickDate.value = '';
-  clearPlanDateRange();
-  savedViewId.value = '';
-  sortConfig.value = {};
+function handleSelectionChange(rows: AppleExpiringCustomer[]) {
+  selectedRows.value = rows;
 }
 
 async function clearFiltersAndSearch() {
-  clearFilters();
-  await loadPlans();
+  query.page = 1;
+  query.keyword = '';
+  query.status = 'active';
+  query.ownershipType = '';
+  query.appleAccountStatus = '';
+  query.renewalSubmitted = '';
+  expiresPreset.value = '3';
+  expireDateRange.value = [];
+  sortConfig.value = {};
+  await loadCustomers();
 }
 
 function removeFilter(key: string) {
-  if (key === 'hasWrongChargeRisk') {
-    query.hasWrongChargeRisk = '';
+  if (key === 'expires') {
+    expiresPreset.value = '3';
+    expireDateRange.value = [];
   }
-  if (key === 'quickDate') {
-    quickDate.value = '';
-    clearPlanDateRange();
-  }
-}
-
-function exportList() {
-  ElMessage.info('Apple ID 操作计划导出会进入数据中心导出任务，后续统一接入');
+  if (key === 'ownershipType') query.ownershipType = '';
+  if (key === 'appleAccountStatus') query.appleAccountStatus = '';
+  if (key === 'renewalSubmitted') query.renewalSubmitted = '';
+  handleSearch();
 }
 
 function handleBatchAction(action: string) {
@@ -754,101 +823,229 @@ function handleBatchAction(action: string) {
   }
 }
 
-async function loadTableViews(applyDefault = false) {
+function exportList() {
+  ElMessage.info('到期客户导出会进入数据中心导出任务，后续统一接入');
+}
+
+function openTopupDialog(row: AppleExpiringCustomer) {
+  if (!row.appleAccount) {
+    ElMessage.warning('这条开通记录没有绑定 Apple ID');
+    return;
+  }
+  selectedRow.value = row;
+  topupForm.faceValue =
+    getSuggestedTopupForRow(row) > 0 ? formatNumber(getSuggestedTopupForRow(row)) : '';
+  topupForm.unitCost = '';
+  topupForm.giftCardCode = '';
+  topupForm.remark = `到期客户充值：${row.customer.name} / ${row.currentPackageSummary}`;
+  topupDialogVisible.value = true;
+}
+
+async function saveTopup() {
+  const valid = await topupFormRef.value?.validate().catch(() => false);
+  if (!valid || !selectedRow.value?.appleAccount) {
+    return;
+  }
+
+  savingTopup.value = true;
   try {
-    const data = await userTableViewsApi.list({
-      page: 1,
-      pageSize: 100,
-      tableKey
+    await appleAccountsApi.createTopup(selectedRow.value.appleAccount.id, {
+      faceValue: topupForm.faceValue,
+      costAmount: topupTotalCost.value,
+      giftCardCode: topupForm.giftCardCode || null,
+      remark: topupForm.remark || null
     });
-    savedViews.value = data.items;
-    if (applyDefault) {
-      const defaultView = data.items.find((view) => view.isDefault);
-      if (defaultView) {
-        applyView(defaultView);
-      }
+    ElMessage.success('充值已保存');
+    topupDialogVisible.value = false;
+    await loadCustomers({ force: true });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存充值失败');
+  } finally {
+    savingTopup.value = false;
+  }
+}
+
+async function openSubmitDialog(row: AppleExpiringCustomer) {
+  selectedRow.value = row;
+  submitForm.decision = 'renew';
+  submitForm.note = '';
+
+  if (!servicePrices.value.length) {
+    await loadServicePrices();
+  }
+
+  submitForm.targetRegion =
+    row.servicePrice?.region || row.serviceRegion || row.appleAccount?.region || '';
+  submitForm.targetCategory = row.servicePrice?.category || row.service.category || '';
+  submitForm.targetServicePriceId =
+    row.servicePrice?.id ||
+    findFirstTargetServicePrice(row)?.id ||
+    targetServiceOptions.value[0]?.id ||
+    '';
+  submitDialogVisible.value = true;
+}
+
+function handleSubmitRegionChange() {
+  if (!targetCategoryOptions.value.some((item) => item.value === submitForm.targetCategory)) {
+    submitForm.targetCategory = targetCategoryOptions.value[0]?.value || '';
+  }
+  syncTargetServicePrice();
+}
+
+function handleSubmitCategoryChange() {
+  syncTargetServicePrice();
+}
+
+function syncTargetServicePrice() {
+  if (!targetServiceOptions.value.some((item) => item.id === submitForm.targetServicePriceId)) {
+    submitForm.targetServicePriceId = targetServiceOptions.value[0]?.id || '';
+  }
+}
+
+async function submitToRenewalWorkbench() {
+  const valid = await submitFormRef.value?.validate().catch(() => false);
+  if (!valid || !selectedRow.value) {
+    return;
+  }
+
+  if (submitForm.decision === 'stop') {
+    try {
+      await ElMessageBox.confirm(
+        '确认提交停止续费任务？提交后会取消同一开通记录未完成的续费类任务。',
+        '确认停止续费',
+        {
+          type: 'warning',
+          confirmButtonText: '提交',
+          cancelButtonText: '取消'
+        }
+      );
+    } catch (error) {
+      if (error === 'cancel' || error === 'close') return;
+      throw error;
     }
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载保存视图失败');
   }
-}
 
-async function saveTableView() {
+  const targetPrice = selectedTargetPrice.value;
+  submitting.value = true;
   try {
-    const { value } = await ElMessageBox.prompt('请输入视图名称', '保存 Apple ID 操作计划视图', {
-      inputValue: 'Apple ID 操作计划常用视图',
-      inputPattern: /^.{1,60}$/,
-      inputErrorMessage: '视图名称不能为空，且不超过 60 个字符',
-      confirmButtonText: '保存',
-      cancelButtonText: '取消'
+    await appleActionPlansApi.submitExpiringCustomer(selectedRow.value.activationId, {
+      decision: submitForm.decision,
+      targetRegion: submitForm.decision === 'renew' ? submitForm.targetRegion || null : null,
+      targetCategory: submitForm.decision === 'renew' ? submitForm.targetCategory || null : null,
+      targetServiceId: submitForm.decision === 'renew' ? targetPrice?.serviceId || null : null,
+      targetServicePriceId:
+        submitForm.decision === 'renew' ? submitForm.targetServicePriceId : null,
+      note: submitForm.note || null
     });
-    const created = await userTableViewsApi.create({
-      tableKey,
-      viewName: value.trim(),
-      filters: {
-        keyword: query.keyword,
-        status: query.status,
-        hasWrongChargeRisk: query.hasWrongChargeRisk,
-        quickDate: quickDate.value,
-        planDateFrom: query.planDateFrom,
-        planDateTo: query.planDateTo
-      },
-      sortConfig: sortConfig.value,
-      columns: visibleColumns.value.length
-        ? visibleColumns.value
-        : actionPlanColumnOptions.map((column) => column.value),
-      density: density.value,
-      pageSize: query.pageSize,
-      isDefault: savedViews.value.length === 0
-    });
-    await loadTableViews();
-    savedViewId.value = created.id;
-    ElMessage.success('表格视图已保存');
+    ElMessage.success(submitForm.decision === 'renew' ? '续费任务已提交' : '停止续费任务已提交');
+    submitDialogVisible.value = false;
+    await loadCustomers({ force: true });
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    ElMessage.error(error instanceof Error ? error.message : '保存视图失败');
+    ElMessage.error(error instanceof Error ? error.message : '提交续费工作台失败');
+  } finally {
+    submitting.value = false;
   }
 }
 
-async function applySavedView(id: string) {
-  const view = savedViews.value.find((item) => item.id === id);
-  if (!view) return;
-  applyView(view);
-  ElMessage.success('已应用保存视图');
-  await loadPlans();
+function findFirstTargetServicePrice(row: AppleExpiringCustomer) {
+  return servicePrices.value.find(
+    (item) =>
+      (!row.serviceRegion || item.region === row.serviceRegion) &&
+      item.category === row.service.category &&
+      item.serviceId === row.service.id
+  );
 }
 
-function applyView(view: UserTableView) {
-  const filters = view.filters;
-  query.keyword = typeof filters.keyword === 'string' ? filters.keyword : '';
-  query.status = typeof filters.status === 'string' ? filters.status : '';
-  query.hasWrongChargeRisk =
-    typeof filters.hasWrongChargeRisk === 'string' ? filters.hasWrongChargeRisk : '';
-  quickDate.value = typeof filters.quickDate === 'string' ? filters.quickDate : '';
-  query.planDateFrom = typeof filters.planDateFrom === 'string' ? filters.planDateFrom : '';
-  query.planDateTo = typeof filters.planDateTo === 'string' ? filters.planDateTo : '';
-  query.pageSize = view.pageSize;
-  query.page = 1;
-  density.value = 'default';
-  visibleColumns.value = view.columns.length
-    ? view.columns.filter((column) =>
-        actionPlanColumnOptions.some((option) => option.value === column)
-      )
-    : actionPlanColumnOptions.map((column) => column.value);
-  sortConfig.value = parseSortConfig(view.sortConfig);
-  savedViewId.value = view.id;
+function isColumnVisible(column: string) {
+  return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
 }
 
-function parseSortConfig(value: Record<string, unknown>): {
-  prop?: string;
-  order?: 'ascending' | 'descending' | null;
-} {
-  const prop = typeof value.prop === 'string' ? value.prop : undefined;
-  const order =
-    value.order === 'ascending' || value.order === 'descending' || value.order === null
-      ? value.order
-      : undefined;
-  return prop ? { prop, order } : {};
+function getSuggestedTopupForRow(row: AppleExpiringCustomer) {
+  if (!row.appleAccount) {
+    return 0;
+  }
+  const expected = readAmount(row.servicePrice?.appleBalancePrice || row.consumedValue);
+  return Math.max(0, expected - readAmount(row.appleAccount.currentBalance));
+}
+
+function formatServicePriceOption(price: AppleServiceRegionPrice) {
+  return `${price.serviceName || price.service.name} / ${price.region} / ${price.appleBalancePrice} ${
+    price.currency
+  }`;
+}
+
+function getOwnershipLabel(value?: AppleAccountOwnershipType | null) {
+  if (value === 'sold') return '售出';
+  if (value === 'consigned') return '寄存';
+  return '未知';
+}
+
+function getAccountStatusLabel(value?: AppleAccount['status'] | null) {
+  return accountStatusOptions.find((item) => item.value === value)?.label ?? '未知';
+}
+
+function getAccountStatusTone(value?: AppleAccount['status'] | null): ChipTone {
+  if (value === 'normal') return 'green';
+  if (value === 'need_verify' || value === 'unknown') return 'orange';
+  if (value === 'locked' || value === 'password_error' || value === 'risk') return 'red';
+  return 'neutral';
+}
+
+function getExpireTone(days?: number | null): ChipTone {
+  if (days === null || days === undefined) return 'neutral';
+  if (days <= 0) return 'red';
+  if (days <= 3) return 'orange';
+  return 'blue';
+}
+
+function formatExpireDelta(days?: number | null) {
+  if (days === null || days === undefined) return '未记录到期';
+  if (days < 0) return `已过期 ${Math.abs(days)} 天`;
+  if (days === 0) return '今天到期';
+  return `还有 ${days} 天`;
+}
+
+function formatDate(value?: string | null, withTime = false) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return withTime ? date.toLocaleString('zh-CN') : date.toLocaleDateString('zh-CN');
+}
+
+function readAmount(value?: string | number | null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatNumber(value: number) {
+  if (!Number.isFinite(value)) {
+    return '0.00';
+  }
+  return value.toFixed(2);
+}
+
+function uniqueOptions<TItem>(
+  items: TItem[],
+  getValue: (item: TItem) => string | null | undefined,
+  getLabel: (value: string) => string
+) {
+  return [...new Set(items.map(getValue).filter((value): value is string => Boolean(value)))]
+    .sort((left, right) => left.localeCompare(right))
+    .map((value) => ({ label: getLabel(value), value }));
+}
+
+function buildStartDate(value?: string) {
+  return value ? `${value}T00:00:00` : undefined;
+}
+
+function buildEndDate(value?: string) {
+  return value ? `${value}T23:59:59` : undefined;
+}
+
+function mapSortProp(prop?: string) {
+  if (prop === 'paidAmountRmb') return 'paidAmountRmb';
+  if (prop === 'expireTime') return 'expireTime';
+  return undefined;
 }
 
 function mapSortOrder(order?: 'ascending' | 'descending' | null) {
@@ -856,198 +1053,4 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
   if (order === 'descending') return 'desc';
   return undefined;
 }
-
-function getPlanTimeValue(value?: string | null) {
-  return value ? new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
-}
-
-function isColumnVisible(column: string) {
-  return visibleColumns.value.length ? visibleColumns.value.includes(column) : true;
-}
-
-async function generatePlans() {
-  generating.value = true;
-  try {
-    const result = await appleActionPlansApi.generate({ daysAhead: 7 });
-    ElMessage.success(
-      `扫描 ${result.scannedActivations} 条开通记录，生成 ${result.accountCount} 个 Apple ID 计划，操作项 ${result.itemCount} 个`
-    );
-    await loadPlans();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '生成操作计划失败');
-  } finally {
-    generating.value = false;
-  }
-}
-
-async function openDetail(plan: AppleActionPlan) {
-  try {
-    selectedPlan.value = await appleActionPlansApi.get(plan.id);
-    detailDrawerVisible.value = true;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载计划详情失败');
-  }
-}
-
-async function refreshDetail() {
-  if (!selectedPlan.value) return;
-  await openDetail(selectedPlan.value);
-}
-
-async function completePlan(plan: AppleActionPlan) {
-  selectedPlan.value = plan;
-  await completeSelectedPlan();
-}
-
-async function completeSelectedPlan() {
-  if (!selectedPlan.value) return;
-  try {
-    const { value } = await ElMessageBox.prompt('请输入完成备注', '完成操作计划', {
-      inputType: 'textarea',
-      inputValue: selectedPlan.value.mainNote ?? '',
-      confirmButtonText: '完成',
-      cancelButtonText: '取消'
-    });
-    selectedPlan.value = await appleActionPlansApi.complete(selectedPlan.value.id, {
-      mainNote: value || selectedPlan.value.mainNote || null
-    });
-    ElMessage.success('操作计划已完成');
-    await loadPlans();
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error instanceof Error ? error.message : '完成操作计划失败');
-    }
-  }
-}
-
-async function applyQuickDate() {
-  const now = new Date();
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  query.page = 1;
-  clearPlanDateRange();
-
-  if (quickDate.value === 'today') {
-    end.setDate(end.getDate() + 1);
-    query.planDateFrom = start.toISOString();
-    query.planDateTo = end.toISOString();
-  } else if (quickDate.value === 'yesterday') {
-    start.setDate(start.getDate() - 1);
-    query.planDateFrom = start.toISOString();
-    query.planDateTo = end.toISOString();
-  } else if (quickDate.value === 'last7') {
-    start.setDate(start.getDate() - 7);
-    end.setDate(end.getDate() + 1);
-    query.planDateFrom = start.toISOString();
-    query.planDateTo = end.toISOString();
-  } else if (quickDate.value === 'month') {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    query.planDateFrom = monthStart.toISOString();
-    query.planDateTo = monthEnd.toISOString();
-  }
-
-  await loadPlans();
-}
-
-function clearPlanDateRange() {
-  query.planDateFrom = '';
-  query.planDateTo = '';
-}
-
-async function initializePage() {
-  await loadTableViews(true);
-  await loadPlans({ force: false });
-}
-
-function formatDate(value?: string | null, dateOnly = false) {
-  if (!value) return '-';
-  const options: Intl.DateTimeFormatOptions = dateOnly
-    ? { year: 'numeric', month: '2-digit', day: '2-digit' }
-    : { hour12: false };
-  return new Date(value).toLocaleString('zh-CN', options);
-}
-
-function formatAverageCost(value?: string | number | null) {
-  if (value === null || value === undefined || String(value).trim() === '') {
-    return '-';
-  }
-
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue.toFixed(2) : '-';
-}
-
-function formatAccountRegionCurrency(
-  region: string | null | undefined,
-  currency: string | null | undefined
-) {
-  return formatAppleRegionCurrencyLabel(region, currency);
-}
-
-function getStatusLabel(value: AppleActionPlan['status']) {
-  const labels: Record<AppleActionPlan['status'], string> = {
-    pending: '待处理',
-    processing: '处理中',
-    completed: '已完成',
-    abnormal: '异常'
-  };
-  return labels[value];
-}
-
-function getStatusTone(value: AppleActionPlan['status']) {
-  if (value === 'completed') return 'green';
-  if (value === 'abnormal') return 'red';
-  if (value === 'processing') return 'orange';
-  return 'blue';
-}
-
-function getActionLabel(value: AppleActionPlanItem['actionType']) {
-  const labels: Record<AppleActionPlanItem['actionType'], string> = {
-    renew: '续费',
-    cancel: '取消订阅',
-    change_plan: '改套餐',
-    wait_customer: '等客户'
-  };
-  return labels[value];
-}
-
-function getActionTone(value: AppleActionPlanItem['actionType']) {
-  if (value === 'cancel') return 'red';
-  if (value === 'renew') return 'green';
-  if (value === 'change_plan') return 'orange';
-  return 'blue';
-}
-
-function getPlanPreviewServices(plan: AppleActionPlan): PlanPreviewService[] {
-  return [
-    {
-      title: '取消订阅',
-      description: `客户确认不续费或存在误扣费风险的业务 ${plan.cancelServicesCount} 项。`,
-      label: plan.cancelServicesCount ? `需取消 ${plan.cancelServicesCount}` : '无取消项',
-      tone: plan.cancelServicesCount || plan.hasWrongChargeRisk ? 'red' : 'green'
-    },
-    {
-      title: '等待续费',
-      description: `余额满足条件后等待自动扣费，当前续费业务 ${plan.renewServicesCount} 项。`,
-      label: plan.suggestedTopupAmount === '0' ? '余额充足' : `需充值 ${plan.suggestedTopupAmount}`,
-      tone: plan.suggestedTopupAmount === '0' ? 'green' : 'orange'
-    },
-    {
-      title: '客户确认',
-      description: `仍需继续询问或等待客户确认的业务 ${plan.pendingCustomerCount} 项。`,
-      label: plan.pendingCustomerCount ? `待确认 ${plan.pendingCustomerCount}` : '已确认',
-      tone: plan.pendingCustomerCount ? 'orange' : 'blue'
-    }
-  ];
-}
-
-const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-action-plans'], () => {
-  void loadPlans({
-    background: plans.value.length > 0,
-    force: true
-  });
-});
-
-onBeforeUnmount(stopRealtimeRefresh);
 </script>

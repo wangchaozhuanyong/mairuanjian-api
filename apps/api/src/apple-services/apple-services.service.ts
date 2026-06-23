@@ -105,6 +105,7 @@ const APPLE_SERVICE_SORT_FIELDS: Record<string, keyof Prisma.AppleServiceOrderBy
 const APPLE_SERVICE_LIST_CACHE_TTL_MS = 120_000;
 const APPLE_SERVICE_PLATFORM_MAPPING_CACHE_TTL_MS = 120_000;
 const APPLE_BALANCE_PRICE_RULE_PARAMETER_KEY = 'apple_balance_price_rule';
+const DELETED_REGION_PRICE_KEYS_PARAMETER = 'apple_service_deleted_region_price_keys';
 const DEFAULT_BALANCE_PRICE_RULE = {
   ruleType: 'percent' as AppleBalancePriceRuleType,
   ruleValue: '1'
@@ -241,6 +242,11 @@ export class AppleServicesService {
   async upsertRegionPriceFromOfficial(input: UpsertAppleServiceRegionPriceInput) {
     const region = this.normalizeCode(input.region, 'US', true);
     const currency = this.normalizeCode(input.currency, 'USD', true);
+    const regionPriceKey = this.buildRegionPriceKey(input.serviceId, region, currency);
+    if (await this.isRegionPriceAutoRestoreBlocked(regionPriceKey)) {
+      return null;
+    }
+
     const officialPrice = new PrismaNamespace.Decimal(input.officialPrice);
     const appleBalancePrice = new PrismaNamespace.Decimal(
       input.appleBalancePrice ?? input.officialPrice
@@ -291,6 +297,56 @@ export class AppleServicesService {
 
     this.clearListCaches();
     return this.toRegionPriceResponse(price);
+  }
+
+  async removeRegionPrice(id: string, operator?: AuthenticatedUser) {
+    const priceId = this.normalizeRequiredId(id, 'id');
+    const price = await this.prisma.appleServiceRegionPrice.findFirst({
+      where: { id: priceId, deletedAt: null },
+      include: this.getRegionPriceInclude()
+    });
+
+    if (!price) {
+      throw new NotFoundException('Apple service region price not found');
+    }
+
+    const deletedKey = this.buildRegionPriceKey(price.serviceId, price.region, price.currency);
+    const blockedKeys = await this.getBlockedRegionPriceAutoRestoreKeys();
+    blockedKeys.add(deletedKey);
+    const blockedValue = this.toAuditJson({ keys: [...blockedKeys].sort() });
+
+    await this.prisma.$transaction([
+      this.prisma.systemParameter.upsert({
+        where: { key: DELETED_REGION_PRICE_KEYS_PARAMETER },
+        update: {
+          value: blockedValue,
+          group: 'apple_service',
+          remark: 'Apple ID 当前价格表手动删除记录，阻止旧价格自动恢复',
+          updatedByUserId: operator?.id
+        },
+        create: {
+          key: DELETED_REGION_PRICE_KEYS_PARAMETER,
+          value: blockedValue,
+          group: 'apple_service',
+          remark: 'Apple ID 当前价格表手动删除记录，阻止旧价格自动恢复',
+          updatedByUserId: operator?.id
+        }
+      }),
+      this.prisma.appleServiceRegionPrice.delete({ where: { id: price.id } })
+    ]);
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.region_price.delete',
+      objectType: 'apple_service_region_price',
+      objectId: price.id,
+      beforeData: this.toAuditJson(this.toRegionPriceResponse(price)),
+      remark: `Deleted Apple service region price ${price.serviceName} ${price.region}/${price.currency}`
+    });
+
+    this.clearListCaches();
+    return { deleted: true };
   }
 
   async create(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
@@ -1019,12 +1075,20 @@ export class AppleServicesService {
       return;
     }
 
+    const blockedKeys = await this.getBlockedRegionPriceAutoRestoreKeys();
+    const regionsToSync = allowedRegions.filter(
+      (region) => !blockedKeys.has(this.buildRegionPriceKey(service.id, region, service.currency))
+    );
+    if (!regionsToSync.length) {
+      return;
+    }
+
     const status: AppleServiceRegionPriceStatus =
       service.status === 'disabled' ? 'disabled' : 'active';
     const confirmedAt = new Date();
 
     await this.prisma.$transaction(
-      allowedRegions.map((region) =>
+      regionsToSync.map((region) =>
         this.prisma.appleServiceRegionPrice.upsert({
           where: {
             serviceId_region_currency: {
@@ -1064,6 +1128,36 @@ export class AppleServicesService {
         })
       )
     );
+  }
+
+  private buildRegionPriceKey(serviceId: string, region: string, currency: string) {
+    return `${serviceId}:${region.trim().toUpperCase()}:${currency.trim().toUpperCase()}`;
+  }
+
+  private async isRegionPriceAutoRestoreBlocked(key: string) {
+    const blockedKeys = await this.getBlockedRegionPriceAutoRestoreKeys();
+    return blockedKeys.has(key);
+  }
+
+  private async getBlockedRegionPriceAutoRestoreKeys() {
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: DELETED_REGION_PRICE_KEYS_PARAMETER },
+      select: { value: true }
+    });
+    return this.parseStringSetParameter(parameter?.value);
+  }
+
+  private parseStringSetParameter(value: Prisma.JsonValue | null | undefined) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return new Set<string>();
+    }
+
+    const keys = (value as { keys?: unknown }).keys;
+    if (!Array.isArray(keys)) {
+      return new Set<string>();
+    }
+
+    return new Set(keys.filter((key): key is string => typeof key === 'string' && key.length > 0));
   }
 
   private assertRequiredString(value: unknown, field: string): asserts value is string {

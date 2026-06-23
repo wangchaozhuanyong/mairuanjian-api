@@ -9,6 +9,7 @@ import { AppleRenewalTasksService } from './apple-renewal-tasks.service';
 @Module({
   imports: [PrismaModule, AuditLogsModule, NotificationsModule, RealtimeModule],
   controllers: [AppleRenewalTasksController],
-  providers: [AppleRenewalTasksService]
+  providers: [AppleRenewalTasksService],
+  exports: [AppleRenewalTasksService]
 })
 export class AppleRenewalTasksModule {}
