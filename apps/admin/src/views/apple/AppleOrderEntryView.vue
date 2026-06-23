@@ -291,6 +291,7 @@
                       inputmode="decimal"
                       min="0"
                       placeholder="0.00"
+                      @input="syncDerivedOrderAmounts"
                       @change="syncDerivedOrderAmounts"
                     />
                     <el-select
@@ -309,6 +310,13 @@
                   <div class="order-entry-money-meta">
                     <div class="order-entry-money-hint">
                       {{ paidAmountRmbHint }}
+                      <template v-if="form.paidAmount">
+                        · 平台手续费 {{ formatMoney(platformFeeRmbValue) }} CNY · 实际毛利
+                        {{ estimatedProfit }} CNY · 实际毛利率 {{ estimatedProfitRate }}
+                      </template>
+                      <template v-else-if="!selectedSourcePlatform">
+                        · 未选来源平台，建议实收未包含平台手续费
+                      </template>
                     </div>
                     <div class="order-entry-margin-calculator">
                       <span class="order-entry-margin-calculator__label">毛利率</span>
@@ -1103,6 +1111,12 @@ const estimatedTotalCost = computed(
     platformFeeRmbValue.value +
     refundLossRmbValue.value
 );
+const estimatedCostBeforePlatformFee = computed(
+  () =>
+    (estimatedAppleCostValue.value ?? 0) +
+    selectedAccountPurchaseCost.value +
+    refundLossRmbValue.value
+);
 const estimatedProfit = computed(() => {
   if (!form.paidAmount || estimatedAppleCostValue.value === null) {
     return '-';
@@ -1134,12 +1148,23 @@ const paidAmountRmbHint = computed(() => {
 });
 const suggestedPaidAmountRmb = computed(() => {
   const margin = readAmount(form.targetGrossMargin);
+  const feeRate = selectedSourcePlatform.value
+    ? readAmount(selectedSourcePlatform.value.feeRate)
+    : 0;
+  const feeFixedRmb = selectedSourcePlatform.value
+    ? readAmount(selectedSourcePlatform.value.feeFixed) * paidExchangeRateValue.value
+    : 0;
+  const denominator = 1 - feeRate - margin / 100;
 
-  if (estimatedTotalCost.value <= 0 || margin <= 0 || margin >= 100) {
+  if (estimatedCostBeforePlatformFee.value <= 0 || margin <= 0 || margin >= 100) {
     return null;
   }
 
-  return estimatedTotalCost.value / (1 - margin / 100);
+  if (denominator <= 0) {
+    return null;
+  }
+
+  return (estimatedCostBeforePlatformFee.value + feeFixedRmb) / denominator;
 });
 const suggestedPaidAmountHint = computed(() =>
   suggestedPaidAmountRmb.value === null
