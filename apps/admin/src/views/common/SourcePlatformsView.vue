@@ -25,7 +25,7 @@
         <PanelTitleHelp
           title="来源平台"
           :help="[
-            '这里设置客户和订单从哪里来，比如淘宝、闲鱼、微信。',
+            '这里设置客户和订单从哪里来，比如微信、官网、线下转账。',
             '平台名称、手续费和状态会给客户、订单和利润计算一起使用。'
           ]"
         />
@@ -852,7 +852,7 @@
         <PanelTitleHelp
           title="客户标签"
           :help="[
-            '这里统一维护新增客户时可以选择的标签，比如大客户、淘宝客户、待跟进。',
+            '这里统一维护新增客户时可以选择的标签，比如大客户、官网客户、待跟进。',
             '停用后的标签不会再出现在新增客户下拉里，已经保存到客户身上的标签会继续保留。'
           ]"
         />
@@ -1423,7 +1423,7 @@
             <FieldHelpLabel
               label="平台名称"
               purpose="标记订单来源平台，订单录入、客户来源和报表筛选都会用到。"
-              example="可以填闲鱼、淘宝、微信私域、线下转账。"
+              example="可以填微信私域、官网订单、线下转账。"
             />
           </template>
           <el-input v-model.trim="form.name" />
@@ -1489,10 +1489,10 @@
             <FieldHelpLabel
               label="标签名称"
               purpose="客户标签的显示名称，用来给客户分类和搜索。"
-              example="可以填大客户、淘宝客户、高频续费、售后关注。"
+              example="可以填大客户、官网客户、高频续费、售后关注。"
             />
           </template>
-          <el-input v-model.trim="tagForm.label" placeholder="例如 大客户 / 淘宝客户" />
+          <el-input v-model.trim="tagForm.label" placeholder="例如 大客户 / 官网客户" />
         </el-form-item>
         <el-form-item>
           <template #label>
@@ -1965,7 +1965,7 @@
             <FieldHelpLabel
               label="备注"
               purpose="记录这种发货方式的使用场景或注意事项。"
-              example="可以写只用于闲鱼、需要人工复制、平台接口暂未接通。"
+              example="可以写只用于手工复制、需要人工确认、接口暂未接通。"
             />
           </template>
           <el-input v-model="methodForm.remark" type="textarea" :rows="3" />

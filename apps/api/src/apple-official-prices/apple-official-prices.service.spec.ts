@@ -409,7 +409,8 @@ describe('AppleOfficialPricesService', () => {
       'https://example.test/apple-prices.json',
       expect.objectContaining({
         headers: expect.objectContaining({
-          accept: expect.stringContaining('application/json')
+          accept: expect.stringContaining('application/json'),
+          'user-agent': expect.stringContaining('Mozilla/5.0')
         })
       })
     );
@@ -462,7 +463,7 @@ describe('AppleOfficialPricesService', () => {
         name: 'ChatGPT 官方价格 US/USD',
         provider: 'chatgpt',
         collectMethod: 'webpage',
-        sourceUrl: 'https://openai.com/chatgpt/pricing/'
+        sourceUrl: 'https://chatgpt.com/pricing'
       },
       appleService: {
         name: 'ChatGPT Plus 1个月'
@@ -494,7 +495,7 @@ describe('AppleOfficialPricesService', () => {
         name: 'ChatGPT 官方价格 US/USD',
         provider: 'chatgpt',
         collectMethod: 'webpage',
-        sourceUrl: 'https://openai.com/chatgpt/pricing/'
+        sourceUrl: 'https://chatgpt.com/pricing'
       },
       appleService: {
         name: 'ChatGPT Plus 1个月'
@@ -562,15 +563,15 @@ describe('AppleOfficialPricesService', () => {
     );
   });
 
-  it('keeps the requested region when falling back to another catalog currency', async () => {
-    const { service, tx } = createService({
+  it('requires manual verification when the requested catalog currency is missing', async () => {
+    const { service, prisma, tx } = createService({
       source: {
         name: 'ChatGPT 官方价格 SG/SGD',
         provider: 'chatgpt',
         region: 'SG',
         currency: 'SGD',
         collectMethod: 'webpage',
-        sourceUrl: 'https://openai.com/chatgpt/pricing/'
+        sourceUrl: 'https://chatgpt.com/pricing'
       },
       appleService: {
         name: 'ChatGPT Plus 1个月',
@@ -587,18 +588,14 @@ describe('AppleOfficialPricesService', () => {
 
     expect(result.provider).toBe('chatgpt');
     expect(result.failedCount).toBe(0);
-    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+    expect(result.snapshotCount).toBe(0);
+    expect(result.results[0]?.status).toBe('manual_required');
+    expect(tx.appleOfficialPriceSnapshot.create).not.toHaveBeenCalled();
+    expect(prisma.automationTask.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          planCode: 'chatgpt_plus_monthly',
-          region: 'SG',
-          currency: 'USD',
-          officialPrice: '20',
-          rawPayload: expect.objectContaining({
-            parser: 'provider_catalog_currency_fallback',
-            requestedCurrency: 'SGD',
-            catalogCurrency: 'USD'
-          })
+          status: 'waiting_manual_verify',
+          manualRequired: true
         })
       })
     );
@@ -693,6 +690,9 @@ describe('AppleOfficialPricesService', () => {
       'gemini',
       'claude'
     ]);
+    expect(catalog.providers.find((provider) => provider.value === 'chatgpt')?.sourceUrl).toBe(
+      'https://chatgpt.com/pricing'
+    );
     expect(catalog.regions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

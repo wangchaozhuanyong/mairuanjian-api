@@ -2,7 +2,7 @@
 CREATE TYPE "CustomerStatus" AS ENUM ('active', 'disabled');
 
 -- CreateEnum
-CREATE TYPE "SourcePlatformType" AS ENUM ('taobao', 'xianyu', 'wechat', 'manual', 'other');
+CREATE TYPE "SourcePlatformType" AS ENUM ('wechat', 'manual', 'other');
 
 -- CreateEnum
 CREATE TYPE "SourcePlatformStatus" AS ENUM ('active', 'disabled');

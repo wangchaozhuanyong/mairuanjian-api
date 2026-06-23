@@ -244,8 +244,7 @@ codes.after_sale.reissued
 notification.message.created
 security.login.abnormal
 ops.health.updated
-platform.taobao.sync_failed
-platform.xianyu.sync_failed
+platform.connection.failed
 ```
 
 ## 7. 业务边界
@@ -280,8 +279,7 @@ platform.xianyu.sync_failed
 
 - 兑换码库存
 - 兑换码批次
-- 淘宝订单
-- 闲鱼订单
+- 兑换码订单
 - 发货异常
 - 售后补发
 - 兑换码报表
@@ -410,44 +408,43 @@ refreshQueryInBackground
 | -------------------------- | -------------------------------- | -------------- |
 | codes.inventory.updated    | 兑换码库存、首页仪表盘           | 当前页静默刷新 |
 | codes.batch.imported       | 兑换码库存、数据中心             | 当前页静默刷新 |
-| codes.order.synced         | 淘宝订单、闲鱼订单、兑换码报表   | 当前页静默刷新 |
+| codes.order.synced         | 兑换码订单、兑换码报表           | 当前页静默刷新 |
 | codes.delivery.failed      | 发货异常、通知中心、首页仪表盘   | 当前页静默刷新 |
-| codes.delivery.completed   | 淘宝订单、闲鱼订单、兑换码报表   | 当前页静默刷新 |
+| codes.delivery.completed   | 兑换码订单、兑换码报表           | 当前页静默刷新 |
 | codes.after_sale.created   | 售后补发、兑换码报表             | 当前页静默刷新 |
 | codes.after_sale.reissued  | 售后补发、兑换码库存、兑换码报表 | 当前页静默刷新 |
 | codes.after_sale.completed | 售后补发、兑换码报表             | 当前页静默刷新 |
 
 ### 9.3 系统和平台
 
-| 事件                                        | 影响页面                         | 刷新策略         |
-| ------------------------------------------- | -------------------------------- | ---------------- |
-| notification.message.created                | 通知中心、顶部通知入口           | 立即刷新通知计数 |
-| security.login.abnormal                     | 安全中心、通知中心               | 当前页静默刷新   |
-| security.session.revoked                    | 安全中心、审计日志               | 当前页静默刷新   |
-| security.mfa.enabled                        | 安全中心                         | 当前页静默刷新   |
-| security.mfa.disabled                       | 安全中心                         | 当前页静默刷新   |
-| security.mfa_settings.updated               | 安全中心                         | 当前页静默刷新   |
-| security.password_policy.updated            | 安全中心                         | 当前页静默刷新   |
-| security.ip_whitelist.updated               | 安全中心                         | 当前页静默刷新   |
-| security.sensitive_access_approval.created  | 安全中心、审计日志               | 当前页静默刷新   |
-| security.sensitive_access_approval.approved | 安全中心、审计日志               | 当前页静默刷新   |
-| security.sensitive_access_approval.rejected | 安全中心、审计日志               | 当前页静默刷新   |
-| security.permission.changed                 | 权限管理、审计日志               | 标记 stale       |
-| data.backup_job.created                     | 数据中心、通知中心               | 当前页静默刷新   |
-| data.backup_job.updated                     | 数据中心、通知中心               | 当前页静默刷新   |
-| data.import_job.updated                     | 数据中心                         | 当前页静默刷新   |
-| data.export_job.updated                     | 数据中心                         | 当前页静默刷新   |
-| data.dictionary.updated                     | 数据中心                         | 当前页静默刷新   |
-| maintenance.announcement.updated            | 网站维护、通知中心               | 当前页静默刷新   |
-| maintenance.mode.updated                    | 网站维护                         | 当前页静默刷新   |
-| maintenance.feature_flag.updated            | 网站维护                         | 当前页静默刷新   |
-| maintenance.app_version.created             | 网站维护                         | 当前页静默刷新   |
-| common.attachment.created                   | 附件管理                         | 当前页静默刷新   |
-| ops.health.updated                          | 运维监控、平台接口状态           | 当前页静默刷新   |
-| platform.connection.tested                  | 平台接口状态、平台接口日志       | 当前页静默刷新   |
-| platform.authorization.updated              | 平台接口状态                     | 当前页静默刷新   |
-| platform.taobao.sync_failed                 | 淘宝订单、平台接口状态、通知中心 | 当前页静默刷新   |
-| platform.xianyu.sync_failed                 | 闲鱼订单、平台接口状态、通知中心 | 当前页静默刷新   |
+| 事件                                        | 影响页面                   | 刷新策略         |
+| ------------------------------------------- | -------------------------- | ---------------- |
+| notification.message.created                | 通知中心、顶部通知入口     | 立即刷新通知计数 |
+| security.login.abnormal                     | 安全中心、通知中心         | 当前页静默刷新   |
+| security.session.revoked                    | 安全中心、审计日志         | 当前页静默刷新   |
+| security.mfa.enabled                        | 安全中心                   | 当前页静默刷新   |
+| security.mfa.disabled                       | 安全中心                   | 当前页静默刷新   |
+| security.mfa_settings.updated               | 安全中心                   | 当前页静默刷新   |
+| security.password_policy.updated            | 安全中心                   | 当前页静默刷新   |
+| security.ip_whitelist.updated               | 安全中心                   | 当前页静默刷新   |
+| security.sensitive_access_approval.created  | 安全中心、审计日志         | 当前页静默刷新   |
+| security.sensitive_access_approval.approved | 安全中心、审计日志         | 当前页静默刷新   |
+| security.sensitive_access_approval.rejected | 安全中心、审计日志         | 当前页静默刷新   |
+| security.permission.changed                 | 权限管理、审计日志         | 标记 stale       |
+| data.backup_job.created                     | 数据中心、通知中心         | 当前页静默刷新   |
+| data.backup_job.updated                     | 数据中心、通知中心         | 当前页静默刷新   |
+| data.import_job.updated                     | 数据中心                   | 当前页静默刷新   |
+| data.export_job.updated                     | 数据中心                   | 当前页静默刷新   |
+| data.dictionary.updated                     | 数据中心                   | 当前页静默刷新   |
+| maintenance.announcement.updated            | 网站维护、通知中心         | 当前页静默刷新   |
+| maintenance.mode.updated                    | 网站维护                   | 当前页静默刷新   |
+| maintenance.feature_flag.updated            | 网站维护                   | 当前页静默刷新   |
+| maintenance.app_version.created             | 网站维护                   | 当前页静默刷新   |
+| common.attachment.created                   | 附件管理                   | 当前页静默刷新   |
+| ops.health.updated                          | 运维监控、平台接口状态     | 当前页静默刷新   |
+| platform.connection.tested                  | 平台接口状态、平台接口日志 | 当前页静默刷新   |
+| platform.authorization.updated              | 平台接口状态               | 当前页静默刷新   |
+| platform.connection.failed                  | 平台接口状态、通知中心     | 当前页静默刷新   |
 
 ## 10. 权限和安全
 
@@ -587,10 +584,9 @@ SSE 不可用时：
 1. 续费工作台
 2. Apple ID 管理
 3. 兑换码库存
-4. 淘宝订单
-5. 闲鱼订单
-6. 通知中心
-7. 运维监控
+4. 兑换码订单
+5. 通知中心
+6. 运维监控
 
 ### Phase R3 - 后端 SSE 基础通道
 
@@ -620,7 +616,7 @@ SSE 不可用时：
 
 - 兑换码导入后发布事件。
 - 库存锁定、发货、补发后发布事件。
-- 淘宝/闲鱼订单同步后发布事件。
+- 兑换码订单创建、更新后发布事件。
 - 发货失败后发布事件。
 
 ### Phase R7 - 系统事件接入
@@ -708,7 +704,7 @@ WebSocket 不替代 SSE，只补充双向交互能力。
 
 ```text
 1. smartQuery 已扩展为全局查询缓存。
-2. Apple ID 管理、Apple ID 订单、开通记录、续费工作台、操作计划、自动化任务、兑换码业务设置、发货模板、兑换码订单总览、兑换码库存、淘宝/闲鱼订单、发货异常、售后补发、兑换码报表、客户管理、来源平台、附件管理、用户管理、角色权限、安全中心、审计日志中心、通知中心、运维监控、数据中心、网站维护、平台接口状态已接入缓存优先和后台刷新。
+2. Apple ID 管理、Apple ID 订单、开通记录、续费工作台、操作计划、自动化任务、兑换码业务设置、发货模板、兑换码订单总览、兑换码库存、发货异常、售后补发、兑换码报表、客户管理、来源平台、附件管理、用户管理、角色权限、安全中心、审计日志中心、通知中心、运维监控、数据中心、网站维护、平台接口状态已接入缓存优先和后台刷新。
 3. 后端已新增 GET /api/realtime/events SSE 通道。
 4. 前端已新增登录态自动连接的 RealtimeProvider。
 5. 前端已支持 SSE 连接状态展示、断线自动重连和当前页低频兜底刷新。
@@ -781,7 +777,7 @@ Apple ID 业务：
 - 安全中心会话、MFA、IP 白名单、密码策略、敏感字段审批相关事件。
 - 通知规则、通知模板、Telegram 配置、通知日志相关事件。
 - 运维健康快照、错误日志、平台同步日志相关事件。
-- 淘宝/闲鱼订单与发货相关事件。
+- 兑换码订单与发货相关事件。
 - 数据中心备份、恢复、导入、导出、回收站、数据清理、重复合并、数据字典、系统参数相关事件。
 - 网站维护公告、维护模式、版本、功能开关、菜单配置、主题配置、上线清单、系统参数相关事件。
 - 附件上传事件。
@@ -797,8 +793,6 @@ Apple ID 业务：
 - 兑换码业务设置
 - 兑换码订单总览
 - 兑换码库存
-- 淘宝订单
-- 闲鱼订单
 - 发货异常
 - 售后补发
 - 兑换码报表

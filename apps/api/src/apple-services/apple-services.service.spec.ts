@@ -19,7 +19,7 @@ describe('AppleServicesService platform mappings', () => {
           id: 'mapping-id',
           serviceId: '11111111-1111-4111-8111-111111111111',
           sourcePlatformId: '22222222-2222-4222-8222-222222222222',
-          shopName: '淘宝店',
+          shopName: '微信渠道',
           platformItemId: 'item-1',
           platformSkuId: '',
           skuKeyword: 'GPT Plus',
@@ -32,7 +32,7 @@ describe('AppleServicesService platform mappings', () => {
           updatedAt: new Date('2026-06-18T00:00:00.000Z'),
           sourcePlatform: {
             id: '22222222-2222-4222-8222-222222222222',
-            name: '淘宝店',
+            name: '微信渠道',
             feeRate: new Prisma.Decimal('0.05'),
             feeFixed: new Prisma.Decimal('0'),
             status: 'active'
@@ -67,7 +67,7 @@ describe('AppleServicesService platform mappings', () => {
       defaultPeriodValue: 1,
       expireCalcType: 'by_month',
       requireAppleId: true,
-      requireServiceAccount: false,
+      requireServiceAccount: true,
       autoMatchAppleId: true,
       lockRule: 'by_service',
       allowedRegions: ['US'],
@@ -102,6 +102,30 @@ describe('AppleServicesService platform mappings', () => {
       })
     );
     expect(count).toHaveBeenCalled();
+  });
+
+  it('orders enabled Apple services first by default', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const count = jest.fn().mockResolvedValue(0);
+    const { service } = createService({
+      $transaction: jest.fn(async (queries: Array<Promise<unknown>>) => Promise.all(queries)),
+      appleService: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany,
+        count
+      }
+    } as unknown as Partial<PrismaService>);
+
+    await service.list({
+      page: '1',
+      pageSize: '20'
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
+      })
+    );
   });
 
   it('calculates Apple balance price from global percent rule when creating service', async () => {
@@ -159,7 +183,8 @@ describe('AppleServicesService platform mappings', () => {
         data: expect.objectContaining({
           officialBasePrice: '20',
           officialCostValue: '25',
-          appleBalancePriceRuleType: 'inherit'
+          appleBalancePriceRuleType: 'inherit',
+          requireServiceAccount: true
         })
       })
     );
@@ -172,7 +197,7 @@ describe('AppleServicesService platform mappings', () => {
       '11111111-1111-4111-8111-111111111111',
       {
         sourcePlatformId: '22222222-2222-4222-8222-222222222222',
-        shopName: '淘宝店',
+        shopName: '微信渠道',
         platformItemId: 'item-1',
         skuKeyword: 'GPT Plus',
         platformPrice: '88',
@@ -192,7 +217,7 @@ describe('AppleServicesService platform mappings', () => {
 
     expect(result.platformSkuId).toBe('');
     expect(result.platformPrice).toBe('88');
-    expect(result.sourcePlatform.name).toBe('淘宝店');
+    expect(result.sourcePlatform.name).toBe('微信渠道');
     expect(prisma.appleServicePlatformMapping.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

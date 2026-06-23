@@ -298,7 +298,7 @@
               <FieldHelpLabel
                 label="平台"
                 purpose="这笔兑换码订单来自哪个销售平台，系统会按平台和商品信息匹配业务。"
-                example="淘宝订单选淘宝，闲鱼订单选闲鱼。"
+                example="直营网店订单选直营网店，微信订单选微信渠道。"
               />
             </template>
             <el-select v-model="form.platformId" class="full-input" filterable>
@@ -315,7 +315,7 @@
               <FieldHelpLabel
                 label="平台订单号"
                 purpose="外部平台的订单编号，用来对账、售后和防止重复导入。"
-                example="复制淘宝或闲鱼订单详情里的订单号。"
+                example="复制外部订单详情里的订单号。"
               />
             </template>
             <el-input v-model.trim="form.externalOrderNo" />
@@ -430,7 +430,7 @@
               <FieldHelpLabel
                 label="买家脱敏"
                 purpose="记录买家的脱敏名称，方便售后定位但不暴露完整隐私。"
-                example="可以填张***、微信尾号 1234、闲鱼昵称前后缀。"
+                example="可以填张***、微信尾号 1234、客户昵称前后缀。"
               />
             </template>
             <el-input v-model.trim="form.buyerNameMasked" />

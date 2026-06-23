@@ -20,7 +20,7 @@ describe('CodeReportsService', () => {
       deliveredAt: new Date('2026-06-18T00:10:00.000Z'),
       platform: {
         id: '22222222-2222-4222-8222-222222222222',
-        name: '淘宝店'
+        name: '微信渠道'
       },
       service: {
         id: '33333333-3333-4333-8333-333333333333',
@@ -54,7 +54,7 @@ describe('CodeReportsService', () => {
     expect(report.summary.refundAmount).toBe('10.00');
     expect(report.summary.profitAmount).toBe('28.00');
     expect(report.summary.netProfitAmount).toBe('18.00');
-    expect(report.byPlatform[0]?.label).toBe('淘宝店');
+    expect(report.byPlatform[0]?.label).toBe('微信渠道');
     expect(report.recentOrders[0]?.netProfitAmount).toBe('18.00');
   });
 });

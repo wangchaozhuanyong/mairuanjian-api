@@ -549,7 +549,7 @@
             <FieldHelpLabel
               label="来源渠道"
               purpose="记录这个 Apple ID 从哪个来源渠道获得，方便以后追踪采购来源和成本。"
-              example="可以选供应商、闲鱼、淘宝或内部自建的来源渠道。"
+              example="可以选供应商、官网采购或内部自建的来源渠道。"
             />
           </template>
           <el-select

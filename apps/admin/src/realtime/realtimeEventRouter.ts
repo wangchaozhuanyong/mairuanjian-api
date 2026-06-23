@@ -22,7 +22,6 @@ export function handleRealtimeEvent(event: RealtimeEvent) {
 
 function getRealtimeSmartQueryScopes(event: RealtimeEvent) {
   const scopes = new Set<string>();
-  const platform = typeof event.scope?.platform === 'string' ? event.scope.platform : '';
 
   if (event.module !== 'system') {
     scopes.add('audit-operation-logs');
@@ -56,8 +55,6 @@ function getRealtimeSmartQueryScopes(event: RealtimeEvent) {
     scopes.add('code-after-sales');
     scopes.add('code-delivery-exceptions');
     scopes.add('code-reports');
-    scopes.add('platform-code-orders-taobao');
-    scopes.add('platform-code-orders-xianyu');
   }
 
   if (event.module === 'platform') {
@@ -65,13 +62,6 @@ function getRealtimeSmartQueryScopes(event: RealtimeEvent) {
     scopes.add('ops-platform-status');
     scopes.add('ops-platform-sync');
     scopes.add('audit-platform-logs');
-
-    if (platform === 'taobao' || platform === 'xianyu') {
-      scopes.add(`platform-code-orders-${platform}`);
-    } else {
-      scopes.add('platform-code-orders-taobao');
-      scopes.add('platform-code-orders-xianyu');
-    }
   }
 
   if (event.module === 'common') {

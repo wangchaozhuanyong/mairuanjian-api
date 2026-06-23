@@ -30,7 +30,6 @@ import { MaintenanceModule } from './maintenance/maintenance.module';
 import { MessageTemplatesModule } from './message-templates/message-templates.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OpsModule } from './ops/ops.module';
-import { PlatformDeliveryModule } from './platform-delivery/platform-delivery.module';
 import { RedeemCodesModule } from './redeem-codes/redeem-codes.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RolesModule } from './roles/roles.module';
@@ -72,7 +71,6 @@ import { UsersModule } from './users/users.module';
     CodeOrdersModule,
     CodeReportsModule,
     CodeServicesModule,
-    PlatformDeliveryModule,
     RedeemCodesModule,
     RealtimeModule,
     RolesModule,

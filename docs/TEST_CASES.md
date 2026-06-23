@@ -1016,12 +1016,12 @@
 
 前置：
 
-- 淘宝或闲鱼接口调用失败
+- Telegram 或文件存储连接失败
 - 平台接口异常通知规则已启用
 
 操作：
 
-- 执行平台订单同步
+- 执行平台连接测试或读取平台接口状态
 
 期望：
 
@@ -1066,33 +1066,30 @@
 - 平台接口状态表格可以展示、排序和列配置这些字段
 - 最近失败原因仍来自最近一条失败日志的 `errorMessage`
 
-### 用例 7.2：平台定时轮询任务
+### 用例 7.2：通用平台状态刷新
 
 前置：
 
-- `PLATFORM_POLL_ENABLED=true`
-- `PLATFORM_POLL_INTERVAL_MS` 大于等于 60000
-- 淘宝/闲鱼平台轮询 Worker 已启动
+- `platform_sync_logs` 中存在通用平台连接日志
+- 平台接口状态页可访问
 
 操作：
 
-- 手动调用 `POST /api/platforms/taobao/poll`
-- 或等待 Worker 调用 `poll-all`
+- 调用 `GET /api/ops/platforms`
+- 打开平台接口状态页
 
 期望：
 
-- 创建 `cron_job_logs`，开始时状态为 `running`，完成后更新为 `success` 或 `failed`
-- 每个订单/退款同步动作写入 `platform_sync_logs`
-- 手动触发时写入 `audit_logs`，记录触发人和轮询结果
-- 淘宝/闲鱼真实适配器未接入时，不伪造成功，状态应为 failed 或 unsupported，并触发平台同步失败通知
-- 接入真实 OAuth 和签名后，仍复用同一套日志与通知链路
+- 返回 Telegram、文件存储、自动化服务等通用平台状态
+- 统计最近同步时间、失败原因、失败请求数和错误率
+- 连接异常时生成平台接口异常通知
 
 ### 用例 7.3：平台授权配置加密保存
 
 前置：
 
 - 操作人拥有 `ops.platform.reauthorize` 权限
-- 平台为 `taobao` 或 `xianyu`
+- 平台为 `telegram` 或 `file-storage`
 
 操作：
 
@@ -1107,14 +1104,14 @@
 - 审计日志不包含 appSecret、accessToken、refreshToken 明文
 - 写入一条 `platform_sync_logs`，`syncType=authorization_config`
 - 平台状态页授权状态可显示为 configured 或 expiring/expired
-- 测试连接仍不能伪装真实成功，真实 OAuth 和平台接口接入前应提示 Adapter 未接入
+- 测试连接不能伪装真实成功，未配置时应提示授权或连接信息缺失
 
 ### 用例 7.4：平台 OAuth 发起和回调授权码托管
 
 前置：
 
 - 操作人拥有 `ops.platform.reauthorize` 权限
-- 平台为 `taobao` 或 `xianyu`
+- 平台为 `telegram` 或 `file-storage`
 - 已保存 `appKey` 和 `authorizationUrl`
 
 操作：

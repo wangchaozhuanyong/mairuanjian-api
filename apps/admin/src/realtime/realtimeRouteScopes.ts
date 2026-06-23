@@ -49,8 +49,6 @@ const fallbackScopesByModuleKey: Record<string, string[]> = {
   'delivery-templates': ['message-templates'],
   'delivery-exceptions': ['code-delivery-exceptions'],
   'after-sales': ['code-after-sales', 'data-dictionaries'],
-  'taobao-orders': ['platform-code-orders-taobao'],
-  'xianyu-orders': ['platform-code-orders-xianyu'],
   'code-reports': ['code-reports'],
   customers: ['customers', 'source-platforms', 'data-dictionaries'],
   'source-platforms': ['source-platforms', 'data-dictionaries'],

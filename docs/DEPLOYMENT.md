@@ -10,7 +10,7 @@
 - `api`：NestJS 后端
 - `admin`：Nginx 托管 Vue 管理后台，并代理 `/api`
 
-本文件只定义生产部署底座和上线检查流程，不代表已经接入真实淘宝/闲鱼 OAuth、真实 Apple ID 自动化 Worker、真实物理备份执行器。
+本文件只定义生产部署底座和上线检查流程，不代表已经接入真实 Apple ID 自动化 Worker、真实物理备份执行器。
 
 从当前开发状态推进到正式上线的完整执行顺序见：
 
@@ -357,5 +357,4 @@ npm run restore:verify -- backups/postgres/your-file.dump
 - 自动化备份上传到对象存储
 - 数据恢复审批和执行器
 - 蓝绿发布或灰度发布
-- 接入真实淘宝/闲鱼 OAuth
 - 接入真实 Apple ID 自动化 Worker

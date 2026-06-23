@@ -1,6 +1,13 @@
 import type { ApiResponse } from '@apple-business/shared';
-import axios, { AxiosError } from 'axios';
-import { notifyAuthSessionExpired, TOKEN_STORAGE_KEY } from '@/auth/session';
+import axios, { AxiosError, type GenericAbortSignal } from 'axios';
+import {
+  AuthSessionExpiredError,
+  getAuthSessionAbortSignal,
+  isAuthSessionExpired,
+  isAuthSessionExpiredError,
+  notifyAuthSessionExpired,
+  TOKEN_STORAGE_KEY
+} from '@/auth/session';
 
 export { TOKEN_STORAGE_KEY };
 
@@ -83,6 +90,16 @@ const serverTermMap: Record<string, string> = {
 
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+  const requestUrl = String(config.url ?? '');
+  const bypassAuthGate = isAuthGateBypassRequest(requestUrl);
+
+  if (isAuthSessionExpired() && !bypassAuthGate) {
+    throw new AuthSessionExpiredError();
+  }
+
+  if (!bypassAuthGate) {
+    config.signal = mergeAbortSignals(config.signal, getAuthSessionAbortSignal());
+  }
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -247,6 +264,10 @@ function getAxiosErrorMessage(error: AxiosError<ApiResponse<unknown>>) {
 }
 
 export function isRequestCanceled(error: unknown) {
+  if (isAuthSessionExpiredError(error)) {
+    return true;
+  }
+
   if (axios.isCancel(error)) {
     return true;
   }
@@ -269,6 +290,49 @@ export function isRequestCanceled(error: unknown) {
   );
 }
 
+function isAuthGateBypassRequest(url: string) {
+  return (
+    url.includes('/auth/login') ||
+    url.includes('/maintenance/mode/public') ||
+    url.startsWith('data:') ||
+    url.startsWith('blob:')
+  );
+}
+
+function mergeAbortSignals(
+  requestSignal: GenericAbortSignal | undefined,
+  authSignal: AbortSignal
+): AbortSignal {
+  if (!requestSignal) {
+    return authSignal;
+  }
+
+  if (requestSignal.aborted) {
+    const controller = new AbortController();
+    controller.abort();
+    return controller.signal;
+  }
+
+  if (authSignal.aborted) {
+    return authSignal;
+  }
+
+  if (!requestSignal.addEventListener) {
+    return authSignal;
+  }
+
+  const controller = new AbortController();
+  const abort = (event: Event) => {
+    const signal = event.target as { reason?: unknown };
+    controller.abort(signal.reason);
+  };
+
+  requestSignal.addEventListener('abort', abort, { once: true });
+  authSignal.addEventListener('abort', abort, { once: true });
+
+  return controller.signal;
+}
+
 export async function request<TData>(promise: Promise<{ data: ApiResponse<TData> }>) {
   try {
     const response = await promise;
@@ -280,7 +344,15 @@ export async function request<TData>(promise: Promise<{ data: ApiResponse<TData>
 
     return body.data;
   } catch (error) {
+    if (isAuthSessionExpiredError(error)) {
+      throw error;
+    }
+
     if (isRequestCanceled(error)) {
+      if (isAuthSessionExpired()) {
+        throw new AuthSessionExpiredError();
+      }
+
       throw error;
     }
 
@@ -288,10 +360,14 @@ export async function request<TData>(promise: Promise<{ data: ApiResponse<TData>
       const axiosError = error as AxiosError<ApiResponse<unknown>>;
       const message = getAxiosErrorMessage(axiosError);
 
-      if (axiosError.response?.status === 401 && localStorage.getItem(TOKEN_STORAGE_KEY)) {
+      const requestUrl = String(axiosError.config?.url ?? '');
+      if (axiosError.response?.status === 401 && !isAuthGateBypassRequest(requestUrl)) {
         notifyAuthSessionExpired({
           message,
           reason: 'unauthorized'
+        });
+        throw new AuthSessionExpiredError(message, {
+          cause: error
         });
       }
 

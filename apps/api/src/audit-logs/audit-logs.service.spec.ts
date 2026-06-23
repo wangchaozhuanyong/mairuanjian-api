@@ -8,7 +8,7 @@ describe('AuditLogsService', () => {
   function createService() {
     const platformLog = {
       id: '11111111-1111-4111-8111-111111111111',
-      platform: 'taobao',
+      platform: 'telegram',
       syncType: 'test',
       status: 'failed',
       requestCount: 1,
@@ -140,7 +140,7 @@ describe('AuditLogsService', () => {
     const result = await service.listPlatformInterfaceLogs({
       page: 1,
       pageSize: 20,
-      platform: 'taobao',
+      platform: 'telegram',
       status: 'failed'
     });
 
@@ -149,7 +149,7 @@ describe('AuditLogsService', () => {
     expect(prisma.platformSyncLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          platform: 'taobao',
+          platform: 'telegram',
           status: 'failed'
         })
       })
@@ -162,7 +162,7 @@ describe('AuditLogsService', () => {
     const result = await service.listPlatformInterfaceLogs({
       page: 1,
       pageSize: 20,
-      platform: 'taobao',
+      platform: 'telegram',
       status: 'failed',
       sortBy: 'syncType',
       sortOrder: 'asc'
@@ -173,7 +173,7 @@ describe('AuditLogsService', () => {
     expect(prisma.platformSyncLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          platform: 'taobao',
+          platform: 'telegram',
           status: 'failed'
         }),
         orderBy: [{ syncType: 'asc' }, { createdAt: 'desc' }]

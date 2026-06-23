@@ -9,7 +9,7 @@
       <div class="panel-title-row">
         <PanelTitleHelp
           title="兑换码业务规则"
-          help="这里配置兑换码商品怎么卖、成本多少、怎么发货，以及淘宝/闲鱼 SKU 怎么识别。它只服务兑换码自动发货，不和 Apple ID 代充混用。"
+          help="这里配置兑换码商品怎么卖、成本多少、怎么发货，以及外部订单 SKU 怎么识别。它只服务兑换码发货，不和 Apple ID 代充混用。"
         />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>共 {{ total }} 个业务</StatusChip>
@@ -362,7 +362,7 @@
           <AppButton @click="() => loadMappings()">刷新</AppButton>
         </div>
         <p class="drawer-section__description">
-          用于后续淘宝、闲鱼订单同步时识别兑换码业务，不和 Apple ID 平台映射混用。
+          用于手工导入或外部订单识别兑换码业务，不和 Apple ID 平台映射混用。
         </p>
 
         <el-table
@@ -374,7 +374,7 @@
           <template #empty>
             <div class="apple-core-empty-state">
               <strong>暂无平台映射</strong>
-              <span>新增平台商品或 SKU 映射后，淘宝/闲鱼订单才能自动匹配兑换码业务。</span>
+              <span>新增平台商品或 SKU 映射后，外部订单才能自动匹配兑换码业务。</span>
               <div class="apple-core-empty-state__actions">
                 <AppButton variant="primary" @click="openCreateMapping">新增映射</AppButton>
               </div>
@@ -455,7 +455,7 @@
         <div v-else-if="!mappingLoading" class="mobile-record-list">
           <div class="apple-core-empty-state">
             <strong>暂无平台映射</strong>
-            <span>新增平台商品或 SKU 映射后，淘宝/闲鱼订单才能自动匹配兑换码业务。</span>
+            <span>新增平台商品或 SKU 映射后，外部订单才能自动匹配兑换码业务。</span>
           </div>
         </div>
       </div>
@@ -473,7 +473,7 @@
               <FieldHelpLabel
                 label="来源平台"
                 purpose="这条映射属于哪个平台，用来把平台订单识别成兑换码业务。"
-                example="淘宝商品选淘宝，闲鱼商品选闲鱼。"
+                example="直营网店订单选直营网店，微信订单选微信渠道。"
               />
             </template>
             <el-select v-model="mappingForm.platformId" class="full-input" filterable>
@@ -490,7 +490,7 @@
               <FieldHelpLabel
                 label="店铺/账号"
                 purpose="记录平台店铺、账号或渠道名称，多个店铺时用来区分。"
-                example="可以填淘宝主店、闲鱼 1 号、企业店。"
+                example="可以填官网店、微信渠道、企业店。"
               />
             </template>
             <el-input v-model.trim="mappingForm.shopId" />
@@ -502,7 +502,7 @@
               <FieldHelpLabel
                 label="平台商品 ID"
                 purpose="平台商品的唯一编号，系统用它识别订单应该匹配哪个兑换码业务。"
-                example="从淘宝/闲鱼订单或商品后台复制 itemId。"
+                example="从外部订单或商品后台复制 itemId。"
               />
             </template>
             <el-input v-model.trim="mappingForm.platformItemId" />

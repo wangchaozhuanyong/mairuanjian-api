@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { ElConfigProvider } from 'element-plus/es/components/config-provider/index.mjs';
+import { ElMessage } from 'element-plus';
 import zhCn from 'element-plus/es/locale/lang/zh-cn.mjs';
 import { AUTH_SESSION_EXPIRED_EVENT } from '@/auth/session';
 import { isRoutePending, router } from '@/router';
@@ -57,10 +58,12 @@ const slowBootTimer = window.setTimeout(() => {
 
 useRealtimeConnection();
 
-function handleAuthSessionExpired() {
+function handleAuthSessionExpired(rawEvent: Event) {
+  const event = rawEvent as CustomEvent<{ message?: string }>;
   const currentRoute = router.currentRoute.value;
 
   authStore.clearLocalSession();
+  ElMessage.warning(event.detail?.message || '登录状态已过期，请重新登录。');
 
   if (currentRoute.path === '/login') {
     return;

@@ -2642,10 +2642,7 @@ export class OpsService {
     if (definition.platform === 'telegram') {
       return telegramEnabledCount > 0 ? 'configured' : 'not_configured';
     }
-    if (definition.platform === 'taobao' || definition.platform === 'xianyu') {
-      return authorization?.configured ? 'configured' : 'not_configured';
-    }
-    return 'unknown';
+    return authorization?.configured ? 'configured' : 'not_configured';
   }
 
   private async notifyPlatformAuthorizationIncidents(statuses: PlatformInterfaceStatus[]) {
@@ -2772,7 +2769,7 @@ export class OpsService {
       name: definition.displayName,
       status: 'unknown',
       latencyMs: null,
-      message: `${definition.displayName} 真实开放平台授权尚未接入`,
+      message: `${definition.displayName} 接口状态等待真实连接数据`,
       checkedAt: new Date().toISOString()
     };
   }
@@ -2787,11 +2784,8 @@ export class OpsService {
       });
       return count > 0 ? 'configured' : 'not_configured';
     }
-    if (definition.platform === 'taobao' || definition.platform === 'xianyu') {
-      const authorization = await this.getPlatformAuthorizationResponse(definition);
-      return authorization.configured ? 'configured' : 'not_configured';
-    }
-    return 'unknown';
+    const authorization = await this.getPlatformAuthorizationResponse(definition);
+    return authorization.configured ? 'configured' : 'not_configured';
   }
 
   private getPlatformStatsWindowStart() {
@@ -3036,18 +3030,6 @@ export class OpsService {
 
   private getPlatformDefinitions(): PlatformDefinition[] {
     return [
-      {
-        platform: 'taobao',
-        displayName: '淘宝',
-        logAliases: ['taobao'],
-        authorizationStatus: 'required'
-      },
-      {
-        platform: 'xianyu',
-        displayName: '闲鱼',
-        logAliases: ['xianyu'],
-        authorizationStatus: 'required'
-      },
       {
         platform: 'telegram',
         displayName: 'Telegram',

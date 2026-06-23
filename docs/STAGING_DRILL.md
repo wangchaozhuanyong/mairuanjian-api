@@ -18,7 +18,7 @@
 - 数据中心后台已接入真实备份执行器和强确认恢复演练执行器。
 - 生产 `.env.production` 仍有域名占位值，`APP_PUBLIC_URL` 和 `CORS_ORIGIN` 需要替换为真实预发布或生产域名。
 - Telegram 真实 Bot Token / Chat ID 测试发送仍待配置。
-- 淘宝、闲鱼和 Apple ID 自动化 Worker 若要求全自动上线，仍需单独联调。
+- Apple ID 自动化 Worker 若要求全自动上线，仍需单独联调。
 
 ## 3. 预发布环境信息
 

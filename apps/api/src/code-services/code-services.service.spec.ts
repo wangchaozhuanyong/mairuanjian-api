@@ -24,7 +24,7 @@ describe('CodeServicesService platform mappings', () => {
         create: jest.fn().mockResolvedValue({
           id: 'mapping-id',
           platformId: '22222222-2222-4222-8222-222222222222',
-          shopId: 'taobao-main',
+          shopId: 'wechat-main',
           platformItemId: 'item-1',
           platformSkuId: '',
           skuKeyword: '100元',
@@ -37,7 +37,7 @@ describe('CodeServicesService platform mappings', () => {
           updatedAt: new Date('2026-06-18T00:00:00.000Z'),
           platform: {
             id: '22222222-2222-4222-8222-222222222222',
-            name: '淘宝店',
+            name: '微信渠道',
             status: 'active'
           },
           service: {
@@ -118,7 +118,7 @@ describe('CodeServicesService platform mappings', () => {
     const result = await service.createPlatformMapping(
       {
         platformId: '22222222-2222-4222-8222-222222222222',
-        shopId: 'taobao-main',
+        shopId: 'wechat-main',
         platformItemId: 'item-1',
         skuKeyword: '100元',
         serviceId: '11111111-1111-4111-8111-111111111111',
@@ -135,7 +135,7 @@ describe('CodeServicesService platform mappings', () => {
 
     expect(result.platformSkuId).toBe('');
     expect(result.faceValue).toBe('100');
-    expect(result.platform.name).toBe('淘宝店');
+    expect(result.platform.name).toBe('微信渠道');
     expect(prisma.messageTemplate.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

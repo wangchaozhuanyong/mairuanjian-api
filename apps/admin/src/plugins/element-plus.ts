@@ -57,6 +57,18 @@ const components: Array<[string, ComponentLoader]> = [
       )
   ],
   [
+    'ElCollapse',
+    () =>
+      import('element-plus/es/components/collapse/index.mjs').then((module) => module.ElCollapse)
+  ],
+  [
+    'ElCollapseItem',
+    () =>
+      import('element-plus/es/components/collapse/index.mjs').then(
+        (module) => module.ElCollapseItem
+      )
+  ],
+  [
     'ElDatePicker',
     () =>
       import('element-plus/es/components/date-picker/index.mjs').then(
@@ -151,6 +163,11 @@ const components: Array<[string, ComponentLoader]> = [
     () => import('element-plus/es/components/popover/index.mjs').then((module) => module.ElPopover)
   ],
   [
+    'ElProgress',
+    () =>
+      import('element-plus/es/components/progress/index.mjs').then((module) => module.ElProgress)
+  ],
+  [
     'ElRadioButton',
     () =>
       import('element-plus/es/components/radio/index.mjs').then((module) => module.ElRadioButton)
@@ -193,6 +210,10 @@ const components: Array<[string, ComponentLoader]> = [
   [
     'ElTag',
     () => import('element-plus/es/components/tag/index.mjs').then((module) => module.ElTag)
+  ],
+  [
+    'ElTooltip',
+    () => import('element-plus/es/components/tooltip/index.mjs').then((module) => module.ElTooltip)
   ],
   [
     'ElTree',

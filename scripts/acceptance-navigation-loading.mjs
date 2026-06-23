@@ -46,10 +46,6 @@ const apiChecks = [
     path: '/user-table-views?page=1&pageSize=100&tableKey=code_orders'
   },
   { label: 'active source platforms', path: '/source-platforms?page=1&pageSize=100&status=active' },
-  {
-    label: 'taobao source platforms',
-    path: '/source-platforms?page=1&pageSize=100&type=taobao&status=active'
-  },
   { label: 'active customers', path: '/customers?page=1&pageSize=100&status=active' },
   {
     label: 'delivery message templates',

@@ -259,7 +259,7 @@ describe('DataCenterService', () => {
             remark: 'unit customer',
             createdAt: now,
             updatedAt: now,
-            sourcePlatform: { name: '淘宝' }
+            sourcePlatform: { name: '微信渠道' }
           }
         ])
       },
@@ -580,7 +580,7 @@ describe('DataCenterService', () => {
     const fileName = 'customers.csv';
     writeFileSync(
       join(importDir, fileName),
-      'name,phone,sourcePlatformName,tags,status\n测试客户,18800001234,淘宝,"vip|paid",active\n,18800005678,淘宝,,active\n'
+      'name,phone,sourcePlatformName,tags,status\n测试客户,18800001234,微信渠道,"vip|paid",active\n,18800005678,微信渠道,,active\n'
     );
     const executableImportJob = {
       ...importJob,

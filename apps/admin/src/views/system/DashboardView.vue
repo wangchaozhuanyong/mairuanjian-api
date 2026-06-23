@@ -215,8 +215,8 @@
             <StatusChip tone="green">半自动已接入</StatusChip>
           </div>
           <div class="mini-row">
-            <span>淘宝/闲鱼真实自动化</span>
-            <StatusChip tone="orange">后续接入</StatusChip>
+            <span>高风险自动化</span>
+            <StatusChip tone="orange">人工验证</StatusChip>
           </div>
           <div class="mini-row">
             <span>权限、审计和敏感查看</span>
@@ -527,11 +527,11 @@ const workflowStatus = computed<
     type: !renewalDataReady.value ? 'info' : openRenewalTaskCount.value ? 'warning' : 'success'
   },
   {
-    title: '淘宝/闲鱼订单发货',
+    title: '兑换码订单发货',
     status: codeOrderDataReady.value ? (failedDeliveryCount.value ? '需处理' : '正常') : '读取中',
     description: codeOrderDataReady.value
       ? `最近订单 ${codeOrders.value.length} 单，失败 ${failedDeliveryCount.value} 单，待发货 ${pendingDeliveryCount.value} 单。`
-      : '正在读取平台发货状态。',
+      : '正在读取兑换码发货状态。',
     type: !codeOrderDataReady.value ? 'info' : failedDeliveryCount.value ? 'warning' : 'success'
   },
   {
@@ -598,7 +598,7 @@ const attentionStatus = computed<DashboardNotice[]>(() => {
     },
     {
       title: '平台接口状态需要持续观察',
-      description: '淘宝、闲鱼、Telegram 和文件存储授权状态仍按接口状态页统一巡检。',
+      description: 'Telegram、文件存储和自动化服务状态仍按接口状态页统一巡检。',
       type: 'info'
     },
     {

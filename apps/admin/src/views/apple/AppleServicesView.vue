@@ -393,8 +393,11 @@
       <div v-if="officialPriceBatch" class="apple-official-batch-panel">
         <div class="apple-official-batch-panel__header">
           <div>
-            <strong>{{ getOfficialBatchTitle(officialPriceBatch) }}</strong>
-            <span>{{ officialPriceBatch.message || '等待采集进度' }}</span>
+            <strong>最新采集批次：{{ getOfficialBatchTitle(officialPriceBatch) }}</strong>
+            <span>
+              {{ getOfficialBatchTimeline(officialPriceBatch) }} ·
+              {{ officialPriceBatch.message || '等待采集进度' }}
+            </span>
           </div>
           <div class="inline-actions">
             <StatusChip :tone="getOfficialBatchStatusTone(officialPriceBatch.status)" dot>
@@ -425,7 +428,7 @@
             <StatusChip tone="orange" class="apple-official-batch-problem__status">
               异常 {{ officialBatchProblemItems.length }}
             </StatusChip>
-            <span>有地区采集失败或需要人工确认，请到采集结果查看完整原因。</span>
+            <span>这是最新批次里的异常项；采集失败和人工确认都在当前批次结果里看原因。</span>
             <AppButton size="small" variant="soft" @click="showOfficialBatchResults">
               查看全部
             </AppButton>
@@ -454,7 +457,13 @@
         class="apple-official-price-tabs"
         @tab-change="preserveWorkspaceScrollAfterOfficialTabChange"
       >
-        <el-tab-pane label="待确认变化" name="reviews">
+        <el-tab-pane label="历史待确认变化" name="reviews">
+          <div class="apple-official-tab-note">
+            <strong>历史待确认变化</strong>
+            <span>
+              这里汇总所有还没处理的价格变化，可能来自旧批次；本次采集跑了哪些国家、哪些失败，请看“当前批次结果”。
+            </span>
+          </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table official-review-table"
@@ -629,7 +638,13 @@
           />
         </el-tab-pane>
 
-        <el-tab-pane label="采集结果" name="batch-items">
+        <el-tab-pane label="当前批次结果" name="batch-items">
+          <div class="apple-official-tab-note">
+            <strong>当前批次结果</strong>
+            <span>
+              这里只展示最新采集批次的来源、地区、状态和原因，避免和历史待确认变化混在一起看。
+            </span>
+          </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table official-batch-items-table"
@@ -744,7 +759,7 @@
               @change="handlePrimaryRegionChange"
             >
               <el-option
-                v-for="region in officialCountryOptions"
+                v-for="region in formOfficialCountryOptions"
                 :key="region.value"
                 :label="region.label"
                 :value="region.value"
@@ -1186,7 +1201,7 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue';
 import {
   appleOfficialPricesApi,
   appleServicesApi,
@@ -1201,6 +1216,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { useAuthenticatedPageLoader } from '@/composables/useAuthenticatedPageLoader';
 import {
   APPLE_ACCOUNT_REGION_DICTIONARY_GROUP,
   APPLE_SERVICE_CATEGORY_DICTIONARY_GROUP,
@@ -1260,7 +1276,11 @@ const serviceColumnOptions = [
   { label: '状态', value: 'status' },
   { label: '更新时间', value: 'updatedAt' }
 ];
-const batchActions = [{ label: '批量导出', value: 'export' }];
+const batchActions = [
+  { label: '一键开启选中', value: 'enable' },
+  { label: '一键暂停选中', value: 'pause' },
+  { label: '批量导出', value: 'export' }
+];
 
 interface OfficialCollectedServiceOption {
   category: string;
@@ -1447,7 +1467,7 @@ const form = reactive({
   defaultPeriodValue: 1,
   expireCalcType: 'by_month' as AppleService['expireCalcType'],
   requireAppleId: true,
-  requireServiceAccount: false,
+  requireServiceAccount: true,
   autoMatchAppleId: true,
   lockRule: 'by_service' as AppleService['lockRule'],
   allowedRegions: [] as string[],
@@ -1617,6 +1637,23 @@ const officialCountryOptions = computed(() => {
   }
 
   return [...optionMap.values()].sort((left, right) => left.label.localeCompare(right.label));
+});
+const formOfficialCountryOptions = computed(() => {
+  const options = [...officialCountryOptions.value];
+  const primaryRegion = normalizeAppleRegionCode(form.primaryRegion, form.currency);
+
+  if (primaryRegion && !options.some((option) => option.value === primaryRegion)) {
+    const currency = getCurrencyForOfficialRegion(primaryRegion) || form.currency || '';
+    options.unshift({
+      currency,
+      label: currency
+        ? `${formatCountryCodeLabel(primaryRegion, currency)} · ${primaryRegion}/${currency}`
+        : formatCountryCodeLabel(primaryRegion),
+      value: primaryRegion
+    });
+  }
+
+  return options;
 });
 const filteredOfficialServiceOptions = computed(() => {
   const normalizedCategory = normalizeCategoryValue(form.category);
@@ -1882,7 +1919,7 @@ function getServiceCountryLabel(service: Pick<AppleService, 'allowedRegions' | '
 }
 
 function getServicePrimaryRegion(service: Pick<AppleService, 'allowedRegions' | 'currency'>) {
-  const savedRegion = normalizeOfficialReviewCode(service.allowedRegions[0]);
+  const savedRegion = normalizeAppleRegionCode(service.allowedRegions[0], service.currency);
 
   if (savedRegion) {
     return savedRegion;
@@ -1900,7 +1937,7 @@ function getServicePrimaryRegion(service: Pick<AppleService, 'allowedRegions' | 
 }
 
 function formatCountryCodeLabel(region: string, currency?: string | null) {
-  const normalizedRegion = normalizeOfficialReviewCode(region);
+  const normalizedRegion = normalizeAppleRegionCode(region, currency);
   const normalizedCurrency = normalizeOfficialReviewCode(currency);
   const dictionaryOption = appleRegionOptions.value.find((item) => item.code === normalizedRegion);
   const officialOption = officialCountryOptions.value.find(
@@ -1969,7 +2006,7 @@ function getDefaultPrimaryRegion() {
 }
 
 function handlePrimaryRegionChange() {
-  form.primaryRegion = normalizeOfficialReviewCode(form.primaryRegion);
+  form.primaryRegion = normalizeAppleRegionCode(form.primaryRegion, form.currency);
   const currency = getCurrencyForOfficialRegion(form.primaryRegion);
   if (currency) {
     form.currency = currency;
@@ -2042,7 +2079,7 @@ function findOfficialCollectedOption(criteria: {
   serviceName?: string;
 }) {
   let candidates = officialCollectedServiceOptions.value;
-  const region = normalizeOfficialReviewCode(criteria.region);
+  const region = normalizeAppleRegionCode(criteria.region);
   const category = normalizeCategoryValue(criteria.category);
   const serviceName = String(criteria.serviceName || '').trim();
   const officialPrice = String(criteria.officialPrice || '').trim();
@@ -2074,7 +2111,7 @@ function findOfficialCollectedOption(criteria: {
 }
 
 function getCurrencyForOfficialRegion(region?: string | null) {
-  const normalizedRegion = normalizeOfficialReviewCode(region);
+  const normalizedRegion = normalizeAppleRegionCode(region);
   if (!normalizedRegion) return '';
 
   return (
@@ -2087,13 +2124,14 @@ function getCurrencyForOfficialRegion(region?: string | null) {
 }
 
 function syncPrimaryRegionToAllowedRegions(region = form.primaryRegion) {
-  const normalizedRegion = normalizeOfficialReviewCode(region);
+  const normalizedRegion = normalizeAppleRegionCode(region, form.currency);
   if (!normalizedRegion) return;
 
-  form.allowedRegions = [
-    normalizedRegion,
-    ...form.allowedRegions.filter((item) => normalizeOfficialReviewCode(item) !== normalizedRegion)
-  ];
+  const otherRegions = form.allowedRegions
+    .map((item) => normalizeAppleRegionCode(item, form.currency))
+    .filter((item) => item && item !== normalizedRegion);
+
+  form.allowedRegions = [...new Set([normalizedRegion, ...otherRegions])];
 }
 
 function getProviderLabel(provider?: string | null) {
@@ -2135,6 +2173,13 @@ function getOfficialBatchTitle(batch: AppleOfficialPriceCheckBatch) {
   return batch.provider === 'all'
     ? '官方价格批量采集'
     : `${getProviderLabel(batch.provider)} 官方价格采集`;
+}
+
+function getOfficialBatchTimeline(batch: AppleOfficialPriceCheckBatch) {
+  const createdAt = formatDate(batch.createdAt);
+  const startedAt = batch.startedAt ? `，开始 ${formatDate(batch.startedAt)}` : '';
+  const finishedAt = batch.finishedAt ? `，完成 ${formatDate(batch.finishedAt)}` : '';
+  return `创建 ${createdAt}${startedAt}${finishedAt}`;
 }
 
 function getOfficialBatchStatusLabel(status: AppleOfficialPriceCheckBatch['status']) {
@@ -2328,7 +2373,7 @@ async function loadServices(
       force: options.force ?? true,
       dedupeMs: options.dedupeMs ?? 1_200
     });
-    services.value = result.data.items;
+    services.value = sortAppleServicesForDisplay(result.data.items);
     total.value = result.data.total;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务失败');
@@ -2389,9 +2434,78 @@ function exportList() {
   ElMessage.info('Apple ID 业务设置导出会进入数据中心导出任务，后续统一接入');
 }
 
-function handleBatchAction(action: string) {
+function sortAppleServicesForDisplay(items: AppleService[]) {
+  if (sortConfig.value.prop && sortConfig.value.prop !== 'status') {
+    return items;
+  }
+
+  const direction = sortConfig.value.order === 'descending' ? -1 : 1;
+
+  return [...items].sort((left, right) => {
+    const statusOrder = getStatusSortPriority(left.status) - getStatusSortPriority(right.status);
+    return statusOrder ? statusOrder * direction : 0;
+  });
+}
+
+function getStatusSortPriority(status: AppleService['status']) {
+  if (status === 'enabled') return 0;
+  if (status === 'paused') return 1;
+  return 2;
+}
+
+async function handleBatchAction(action: string) {
+  if (action === 'enable') {
+    await updateSelectedServiceStatus('enabled');
+    return;
+  }
+  if (action === 'pause') {
+    await updateSelectedServiceStatus('paused');
+    return;
+  }
   if (action === 'export') {
     exportList();
+  }
+}
+
+async function updateSelectedServiceStatus(status: AppleService['status']) {
+  if (!selectedServices.value.length) {
+    ElMessage.warning('请先选择要处理的业务');
+    return;
+  }
+
+  const targetServices = selectedServices.value.filter((service) => service.status !== status);
+  const actionLabel = status === 'enabled' ? '一键开启' : '一键暂停';
+  const statusLabel = getStatusLabel(status);
+
+  if (!targetServices.length) {
+    ElMessage.info(`选中的业务已经都是${statusLabel}状态`);
+    return;
+  }
+
+  const confirmed = await confirmAction({
+    title: `确认${actionLabel}选中业务？`,
+    actionName: actionLabel,
+    description: `将 ${targetServices.length} 个选中业务改成${statusLabel}状态。`,
+    expectedCount: targetServices.length,
+    impact: [
+      '只修改业务状态，不修改价格、周期、地区和历史订单。',
+      '状态变更后订单录入会按新状态展示。'
+    ],
+    confirmButtonText: `确认${statusLabel}`
+  });
+
+  if (!confirmed) return;
+
+  try {
+    await Promise.all(
+      targetServices.map((service) => appleServicesApi.update(service.id, { status }))
+    );
+    ElMessage.success(`已${statusLabel} ${targetServices.length} 个业务`);
+    selectedServices.value = [];
+    invalidateAppleServiceConsumers();
+    await loadServices({ force: true, dedupeMs: 0 });
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : `${actionLabel}失败`);
   }
 }
 
@@ -2735,6 +2849,50 @@ function normalizeOfficialReviewCode(value?: string | null) {
     .trim()
     .toUpperCase();
   return normalized === '-' ? '' : normalized;
+}
+
+function normalizeAppleRegionCode(value?: string | null, currency?: string | null) {
+  const raw = normalizeOfficialReviewCode(value);
+  if (!raw) return '';
+
+  const knownRegions = getKnownAppleRegionCodes();
+  if (knownRegions.has(raw)) return raw;
+
+  const normalizedCurrency = normalizeOfficialReviewCode(currency);
+  const candidates = raw
+    .replace(/[·/:|,，()（）[\]{}]+/g, ' ')
+    .split(/\s+/)
+    .map((item) => normalizeOfficialReviewCode(item))
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (candidate !== normalizedCurrency && knownRegions.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const regionMatches = raw.match(/\b[A-Z]{2}\b/g) ?? [];
+  for (const candidate of regionMatches) {
+    if (candidate !== normalizedCurrency && knownRegions.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const suffix = raw.slice(-2);
+  return knownRegions.has(suffix) ? suffix : raw;
+}
+
+function getKnownAppleRegionCodes() {
+  return new Set(
+    [
+      ...officialCountryOptions.value.map((item) => item.value),
+      ...officialAutoRegionOptions.value.map((item) => item.region),
+      ...fallbackOfficialAutoRegionOptions.map((item) => item.region),
+      ...appleRegionOptions.value.map((item) => item.code)
+    ]
+      .map((item) => normalizeOfficialReviewCode(item))
+      .filter(Boolean)
+  );
 }
 
 function getReviewRecordValue(record: unknown, key: string) {
@@ -3489,7 +3647,7 @@ function resetForm() {
   form.defaultPeriodValue = 1;
   form.expireCalcType = expireCalcTypeOptions.value[0]?.value ?? 'by_month';
   form.requireAppleId = true;
-  form.requireServiceAccount = false;
+  form.requireServiceAccount = true;
   form.autoMatchAppleId = true;
   form.lockRule = lockRuleOptions.value[0]?.value ?? 'by_service';
   form.allowedRegions = defaultPrimaryRegion ? [defaultPrimaryRegion] : [];
@@ -3503,13 +3661,22 @@ function openCreate() {
   editingService.value = null;
   resetForm();
   dialogVisible.value = true;
+  void nextTick(() => formRef.value?.clearValidate());
 }
 
 function openEdit(service: AppleService) {
   editingService.value = service;
+  const primaryRegion = getServicePrimaryRegion(service);
+  const allowedRegions = [
+    ...new Set(
+      service.allowedRegions
+        .map((item) => normalizeAppleRegionCode(item, service.currency))
+        .filter(Boolean)
+    )
+  ];
   form.name = service.name;
   form.category = normalizeCategoryValue(service.category);
-  form.primaryRegion = service.allowedRegions[0] ?? '';
+  form.primaryRegion = primaryRegion;
   form.defaultPrice = service.defaultPrice;
   form.officialBasePrice = service.officialBasePrice;
   form.officialCostValue = service.officialCostValue;
@@ -3523,12 +3690,17 @@ function openEdit(service: AppleService) {
   form.requireServiceAccount = service.requireServiceAccount;
   form.autoMatchAppleId = service.autoMatchAppleId;
   form.lockRule = service.lockRule;
-  form.allowedRegions = [...service.allowedRegions];
+  form.allowedRegions = allowedRegions.length
+    ? allowedRegions
+    : primaryRegion
+      ? [primaryRegion]
+      : [];
   form.minBalanceRequired = service.minBalanceRequired;
   form.status = service.status;
   form.remark = service.remark ?? '';
   serviceAdvancedPanels.value = [];
   dialogVisible.value = true;
+  void nextTick(() => formRef.value?.clearValidate());
 }
 
 async function saveService() {
@@ -3622,7 +3794,7 @@ async function removeService(service: AppleService) {
   }
 }
 
-onMounted(initializePage);
+useAuthenticatedPageLoader(initializePage);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();
@@ -3793,6 +3965,29 @@ onBeforeUnmount(() => {
   margin-top: 10px;
 }
 
+.apple-official-tab-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #dbe7f5;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #475569;
+  font-size: 13px;
+}
+
+.apple-official-tab-note strong {
+  flex: 0 0 auto;
+  color: #0f172a;
+}
+
+.apple-official-tab-note span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .apple-official-price-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3883,6 +4078,11 @@ onBeforeUnmount(() => {
   }
 
   .apple-official-batch-panel__header {
+    flex-direction: column;
+  }
+
+  .apple-official-tab-note {
+    align-items: flex-start;
     flex-direction: column;
   }
 

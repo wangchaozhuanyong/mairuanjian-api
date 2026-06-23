@@ -1235,29 +1235,6 @@ export interface MarkCodeOrderManualPayload {
   reason: string;
 }
 
-export interface PlatformDeliverPayload {
-  deliveryContent?: string | null;
-  deliveryMethod?: CodeDeliveryLog['deliveryMethod'];
-  reason?: string | null;
-}
-
-export interface PlatformSyncResult {
-  platform: 'taobao' | 'xianyu' | 'manual';
-  supported: boolean;
-  syncedCount: number;
-  skippedCount: number;
-  failedCount: number;
-  message: string;
-}
-
-export interface PlatformDeliverResult {
-  platform: 'taobao' | 'xianyu' | 'manual';
-  supported: boolean;
-  status: 'success' | 'manual_required' | 'unsupported';
-  message: string;
-  order?: CodePlatformOrder;
-}
-
 export interface CreateCodeAfterSalePayload {
   orderId: string;
   originalCodeId?: string | null;
@@ -2405,28 +2382,6 @@ export const codeOrdersApi = {
   },
   getDeliveryLog(id: string) {
     return request<CodeDeliveryLog>(http.get(`/codes/deliveries/${id}`));
-  }
-};
-
-export const platformDeliveryApi = {
-  syncOrders(platform: 'taobao' | 'xianyu') {
-    return request<PlatformSyncResult>(http.post(`/platforms/${platform}/sync-orders`));
-  },
-  getOrder(platform: 'taobao' | 'xianyu', externalOrderNo: string) {
-    return request<CodePlatformOrder>(http.get(`/platforms/${platform}/orders/${externalOrderNo}`));
-  },
-  deliver(platform: 'taobao' | 'xianyu', id: string, payload: PlatformDeliverPayload = {}) {
-    return request<PlatformDeliverResult>(
-      http.post(`/platforms/${platform}/orders/${id}/deliver`, payload)
-    );
-  },
-  syncRefunds(platform: 'taobao' | 'xianyu') {
-    return request<PlatformSyncResult>(http.post(`/platforms/${platform}/sync-refunds`));
-  },
-  deliverManual(id: string, payload: PlatformDeliverPayload) {
-    return request<PlatformDeliverResult>(
-      http.post(`/platforms/manual/orders/${id}/deliver`, payload)
-    );
   }
 };
 

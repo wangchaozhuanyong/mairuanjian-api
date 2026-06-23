@@ -101,7 +101,7 @@
               <FieldHelpLabel
                 label="来源平台"
                 purpose="记录订单从哪里来，并按平台设置自动计算手续费。"
-                example="闲鱼来的订单选闲鱼，淘宝来的订单选淘宝，私下收款可以留空或选对应自建平台。"
+                example="微信来的订单选微信，官网来的订单选官网，私下收款可以留空或选对应自建平台。"
               />
             </template>
             <el-select
@@ -125,7 +125,7 @@
               <FieldHelpLabel
                 label="平台订单号"
                 purpose="保存外部平台的订单编号，方便以后对账、查售后和回看聊天记录。"
-                example="淘宝填淘宝订单号，闲鱼填闲鱼订单号；没有平台单号可以先留空。"
+                example="官网订单填官网单号，微信订单填转账备注；没有平台单号可以先留空。"
               />
             </template>
             <el-input v-model.trim="form.externalOrderNo" />
@@ -372,7 +372,7 @@
               <FieldHelpLabel
                 label="平台手续费"
                 purpose="平台从这单里扣掉的钱，系统按来源平台的费率和固定费用自动算。"
-                example="闲鱼设置了 1% 手续费，客户实收 20，系统会自动带出约 0.20。"
+                example="某渠道设置了 1% 手续费，客户实收 20，系统会自动带出约 0.20。"
               />
             </template>
             <el-input v-model.trim="form.platformFee" disabled placeholder="按来源平台自动计算" />

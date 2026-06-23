@@ -99,8 +99,7 @@
 | phone_encrypted      | text          | 手机号加密             |
 | phone_hash           | varchar       | 手机号 hash            |
 | phone_tail           | varchar       | 手机尾号               |
-| taobao_buyer_id      | varchar       | 淘宝买家 ID            |
-| xianyu_buyer_id      | varchar       | 闲鱼买家 ID            |
+| external_customer_id | varchar       | 外部来源客户 ID        |
 | source_platform_id   | uuid          | 来源平台               |
 | tags                 | text[]        | 标签                   |
 | blacklist_status     | varchar       | normal/watch/blacklist |
@@ -116,8 +115,7 @@
 
 - index(wechat_id)
 - index(phone_hash)
-- index(taobao_buyer_id)
-- index(xianyu_buyer_id)
+- index(external_customer_id)
 - index(source_platform_id)
 
 ### 2.7 source_platforms
@@ -1331,7 +1329,7 @@
 平台授权配置第一版复用 `system_parameters`：
 
 - `group = platform_auth`
-- `key = platform_auth_taobao` / `platform_auth_xianyu`
+- `key = platform_auth_<platform>`
 - `value` 保存 `authMode`、`tokenExpiresAt`、`shopName`、`scopes`、`authorizationUrl`、`tokenUrl`、`redirectUri`、`clientIdParam` 和敏感字段密文
 - `appKey`、`appSecret`、`accessToken`、`refreshToken` 必须加密保存
 - 列表和状态页只显示 `has*` 与尾号字段，不返回明文或密文
@@ -1459,19 +1457,19 @@ OAuth state 第一版也复用 `system_parameters`，只作为短期授权流程
 
 ### 11.4 platform_sync_logs
 
-| 字段          | 类型          | 说明                                      |
-| ------------- | ------------- | ----------------------------------------- |
-| id            | uuid          | 主键                                      |
-| platform      | varchar       | taobao/xianyu/telegram/storage/automation |
-| sync_type     | varchar       | orders/refunds/auth/test                  |
-| status        | varchar       | success/failed                            |
-| request_count | int           | 请求次数                                  |
-| error_rate    | decimal(18,4) | 错误率                                    |
-| error_message | text          | 最近失败原因                              |
-| started_at    | timestamptz   | 开始时间                                  |
-| finished_at   | timestamptz   | 结束时间                                  |
-| metadata      | jsonb         | 接口元数据                                |
-| created_at    | timestamptz   | 创建时间                                  |
+| 字段          | 类型          | 说明                              |
+| ------------- | ------------- | --------------------------------- |
+| id            | uuid          | 主键                              |
+| platform      | varchar       | telegram/storage/automation/other |
+| sync_type     | varchar       | orders/refunds/auth/test          |
+| status        | varchar       | success/failed                    |
+| request_count | int           | 请求次数                          |
+| error_rate    | decimal(18,4) | 错误率                            |
+| error_message | text          | 最近失败原因                      |
+| started_at    | timestamptz   | 开始时间                          |
+| finished_at   | timestamptz   | 结束时间                          |
+| metadata      | jsonb         | 接口元数据                        |
+| created_at    | timestamptz   | 创建时间                          |
 
 ### 11.5 error_logs
 

@@ -65,8 +65,6 @@ const modulePermissionByKey: Record<string, string> = {
   'code-orders': 'code.order.view',
   'delivery-exceptions': 'code.delivery.view',
   'after-sales': 'code.after_sale.manage',
-  'taobao-orders': 'code.order.view',
-  'xianyu-orders': 'code.order.view',
   'code-reports': 'code.report.view',
   'delivery-templates': 'code.delivery_template.manage',
   customers: 'customer.view',
@@ -287,7 +285,7 @@ const appleModules: AppModuleItem[] = [
   },
   {
     key: 'apple-activations',
-    title: 'Apple ID 开通记录',
+    title: '开通记录',
     route: '/apple/activations',
     mark: 'AC',
     group: '客户与来源',
@@ -403,8 +401,8 @@ const codeModules: AppModuleItem[] = [
     group: '兑换码自动发货',
     phase: 'Phase 6',
     status: 'ready',
-    description: '设置淘宝、闲鱼客户付款后收到的回复内容，只用于兑换码自动发货。',
-    features: ['淘宝/闲鱼话术', '模板变量', '自动发货引用', '售后补发话术', '启用状态'],
+    description: '设置兑换码订单发货时发给买家的回复内容，只用于兑换码发货和售后补发。',
+    features: ['发货话术', '模板变量', '手工发货引用', '售后补发话术', '启用状态'],
     primaryAction: '新增发货模板',
     tableColumns: ['模板', '内容预览', '变量', '状态', '更新时间']
   },
@@ -433,32 +431,6 @@ const codeModules: AppModuleItem[] = [
     features: ['售后单', '补发流程', '损耗成本', '凭证上传', '处理记录'],
     primaryAction: '新增售后单',
     tableColumns: ['售后单', '原订单', '面值', '损耗', '负责人', '状态']
-  },
-  {
-    key: 'taobao-orders',
-    title: '淘宝订单',
-    route: '/codes/taobao-orders',
-    mark: 'TB',
-    group: '兑换码自动发货',
-    phase: 'Phase 7',
-    status: 'design-ready',
-    description: '同步淘宝订单，识别 SKU，锁定兑换码并自动或半自动发货。',
-    features: ['订单同步', 'SKU 识别', '自动发货', '退款同步', '失败转人工'],
-    primaryAction: '同步淘宝订单',
-    tableColumns: ['订单号', '买家', 'SKU', '面值', '实付', '发货状态']
-  },
-  {
-    key: 'xianyu-orders',
-    title: '闲鱼订单',
-    route: '/codes/xianyu-orders',
-    mark: 'XY',
-    group: '兑换码自动发货',
-    phase: 'Phase 7',
-    status: 'planned',
-    description: '处理闲鱼电子凭证、无需物流和半自动复制发货兜底。',
-    features: ['订单同步', '电子凭证', '无需物流', '半自动兜底', '售后同步'],
-    primaryAction: '同步闲鱼订单',
-    tableColumns: ['订单号', '商品', '面值', '实付', '发货方式', '状态']
   },
   {
     key: 'code-reports',
@@ -770,7 +742,7 @@ const systemModules: AppModuleItem[] = [
     group: '平台连接',
     phase: 'Phase 14',
     status: 'ready',
-    description: '查看淘宝、闲鱼、Telegram 等外部平台有没有连上、有没有报错。',
+    description: '查看 Telegram、文件存储、自动化服务等外部连接有没有连上、有没有报错。',
     features: ['连接状态', '授权状态', '最近同步', '失败原因', '测试连接'],
     primaryAction: '测试连接',
     tableColumns: ['平台', '授权', 'Token 有效期', '最近同步', '错误率']
@@ -783,7 +755,7 @@ const systemModules: AppModuleItem[] = [
     group: '平台连接',
     phase: 'Phase 14',
     status: 'ready',
-    description: '查看系统和淘宝、闲鱼、Telegram 等平台沟通时留下的成功和失败记录。',
+    description: '查看系统和 Telegram、文件存储、自动化服务等外部连接沟通时留下的成功和失败记录。',
     features: ['请求记录', '返回结果', '失败原因', '重试记录', '关联对象'],
     tableColumns: ['平台', '接口', '状态', '耗时', '错误', '时间']
   },
@@ -985,8 +957,6 @@ export const menuSections: MenuSection[] = [
       'code-inventory',
       'code-orders',
       'delivery-exceptions',
-      'taobao-orders',
-      'xianyu-orders',
       'after-sales',
       'code-reports'
     ])

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router';
 import { ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
+import { isAuthSessionExpired } from '@/auth/session';
 import { maintenanceApi } from '@/api/system';
 import type { CurrentUser } from '@/types/system';
 import {
@@ -42,8 +43,6 @@ const CodeServicesView = () => import('@/views/codes/CodeServicesView.vue');
 const CodeOrdersView = () => import('@/views/codes/CodeOrdersView.vue');
 const CodeDeliveryExceptionsView = () => import('@/views/codes/CodeDeliveryExceptionsView.vue');
 const CodeAfterSalesView = () => import('@/views/codes/CodeAfterSalesView.vue');
-const TaobaoOrdersView = () => import('@/views/codes/TaobaoOrdersView.vue');
-const XianyuOrdersView = () => import('@/views/codes/XianyuOrdersView.vue');
 const CodeReportsView = () => import('@/views/codes/CodeReportsView.vue');
 const NotificationsView = () => import('@/views/system/NotificationsView.vue');
 const SecurityView = () => import('@/views/system/SecurityView.vue');
@@ -86,8 +85,6 @@ const readyPageComponents = {
   'code-orders': CodeOrdersView,
   'delivery-exceptions': CodeDeliveryExceptionsView,
   'after-sales': CodeAfterSalesView,
-  'taobao-orders': TaobaoOrdersView,
-  'xianyu-orders': XianyuOrdersView,
   'code-reports': CodeReportsView,
   notifications: NotificationsView,
   security: SecurityView,
@@ -696,7 +693,16 @@ router.beforeEach((to, from) => {
   const authStore = useAuthStore();
 
   if (to.meta.public) {
+    if (isAuthSessionExpired()) {
+      authStore.clearLocalSession();
+    }
+
     return authStore.isAuthenticated ? '/dashboard' : true;
+  }
+
+  if (isAuthSessionExpired()) {
+    authStore.clearLocalSession();
+    return redirectToLogin(to.fullPath);
   }
 
   if (!authStore.isAuthenticated) {

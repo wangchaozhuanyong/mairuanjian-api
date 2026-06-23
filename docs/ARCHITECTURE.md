@@ -138,25 +138,25 @@ codes/
 └── reports/
 ```
 
-### 平台适配器
+### 兑换码交付服务
 
-建议放在 `platform-adapters/` 下：
+兑换码交付逻辑放在兑换码业务模块内，不维护外部交易平台自动同步适配器：
 
 ```text
-platform-adapters/
-├── delivery-adapter.interface.ts
-├── taobao/
-├── xianyu/
-└── manual/
+codes/
+├── orders/
+├── inventory/
+├── deliveries/
+├── after-sales/
+└── reports/
 ```
 
 接口：
 
 ```text
-syncOrders()
-getOrderDetail()
 deliverCode()
-syncRefundStatus()
+recordDeliveryFailure()
+reissueCode()
 ```
 
 ## 4. 前端页面结构
@@ -191,8 +191,7 @@ views/
     ├── services/
     ├── batches/
     ├── inventory/
-    ├── taobao-orders/
-    ├── xianyu-orders/
+    ├── orders/
     ├── deliveries/
     ├── after-sales/
     └── reports/
@@ -220,7 +219,6 @@ views/
 - renewal-task-generator：到期任务生成
 - apple-automation：Apple ID 自动化任务
 - code-delivery：兑换码发货任务
-- platform-order-sync：淘宝/闲鱼订单同步
 - report-export：报表导出
 
 ## 7. 安全设计
@@ -275,5 +273,5 @@ Docker Compose:
 6. Apple ID 订单和匹配
 7. 续费任务中心
 8. 兑换码库存和半自动发货
-9. 淘宝/闲鱼自动发货
+9. 兑换码手工订单和外部来源订单处理
 10. Apple ID 自动化任务中心

@@ -1,3 +1,10 @@
+import {
+  AuthSessionExpiredError,
+  getAuthSessionAbortSignal,
+  isAuthSessionExpired,
+  isAuthSessionExpiredError
+} from '@/auth/session';
+
 interface SmartQueryCacheEntry<TData> {
   data: TData;
   signature: string;
@@ -179,6 +186,20 @@ export async function refreshSmartQuery<TData>({
   const now = Date.now();
   const isStale = staleQueryKeys.has(key);
 
+  if (isAuthSessionExpired()) {
+    if (cached) {
+      return {
+        data: cached.data,
+        changed: false,
+        fromCache: true,
+        skipped: true,
+        updatedAt: cached.updatedAt
+      };
+    }
+
+    throw new AuthSessionExpiredError();
+  }
+
   if (cached && force && !isStale && dedupeMs > 0 && now - cached.updatedAt < dedupeMs) {
     return {
       data: cached.data,
@@ -227,6 +248,7 @@ export async function refreshSmartQuery<TData>({
   const startedAt = Date.now();
   const revision = getSmartQueryRevision(key);
   const controller = new AbortController();
+  const cleanupAuthAbort = bindAuthAbortSignal(controller);
   markSmartQueryStarted(key, startedAt);
   const promise = fetcher({
     key,
@@ -293,7 +315,7 @@ export async function refreshSmartQuery<TData>({
       };
     })
     .catch((error: unknown) => {
-      if (!isSmartQueryCanceledError(error)) {
+      if (!isSmartQueryCanceledError(error) && !isAuthSessionExpiredError(error)) {
         markSmartQueryFailed(key, error);
       }
 
@@ -303,6 +325,7 @@ export async function refreshSmartQuery<TData>({
       if (inFlightQueries.get(key)?.startedAt === startedAt) {
         inFlightQueries.delete(key);
       }
+      cleanupAuthAbort();
       markSmartQueryFinished(key);
     });
 
@@ -347,7 +370,7 @@ export async function refreshSmartQueryResource<TData>({
 
     return result;
   } catch (error) {
-    if (isSmartQueryCanceledError(error)) {
+    if (isSmartQueryCanceledError(error) || isAuthSessionExpiredError(error)) {
       return undefined;
     }
 
@@ -360,6 +383,10 @@ export async function refreshSmartQueryResource<TData>({
 }
 
 export function isSmartQueryCanceledError(error: unknown) {
+  if (isAuthSessionExpiredError(error)) {
+    return true;
+  }
+
   if (!error || typeof error !== 'object') {
     return false;
   }
@@ -376,6 +403,23 @@ export function isSmartQueryCanceledError(error: unknown) {
     candidate.name === 'CanceledError' ||
     candidate.message === 'canceled'
   );
+}
+
+function bindAuthAbortSignal(controller: AbortController) {
+  const authSignal = getAuthSessionAbortSignal();
+
+  if (authSignal.aborted) {
+    controller.abort(authSignal.reason);
+    return () => undefined;
+  }
+
+  const abort = () => {
+    controller.abort(authSignal.reason);
+  };
+
+  authSignal.addEventListener('abort', abort, { once: true });
+
+  return () => authSignal.removeEventListener('abort', abort);
 }
 
 function matchesSmartQueryKey(key: string, matcher: SmartQueryMatcher) {

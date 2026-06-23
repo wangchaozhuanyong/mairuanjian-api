@@ -9,9 +9,6 @@ interface RawEnv {
   JWT_SECRET?: string;
   FIELD_ENCRYPTION_KEY?: string;
   HASH_SECRET?: string;
-  PLATFORM_POLL_ENABLED?: string;
-  PLATFORM_POLL_INTERVAL_MS?: string;
-  PLATFORM_POLL_RUN_ON_STARTUP?: string;
   APPLE_OFFICIAL_PRICE_POLL_ENABLED?: string;
   APPLE_OFFICIAL_PRICE_POLL_INTERVAL_MS?: string;
   APPLE_OFFICIAL_PRICE_POLL_RUN_ON_STARTUP?: string;
@@ -99,8 +96,6 @@ export function validateEnv(config: RawEnv) {
   assertNotPlaceholder('JWT_SECRET', config.JWT_SECRET, nodeEnv);
   assertNotPlaceholder('FIELD_ENCRYPTION_KEY', config.FIELD_ENCRYPTION_KEY, nodeEnv);
   assertNotPlaceholder('HASH_SECRET', config.HASH_SECRET, nodeEnv);
-  assertBooleanString('PLATFORM_POLL_ENABLED', config.PLATFORM_POLL_ENABLED);
-  assertBooleanString('PLATFORM_POLL_RUN_ON_STARTUP', config.PLATFORM_POLL_RUN_ON_STARTUP);
   assertBooleanString(
     'APPLE_OFFICIAL_PRICE_POLL_ENABLED',
     config.APPLE_OFFICIAL_PRICE_POLL_ENABLED
@@ -124,15 +119,6 @@ export function validateEnv(config: RawEnv) {
   }
   if (config.APPLE_WEB_CHECK_IP_CHECK_URL) {
     assertUrl('APPLE_WEB_CHECK_IP_CHECK_URL', config.APPLE_WEB_CHECK_IP_CHECK_URL);
-  }
-
-  const platformPollIntervalMs = Number(config.PLATFORM_POLL_INTERVAL_MS ?? 300000);
-  if (
-    !Number.isInteger(platformPollIntervalMs) ||
-    platformPollIntervalMs < 60000 ||
-    platformPollIntervalMs > 24 * 60 * 60 * 1000
-  ) {
-    throw new Error('PLATFORM_POLL_INTERVAL_MS must be between 60000 and 86400000');
   }
 
   const officialPricePollIntervalMs = Number(
@@ -178,7 +164,6 @@ export function validateEnv(config: RawEnv) {
     NODE_ENV: nodeEnv,
     APP_PORT: String(appPort),
     FIRST_RELEASE_MODE: firstReleaseMode,
-    PLATFORM_POLL_INTERVAL_MS: String(platformPollIntervalMs),
     APPLE_OFFICIAL_PRICE_POLL_INTERVAL_MS: String(officialPricePollIntervalMs),
     APPLE_WEB_CHECK_WORKER_INTERVAL_MS: String(appleWebCheckIntervalMs),
     APPLE_WEB_CHECK_WORKER_MAX_BATCH: String(appleWebCheckMaxBatch),

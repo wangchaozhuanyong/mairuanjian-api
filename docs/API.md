@@ -703,63 +703,15 @@ POST /api/codes/after-sales/:id/complete
 ```text
 GET /api/codes/reports/inventory
 GET /api/codes/reports/batches
-GET /api/codes/reports/taobao-deliveries
-GET /api/codes/reports/xianyu-deliveries
 GET /api/codes/reports/delivery-failed
 GET /api/codes/reports/after-sales
 GET /api/codes/reports/profit
 GET /api/codes/reports/platform-profit
 ```
 
-## 7. 平台适配接口
+## 7. 兑换码交付边界
 
-### 7.1 淘宝
-
-```text
-POST /api/platforms/taobao/sync-orders
-GET  /api/platforms/taobao/orders/:externalOrderNo
-POST /api/platforms/taobao/orders/:id/deliver
-POST /api/platforms/taobao/sync-refunds
-POST /api/platforms/taobao/poll
-```
-
-### 7.2 闲鱼
-
-```text
-POST /api/platforms/xianyu/sync-orders
-GET  /api/platforms/xianyu/orders/:externalOrderNo
-POST /api/platforms/xianyu/orders/:id/deliver
-POST /api/platforms/xianyu/sync-refunds
-POST /api/platforms/xianyu/poll
-POST /api/platforms/poll-all
-```
-
-### 7.3 手工发货
-
-```text
-POST /api/platforms/manual/orders/:id/deliver
-```
-
-### 7.4 平台轮询任务
-
-`POST /api/platforms/:platform/poll` 和 `POST /api/platforms/poll-all` 用于触发平台订单/退款轮询任务。
-
-请求参数：
-
-```json
-{
-  "includeOrders": true,
-  "includeRefunds": true,
-  "trigger": "manual"
-}
-```
-
-说明：
-
-- `trigger` 支持 `manual`、`cron`、`worker`、`system`。
-- 轮询执行会写入 `cron_job_logs`、`platform_sync_logs` 和 `audit_logs`。
-- 后台 Worker 默认关闭；生产环境可通过 `PLATFORM_POLL_ENABLED=true`、`PLATFORM_POLL_INTERVAL_MS=300000` 启用。
-- 当前淘宝/闲鱼真实开放平台适配器尚未接入，轮询会明确记录失败/不支持状态；真实 OAuth、签名、同步和发货逻辑接入后复用同一套日志链路。
+兑换码交付以库存锁定、订单发货、发货异常和售后补发为核心，不保留外部交易平台自动同步、自动退款或平台轮询接口。
 
 ## 8. 错误码建议
 
@@ -931,7 +883,7 @@ POST   /api/notifications/telegram/test
 - Apple ID 状态检测：非 normal 状态触发状态异常通知。
 - 兑换码导入：重复导入、导入失败、低库存、缺货。
 - 兑换码发货：锁码库存不足、锁码后低库存、自动发货失败转人工。
-- 平台接口：淘宝/闲鱼订单或退款同步失败、平台发货接口异常、平台授权即将过期、平台授权已失效。
+- 平台接口：Telegram、文件存储、自动化服务等通用连接异常。
 - 系统安全：登录失败事件。
 
 说明：
@@ -1081,7 +1033,7 @@ POST /api/ops/apple-web-gateways/sync
 POST /api/ops/platforms/:platform/test-connection
 ```
 
-说明：第一版运维监控会实时检查 API、数据库、Redis、本地文件存储、磁盘空间和自动化任务队列；`POST /api/ops/health-snapshots` 会记录当前快照和队列状态，并在数据库异常、队列积压、磁盘不足时触发系统通知事件。`/api/ops/apple-web-gateways` 用于 Apple 官网检查 Worker 节点订阅管理，订阅 URL 和原始节点配置加密写入 `system_parameters`，接口只返回订阅主机、脱敏 URL、节点名称、国家、协议、状态和失败原因，不返回 token、密码或原始节点串。淘宝、闲鱼真实授权检测和重新授权入口将在平台接口状态阶段继续完善。
+说明：第一版运维监控会实时检查 API、数据库、Redis、本地文件存储、磁盘空间和自动化任务队列；`POST /api/ops/health-snapshots` 会记录当前快照和队列状态，并在数据库异常、队列积压、磁盘不足时触发系统通知事件。`/api/ops/apple-web-gateways` 用于 Apple 官网检查 Worker 节点订阅管理，订阅 URL 和原始节点配置加密写入 `system_parameters`，接口只返回订阅主机、脱敏 URL、节点名称、国家、协议、状态和失败原因，不返回 token、密码或原始节点串。
 
 ## 14. 网站维护接口
 
@@ -1144,8 +1096,6 @@ GET /api/audit-logs/platform-interfaces
 
 ```text
 GET /api/ops/platforms
-GET /api/ops/platforms/taobao
-GET /api/ops/platforms/xianyu
 GET /api/ops/platforms/telegram
 GET /api/ops/platforms/file-storage
 GET /api/ops/platforms/automation-service
@@ -1176,7 +1126,7 @@ POST /api/ops/platforms/:platform/reauthorize
 
 说明：
 
-- 运维接口标识支持 `taobao`、`xianyu`、`telegram`、`file-storage`、`automation-service`。
+- 运维接口标识支持 `telegram`、`file-storage`、`automation-service`。
 - `GET /api/ops/platforms` 聚合授权状态、最近同步、最近失败、调用次数、失败请求数、失败日志数、重试记录数、错误率和最新日志。
 - 平台接口统计默认基于最近 30 天 `platform_sync_logs`；错误率按失败请求数 / 总请求数计算，避免简单平均导致少量大批次调用被低估。
 - 授权状态支持 `configured`、`expiring`、`expired`、`not_configured`、`not_required`、`unknown`。
@@ -1184,7 +1134,7 @@ POST /api/ops/platforms/:platform/reauthorize
 - `GET /api/ops/platforms/:platform/authorization` 返回授权配置脱敏状态，只包含 `hasAppKey`、`appKeyTail`、`hasAccessToken`、`tokenExpiresAt` 等，不返回密文或明文。
 - `POST /api/ops/platforms/:platform/authorization` 保存 `appKey`、`appSecret`、`accessToken`、`refreshToken`、`tokenExpiresAt`、`shopName`、`scopes`、`authorizationUrl`、`tokenUrl`、`redirectUri`、`clientIdParam`，敏感字段加密写入 `system_parameters` 的 `platform_auth` 分组，审计日志只记录脱敏摘要。
 - `POST /api/ops/platforms/:platform/oauth/start` 基于已保存的 `appKey`、授权地址和回调地址生成 OAuth 授权链接，创建 10 分钟有效的 state 记录，并写入 `platform_sync_logs` 与 `audit_logs`。
-- `GET /api/ops/platforms/:platform/oauth/callback` 接收平台回调，校验 state 是否存在、未过期且未使用；第一版只加密保存授权码并记录日志，真实 token exchange、签名验签、刷新 token 要等淘宝/闲鱼真实开放平台 Adapter 接入后完成。
+- `GET /api/ops/platforms/:platform/oauth/callback` 接收平台回调，校验 state 是否存在、未过期且未使用；第一版只加密保存授权码并记录日志，后续按真实通用平台能力补充 token exchange、签名验签和刷新 token。
 - `POST /api/ops/platforms/:platform/test-connection` 会写入 `platform_sync_logs` 并写入 `audit_logs`。
 - `POST /api/ops/platforms/:platform/reauthorize` 保留兼容入口，第一版记录重新授权请求和审计日志；新版页面优先使用 `/oauth/start` 生成授权跳转。
 
@@ -1319,7 +1269,7 @@ DELETE /api/message-templates/:id
 说明：
 
 - 列表支持 `page`、`pageSize`、`keyword`、`type`、`channel`、`status`。
-- 后台发货模板页和服务端都固定为 `type=delivery`、`channel=customer_service`，用于淘宝/闲鱼付款后的自动回复内容。
+- 后台发货模板页和服务端都固定为 `type=delivery`、`channel=customer_service`，用于兑换码付款后的交付回复内容。
 - 兑换码业务设置绑定发货模板时，后端也会校验模板必须是启用的发货客服话术。
 - 传入其他 `type` 或 `channel` 会被拒绝，避免通知模板误绑到自动发货流程。
 - 模板内容支持 `{{ variable }}` 变量写法，服务端会提取并合并变量。

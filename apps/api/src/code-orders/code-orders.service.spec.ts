@@ -33,7 +33,7 @@ describe('CodeOrdersService', () => {
     updatedAt: new Date('2026-06-18T00:00:00.000Z'),
     platform: {
       id: '22222222-2222-4222-8222-222222222222',
-      name: '淘宝店',
+      name: '微信渠道',
       status: 'active'
     },
     service: {

@@ -3,13 +3,13 @@
     title="发货模板"
     group="兑换码业务"
     phase="Phase 2"
-    description="维护淘宝、闲鱼客户付款后收到的发货回复内容。模板变量使用 {{ variable }} 格式。"
+    description="维护兑换码客户付款后收到的发货回复内容。模板变量使用 {{ variable }} 格式。"
   >
     <section class="content-panel common-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
           title="发货模板列表"
-          help="这些话术是给淘宝、闲鱼客户付款后自动回复用的，只服务兑换码发货，不和代充订单、通知提醒混在一起。"
+          help="这些话术是给兑换码客户付款后发货回复用的，只服务兑换码发货，不和代充订单、通知提醒混在一起。"
         />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>模板 {{ total }}</StatusChip>
@@ -127,7 +127,7 @@
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
               <strong>{{ template.name }}</strong>
-              <span>淘宝 / 闲鱼发货话术</span>
+              <span>兑换码发货话术</span>
             </div>
             <StatusTag :status="template.status" />
           </div>
@@ -249,7 +249,7 @@
             <FieldHelpLabel
               label="备注"
               purpose="记录模板的使用场景或注意事项。"
-              example="可以写只用于淘宝、只用于补发、含售后提示。"
+              example="可以写只用于手工发货、只用于补发、含售后提示。"
             />
           </template>
           <el-input v-model="form.remark" type="textarea" :rows="3" />

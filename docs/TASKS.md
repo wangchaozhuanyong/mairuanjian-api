@@ -123,23 +123,17 @@
 - [x] T0619 实现售后补发
 - [x] T0620 实现兑换码利润报表
 
-## Phase 7 - 淘宝/闲鱼自动发货
+## Phase 7 - 兑换码半自动发货
 
-- [x] T0701 设计 DeliveryAdapter 抽象接口
-- [x] T0702 实现 ManualDeliveryAdapter
-- [x] T0703 实现 TaobaoDeliveryAdapter 占位结构
-- [x] T0704 实现淘宝订单同步接口占位
-- [x] T0705 实现淘宝发货接口占位
-- [x] T0706 实现淘宝退款同步接口占位
-- [x] T0707 实现 XianyuDeliveryAdapter 占位结构
-- [x] T0708 实现闲鱼订单同步接口占位
-- [x] T0709 实现闲鱼电子凭证/无需物流发货接口占位
-- [x] T0710 实现闲鱼退款售后同步接口占位
-- [x] T0711 实现平台发货失败转人工
-- [x] T0712 实现平台自动发货开关
-- [x] T0713 实现平台利润报表
+- [x] T0701 设计兑换码订单交付流程
+- [x] T0702 实现手工订单发货入口
+- [x] T0703 实现兑换码锁定和防重复发货
+- [x] T0704 实现发货失败转人工
+- [x] T0705 实现发货模板绑定
+- [x] T0706 实现售后补发
+- [x] T0707 实现兑换码利润报表
 
-说明：Phase 7 当前完成平台适配层、占位接口、自动发货开关检查、失败转人工和平台利润报表入口；淘宝/闲鱼真实开放平台授权、签名、回调和接口字段映射需要在拿到平台能力后替换对应 Adapter。
+说明：Phase 7 当前完成兑换码半自动发货、失败转人工、售后补发和利润报表入口；不保留外部交易平台自动同步、自动退款或平台轮询任务。
 
 ## Phase 8 - Apple ID 自动化任务中心
 
@@ -190,7 +184,7 @@
 - [x] T0909 接入平台接口异常和授权过期通知事件
 - [x] T0910 接入系统安全和运维异常通知事件
 
-说明：Phase 9 当前完成通知设置基础底座、后端接口、权限、前端页面、日志重试、默认通知规则/模板 seed、内部 `triggerEvent` 触发入口，并已接入 Apple ID 续费到期/余额不足/状态异常、兑换码低库存/缺货/重复导入/导入失败/发货失败、淘宝/闲鱼订单同步异常、平台发货接口异常、平台授权即将过期/已失效、异常登录/连续登录失败安全事件、备份失败、数据库异常、队列积压和磁盘不足事件。平台授权通知第一版由平台接口状态页基于授权状态和可选 Token 有效期触发，真实淘宝/闲鱼 OAuth 接入后替换 Token 来源。
+说明：Phase 9 当前完成通知设置基础底座、后端接口、权限、前端页面、日志重试、默认通知规则/模板 seed、内部 `triggerEvent` 触发入口，并已接入 Apple ID 续费到期/余额不足/状态异常、兑换码低库存/缺货/重复导入/导入失败/发货失败、通用平台连接异常、平台授权即将过期/已失效、异常登录/连续登录失败安全事件、备份失败、数据库异常、队列积压和磁盘不足事件。
 
 补充：Phase 11 数据中心已接入备份失败通知事件 `ops.backup.failed`；Phase 12 健康快照已接入 `ops.database.connection_abnormal`、`ops.queue.backlog`、`ops.disk.low`。
 
@@ -236,7 +230,7 @@
 - [x] T1208 实现磁盘空间监控
 - [x] T1209 实现最近错误列表和错误详情
 
-说明：Phase 12 当前完成数据库迁移、权限 seed、后端接口、前端运维监控页面、健康快照记录、队列状态记录、平台连接测试日志、错误日志记录和运维异常通知触发。第一版 Redis/平台/Worker 以真实连通性或占位状态展示；淘宝、闲鱼真实授权与重新授权入口将在 Phase 14 平台接口状态继续完善。
+说明：Phase 12 当前完成数据库迁移、权限 seed、后端接口、前端运维监控页面、健康快照记录、队列状态记录、平台连接测试日志、错误日志记录和运维异常通知触发。第一版 Redis、Telegram、文件存储和 Worker 以真实连通性或占位状态展示。
 
 ## Phase 13 - 网站维护
 
@@ -257,10 +251,10 @@
 - [x] T1402 实现权限变更日志查询
 - [x] T1403 实现自动化任务日志查询
 - [x] T1404 实现平台接口日志查询
-- [x] T1405 实现淘宝、闲鱼、Telegram、文件存储、自动化服务接口状态页
+- [x] T1405 实现 Telegram、文件存储、自动化服务接口状态页
 - [x] T1406 实现接口测试连接和重新授权入口
 
-说明：Phase 14 当前完成审计日志中心分类接口、前端多标签审计页面、平台接口状态接口、平台接口状态前端页面、测试连接入口和重新授权占位入口。第一版复用 `audit_logs`、`sensitive_access_logs`、`login_logs`、`data_export_jobs`、`automation_task_logs`、`platform_sync_logs` 等既有日志表，不新增数据库表；淘宝/闲鱼真实 OAuth 授权流程后续接入真实开放平台时再实现。
+说明：Phase 14 当前完成审计日志中心分类接口、前端多标签审计页面、平台接口状态接口、平台接口状态前端页面、测试连接入口和重新授权占位入口。第一版复用 `audit_logs`、`sensitive_access_logs`、`login_logs`、`data_export_jobs`、`automation_task_logs`、`platform_sync_logs` 等既有日志表，不新增数据库表。
 
 ## Phase 15 - 通用表格和查询能力
 
@@ -282,7 +276,7 @@
 - [x] T1516 将 Apple ID 业务设置真实列表迁移到 `TableToolbar` 保存视图范式，并接入后端排序白名单
 - [x] T1517 将兑换码业务设置真实列表迁移到 `TableToolbar` 保存视图范式，并接入后端排序白名单
 - [x] T1518 将发货模板真实列表迁移到 `TableToolbar` 保存视图范式，并接入后端排序白名单
-- [x] T1519 将淘宝/闲鱼平台订单真实列表迁移到 `TableToolbar` 保存视图范式，复用兑换码订单后端排序白名单
+- [x] T1519 将兑换码订单真实列表迁移到 `TableToolbar` 保存视图范式，复用兑换码订单后端排序白名单
 - [x] T1520 将售后补发真实列表迁移到 `TableToolbar` 保存视图范式，并接入后端排序白名单
 - [x] T1521 将附件中心真实列表迁移到 `TableToolbar` 保存视图范式，并接入后端排序白名单
 - [x] T1522 将 Apple ID 余额对账真实列表迁移到 `TableToolbar` 保存视图范式，复用 Apple ID 账号后端排序白名单
@@ -321,7 +315,7 @@
 - [x] T1555 将 Apple ID 订单录入客户选择改为模糊搜索，并复用客户管理新增表单支持提交订单时同步创建客户
 - [x] T1556 重整 Apple ID 业务设置分类管理和订单录入自动带出逻辑，避免售价、手续费、官方消耗和 Apple ID 匹配重复手填
 
-说明：Phase 15 当前完成 `user_table_views` 持久化表、个人保存视图 API、默认视图唯一规则、通用 `TableToolbar` 组件、日期快捷筛选、批量操作入口、导出入口、列显示配置、保存视图、筛选标签回显和一键清空。第一版已接入模块化占位页、用户管理真实列表、权限管理角色列表、审计日志中心操作日志、敏感查看日志、登录日志、导出日志、权限变更日志、自动化任务日志和平台接口日志、通知设置规则/通知模板/通知日志、安全中心登录日志、在线会话、IP 白名单、敏感审批和敏感查看日志、平台接口状态页、网站维护系统公告、功能开关、版本信息、更新日志和系统参数、数据中心备份/恢复/导入/导出任务、回收站、数据清理、重复合并、数据字典和系统参数、客户管理真实列表、来源平台真实列表、发货模板真实列表、附件中心真实列表、Apple ID 管理真实列表、Apple ID 余额对账真实列表、Apple ID 财务对账/报表、Apple ID 业务设置真实列表、Apple ID 订单真实列表、Apple ID 开通记录真实列表、Apple ID 续费任务真实列表、Apple ID 操作计划真实列表、Apple ID 自动化任务真实列表、兑换码业务设置真实列表、兑换码订单真实列表、兑换码库存真实列表、兑换码报表、淘宝/闲鱼平台订单真实列表、售后补发真实列表作为统一范式；更多真实业务列表页面后续按模块逐页迁移复用。
+说明：Phase 15 当前完成 `user_table_views` 持久化表、个人保存视图 API、默认视图唯一规则、通用 `TableToolbar` 组件、日期快捷筛选、批量操作入口、导出入口、列显示配置、保存视图、筛选标签回显和一键清空。第一版已接入模块化占位页、用户管理真实列表、权限管理角色列表、审计日志中心操作日志、敏感查看日志、登录日志、导出日志、权限变更日志、自动化任务日志和平台接口日志、通知设置规则/通知模板/通知日志、安全中心登录日志、在线会话、IP 白名单、敏感审批和敏感查看日志、平台接口状态页、网站维护系统公告、功能开关、版本信息、更新日志和系统参数、数据中心备份/恢复/导入/导出任务、回收站、数据清理、重复合并、数据字典和系统参数、客户管理真实列表、来源平台真实列表、发货模板真实列表、附件中心真实列表、Apple ID 管理真实列表、Apple ID 余额对账真实列表、Apple ID 财务对账/报表、Apple ID 业务设置真实列表、Apple ID 订单真实列表、Apple ID 开通记录真实列表、Apple ID 续费任务真实列表、Apple ID 操作计划真实列表、Apple ID 自动化任务真实列表、兑换码业务设置真实列表、兑换码订单真实列表、兑换码库存真实列表、兑换码报表和售后补发真实列表作为统一范式；更多真实业务列表页面后续按模块逐页迁移复用。
 
 ## Phase 3 补充任务 - Apple ID 充值礼品卡代码
 
@@ -395,7 +389,7 @@
 - [x] T1630 新增 `npm run release:ready`，作为正式上线前 strict 发布就绪硬门禁
 - [x] T1631 新增 `npm run release:blockers`，输出当前上线阻塞项行动清单
 
-说明：Phase 16 不代表新增业务模块，而是把已经完成的第一版系统推进到可上线状态。淘宝/闲鱼真实开放平台、Apple ID 真实自动化 Worker、数据中心真实执行器是否进入上线前 P0，取决于第一版上线策略是否允许半自动运营。
+说明：Phase 16 不代表新增业务模块，而是把已经完成的第一版系统推进到可上线状态。Apple ID 真实自动化 Worker、数据中心真实执行器是否进入上线前 P0，取决于第一版上线策略是否允许半自动运营。
 
 验证记录：当前基线已通过 `npm run check`、`npm run prod:config:example`，并使用 `COMPOSE_BAKE=false DOCKER_BUILDKIT=0` 验证 API/Admin 生产镜像可构建；GitHub Actions 已纳入代码质量、生产 Compose 示例、Git 提交前安全检查和 API/Admin 生产 Docker 镜像构建。上线检查清单已接入真实页面和 `system_parameters` 持久化接口，浏览器实测 `/workspace/launch-audit` 可显示 12 个验收项、统计和保存入口。已通过浏览器实际渲染确认 `/403`、`/404`、`/system/maintenance-mode` 均能显示对应页面内容。维护模式已接入公开只读状态接口和前端路由守卫，维护开启时非允许角色会被引导到维护模式页。`npm run acceptance:business` 已通过真实本地 API 验收 Apple ID 代充闭环和兑换码半自动发货闭环，并更新上线检查清单中的 `apple_e2e`、`code_e2e`。`npm run acceptance:security` 已通过真实本地 API 验收 Apple ID 密码、Apple ID 礼品卡代码、兑换码完整码、客户手机号的无权限拦截、查看原因、操作审计和敏感访问日志，并更新上线检查清单中的 `sensitive_audit`。Admin 前端已完成路由级按需加载和 Element Plus 异步组件注册，本轮生产构建最大 JS chunk 约 370.95KB，已消除 500KB chunk 警告。`npm run acceptance:launch` 本地等效上线验收总入口已跑通，串行验证格式、lint、类型检查、27 个 API 测试套件、96 个测试、生产构建、Prisma schema、生产 Compose 示例、业务闭环、安全回归、备份、临时库恢复和 Git 提交前安全检查。本轮备份文件为 `backups/postgres/local/apple_business-20260618-053949.dump`，已恢复到临时数据库 `restore_drill_20260618_053950_19852` 验证关键表数量后清理，其中 `users=4`、`roles=8`、`permissions=117`、`audit_logs=221`、`system_parameters=8`、`apple_accounts=14`、`redeem_codes=13`。`npm run git:readiness` 已确认 Git remote 存在，`.env`、备份、上传文件、构建产物和常见密钥不会进入 Git 候选文件；是否执行首次 commit/push 仍等待用户确认。当前仍存在 `npm audit` 报告的低/中级依赖风险；高危审计门禁通过。
 
@@ -403,7 +397,7 @@
 
 补充验证记录：新增 `npm run launch:status` 作为只读上线状态速览入口，用于在继续开发或上线前快速查看 Phase 16/17/18 未完成项、生产环境变量校验结果和 Git 变更状态。该命令不修改数据库、不发送通知、不启动服务；真实 Telegram 测试发送、真实生产域名和首次 commit/push 仍是外部或人工门禁。
 
-补充验证记录：`npm run launch:status` 已补充首版发布门禁判断，会根据 `FIRST_RELEASE_MODE` 将阻塞项和后续自动化路线图区分展示。在 `semi_auto` 模式下，Phase 17 的淘宝/闲鱼真实 Adapter 和 Apple ID 真实 Worker 会显示为 post-launch automation roadmap，不阻断首个内部可运营版本；在 `full_auto` 模式下，这些任务仍会作为上线前阻塞项。
+补充验证记录：`npm run launch:status` 已补充首版发布门禁判断，会根据 `FIRST_RELEASE_MODE` 将阻塞项和后续自动化路线图区分展示。在 `semi_auto` 模式下，Phase 17 的 Apple ID 真实 Worker 会显示为 post-launch automation roadmap，不阻断首个内部可运营版本；在 `full_auto` 模式下，这些任务仍会作为上线前阻塞项。
 
 补充验证记录：新增 `npm run launch:gates` 和 `npm run launch:gates:strict`。该脚本只读检查 `.env.production`、`telegram_configs.last_test_status` 和上线检查清单中的 `telegram_test`、`prod_env`、`git_baseline`，不会发送 Telegram、不会写数据库、不会输出明文 token。当前真实 Telegram 测试和真实生产域名仍未完成，因此该脚本会显示 manual gates blocked；预发布或生产等效环境可使用 strict 版本让未通过项返回失败退出码。
 
@@ -468,26 +462,21 @@
 ## Phase 17 - 平台接口与自动化增强
 
 - [x] T1701 确认第一版上线策略：半自动运营优先，还是必须全自动发货
-- [ ] T1702 接入淘宝真实 OAuth、签名、订单同步、发货、退款同步
-- [ ] T1703 接入闲鱼真实授权、订单同步、电子凭证或无需物流发货
-- [x] T1704 接入平台 Webhook 或定时轮询任务
-- [ ] T1705 接入 Apple ID 真实自动化 Worker
-- [ ] T1706 将平台授权状态页的重新授权占位替换为真实授权流程
-- [x] T1707 增强平台接口错误率、调用次数、失败原因和重试记录
+- [ ] T1702 接入 Apple ID 真实自动化 Worker
+- [ ] T1703 将通用平台授权状态页的重新授权占位替换为真实授权流程
+- [x] T1704 增强平台接口错误率、调用次数、失败原因和重试记录
 
 说明：Phase 17 属于全自动化增强阶段。如果第一版允许手工导入和半自动发货，可以在生产上线后逐步接入；如果业务要求无人值守自动发货，则必须在正式上线前完成。
 
-补充验证记录：第一版上线策略已固化为“半自动可运营优先”，详见 `docs/LAUNCH_STRATEGY.md`。配置项 `FIRST_RELEASE_MODE=semi_auto` 已写入 `.env.example` 和 `.env.production.example`，并纳入后端环境校验与 `npm run launch:status` 展示。该策略下淘宝/闲鱼真实开放平台和 Apple ID 真实自动化 Worker 不阻断第一版内部上线；如果改为 `FIRST_RELEASE_MODE=full_auto`，则 T1702、T1703、T1705、T1706 必须在正式上线前完成。
+补充验证记录：第一版上线策略已固化为“半自动可运营优先”，详见 `docs/LAUNCH_STRATEGY.md`。配置项 `FIRST_RELEASE_MODE=semi_auto` 已写入 `.env.example` 和 `.env.production.example`，并纳入后端环境校验与 `npm run launch:status` 展示。该策略下 Apple ID 真实自动化 Worker 不阻断第一版内部上线；如果改为 `FIRST_RELEASE_MODE=full_auto`，则 T1702、T1703 必须在正式上线前完成。
 
 补充设计记录：Apple ID 官网状态检查已先落地真实 Worker 前置底座，详见 `docs/APPLE_ID_WEB_CHECK_WORKER.md`。后台可批量生成 `check_status` 官网检查任务，后端将 Apple ID `region` 和 Worker 出口 IP 国家分开记录；运维监控新增 Apple 节点配置，订阅 URL 和原始节点配置加密保存到 `system_parameters`，同步后只返回脱敏节点摘要。批量检查会优先按 `gatewayRegion` 从同国家节点池选择候选节点，`APPLE_WEB_CHECK_GATEWAY_REGIONS` 仅作为临时兜底；缺少对应出口 IP 时自动转人工验证。任务接口已补充 `GET /api/apple/automation-tasks/:id/web-check-gateways` 和 `POST /api/apple/automation-tasks/:id/web-check-gateway-attempt`，用于 Worker 获取脱敏候选节点、回写出口国家检测和节点尝试结果；检测失败会标记节点不可用，同国家候选耗尽后转人工。真实 Playwright Worker 第一版代码和 sing-box 配置生成脚本已接入，默认关闭；生产 sing-box sidecar 部署、Playwright Chromium 安装、验证码会话续跑和真实 Apple 页面联调仍属于 T1705 的上线前剩余事项。
 
-补充验证记录：平台轮询任务已接入 `POST /api/platforms/taobao/poll`、`POST /api/platforms/xianyu/poll`、`POST /api/platforms/poll-all` 和默认关闭的 `PlatformPollingWorker`。生产可通过 `PLATFORM_POLL_ENABLED=true` 与 `PLATFORM_POLL_INTERVAL_MS` 开启定时轮询。每次轮询会写 `cron_job_logs`、`platform_sync_logs` 和 `audit_logs`；当前淘宝/闲鱼真实开放平台适配器仍未接入，因此轮询会保留失败/不支持状态，真实 OAuth、签名、订单同步、发货、退款同步仍属于 T1702/T1703/T1706。
-
-补充验证记录：平台接口状态已基于最近 30 天 `platform_sync_logs` 统计调用次数、失败请求数、失败日志数、最近失败时间、重试记录数、最近重试时间和加权错误率；错误率按失败请求数 / 总请求数计算，不再使用简单日志平均值。前端平台接口状态页已补充对应列展示、列配置和排序能力。淘宝/闲鱼真实 OAuth、真实订单同步、真实发货和退款同步仍属于 T1702/T1703/T1706。
+补充验证记录：平台接口状态已基于最近 30 天 `platform_sync_logs` 统计调用次数、失败请求数、失败日志数、最近失败时间、重试记录数、最近重试时间和加权错误率；错误率按失败请求数 / 总请求数计算，不再使用简单日志平均值。前端平台接口状态页已补充对应列展示、列配置和排序能力。
 
 补充验证记录：平台授权配置底座已接入 `GET/POST /api/ops/platforms/:platform/authorization`，支持保存 `appKey`、`appSecret`、`accessToken`、`refreshToken`、`tokenExpiresAt`、店铺名称和授权范围。敏感字段使用字段加密服务保存到 `system_parameters` 的 `platform_auth` 分组，平台状态页只展示是否配置和尾号，保存动作写审计日志和平台接口日志。真实 OAuth 授权跳转、回调验签和 token 刷新仍属于 T1706，真实订单/发货/退款接口仍属于 T1702/T1703。
 
-补充验证记录：平台 OAuth 发起/回调骨架已接入 `POST /api/ops/platforms/:platform/oauth/start` 和 `GET /api/ops/platforms/:platform/oauth/callback`。当前支持保存授权地址、Token 地址、回调地址、Client ID 参数名，发起授权时生成 state 并写入 10 分钟有效的 `platform_oauth_state` 参数，回调时校验 state 并加密保存授权码。该能力只完成“授权流程外壳”，还未完成淘宝/闲鱼真实 token exchange、平台签名验签、token 刷新、订单同步、发货和退款，因此 T1702/T1703/T1706 仍保持未完成。
+补充验证记录：平台 OAuth 发起/回调骨架已接入 `POST /api/ops/platforms/:platform/oauth/start` 和 `GET /api/ops/platforms/:platform/oauth/callback`。当前支持保存授权地址、Token 地址、回调地址、Client ID 参数名，发起授权时生成 state 并写入 10 分钟有效的 `platform_oauth_state` 参数，回调时校验 state 并加密保存授权码。该能力只完成“授权流程外壳”，真实 token exchange、平台签名验签和 token 刷新后续按通用平台能力补齐。
 
 ## Phase 18 - 数据、运维和安全增强
 

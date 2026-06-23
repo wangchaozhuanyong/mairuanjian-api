@@ -21,7 +21,7 @@ describe('AppleReportsService', () => {
         profitAmount: new Prisma.Decimal('35'),
         createdAt: new Date('2026-06-18T01:00:00.000Z'),
         service: { id: 'service-gpt', name: 'GPT Plus', category: 'ai' },
-        sourcePlatform: { id: 'taobao', name: '淘宝店' },
+        sourcePlatform: { id: 'wechat', name: '微信渠道' },
         appleAccount: {
           id: 'apple-1',
           appleId: 'profit-test@icloud.com',

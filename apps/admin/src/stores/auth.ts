@@ -109,6 +109,7 @@ export const useAuthStore = defineStore('auth', {
       return currentUserPromise;
     },
     clearLocalSession() {
+      currentUserPromise = null;
       this.token = '';
       this.user = null;
       this.userLoadedAt = 0;

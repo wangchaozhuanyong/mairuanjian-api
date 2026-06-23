@@ -402,7 +402,7 @@ export class AppleServicesService {
     const sortField = query.sortBy ? APPLE_SERVICE_SORT_FIELDS[query.sortBy] : undefined;
 
     if (!sortField || !sortOrder) {
-      return [{ createdAt: 'desc' }];
+      return [{ status: 'asc' }, { createdAt: 'desc' }];
     }
 
     return [{ [sortField]: sortOrder }, { createdAt: 'desc' }];
@@ -727,7 +727,7 @@ export class AppleServicesService {
       ),
       expireCalcType: this.parseExpireCalcType(dto.expireCalcType, true) ?? 'by_month',
       requireAppleId: dto.requireAppleId ?? true,
-      requireServiceAccount: dto.requireServiceAccount ?? false,
+      requireServiceAccount: dto.requireServiceAccount ?? true,
       autoMatchAppleId: dto.autoMatchAppleId ?? true,
       lockRule: this.parseLockRule(dto.lockRule, true) ?? 'by_service',
       allowedRegions: this.normalizeRegions(dto.allowedRegions),

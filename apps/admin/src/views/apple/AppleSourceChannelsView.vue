@@ -10,7 +10,7 @@
         <PanelTitleHelp
           title="来源渠道列表"
           :help="[
-            '这里专门给 Apple ID 账号资料使用，比如供应商、内部自建、闲鱼采购。',
+            '这里专门给 Apple ID 账号资料使用，比如供应商、内部自建、官网采购。',
             '停用后不会再出现在新增和编辑 Apple ID 的下拉里，历史账号已经选过的来源渠道会继续显示。'
           ]"
         />
@@ -137,7 +137,7 @@
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="来源渠道名称" prop="name">
-          <el-input v-model.trim="form.name" placeholder="例如 供应商A / 闲鱼采购 / 内部自建" />
+          <el-input v-model.trim="form.name" placeholder="例如 供应商A / 官网采购 / 内部自建" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status" class="full-input">

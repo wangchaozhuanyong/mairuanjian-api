@@ -661,7 +661,7 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import {
   appleAutomationTasksApi,
   userTableViewsApi,
@@ -675,6 +675,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { useAuthenticatedPageLoader } from '@/composables/useAuthenticatedPageLoader';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleAccount,
@@ -853,7 +854,7 @@ const filterChips = computed(() => {
   return chips;
 });
 
-onMounted(async () => {
+useAuthenticatedPageLoader(async () => {
   await Promise.all([initializePage(), loadAppleAccounts()]);
 });
 

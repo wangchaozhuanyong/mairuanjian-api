@@ -34,8 +34,8 @@ describe('MaintenanceService', () => {
   };
   const featureFlag = {
     id: '22222222-2222-4222-8222-222222222222',
-    key: 'platform_real_delivery',
-    name: '平台真实自动发货',
+    key: 'sensitive_export',
+    name: '敏感数据导出',
     enabled: false,
     config: {},
     remark: '默认关闭',
@@ -253,7 +253,7 @@ describe('MaintenanceService', () => {
     });
 
     expect(result.total).toBe(1);
-    expect(result.items[0]?.key).toBe('platform_real_delivery');
+    expect(result.items[0]?.key).toBe('sensitive_export');
     expect(prisma.featureFlag.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

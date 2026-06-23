@@ -8,6 +8,15 @@ export interface AuthSessionExpiredDetail {
 }
 
 let sessionExpiredNotified = false;
+let authSessionExpired = false;
+let authSessionAbortController = new AbortController();
+
+export class AuthSessionExpiredError extends Error {
+  constructor(message = '登录状态已过期，请重新登录。', options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'AuthSessionExpiredError';
+  }
+}
 
 export function clearStoredAuthSession() {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -16,18 +25,50 @@ export function clearStoredAuthSession() {
 
 export function markAuthSessionFresh() {
   sessionExpiredNotified = false;
+  authSessionExpired = false;
+  authSessionAbortController = new AbortController();
+}
+
+export function isAuthSessionExpired() {
+  return authSessionExpired;
+}
+
+export function getAuthSessionAbortSignal() {
+  return authSessionAbortController.signal;
+}
+
+export function isAuthSessionExpiredError(error: unknown): error is AuthSessionExpiredError {
+  return (
+    error instanceof AuthSessionExpiredError || getErrorName(error) === 'AuthSessionExpiredError'
+  );
+}
+
+export function assertAuthSessionActive() {
+  if (authSessionExpired) {
+    throw new AuthSessionExpiredError();
+  }
 }
 
 export function notifyAuthSessionExpired(detail: AuthSessionExpiredDetail) {
+  authSessionExpired = true;
+  clearStoredAuthSession();
+
+  if (!authSessionAbortController.signal.aborted) {
+    authSessionAbortController.abort(new AuthSessionExpiredError(detail.message));
+  }
+
   if (sessionExpiredNotified) {
     return;
   }
 
   sessionExpiredNotified = true;
-  clearStoredAuthSession();
   window.dispatchEvent(
     new CustomEvent<AuthSessionExpiredDetail>(AUTH_SESSION_EXPIRED_EVENT, {
       detail
     })
   );
+}
+
+function getErrorName(error: unknown) {
+  return error && typeof error === 'object' ? (error as { name?: unknown }).name : undefined;
 }

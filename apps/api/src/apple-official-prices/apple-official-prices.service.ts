@@ -42,7 +42,8 @@ import {
   normalizeOfficialPriceProvider,
   type OfficialPriceProviderKey,
   type OfficialPriceProviderPlan,
-  type OfficialPriceProviderRegion
+  type OfficialPriceProviderRegion,
+  type OfficialPriceProviderSourcePreset
 } from './official-price-provider-catalog';
 
 interface ListSourcesQuery extends PaginationQuery {
@@ -162,6 +163,8 @@ interface OfficialPriceBatchPlanItem {
 
 const AUTO_COLLECT_LIMIT = 200;
 const OFFICIAL_PRICE_FETCH_TIMEOUT_MS = 15_000;
+const OFFICIAL_PRICE_BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const ACTIVE_OFFICIAL_PRICE_BATCH_STATUSES: AutomationTaskStatus[] = ['queued', 'running'];
 const FINAL_OFFICIAL_PRICE_BATCH_ITEM_STATUSES: AutomationTaskStatus[] = [
   'success',
@@ -1349,7 +1352,7 @@ export class AppleOfficialPricesService {
       response = await this.fetchOfficialPriceSource(sourceUrl);
     } catch (error) {
       const fallbackItems = this.collectOfficialProviderItems('', source, sourceUrl);
-      if (fallbackItems?.length) {
+      if (fallbackItems) {
         return this.normalizeCollectedItems(fallbackItems.slice(0, AUTO_COLLECT_LIMIT), source);
       }
       throw error;
@@ -1394,7 +1397,7 @@ export class AppleOfficialPricesService {
           provider,
           region: preset.region,
           currency: preset.currency,
-          sourceUrl: existing.sourceUrl || preset.sourceUrl,
+          sourceUrl: this.getProviderSourceUrlForUpdate(existing.sourceUrl, preset, provider),
           collectMethod: 'webpage',
           checkIntervalHours: existing.checkIntervalHours || preset.checkIntervalHours,
           status: 'enabled',
@@ -1419,6 +1422,25 @@ export class AppleOfficialPricesService {
       },
       operator
     );
+  }
+
+  private getProviderSourceUrlForUpdate(
+    existingUrl: string | null,
+    preset: OfficialPriceProviderSourcePreset,
+    provider: OfficialPriceProviderKey
+  ) {
+    const normalizedExistingUrl = this.normalizeNullableString(existingUrl);
+    if (!normalizedExistingUrl) return preset.sourceUrl;
+    if (normalizedExistingUrl === preset.sourceUrl) return normalizedExistingUrl;
+
+    if (
+      this.isOfficialProviderUrl(provider, normalizedExistingUrl) &&
+      this.isOfficialProviderUrl(provider, preset.sourceUrl)
+    ) {
+      return preset.sourceUrl;
+    }
+
+    return normalizedExistingUrl;
   }
 
   private async ensureDefaultProviderSources() {
@@ -1530,54 +1552,29 @@ export class AppleOfficialPricesService {
     const requestedCurrency = source.currency.toUpperCase();
     const parsedPrice = this.extractProviderPlanPrice(plainText, plan, requestedCurrency);
     const requestedCatalogPrice = plan.currencyPrices[requestedCurrency];
-    const fallbackCatalogCurrency = requestedCatalogPrice
-      ? requestedCurrency
-      : this.getProviderPlanFallbackCurrency(plan, requestedCurrency);
-    const catalogCurrency = requestedCatalogPrice ? requestedCurrency : fallbackCatalogCurrency;
-    const catalogPrice =
-      requestedCatalogPrice ??
-      (fallbackCatalogCurrency ? plan.currencyPrices[fallbackCatalogCurrency] : undefined);
     const officialPrice = plan.preferCatalogPrice
-      ? (catalogPrice ?? parsedPrice)
-      : (parsedPrice ?? catalogPrice);
+      ? (requestedCatalogPrice ?? parsedPrice)
+      : (parsedPrice ?? requestedCatalogPrice);
     if (!officialPrice) return null;
-    const priceCurrency =
-      parsedPrice || requestedCatalogPrice ? requestedCurrency : catalogCurrency;
-    if (!priceCurrency) return null;
 
     return {
       planCode: plan.planCode,
       serviceName: plan.serviceName,
       category: plan.category,
       region: source.region,
-      currency: priceCurrency,
+      currency: requestedCurrency,
       officialPrice,
       periodType: plan.periodType,
       periodValue: plan.periodValue,
       rawPayload: {
-        parser: parsedPrice
-          ? 'provider_page_text'
-          : requestedCatalogPrice
-            ? 'provider_catalog_fallback'
-            : 'provider_catalog_currency_fallback',
+        parser: parsedPrice ? 'provider_page_text' : 'provider_catalog_fallback',
         provider: source.provider,
         planCode: plan.planCode,
         requestedCurrency,
-        catalogCurrency: parsedPrice ? null : priceCurrency,
+        catalogCurrency: parsedPrice ? null : requestedCurrency,
         sourceUrl
       }
     };
-  }
-
-  private getProviderPlanFallbackCurrency(
-    plan: OfficialPriceProviderPlan,
-    requestedCurrency: string
-  ) {
-    const catalogCurrencies = Object.keys(plan.currencyPrices);
-    if (!catalogCurrencies.length) return null;
-    if (plan.currencyPrices[requestedCurrency]) return requestedCurrency;
-    if (plan.currencyPrices.USD) return 'USD';
-    return catalogCurrencies[0];
   }
 
   private extractProviderPlanPrice(
@@ -1627,9 +1624,13 @@ export class AppleOfficialPricesService {
     try {
       const response = await fetch(sourceUrl, {
         headers: {
-          accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
-          'user-agent':
-            'Mozilla/5.0 AppleOfficialPriceChecker/1.0 (+https://localhost/apple-official-prices)'
+          accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7',
+          'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+          'cache-control': 'no-cache',
+          pragma: 'no-cache',
+          'upgrade-insecure-requests': '1',
+          'user-agent': OFFICIAL_PRICE_BROWSER_USER_AGENT
         },
         signal: AbortSignal.timeout(OFFICIAL_PRICE_FETCH_TIMEOUT_MS)
       });

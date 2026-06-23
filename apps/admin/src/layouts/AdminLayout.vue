@@ -409,6 +409,7 @@ import FeatureHelp from '@/components/ui/FeatureHelp.vue';
 import PageActionsPortal from '@/components/ui/PageActionsPortal.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import WorkspaceRouteSkeleton from '@/components/ui/WorkspaceRouteSkeleton.vue';
+import { AUTH_SESSION_EXPIRED_EVENT } from '@/auth/session';
 import { providePageActionsHost } from '@/composables/pageActions';
 import { providePageRefreshHost } from '@/composables/pageRefresh';
 import {
@@ -440,7 +441,11 @@ import {
 import { notifyRealtimeScopesInvalidated } from '@/realtime/realtimeQueryEvents';
 import { getRealtimeFallbackScopesForModule } from '@/realtime/realtimeRouteScopes';
 import type { NavigationItemBadge, NavigationNotificationBadge } from '@/types/system';
-import { subscribeSmartQueryActivity, type SmartQueryActivitySnapshot } from '@/utils/smartQuery';
+import {
+  clearSmartQueryCache,
+  subscribeSmartQueryActivity,
+  type SmartQueryActivitySnapshot
+} from '@/utils/smartQuery';
 import { normalizeHelpText } from '@/utils/helpText';
 
 const NAV_OPEN_STORAGE_KEY = 'apple_business_sidebar_open_keys';
@@ -713,6 +718,19 @@ watch(
 );
 
 watch(
+  () => authStore.isAuthenticated,
+  (isAuthenticated) => {
+    if (isAuthenticated) {
+      startAuthenticatedLayoutTimers();
+      return;
+    }
+
+    stopAuthenticatedLayoutTimers();
+    clearNavigationBadges();
+  }
+);
+
+watch(
   workspaceTabs,
   (tabs) => {
     window.localStorage.setItem(WORKSPACE_TABS_STORAGE_KEY, JSON.stringify(tabs));
@@ -725,37 +743,21 @@ onMounted(() => {
     smartQueryActivity.value = snapshot;
   });
 
-  startupRoutePrefetchTimer = window.setTimeout(() => {
-    prefetchReadyRouteComponents(getInitialPrefetchRoutes());
-  }, STARTUP_ROUTE_PREFETCH_DELAY_MS);
-
-  startupBadgeRefreshTimer = window.setTimeout(() => {
-    void refreshNavigationBadges();
-  }, STARTUP_BADGE_REFRESH_DELAY_MS);
-
-  notificationBadgeTimer = window.setInterval(
-    () => void refreshNavigationBadges({ silent: true }),
-    NOTIFICATION_BADGE_REFRESH_MS
-  );
+  startAuthenticatedLayoutTimers();
   window.addEventListener(
     NAVIGATION_NOTIFICATION_BADGES_CHANGED_EVENT,
     handleNavigationNotificationBadgesChanged
   );
   window.addEventListener(NAVIGATION_ITEM_BADGES_CHANGED_EVENT, handleNavigationItemBadgesChanged);
   window.addEventListener(REALTIME_CONNECTION_STATUS_CHANGED_EVENT, handleRealtimeStatusChanged);
+  window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleAuthSessionExpired);
 });
 
 onBeforeUnmount(() => {
   saveWorkspaceScroll(activeWorkspaceTabPath.value);
-  window.clearTimeout(startupBadgeRefreshTimer);
-  window.clearTimeout(startupRoutePrefetchTimer);
-  window.clearTimeout(routeAutoRefreshTimer);
+  stopAuthenticatedLayoutTimers();
   window.clearTimeout(workspaceScrollRestoreTimer);
   unsubscribeSmartQueryActivity?.();
-
-  if (notificationBadgeTimer) {
-    window.clearInterval(notificationBadgeTimer);
-  }
 
   window.removeEventListener(
     NAVIGATION_NOTIFICATION_BADGES_CHANGED_EVENT,
@@ -766,8 +768,67 @@ onBeforeUnmount(() => {
     handleNavigationItemBadgesChanged
   );
   window.removeEventListener(REALTIME_CONNECTION_STATUS_CHANGED_EVENT, handleRealtimeStatusChanged);
-  stopRealtimeFallbackPolling();
+  window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleAuthSessionExpired);
 });
+
+function startAuthenticatedLayoutTimers() {
+  if (!authStore.isAuthenticated) {
+    return;
+  }
+
+  if (!startupRoutePrefetchTimer) {
+    startupRoutePrefetchTimer = window.setTimeout(() => {
+      startupRoutePrefetchTimer = undefined;
+
+      if (authStore.isAuthenticated) {
+        prefetchReadyRouteComponents(getInitialPrefetchRoutes());
+      }
+    }, STARTUP_ROUTE_PREFETCH_DELAY_MS);
+  }
+
+  if (!startupBadgeRefreshTimer) {
+    startupBadgeRefreshTimer = window.setTimeout(() => {
+      startupBadgeRefreshTimer = undefined;
+      void refreshNavigationBadges();
+    }, STARTUP_BADGE_REFRESH_DELAY_MS);
+  }
+
+  if (!notificationBadgeTimer) {
+    notificationBadgeTimer = window.setInterval(
+      () => void refreshNavigationBadges({ silent: true }),
+      NOTIFICATION_BADGE_REFRESH_MS
+    );
+  }
+}
+
+function stopAuthenticatedLayoutTimers() {
+  window.clearTimeout(startupBadgeRefreshTimer);
+  window.clearTimeout(startupRoutePrefetchTimer);
+  window.clearTimeout(routeAutoRefreshTimer);
+  startupBadgeRefreshTimer = undefined;
+  startupRoutePrefetchTimer = undefined;
+  routeAutoRefreshTimer = undefined;
+
+  if (notificationBadgeTimer) {
+    window.clearInterval(notificationBadgeTimer);
+    notificationBadgeTimer = undefined;
+  }
+
+  stopRealtimeFallbackPolling();
+}
+
+function handleAuthSessionExpired() {
+  stopAuthenticatedLayoutTimers();
+  clearNavigationBadges();
+  notificationDrawerVisible.value = false;
+  closeAllWorkspaceTabs();
+  clearSmartQueryCache();
+}
+
+function clearNavigationBadges() {
+  navigationNotificationBadges.value = {};
+  navigationItemBadges.value = {};
+}
 
 function readStoredOpenMenuKeys() {
   const activeSectionKey = getActiveSectionKey();
@@ -1170,14 +1231,27 @@ async function loadNavigationItemBadges(options: { silent?: boolean } = {}) {
 }
 
 async function refreshNavigationBadges(options: { silent?: boolean } = {}) {
+  if (!authStore.isAuthenticated) {
+    clearNavigationBadges();
+    return;
+  }
+
   await Promise.all([loadNavigationNotificationBadges(options), loadNavigationItemBadges(options)]);
 }
 
 function handleNavigationNotificationBadgesChanged() {
+  if (!authStore.isAuthenticated) {
+    return;
+  }
+
   void loadNavigationNotificationBadges({ silent: true });
 }
 
 function handleNavigationItemBadgesChanged() {
+  if (!authStore.isAuthenticated) {
+    return;
+  }
+
   void loadNavigationItemBadges({ silent: true });
 }
 
@@ -1199,6 +1273,11 @@ function syncRealtimeFallbackPolling() {
   }
 
   realtimeFallbackTimer = window.setInterval(() => {
+    if (!authStore.isAuthenticated) {
+      stopRealtimeFallbackPolling();
+      return;
+    }
+
     if (document.visibilityState !== 'visible') {
       return;
     }
@@ -1261,6 +1340,10 @@ function toggleMenuKey(key: string) {
 }
 
 async function showRefresh() {
+  if (!authStore.isAuthenticated) {
+    return;
+  }
+
   if (isPageRefreshBusy.value) {
     return;
   }

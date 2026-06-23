@@ -40,7 +40,7 @@ describe('OpsService', () => {
     };
     const platformLog = {
       id: '44444444-4444-4444-8444-444444444444',
-      platform: 'taobao',
+      platform: 'telegram',
       syncType: 'test',
       status: 'failed',
       requestCount: 1,
@@ -53,8 +53,8 @@ describe('OpsService', () => {
     };
     const platformSuccessLog = {
       id: '44444444-4444-4444-8444-555555555555',
-      platform: 'taobao',
-      syncType: 'sync_orders',
+      platform: 'telegram',
+      syncType: 'send_message',
       status: 'success',
       requestCount: 4,
       errorRate: new PrismaNamespace.Decimal(0),
@@ -66,7 +66,7 @@ describe('OpsService', () => {
     };
     const platformRetryLog = {
       id: '44444444-4444-4444-8444-666666666666',
-      platform: 'taobao',
+      platform: 'telegram',
       syncType: 'delivery_retry',
       status: 'failed',
       requestCount: 2,
@@ -78,17 +78,17 @@ describe('OpsService', () => {
       createdAt: now
     };
     const systemParameters = new Map<string, Record<string, unknown>>();
-    systemParameters.set('platform_auth_taobao', {
+    systemParameters.set('platform_auth_telegram', {
       id: '77777777-7777-4777-8777-777777777777',
-      key: 'platform_auth_taobao',
+      key: 'platform_auth_telegram',
       value: {
         authMode: 'oauth',
-        appKeyEncrypted: 'encrypted:taobao-app-key',
-        appSecretEncrypted: 'encrypted:taobao-app-secret',
+        appKeyEncrypted: 'encrypted:telegram-client-id',
+        appSecretEncrypted: 'encrypted:telegram-client-secret',
         accessTokenEncrypted: 'encrypted:access-token-123456'
       },
       group: 'platform_auth',
-      remark: '淘宝平台授权配置',
+      remark: 'Telegram 授权配置',
       updatedByUserId: user.id,
       createdAt: now,
       updatedAt: now
@@ -135,10 +135,10 @@ describe('OpsService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({
           id: '77777777-7777-4777-8777-777777777777',
-          key: 'platform_oauth_state_taobao_hash-state-123',
+          key: 'platform_oauth_state_telegram_hash-state-123',
           value: {},
           group: 'platform_oauth_state',
-          remark: '淘宝 OAuth state',
+          remark: 'Telegram OAuth state',
           updatedByUserId: null,
           createdAt: now,
           updatedAt: now
@@ -282,12 +282,13 @@ describe('OpsService', () => {
     );
   });
 
-  it('builds platform interface status from latest logs and source platform config', async () => {
+  it('builds platform interface status from latest logs and authorization config', async () => {
     const { service, prisma } = createService();
+    jest.spyOn(prisma.telegramConfig, 'count').mockResolvedValue(1);
 
-    const result = await service.platformStatus('taobao');
+    const result = await service.platformStatus('telegram');
 
-    expect(result.platform).toBe('taobao');
+    expect(result.platform).toBe('telegram');
     expect(result.authorizationStatus).toBe('configured');
     expect(result.requestCount).toBe(7);
     expect(result.failedRequestCount).toBe(3);
@@ -299,14 +300,14 @@ describe('OpsService', () => {
     expect(prisma.platformSyncLog.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          platform: { in: ['taobao'] }
+          platform: { in: ['telegram'] }
         })
       })
     );
     expect(prisma.platformSyncLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          platform: { in: ['taobao'] },
+          platform: { in: ['telegram'] },
           createdAt: expect.objectContaining({ gte: expect.any(Date) })
         })
       })
@@ -317,7 +318,7 @@ describe('OpsService', () => {
     const { service, prisma, auditLogsService } = createService();
 
     const result = await service.reauthorizePlatform(
-      'taobao',
+      'telegram',
       {
         reason: 'unit test'
       },
@@ -328,7 +329,7 @@ describe('OpsService', () => {
     expect(prisma.platformSyncLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          platform: 'taobao',
+          platform: 'telegram',
           syncType: 'reauthorize',
           status: 'failed'
         })
@@ -346,16 +347,16 @@ describe('OpsService', () => {
     const { service, prisma, auditLogsService, fieldEncryptionService } = createService();
 
     const result = await service.savePlatformAuthorization(
-      'taobao',
+      'telegram',
       {
         authMode: 'manual_token',
-        appKey: 'taobao-app-key',
-        appSecret: 'taobao-app-secret',
+        appKey: 'telegram-app-key',
+        appSecret: 'telegram-client-secret',
         accessToken: 'access-token-123456',
         refreshToken: 'refresh-token-654321',
         tokenExpiresAt: '2026-07-01T00:00:00.000Z',
-        shopName: '淘宝主店',
-        scopes: ['order.read', 'delivery.write']
+        shopName: '通知服务账号',
+        scopes: ['message.send']
       },
       user
     );
@@ -364,14 +365,14 @@ describe('OpsService', () => {
     expect(result.appKeyTail).toBe('-key');
     expect(result.accessTokenTail).toBe('3456');
     expect(result.refreshTokenTail).toBe('4321');
-    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith('taobao-app-secret');
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith('telegram-client-secret');
     expect(prisma.systemParameter.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
-          key: 'platform_auth_taobao',
+          key: 'platform_auth_telegram',
           group: 'platform_auth',
           value: expect.objectContaining({
-            appSecretEncrypted: 'encrypted:taobao-app-secret',
+            appSecretEncrypted: 'encrypted:telegram-client-secret',
             accessTokenEncrypted: 'encrypted:access-token-123456',
             refreshTokenEncrypted: 'encrypted:refresh-token-654321'
           })
@@ -379,7 +380,7 @@ describe('OpsService', () => {
       })
     );
     const auditPayload = JSON.stringify((auditLogsService.create as jest.Mock).mock.calls);
-    expect(auditPayload).not.toContain('taobao-app-secret');
+    expect(auditPayload).not.toContain('telegram-client-secret');
     expect(auditPayload).not.toContain('access-token-123456');
     expect(auditPayload).not.toContain('refresh-token-654321');
   });
@@ -472,42 +473,42 @@ describe('OpsService', () => {
     jest.spyOn(Date, 'now').mockReturnValue(now.getTime());
     jest.spyOn(prisma.systemParameter, 'findUnique').mockResolvedValueOnce({
       id: '88888888-8888-4888-8888-888888888888',
-      key: 'platform_auth_taobao',
+      key: 'platform_auth_telegram',
       value: {
         authMode: 'oauth',
-        appKeyEncrypted: 'encrypted:taobao-app-key',
+        appKeyEncrypted: 'encrypted:telegram-client-id',
         authorizationUrl: 'https://auth.example.com/oauth',
-        redirectUri: 'https://admin.example.com/api/ops/platforms/taobao/oauth/callback',
-        scopes: ['order.read'],
+        redirectUri: 'https://admin.example.com/api/ops/platforms/telegram/oauth/callback',
+        scopes: ['message.send'],
         clientIdParam: 'client_id'
       },
       group: 'platform_auth',
-      remark: '淘宝平台授权配置',
+      remark: 'Telegram 授权配置',
       updatedByUserId: user.id,
       createdAt: now,
       updatedAt: now
     });
 
-    const result = await service.startPlatformOAuth('taobao', {}, user);
+    const result = await service.startPlatformOAuth('telegram', {}, user);
     const authorizationUrl = new URL(result.authorizationUrl);
 
-    expect(result.platform).toBe('taobao');
+    expect(result.platform).toBe('telegram');
     expect(result.redirectUri).toBe(
-      'https://admin.example.com/api/ops/platforms/taobao/oauth/callback'
+      'https://admin.example.com/api/ops/platforms/telegram/oauth/callback'
     );
     expect(authorizationUrl.origin).toBe('https://auth.example.com');
-    expect(authorizationUrl.searchParams.get('client_id')).toBe('taobao-app-key');
+    expect(authorizationUrl.searchParams.get('client_id')).toBe('telegram-client-id');
     expect(authorizationUrl.searchParams.get('redirect_uri')).toBe(result.redirectUri);
     expect(authorizationUrl.searchParams.get('response_type')).toBe('code');
-    expect(authorizationUrl.searchParams.get('scope')).toBe('order.read');
+    expect(authorizationUrl.searchParams.get('scope')).toBe('message.send');
     expect(authorizationUrl.searchParams.get('state')).toBeTruthy();
-    expect(fieldEncryptionService.decrypt).toHaveBeenCalledWith('encrypted:taobao-app-key');
+    expect(fieldEncryptionService.decrypt).toHaveBeenCalledWith('encrypted:telegram-client-id');
     expect(prisma.systemParameter.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
           group: 'platform_oauth_state',
           value: expect.objectContaining({
-            platform: 'taobao',
+            platform: 'telegram',
             status: 'pending',
             expiresAt: '2026-06-18T00:10:00.000Z'
           })
@@ -517,7 +518,7 @@ describe('OpsService', () => {
     expect(prisma.platformSyncLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          platform: 'taobao',
+          platform: 'telegram',
           syncType: 'oauth_start',
           status: 'success'
         })
@@ -536,23 +537,23 @@ describe('OpsService', () => {
     jest.spyOn(Date, 'now').mockReturnValue(now.getTime());
     jest.spyOn(prisma.systemParameter, 'findUnique').mockResolvedValueOnce({
       id: '99999999-9999-4999-8999-999999999999',
-      key: 'platform_oauth_state_taobao_hash-state-123',
+      key: 'platform_oauth_state_telegram_hash-state-123',
       value: {
-        platform: 'taobao',
+        platform: 'telegram',
         stateHash: 'hash-state-123',
-        redirectUri: 'https://admin.example.com/api/ops/platforms/taobao/oauth/callback',
-        scopes: ['order.read'],
+        redirectUri: 'https://admin.example.com/api/ops/platforms/telegram/oauth/callback',
+        scopes: ['message.send'],
         status: 'pending',
         expiresAt: '2026-06-18T00:10:00.000Z'
       },
       group: 'platform_oauth_state',
-      remark: '淘宝 OAuth state',
+      remark: 'Telegram OAuth state',
       updatedByUserId: user.id,
       createdAt: now,
       updatedAt: now
     });
 
-    const result = await service.handlePlatformOAuthCallback('taobao', {
+    const result = await service.handlePlatformOAuthCallback('telegram', {
       state: 'state-123',
       code: 'auth-code-abc123'
     });
@@ -576,7 +577,7 @@ describe('OpsService', () => {
     expect(prisma.platformSyncLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          platform: 'taobao',
+          platform: 'telegram',
           syncType: 'oauth_callback',
           status: 'success'
         })
@@ -594,7 +595,7 @@ describe('OpsService', () => {
     const { service, prisma, notificationsService } = createService();
     jest.spyOn(prisma.systemParameter, 'findUnique').mockResolvedValue(null);
 
-    const result = await service.platformStatus('taobao');
+    const result = await service.platformStatus('telegram');
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(result.authorizationStatus).toBe('not_configured');
@@ -611,7 +612,7 @@ describe('OpsService', () => {
     jest.spyOn(Date, 'now').mockReturnValue(now.getTime());
     jest.spyOn(prisma.platformSyncLog, 'findFirst').mockResolvedValue({
       id: '66666666-6666-4666-8666-666666666666',
-      platform: 'taobao',
+      platform: 'telegram',
       syncType: 'test',
       status: 'success',
       requestCount: 1,
@@ -625,7 +626,9 @@ describe('OpsService', () => {
       createdAt: now
     });
 
-    const result = await service.platformStatus('taobao');
+    jest.spyOn(prisma.telegramConfig, 'count').mockResolvedValue(1);
+
+    const result = await service.platformStatus('telegram');
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(result.authorizationStatus).toBe('expiring');

@@ -13,7 +13,7 @@ FIRST_RELEASE_MODE=semi_auto
 含义：
 
 - Apple ID 代充和兑换码业务可以按半自动可运营方式先内部上线。
-- 淘宝/闲鱼真实开放平台 Adapter 和 Apple ID 真实自动化 Worker 属于上线后增强，除非改为 `FIRST_RELEASE_MODE=full_auto`。
+- Apple ID 真实自动化 Worker 属于上线后增强，除非改为 `FIRST_RELEASE_MODE=full_auto`。
 - 半自动首发允许 Telegram 后补；正式上线前仍必须完成生产域名配置和 Git 基线确认。
 
 ## 2. 不可跳过的上线前门禁
@@ -211,8 +211,6 @@ npm run launch:gates
 
 首版 `semi_auto` 上线后，优先处理：
 
-- 淘宝真实 OAuth、签名、订单同步、发货、退款同步。
-- 闲鱼真实授权、订单同步、电子凭证或无需物流发货。
 - Apple ID 真实自动化 Worker。
 - 平台授权状态页的真实重新授权流程。
 - 低/中级依赖风险评估和升级计划。

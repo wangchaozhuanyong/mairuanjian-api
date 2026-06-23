@@ -24,15 +24,9 @@ const secretKeys = new Map([
   ['MINIO_ROOT_PASSWORD', 16],
   ['MINIO_ACCESS_KEY', 3],
   ['MINIO_SECRET_KEY', 16],
-  ['SEED_ADMIN_PASSWORD', 12],
-  ['TAOBAO_APP_SECRET', 1],
-  ['XIANYU_APP_SECRET', 1]
+  ['SEED_ADMIN_PASSWORD', 12]
 ]);
-const optionalSecretKeys = new Set([
-  'SEED_ADMIN_PASSWORD',
-  'TAOBAO_APP_SECRET',
-  'XIANYU_APP_SECRET'
-]);
+const optionalSecretKeys = new Set(['SEED_ADMIN_PASSWORD']);
 
 function parseEnvFile(path) {
   const values = new Map();

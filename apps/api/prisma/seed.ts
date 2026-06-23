@@ -197,8 +197,6 @@ const notificationEventDefinitions = [
   ['批量导入失败', 'code.import.failed', 'code', 'error'],
   ['兑换码锁定超时', 'code.lock.timeout', 'code', 'warning'],
   ['售后补发失败', 'code.after_sale.reissue_failed', 'code', 'error'],
-  ['淘宝订单同步失败', 'platform.taobao.sync_failed', 'platform', 'error'],
-  ['闲鱼订单同步失败', 'platform.xianyu.sync_failed', 'platform', 'error'],
   ['平台授权即将过期', 'platform.auth.expiring', 'platform', 'warning'],
   ['平台授权已失效', 'platform.auth.invalid', 'platform', 'critical'],
   ['Webhook 异常', 'platform.webhook.abnormal', 'platform', 'error'],
@@ -448,7 +446,6 @@ async function seedMaintenanceDefaults() {
       false,
       '真实自动化 Worker 接入前保持关闭'
     ],
-    ['platform_real_delivery', '平台真实自动发货', false, '淘宝/闲鱼真实发货接口接入前保持关闭'],
     ['sensitive_export', '敏感数据导出', false, '默认关闭包含敏感字段的批量导出']
   ] as const;
 

@@ -616,9 +616,7 @@ describe('NotificationsService', () => {
     expect(result.items).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ itemKey: 'work-orders' }),
-        expect.objectContaining({ itemKey: 'risk-control' }),
-        expect.objectContaining({ itemKey: 'taobao-orders' }),
-        expect.objectContaining({ itemKey: 'xianyu-orders' })
+        expect.objectContaining({ itemKey: 'risk-control' })
       ])
     );
     expect(prisma.appleOrder.count).toHaveBeenCalledWith({

@@ -3,7 +3,7 @@
     title="平台连接状态"
     group="平台连接"
     phase="Phase 14"
-    description="查看淘宝、闲鱼、Telegram 等外部平台有没有连上，授权有没有过期，同步有没有失败。"
+    description="查看 Telegram、文件存储、自动化服务等外部连接有没有连上，授权有没有过期，同步有没有失败。"
   >
     <template #actions>
       <AppButton @click="() => loadPlatforms({ force: true })">刷新</AppButton>
@@ -41,7 +41,7 @@
       <div class="panel-title-row">
         <PanelTitleHelp
           title="平台接口健康台账"
-          help="这里看淘宝、闲鱼、Telegram 等外部接口是否正常，比如授权有没有过期、同步有没有失败、错误是不是变多了。"
+          help="这里看 Telegram、文件存储、自动化服务等外部接口是否正常，比如授权有没有过期、同步有没有失败、错误是不是变多了。"
         />
         <div class="inline-actions">
           <StatusChip tone="blue" dot>平台接口</StatusChip>
@@ -386,17 +386,17 @@
             <FieldHelpLabel
               label="店铺/账号名称"
               purpose="记录这组平台授权属于哪个店铺或账号，避免多个店铺混用。"
-              example="可以填淘宝主店、闲鱼 1 号、企业店。"
+              example="可以填主账号、企业账号、通知服务账号。"
             />
           </template>
-          <el-input v-model.trim="authorizationForm.shopName" placeholder="例如：淘宝主店" />
+          <el-input v-model.trim="authorizationForm.shopName" placeholder="例如：通知服务账号" />
         </el-form-item>
         <el-form-item>
           <template #label>
             <FieldHelpLabel
               label="App Key"
               purpose="平台开放应用的公开标识，会加密托管，编辑时不填表示保留原配置。"
-              example="从淘宝或闲鱼开放平台应用后台复制 App Key。"
+              example="从对应外部服务后台复制 App Key。"
             />
           </template>
           <el-input

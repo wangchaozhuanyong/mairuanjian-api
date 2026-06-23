@@ -274,8 +274,8 @@ function getLaunchStrategy() {
     label: normalizedMode === 'full_auto' ? '全自动上线' : '半自动可运营优先',
     detail:
       normalizedMode === 'full_auto'
-        ? 'Full-auto mode makes Taobao/Xianyu real adapters and Apple ID real worker launch blockers.'
-        : 'Semi-auto mode allows Taobao/Xianyu real adapters, Apple ID real worker, and Telegram real test to ship after first internal launch.'
+        ? 'Full-auto mode makes Apple ID real worker and manual release gates launch blockers.'
+        : 'Semi-auto mode allows Apple ID real worker and Telegram real test to ship after first internal launch.'
   };
 }
 

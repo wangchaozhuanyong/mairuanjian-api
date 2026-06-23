@@ -27,7 +27,7 @@ describe('CodeAfterSalesService', () => {
     profitAmount: new Prisma.Decimal('28'),
     platform: {
       id: platformId,
-      name: '淘宝店'
+      name: '微信渠道'
     },
     service: {
       id: serviceId,

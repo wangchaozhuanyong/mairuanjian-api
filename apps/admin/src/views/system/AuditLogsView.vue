@@ -1236,8 +1236,6 @@ const automationColumnOptions = [
 ];
 const platformTableKey = 'audit_platform_interface_logs';
 const platformOptions = [
-  { label: '淘宝', value: 'taobao' },
-  { label: '闲鱼', value: 'xianyu' },
   { label: 'Telegram', value: 'telegram' },
   { label: '文件存储', value: 'file-storage' },
   { label: '自动化服务', value: 'automation-service' }
@@ -2907,8 +2905,6 @@ function getJobStatusTone(status: string) {
 function getPlatformLabel(platform: string) {
   return (
     {
-      taobao: '淘宝',
-      xianyu: '闲鱼',
       telegram: 'Telegram',
       'file-storage': '文件存储',
       storage: '文件存储',

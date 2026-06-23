@@ -107,8 +107,8 @@ export const OFFICIAL_PRICE_PROVIDER_PROFILES: Record<
 > = {
   chatgpt: {
     label: 'ChatGPT / OpenAI',
-    sourceUrl: 'https://openai.com/chatgpt/pricing/',
-    hosts: ['openai.com'],
+    sourceUrl: 'https://chatgpt.com/pricing',
+    hosts: ['chatgpt.com', 'openai.com'],
     defaultRegions: COMMON_OFFICIAL_PRICE_REGIONS,
     plans: [
       {

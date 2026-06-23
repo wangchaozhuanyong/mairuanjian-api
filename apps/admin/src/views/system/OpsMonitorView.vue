@@ -325,7 +325,7 @@
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
               <strong>暂无平台状态</strong>
-              <span>刷新后显示淘宝、闲鱼、Telegram 等接口状态。</span>
+              <span>刷新后显示 Telegram、文件存储、自动化服务等接口状态。</span>
             </div>
           </div>
 
@@ -779,7 +779,7 @@
             <FieldHelpLabel
               label="上下文 JSON"
               purpose="补充错误上下文，必须是合法 JSON，便于后续排查。"
-              example='可以填 {"platform":"taobao","reason":"同步失败"}；没有上下文可留空。'
+              example='可以填 {"platform":"telegram","reason":"发送失败"}；没有上下文可留空。'
             />
           </template>
           <el-input v-model="errorForm.contextText" type="textarea" :rows="4" />
@@ -973,7 +973,7 @@ const activeTabMeta = computed(() => {
     },
     platforms: {
       title: '平台同步',
-      description: '监控淘宝、闲鱼、Telegram、文件存储和自动化服务接口状态。',
+      description: '监控 Telegram、文件存储和自动化服务接口状态。',
       badge: '接口',
       tone: 'cyan'
     },
@@ -1516,8 +1516,6 @@ function getDefaultErrorLevel() {
 function getPlatformLabel(platform: string) {
   return (
     {
-      taobao: '淘宝',
-      xianyu: '闲鱼',
       telegram: 'Telegram',
       storage: '文件存储',
       automation: '自动化'
