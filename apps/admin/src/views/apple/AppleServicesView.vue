@@ -186,14 +186,14 @@
         <el-table-column v-if="isColumnVisible('allowedRegions')" label="允许地区" min-width="160">
           <template #default="{ row }">
             <StatusChip
-              v-for="region in row.allowedRegions"
+              v-for="region in getServiceAllowedRegions(row)"
               :key="region"
               class="tag-gap"
               tone="cyan"
             >
               {{ formatServiceRegionLabel(region) }}
             </StatusChip>
-            <span v-if="!row.allowedRegions.length">不限</span>
+            <span v-if="!getServiceAllowedRegions(row).length">不限</span>
           </template>
         </el-table-column>
         <el-table-column
@@ -268,10 +268,14 @@
             <div>
               <span>允许地区</span>
               <div class="mobile-record-card__chips">
-                <StatusChip v-for="region in service.allowedRegions" :key="region" tone="cyan">
+                <StatusChip
+                  v-for="region in getServiceAllowedRegions(service)"
+                  :key="region"
+                  tone="cyan"
+                >
                   {{ formatServiceRegionLabel(region) }}
                 </StatusChip>
-                <em v-if="!service.allowedRegions.length">不限</em>
+                <em v-if="!getServiceAllowedRegions(service).length">不限</em>
               </div>
             </div>
             <div>
@@ -1974,7 +1978,10 @@ function getServiceCountryLabel(service: Pick<AppleService, 'allowedRegions' | '
 }
 
 function getServicePrimaryRegion(service: Pick<AppleService, 'allowedRegions' | 'currency'>) {
-  const savedRegion = normalizeAppleRegionCode(service.allowedRegions[0], service.currency);
+  const savedRegion = normalizeAppleRegionCode(
+    getServiceAllowedRegions(service)[0],
+    service.currency
+  );
 
   if (savedRegion) {
     return savedRegion;
@@ -2014,9 +2021,17 @@ function formatOfficialRegionCurrency(
 
 function formatAllowedRegionList(regions: string[]) {
   return formatSharedAppleRegionListLabel(
-    regions.map((region) => normalizeAppleRegionCode(region)),
+    getAllowedRegionList(regions).map((region) => normalizeAppleRegionCode(region)),
     appleRegionOptions.value
   );
+}
+
+function getAllowedRegionList(regions?: string[] | null) {
+  return Array.isArray(regions) ? regions : [];
+}
+
+function getServiceAllowedRegions(service: Pick<AppleService, 'allowedRegions'>) {
+  return getAllowedRegionList(service.allowedRegions);
 }
 
 function getOfficialServiceNameOptionLabel(option: OfficialCollectedServiceOption) {
@@ -2367,14 +2382,15 @@ function getDefaultServiceColumns() {
   return serviceColumnOptions.map((column) => column.value);
 }
 
-function normalizeServiceVisibleColumns(columns: string[]) {
+function normalizeServiceVisibleColumns(columns?: string[] | null) {
   const defaultColumns = getDefaultServiceColumns();
+  const safeColumns = Array.isArray(columns) ? columns : [];
 
-  if (!columns.length) {
+  if (!safeColumns.length) {
     return defaultColumns;
   }
 
-  const selectedColumns = new Set(columns.filter((column) => defaultColumns.includes(column)));
+  const selectedColumns = new Set(safeColumns.filter((column) => defaultColumns.includes(column)));
 
   for (const column of serviceColumnOptions) {
     if (column.required) {
@@ -2413,7 +2429,7 @@ async function loadServices(
       return;
     }
 
-    services.value = sortAppleServicesForDisplay(result.data.items);
+    services.value = sortAppleServicesForDisplay(result.data.items.map(normalizeServiceRecord));
     total.value = result.data.total;
   } catch (error) {
     if (requestId === servicesLoadRequestId && !options.silent) {
@@ -2476,7 +2492,14 @@ function exportList() {
   ElMessage.info('Apple ID 业务设置导出会进入数据中心导出任务，后续统一接入');
 }
 
-function sortAppleServicesForDisplay(items: AppleService[]) {
+function normalizeServiceRecord(service: AppleService): AppleService {
+  return {
+    ...service,
+    allowedRegions: getServiceAllowedRegions(service)
+  };
+}
+
+function sortAppleServicesForDisplay(items: AppleService[] = []) {
   if (sortConfig.value.prop && sortConfig.value.prop !== 'status') {
     return items;
   }
@@ -3065,15 +3088,18 @@ async function saveGlobalBalanceRule() {
 async function loadOfficialProviderCatalog() {
   try {
     const catalog = await appleOfficialPricesApi.listProviders();
-    officialProviderCatalogProviders.value = catalog.providers.length
-      ? catalog.providers.map((provider) => ({
+    const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
+    const regions = Array.isArray(catalog.regions) ? catalog.regions : [];
+
+    officialProviderCatalogProviders.value = providers.length
+      ? providers.map((provider) => ({
           label: provider.label,
           shortLabel: provider.shortLabel,
           value: provider.value
         }))
       : fallbackOfficialAutoProviderOptions;
-    officialProviderCatalogRegions.value = catalog.regions.length
-      ? catalog.regions
+    officialProviderCatalogRegions.value = regions.length
+      ? regions
       : fallbackOfficialAutoRegionOptions;
   } catch (error) {
     officialProviderCatalogProviders.value = fallbackOfficialAutoProviderOptions;
@@ -3087,9 +3113,12 @@ async function loadOfficialProviderCatalog() {
 }
 
 function syncOfficialAutoRegionSelection(forceAll = false) {
-  const availableValues = officialProviderCatalogRegions.value.map((region) => region.value);
+  const catalogRegions = Array.isArray(officialProviderCatalogRegions.value)
+    ? officialProviderCatalogRegions.value
+    : fallbackOfficialAutoRegionOptions;
+  const availableValues = catalogRegions.map((region) => region.value);
   if (forceAll) {
-    const defaultValues = officialProviderCatalogRegions.value
+    const defaultValues = catalogRegions
       .filter((region) => defaultOfficialAutoRegions.has(region.region))
       .map((region) => region.value);
     selectedOfficialAutoRegions.value = defaultValues.length ? defaultValues : availableValues;
@@ -3741,7 +3770,7 @@ function openEdit(service: AppleService) {
   const primaryRegion = getServicePrimaryRegion(service);
   const allowedRegions = [
     ...new Set(
-      service.allowedRegions
+      getServiceAllowedRegions(service)
         .map((item) => normalizeAppleRegionCode(item, service.currency))
         .filter(Boolean)
     )
@@ -3846,7 +3875,7 @@ async function removeService(service: AppleService) {
       description: `将删除业务「${service.name}」。`,
       impact: [
         `分类：${getCategoryLabel(service.category)}`,
-        `地区/币种：${service.allowedRegions.length ? `${formatAllowedRegionList(service.allowedRegions)} / ${service.currency}` : '不限'}`,
+        `地区/币种：${getServiceAllowedRegions(service).length ? `${formatAllowedRegionList(service.allowedRegions)} / ${service.currency}` : '不限'}`,
         '删除后新订单不能再选择该业务，自动匹配也不会再使用该业务'
       ],
       riskNotes: '历史订单、开通记录和报表不会被物理删除，但后续业务录入会少一个可选项。',

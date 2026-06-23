@@ -1,7 +1,113 @@
 import { PrismaClient } from '@prisma/client';
 import { hashPassword } from '../src/auth/password-hasher';
+import {
+  buildOfficialPriceProviderPreset,
+  OFFICIAL_PRICE_PROVIDER_KEYS,
+  OFFICIAL_PRICE_PROVIDER_PROFILES
+} from '../src/apple-official-prices/official-price-provider-catalog';
 
 const prisma = new PrismaClient();
+
+const appleAccountRegionDefaults = [
+  {
+    code: 'US',
+    label: '美国',
+    currency: 'USD',
+    dialCode: '+1',
+    phoneExample: '+1 415 555 2671'
+  },
+  {
+    code: 'CN',
+    label: '中国',
+    currency: 'CNY',
+    dialCode: '+86',
+    phoneExample: '+86 138 0013 8000'
+  },
+  {
+    code: 'MY',
+    label: '马来西亚',
+    currency: 'MYR',
+    dialCode: '+60',
+    phoneExample: '+60 12 345 6789'
+  },
+  {
+    code: 'SG',
+    label: '新加坡',
+    currency: 'SGD',
+    dialCode: '+65',
+    phoneExample: '+65 8123 4567'
+  },
+  {
+    code: 'HK',
+    label: '中国香港',
+    currency: 'HKD',
+    dialCode: '+852',
+    phoneExample: '+852 9123 4567'
+  }
+] as const;
+
+const appleDefaultDictionaries = [
+  ['apple.service.categories', 'default', '通用', '通用', 10, 'Apple ID 默认业务分类'],
+  ['apple.service.categories', 'chatgpt', 'ChatGPT', 'ChatGPT', 20, 'ChatGPT 业务分类'],
+  ['apple.service.categories', 'gemini', 'Gemini', 'Gemini', 30, 'Gemini 业务分类'],
+  ['apple.service.categories', 'claude', 'Claude', 'Claude', 40, 'Claude 业务分类'],
+  ['apple.service.period_types', 'month', '按月', 'month', 10, 'Apple ID 业务周期'],
+  ['apple.service.period_types', 'day', '按天', 'day', 20, 'Apple ID 业务周期'],
+  ['apple.service.period_types', 'manual', '手工', 'manual', 30, 'Apple ID 业务周期'],
+  ['apple.service.expire_calc_types', 'by_month', '按月', 'by_month', 10, 'Apple ID 到期计算方式'],
+  ['apple.service.expire_calc_types', 'by_day', '按天', 'by_day', 20, 'Apple ID 到期计算方式'],
+  ['apple.service.expire_calc_types', 'manual', '手工', 'manual', 30, 'Apple ID 到期计算方式'],
+  ['apple.service.lock_rules', 'by_service', '按业务锁定', 'by_service', 10, 'Apple ID 锁定规则'],
+  ['apple.service.lock_rules', 'global', '全局锁定', 'global', 20, 'Apple ID 锁定规则'],
+  ['apple.service.platform_fee_types', 'none', '无手续费', 'none', 10, 'Apple ID 平台手续费类型'],
+  ['apple.service.platform_fee_types', 'rate', '比例', 'rate', 20, 'Apple ID 平台手续费类型'],
+  ['apple.service.platform_fee_types', 'fixed', '固定', 'fixed', 30, 'Apple ID 平台手续费类型'],
+  [
+    'apple.service.platform_fee_types',
+    'mixed',
+    '比例 + 固定',
+    'mixed',
+    40,
+    'Apple ID 平台手续费类型'
+  ]
+] as const;
+
+const appleServiceTemplateDefaults = [
+  {
+    name: 'ChatGPT Plus 1个月',
+    category: 'ChatGPT',
+    currency: 'USD',
+    officialBasePrice: '20',
+    officialCostValue: '20',
+    allowedRegions: ['US']
+  },
+  {
+    name: 'ChatGPT Pro 1个月',
+    category: 'ChatGPT',
+    currency: 'USD',
+    officialBasePrice: '200',
+    officialCostValue: '200',
+    allowedRegions: ['US']
+  },
+  {
+    name: 'Google AI Pro 1个月',
+    category: 'Gemini',
+    currency: 'USD',
+    officialBasePrice: '19.99',
+    officialCostValue: '19.99',
+    allowedRegions: ['US']
+  },
+  {
+    name: 'Claude Pro 1个月',
+    category: 'Claude',
+    currency: 'USD',
+    officialBasePrice: '20',
+    officialCostValue: '20',
+    allowedRegions: ['US']
+  }
+] as const;
+
+const defaultOfficialPriceRegions = new Set(['US', 'MY', 'SG', 'HK']);
 
 const roleDefinitions = [
   ['管理员', 'admin', '拥有全部权限'],
@@ -392,6 +498,146 @@ async function seedDataCenterDefaults() {
   }
 }
 
+async function seedAppleSettingsDefaults() {
+  await prisma.systemParameter.upsert({
+    where: { key: 'apple_balance_price_rule' },
+    update: {},
+    create: {
+      key: 'apple_balance_price_rule',
+      group: 'apple',
+      value: {
+        ruleType: 'percent',
+        ruleValue: '1'
+      },
+      remark: 'Apple ID 余额价全局默认规则'
+    }
+  });
+
+  for (const [group, code, label, value, sortOrder, remark] of appleDefaultDictionaries) {
+    await prisma.dataDictionary.upsert({
+      where: {
+        group_code: {
+          group,
+          code
+        }
+      },
+      update: {},
+      create: {
+        group,
+        code,
+        label,
+        value,
+        sortOrder,
+        status: 'active',
+        remark
+      }
+    });
+  }
+
+  for (const [sortOrder, region] of appleAccountRegionDefaults.entries()) {
+    await prisma.dataDictionary.upsert({
+      where: {
+        group_code: {
+          group: 'apple.account.regions',
+          code: region.code
+        }
+      },
+      update: {},
+      create: {
+        group: 'apple.account.regions',
+        code: region.code,
+        label: region.label,
+        value: JSON.stringify({
+          currency: region.currency,
+          dialCode: region.dialCode,
+          phoneExample: region.phoneExample
+        }),
+        sortOrder: (sortOrder + 1) * 10,
+        status: 'active',
+        remark: 'Apple ID 默认地区，可在快捷设置里调整显示名称、币种和手机号区号'
+      }
+    });
+  }
+
+  await seedOfficialPriceSourceDefaults();
+  await seedAppleServiceTemplateDefaults();
+}
+
+async function seedOfficialPriceSourceDefaults() {
+  for (const provider of OFFICIAL_PRICE_PROVIDER_KEYS) {
+    const regions = OFFICIAL_PRICE_PROVIDER_PROFILES[provider].defaultRegions.filter((region) =>
+      defaultOfficialPriceRegions.has(region.region)
+    );
+
+    for (const region of regions) {
+      const preset = buildOfficialPriceProviderPreset(provider, region);
+      const existing = await prisma.appleOfficialPriceSource.findFirst({
+        where: {
+          deletedAt: null,
+          provider: preset.provider,
+          region: preset.region,
+          currency: preset.currency
+        },
+        select: { id: true }
+      });
+
+      if (existing) {
+        continue;
+      }
+
+      await prisma.appleOfficialPriceSource.create({
+        data: {
+          name: preset.name,
+          provider: preset.provider,
+          priceSourceType: 'official_web',
+          region: preset.region,
+          currency: preset.currency,
+          sourceUrl: preset.sourceUrl,
+          collectMethod: 'webpage',
+          checkIntervalHours: preset.checkIntervalHours,
+          status: 'enabled',
+          remark: preset.remark
+        }
+      });
+    }
+  }
+}
+
+async function seedAppleServiceTemplateDefaults() {
+  const existingServiceCount = await prisma.appleService.count({
+    where: { deletedAt: null }
+  });
+
+  if (existingServiceCount > 0) {
+    return;
+  }
+
+  for (const service of appleServiceTemplateDefaults) {
+    await prisma.appleService.create({
+      data: {
+        name: service.name,
+        category: service.category,
+        defaultPrice: '0',
+        officialBasePrice: service.officialBasePrice,
+        officialCostValue: service.officialCostValue,
+        appleBalancePriceRuleType: 'inherit',
+        currency: service.currency,
+        defaultPeriodType: 'month',
+        defaultPeriodValue: 1,
+        expireCalcType: 'by_month',
+        requireAppleId: true,
+        requireServiceAccount: false,
+        autoMatchAppleId: true,
+        lockRule: 'by_service',
+        allowedRegions: [...service.allowedRegions],
+        minBalanceRequired: '0',
+        status: 'paused',
+        remark: '系统初始化业务模板，确认售价、成本和地区后再启用。'
+      }
+    });
+  }
+}
+
 async function seedMaintenanceDefaults() {
   const parameters = [
     [
@@ -523,6 +769,7 @@ async function main() {
   await seedNotificationDefaults();
   await seedSecurityDefaults();
   await seedDataCenterDefaults();
+  await seedAppleSettingsDefaults();
   await seedMaintenanceDefaults();
 
   const adminUsername = process.env.SEED_ADMIN_USERNAME;

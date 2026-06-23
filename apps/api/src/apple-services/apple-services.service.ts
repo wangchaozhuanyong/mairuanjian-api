@@ -1014,7 +1014,8 @@ export class AppleServicesService {
   }
 
   private async syncServiceRegionPricesFromService(service: AppleService) {
-    if (!service.allowedRegions.length) {
+    const allowedRegions = Array.isArray(service.allowedRegions) ? service.allowedRegions : [];
+    if (!allowedRegions.length) {
       return;
     }
 
@@ -1023,7 +1024,7 @@ export class AppleServicesService {
     const confirmedAt = new Date();
 
     await this.prisma.$transaction(
-      service.allowedRegions.map((region) =>
+      allowedRegions.map((region) =>
         this.prisma.appleServiceRegionPrice.upsert({
           where: {
             serviceId_region_currency: {
@@ -1312,7 +1313,7 @@ export class AppleServicesService {
       requireServiceAccount: service.requireServiceAccount,
       autoMatchAppleId: service.autoMatchAppleId,
       lockRule: service.lockRule,
-      allowedRegions: service.allowedRegions,
+      allowedRegions: Array.isArray(service.allowedRegions) ? service.allowedRegions : [],
       minBalanceRequired: service.minBalanceRequired.toString(),
       status: service.status,
       remark: service.remark,

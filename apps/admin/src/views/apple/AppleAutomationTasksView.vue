@@ -930,7 +930,9 @@ const gatewayRegionOptions = appleAccountRegionOptions.map((item) => ({
 }));
 
 const officialRegionOptions = computed(() => {
-  const regions = officialProviderOptions.value.flatMap((provider) => provider.regions);
+  const regions = officialProviderOptions.value.flatMap((provider) =>
+    Array.isArray(provider.regions) ? provider.regions : []
+  );
   const unique = new Map(regions.map((region) => [region.value, region]));
   return Array.from(unique.values()).map((region) => ({
     label: `${region.label} / ${region.currency}`,
@@ -992,8 +994,8 @@ function buildTaskParams(): AppleAutomationTaskQuery {
 }
 
 function applyTaskResult(data: PageResult<AppleAutomationTask>) {
-  tasks.value = data.items;
-  total.value = data.total;
+  tasks.value = Array.isArray(data.items) ? data.items : [];
+  total.value = Number.isFinite(Number(data.total)) ? data.total : tasks.value.length;
 }
 
 async function loadTasks(options: { background?: boolean; force?: boolean } = {}) {
@@ -1039,11 +1041,12 @@ async function loadAppleAccounts() {
       keyword: '',
       status: ''
     });
-    appleAccounts.value = result.items;
-    const defaultIds = result.items.map((account) => account.id).slice(0, 10);
+    const accounts = Array.isArray(result.items) ? result.items : [];
+    appleAccounts.value = accounts;
+    const defaultIds = accounts.map((account) => account.id).slice(0, 10);
     statusCheckForm.appleAccountIds = defaultIds;
     balanceCheckForm.appleAccountIds = defaultIds;
-    advancedForm.appleAccountId = result.items[0]?.id ?? '';
+    advancedForm.appleAccountId = accounts[0]?.id ?? '';
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 失败');
   }
@@ -1052,7 +1055,7 @@ async function loadAppleAccounts() {
 async function loadOfficialProviders() {
   try {
     const catalog = await appleOfficialPricesApi.listProviders();
-    officialProviderOptions.value = catalog.providers;
+    officialProviderOptions.value = Array.isArray(catalog.providers) ? catalog.providers : [];
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载官方价格供应商失败');
   }
@@ -1642,7 +1645,7 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-automation-tasks'
     force: true
   });
   void loadWorkbenchStatus({ background: true });
-  if (taskBatchResults.value) {
+  if (taskBatchResults.value?.batch.id) {
     void appleAutomationTasksApi
       .getBatchResults(taskBatchResults.value.batch.id)
       .then((result) => {

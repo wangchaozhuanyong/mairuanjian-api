@@ -231,6 +231,140 @@ http.interceptors.response.use((response) => {
   return response;
 });
 
+function normalizeArray<TItem>(value: TItem[] | null | undefined): TItem[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizePageResult<TItem>(
+  data: PageResult<TItem>,
+  normalizeItem: (item: TItem) => TItem = (item) => item
+): PageResult<TItem> {
+  const partial = data as Partial<PageResult<TItem>> | null | undefined;
+  const items = normalizeArray(partial?.items).map((item) => normalizeItem(item));
+  const total = Number(partial?.total);
+  const page = Number(partial?.page);
+  const pageSize = Number(partial?.pageSize);
+
+  return {
+    items,
+    total: Number.isFinite(total) ? total : items.length,
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+    pageSize: Number.isFinite(pageSize) && pageSize > 0 ? pageSize : items.length || 20
+  };
+}
+
+function normalizeAppleService(service: AppleService): AppleService {
+  return {
+    ...service,
+    allowedRegions: normalizeArray(service.allowedRegions)
+  };
+}
+
+function normalizeOfficialProviderCatalogRegion(
+  region: AppleOfficialPriceProviderCatalogRegion
+): AppleOfficialPriceProviderCatalogRegion {
+  return {
+    currency: region.currency || '',
+    label: region.label || region.value || '',
+    region: region.region || '',
+    sourceUrl: region.sourceUrl || '',
+    value: region.value || `${region.region || ''}:${region.currency || ''}`
+  };
+}
+
+function normalizeOfficialProviderCatalog(
+  catalog: AppleOfficialPriceProviderCatalog
+): AppleOfficialPriceProviderCatalog {
+  const partial = catalog as Partial<AppleOfficialPriceProviderCatalog> | null | undefined;
+
+  return {
+    providers: normalizeArray(partial?.providers).map((provider) => ({
+      ...provider,
+      regions: normalizeArray(provider.regions).map(normalizeOfficialProviderCatalogRegion)
+    })),
+    regions: normalizeArray(partial?.regions).map(normalizeOfficialProviderCatalogRegion)
+  };
+}
+
+function normalizeAutomationCapability(
+  capability: AppleAutomationWorkbenchStatus['balanceCheck'] | null | undefined
+): AppleAutomationWorkbenchStatus['balanceCheck'] {
+  return {
+    mode: capability?.mode || 'unknown',
+    enabled: Boolean(capability?.enabled),
+    ready: Boolean(capability?.ready),
+    queuedCount: Number(capability?.queuedCount ?? 0),
+    runningCount: Number(capability?.runningCount ?? 0),
+    manualRequiredCount: Number(capability?.manualRequiredCount ?? 0),
+    failedCount: Number(capability?.failedCount ?? 0),
+    message: capability?.message || '暂无状态'
+  };
+}
+
+function normalizeAutomationStatusCheckCapability(
+  capability: AppleAutomationWorkbenchStatus['statusCheck'] | null | undefined
+): AppleAutomationWorkbenchStatus['statusCheck'] {
+  return {
+    ...normalizeAutomationCapability(capability),
+    gatewayConfigured: Boolean(capability?.gatewayConfigured),
+    configuredRegions: normalizeArray(capability?.configuredRegions),
+    availableGatewayCountries: normalizeArray(capability?.availableGatewayCountries),
+    workerIntervalMs: Number(capability?.workerIntervalMs ?? 0),
+    workerMaxBatch: Number(capability?.workerMaxBatch ?? 0)
+  };
+}
+
+function normalizeAutomationWorkbenchStatus(
+  status: AppleAutomationWorkbenchStatus
+): AppleAutomationWorkbenchStatus {
+  const partial = status as Partial<AppleAutomationWorkbenchStatus> | null | undefined;
+
+  return {
+    checkedAt: partial?.checkedAt || new Date(0).toISOString(),
+    statusCheck: normalizeAutomationStatusCheckCapability(partial?.statusCheck),
+    balanceCheck: normalizeAutomationCapability(partial?.balanceCheck),
+    officialPriceCheck: normalizeAutomationCapability(partial?.officialPriceCheck)
+  };
+}
+
+function normalizeAutomationTask(task: AppleAutomationTask): AppleAutomationTask {
+  return {
+    ...task,
+    logs: normalizeArray(task.logs)
+  };
+}
+
+function createEmptyAutomationBatch(): AppleAutomationTaskBatch {
+  return {
+    id: '',
+    batchType: 'status_check',
+    status: 'pending',
+    totalCount: 0,
+    queuedCount: 0,
+    runningCount: 0,
+    successCount: 0,
+    failedCount: 0,
+    manualRequiredCount: 0,
+    note: null,
+    createdBy: null,
+    startedAt: null,
+    finishedAt: null,
+    createdAt: '',
+    updatedAt: ''
+  };
+}
+
+function normalizeAutomationBatchResults(
+  results: AppleAutomationTaskBatchResults
+): AppleAutomationTaskBatchResults {
+  const partial = results as Partial<AppleAutomationTaskBatchResults> | null | undefined;
+
+  return {
+    batch: partial?.batch ?? createEmptyAutomationBatch(),
+    items: normalizeArray(partial?.items)
+  };
+}
+
 export interface UserQuery {
   page: number;
   pageSize: number;
@@ -2193,7 +2327,7 @@ export const appleServicesApi = {
   list(params: AppleServiceQuery, options: ApiRequestOptions = {}) {
     return request<PageResult<AppleService>>(
       http.get('/apple/services', { params, signal: options.signal })
-    );
+    ).then((result) => normalizePageResult(result, normalizeAppleService));
   },
   getBalancePriceRule() {
     return request<AppleBalancePriceRule>(http.get('/apple/services/balance-price-rule'));
@@ -2201,12 +2335,12 @@ export const appleServicesApi = {
   listOrderOptions(options: ApiRequestOptions = {}) {
     return request<{ items: AppleServiceRegionPrice[] }>(
       http.get('/apple/services/order-options', { signal: options.signal })
-    );
+    ).then((result) => ({ items: normalizeArray(result.items) }));
   },
   listRegionPrices(params: AppleServiceRegionPriceQuery, options: ApiRequestOptions = {}) {
     return request<PageResult<AppleServiceRegionPrice>>(
       http.get('/apple/services/region-prices', { params, signal: options.signal })
-    );
+    ).then((result) => normalizePageResult(result));
   },
   updateBalancePriceRule(payload: AppleBalancePriceRule) {
     return request<AppleBalancePriceRule>(
@@ -2214,10 +2348,12 @@ export const appleServicesApi = {
     );
   },
   create(payload: SaveAppleServicePayload) {
-    return request<AppleService>(http.post('/apple/services', payload));
+    return request<AppleService>(http.post('/apple/services', payload)).then(normalizeAppleService);
   },
   update(id: string, payload: UpdateAppleServicePayload) {
-    return request<AppleService>(http.patch(`/apple/services/${id}`, payload));
+    return request<AppleService>(http.patch(`/apple/services/${id}`, payload)).then(
+      normalizeAppleService
+    );
   },
   remove(id: string) {
     return request<{ deleted: boolean }>(http.delete(`/apple/services/${id}`));
@@ -2225,7 +2361,7 @@ export const appleServicesApi = {
   listPlatformMappings(serviceId: string) {
     return request<{ items: AppleServicePlatformMapping[] }>(
       http.get(`/apple/services/${serviceId}/platform-mappings`)
-    );
+    ).then((result) => ({ items: normalizeArray(result.items) }));
   },
   createPlatformMapping(serviceId: string, payload: SaveAppleServicePlatformMappingPayload) {
     return request<AppleServicePlatformMapping>(
@@ -2244,12 +2380,14 @@ export const appleServicesApi = {
 
 export const appleOfficialPricesApi = {
   listProviders() {
-    return request<AppleOfficialPriceProviderCatalog>(http.get('/apple/official-prices/providers'));
+    return request<AppleOfficialPriceProviderCatalog>(
+      http.get('/apple/official-prices/providers')
+    ).then(normalizeOfficialProviderCatalog);
   },
   listSources(params: AppleOfficialPriceSourceQuery) {
     return request<PageResult<AppleOfficialPriceSource>>(
       http.get('/apple/official-prices/sources', { params })
-    );
+    ).then((result) => normalizePageResult(result));
   },
   createSource(payload: SaveAppleOfficialPriceSourcePayload) {
     return request<AppleOfficialPriceSource>(http.post('/apple/official-prices/sources', payload));
@@ -2311,12 +2449,12 @@ export const appleOfficialPricesApi = {
   listSnapshots(params: AppleOfficialPriceSnapshotQuery) {
     return request<PageResult<AppleOfficialPriceSnapshot>>(
       http.get('/apple/official-prices/snapshots', { params })
-    );
+    ).then((result) => normalizePageResult(result));
   },
   listReviews(params: ApplePriceChangeReviewQuery) {
     return request<PageResult<ApplePriceChangeReview>>(
       http.get('/apple/official-prices/reviews', { params })
-    );
+    ).then((result) => normalizePageResult(result));
   },
   approveReview(id: string) {
     return request<ApplePriceChangeReview>(
@@ -2556,13 +2694,17 @@ export const appleAutomationTasksApi = {
   list(params: AppleAutomationTaskQuery) {
     return request<PageResult<AppleAutomationTask>>(
       http.get('/apple/automation-tasks', { params })
-    );
+    ).then((result) => normalizePageResult(result, normalizeAutomationTask));
   },
   get(id: string) {
-    return request<AppleAutomationTask>(http.get(`/apple/automation-tasks/${id}`));
+    return request<AppleAutomationTask>(http.get(`/apple/automation-tasks/${id}`)).then(
+      normalizeAutomationTask
+    );
   },
   create(payload: CreateAppleAutomationTaskPayload) {
-    return request<AppleAutomationTask>(http.post('/apple/automation-tasks', payload));
+    return request<AppleAutomationTask>(http.post('/apple/automation-tasks', payload)).then(
+      normalizeAutomationTask
+    );
   },
   batchStatusCheck(payload: BatchAppleStatusCheckPayload) {
     return request<BatchAppleStatusCheckResult>(
@@ -2572,12 +2714,12 @@ export const appleAutomationTasksApi = {
   createStatusCheckBatch(payload: BatchAppleStatusCheckPayload) {
     return request<AppleAutomationTaskBatchResults>(
       http.post('/apple/automation-tasks/batches/status-check', payload)
-    );
+    ).then(normalizeAutomationBatchResults);
   },
   createBalanceCheckBatch(payload: BatchAppleBalanceCheckPayload) {
     return request<AppleAutomationTaskBatchResults>(
       http.post('/apple/automation-tasks/batches/balance-check', payload)
-    );
+    ).then(normalizeAutomationBatchResults);
   },
   getBatch(id: string) {
     return request<AppleAutomationTaskBatch>(http.get(`/apple/automation-tasks/batches/${id}`));
@@ -2585,17 +2727,17 @@ export const appleAutomationTasksApi = {
   getBatchResults(id: string) {
     return request<AppleAutomationTaskBatchResults>(
       http.get(`/apple/automation-tasks/batches/${id}/results`)
-    );
+    ).then(normalizeAutomationBatchResults);
   },
   workbenchStatus() {
     return request<AppleAutomationWorkbenchStatus>(
       http.get('/apple/automation-tasks/workbench-status')
-    );
+    ).then(normalizeAutomationWorkbenchStatus);
   },
   listLogs(id: string) {
     return request<{ items: NonNullable<AppleAutomationTask['logs']> }>(
       http.get(`/apple/automation-tasks/${id}/logs`)
-    );
+    ).then((result) => ({ items: normalizeArray(result.items) }));
   },
   webCheckGateways(id: string) {
     return request<AppleWebCheckGatewayContext>(
@@ -2608,21 +2750,29 @@ export const appleAutomationTasksApi = {
     );
   },
   runPlaceholder(id: string) {
-    return request<AppleAutomationTask>(http.post(`/apple/automation-tasks/${id}/run-placeholder`));
+    return request<AppleAutomationTask>(
+      http.post(`/apple/automation-tasks/${id}/run-placeholder`)
+    ).then(normalizeAutomationTask);
   },
   cancel(id: string) {
-    return request<AppleAutomationTask>(http.post(`/apple/automation-tasks/${id}/cancel`));
+    return request<AppleAutomationTask>(http.post(`/apple/automation-tasks/${id}/cancel`)).then(
+      normalizeAutomationTask
+    );
   },
   retry(id: string) {
-    return request<AppleAutomationTask>(http.post(`/apple/automation-tasks/${id}/retry`));
+    return request<AppleAutomationTask>(http.post(`/apple/automation-tasks/${id}/retry`)).then(
+      normalizeAutomationTask
+    );
   },
   markManual(id: string, payload: MarkAppleAutomationTaskManualPayload) {
     return request<AppleAutomationTask>(
       http.post(`/apple/automation-tasks/${id}/mark-manual`, payload)
-    );
+    ).then(normalizeAutomationTask);
   },
   writeResult(id: string, payload: WriteAppleAutomationTaskResultPayload) {
-    return request<AppleAutomationTask>(http.post(`/apple/automation-tasks/${id}/result`, payload));
+    return request<AppleAutomationTask>(
+      http.post(`/apple/automation-tasks/${id}/result`, payload)
+    ).then(normalizeAutomationTask);
   }
 };
 

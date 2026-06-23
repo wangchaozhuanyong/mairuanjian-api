@@ -2161,7 +2161,7 @@ export class AppleAutomationTasksService {
       queueJobId: task.queueJobId,
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
-      logs: task.logs?.map((log) => this.toLogResponse(log)) ?? undefined
+      logs: task.logs?.map((log) => this.toLogResponse(log)) ?? []
     };
   }
 }
