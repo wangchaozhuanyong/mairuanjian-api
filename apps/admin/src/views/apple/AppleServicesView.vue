@@ -1240,6 +1240,7 @@ import type {
   AppleOfficialPriceSnapshot,
   ApplePriceChangeReview,
   DataDictionary,
+  PageResult,
   TableDensity,
   UserTableView
 } from '@/types/system';
@@ -1390,6 +1391,10 @@ const savingBalanceRule = ref(false);
 const officialSourceCheckId = ref('');
 const officialProviderCheckKey = ref('');
 let officialPriceTabScrollRestoreTimer: ReturnType<typeof setTimeout> | undefined;
+let servicesLoadRequestId = 0;
+let officialPricePanelLoadRequestId = 0;
+let visibleServicesLoadCount = 0;
+let visibleOfficialPriceLoadCount = 0;
 const dialogVisible = ref(false);
 const officialSourceDialogVisible = ref(false);
 const officialCheckDialogVisible = ref(false);
@@ -2311,9 +2316,9 @@ function normalizeServiceVisibleColumns(columns: string[]) {
 async function loadServices(
   options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
 ) {
-  if (!options.silent || !services.value.length) {
-    loading.value = true;
-  }
+  const requestId = ++servicesLoadRequestId;
+  const endLoading = beginServicesLoading(!options.silent);
+
   try {
     const params = {
       page: query.page,
@@ -2325,18 +2330,25 @@ async function loadServices(
       sortBy: sortConfig.value.prop,
       sortOrder: mapSortOrder(sortConfig.value.order)
     };
-    const result = await refreshSmartQuery({
+    const result = await refreshSmartQuery<PageResult<AppleService>>({
       key: createSmartQueryKey(APPLE_SERVICES_SCOPE, params),
-      fetcher: () => appleServicesApi.list(params),
+      fetcher: ({ signal }) => appleServicesApi.list(params, { signal }),
       force: options.force ?? true,
       dedupeMs: options.dedupeMs ?? 1_200
     });
+
+    if (requestId !== servicesLoadRequestId) {
+      return;
+    }
+
     services.value = sortAppleServicesForDisplay(result.data.items);
     total.value = result.data.total;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务失败');
+    if (requestId === servicesLoadRequestId && !options.silent) {
+      ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务失败');
+    }
   } finally {
-    loading.value = false;
+    endLoading();
   }
 }
 
@@ -2560,6 +2572,34 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null): 'asc' | 'desc'
   return undefined;
 }
 
+function beginServicesLoading(visible: boolean) {
+  if (!visible) return () => undefined;
+
+  visibleServicesLoadCount += 1;
+  loading.value = true;
+
+  return () => {
+    visibleServicesLoadCount = Math.max(visibleServicesLoadCount - 1, 0);
+    if (visibleServicesLoadCount === 0) {
+      loading.value = false;
+    }
+  };
+}
+
+function beginOfficialPriceLoading(visible: boolean) {
+  if (!visible) return () => undefined;
+
+  visibleOfficialPriceLoadCount += 1;
+  officialPriceLoading.value = true;
+
+  return () => {
+    visibleOfficialPriceLoadCount = Math.max(visibleOfficialPriceLoadCount - 1, 0);
+    if (visibleOfficialPriceLoadCount === 0) {
+      officialPriceLoading.value = false;
+    }
+  };
+}
+
 function isServiceStatus(value: unknown): value is AppleService['status'] | '' {
   return value === '' || value === 'enabled' || value === 'paused' || value === 'disabled';
 }
@@ -2582,7 +2622,7 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   [APPLE_SERVICES_SCOPE, APPLE_OFFICIAL_PRICE_SCOPE, 'data-dictionaries'],
   () => {
     void loadServices({ silent: true, dedupeMs: 0 });
-    void loadOfficialPricePanel();
+    void loadOfficialPricePanel({ silent: true });
     void loadGlobalBalanceRule();
     void loadAppleServiceCategories();
     void loadAppleRegions();
@@ -2994,9 +3034,9 @@ function syncOfficialAutoRegionSelection(forceAll = false) {
 async function loadOfficialPricePanel(
   options: { preserveOptionCache?: boolean; silent?: boolean } = {}
 ) {
-  if (!options.silent) {
-    officialPriceLoading.value = true;
-  }
+  const requestId = ++officialPricePanelLoadRequestId;
+  const endLoading = beginOfficialPriceLoading(!options.silent);
+
   try {
     const shouldRefreshOptionCache =
       !options.preserveOptionCache ||
@@ -3039,6 +3079,11 @@ async function loadOfficialPricePanel(
           })
         : Promise.resolve(null)
     ]);
+
+    if (requestId !== officialPricePanelLoadRequestId) {
+      return;
+    }
+
     officialPriceSources.value = sources.items;
     officialPriceReviews.value = reviews.items;
     officialPriceSnapshots.value = snapshots.items;
@@ -3055,11 +3100,11 @@ async function loadOfficialPricePanel(
       officialCheckForm.sourceId = sources.items[0].id;
     }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载官方价格巡检失败');
-  } finally {
-    if (!options.silent) {
-      officialPriceLoading.value = false;
+    if (requestId === officialPricePanelLoadRequestId && !options.silent) {
+      ElMessage.error(error instanceof Error ? error.message : '加载官方价格巡检失败');
     }
+  } finally {
+    endLoading();
   }
 }
 
