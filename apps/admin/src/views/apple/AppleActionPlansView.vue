@@ -433,7 +433,7 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import {
   appleAccountsApi,
   appleActionPlansApi,
@@ -487,6 +487,7 @@ const submitDialogVisible = ref(false);
 const topupFormRef = ref<FormInstance>();
 const submitFormRef = ref<FormInstance>();
 let stopRealtimeListener: (() => void) | undefined;
+let keywordSearchTimer: number | undefined;
 
 const query = reactive<AppleExpiringCustomerQuery>({
   page: 1,
@@ -694,7 +695,24 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopRealtimeListener?.();
+  if (keywordSearchTimer) {
+    window.clearTimeout(keywordSearchTimer);
+  }
 });
+
+watch(
+  () => query.keyword,
+  () => {
+    if (keywordSearchTimer) {
+      window.clearTimeout(keywordSearchTimer);
+    }
+
+    keywordSearchTimer = window.setTimeout(() => {
+      query.page = 1;
+      loadCustomers({ force: true });
+    }, 350);
+  }
+);
 
 function buildListParams(): AppleExpiringCustomerQuery {
   const [expireFrom, expireTo] = expireDateRange.value;
