@@ -356,18 +356,35 @@
           <el-select
             v-model="selectedOfficialAutoRegions"
             class="apple-official-region-select"
+            clearable
             collapse-tags
             collapse-tags-tooltip
+            :filter-method="handleOfficialAutoRegionSearch"
+            filterable
             multiple
-            placeholder="采集地区"
+            placeholder="搜索国家 / 国家码 / 币种，不选则全部"
+            reserve-keyword
+            @change="handleOfficialAutoRegionsChange"
+            @visible-change="handleOfficialAutoRegionVisibleChange"
           >
             <el-option
-              v-for="region in officialAutoRegionOptions"
+              v-for="region in officialAutoRegionSelectOptions"
               :key="region.value"
               :label="region.label"
               :value="region.value"
-            />
+            >
+              <div class="apple-official-region-option">
+                <span>{{ getOfficialAutoRegionDisplayLabel(region) }}</span>
+                <small>{{ region.region }} / {{ region.currency }}</small>
+              </div>
+            </el-option>
+            <template #empty>
+              <div class="apple-official-region-empty">没有匹配的国家或币种</div>
+            </template>
           </el-select>
+          <StatusChip :tone="selectedOfficialAutoRegions.length ? 'blue' : 'neutral'">
+            {{ officialAutoRegionSelectionSummary }}
+          </StatusChip>
         </div>
         <div class="apple-official-provider-runner__actions">
           <AppButton
@@ -390,7 +407,7 @@
           </AppButton>
         </div>
         <span class="apple-official-provider-runner__hint">
-          会按所选地区创建或复用官方来源，采集结果只进入待确认，不会直接覆盖业务价格。
+          不选地区时按全部支持地区创建或复用官方来源，采集结果只进入待确认，不会直接覆盖业务价格。
         </span>
       </div>
 
@@ -1650,7 +1667,63 @@ const fallbackOfficialAutoRegionOptions: AppleOfficialPriceProviderCatalogRegion
   { label: '埃及 EGP', value: 'EG:EGP', region: 'EG', currency: 'EGP' },
   { label: '摩洛哥 MAD', value: 'MA:MAD', region: 'MA', currency: 'MAD' }
 ].map((region) => ({ ...region, sourceUrl: '' }));
-const defaultOfficialAutoRegions = new Set(['US', 'MY', 'SG', 'HK']);
+const officialAutoRegionSearchAliasMap: Record<string, string[]> = {
+  AE: ['uae', 'emirates', 'united arab emirates'],
+  AR: ['argentina'],
+  AT: ['austria'],
+  AU: ['australia'],
+  BD: ['bangladesh'],
+  BE: ['belgium'],
+  BR: ['brazil'],
+  CA: ['canada'],
+  CH: ['switzerland'],
+  CL: ['chile'],
+  CO: ['colombia'],
+  CZ: ['czech', 'czechia'],
+  DE: ['germany'],
+  DK: ['denmark'],
+  EG: ['egypt'],
+  ES: ['spain'],
+  EU: ['europe', 'eurozone', 'euro zone'],
+  FI: ['finland'],
+  FR: ['france'],
+  GB: ['uk', 'britain', 'united kingdom', 'england'],
+  GH: ['ghana'],
+  GR: ['greece'],
+  HK: ['hong kong', 'hongkong'],
+  HU: ['hungary'],
+  ID: ['indonesia'],
+  IE: ['ireland'],
+  IL: ['israel'],
+  IN: ['india'],
+  IT: ['italy'],
+  JP: ['japan'],
+  KE: ['kenya'],
+  KR: ['korea', 'south korea'],
+  MA: ['morocco'],
+  MX: ['mexico'],
+  MY: ['malaysia'],
+  NG: ['nigeria'],
+  NL: ['netherlands', 'holland'],
+  NO: ['norway'],
+  NZ: ['new zealand'],
+  PE: ['peru'],
+  PH: ['philippines'],
+  PK: ['pakistan'],
+  PL: ['poland'],
+  PT: ['portugal'],
+  RO: ['romania'],
+  SA: ['saudi', 'saudi arabia'],
+  SE: ['sweden'],
+  SG: ['singapore'],
+  TH: ['thailand'],
+  TR: ['turkey'],
+  TW: ['taiwan'],
+  UA: ['ukraine'],
+  US: ['usa', 'america', 'united states', 'united states of america'],
+  VN: ['vietnam'],
+  ZA: ['south africa']
+};
 const balanceRuleOptions: Array<{ label: string; value: AppleBalancePriceRuleType }> = [
   { label: '继承全局规则', value: 'inherit' },
   { label: '按百分比', value: 'percent' },
@@ -1716,11 +1789,8 @@ const officialPriceTab = ref('reviews');
 const officialReviewActionId = ref('');
 const officialRecordDeleteKey = ref('');
 const officialBulkDeleteKey = ref('');
-const selectedOfficialAutoRegions = ref<string[]>(
-  fallbackOfficialAutoRegionOptions
-    .filter((region) => defaultOfficialAutoRegions.has(region.region))
-    .map((region) => region.value)
-);
+const officialAutoRegionKeyword = ref('');
+const selectedOfficialAutoRegions = ref<string[]>([]);
 const officialBatchPollingTimer = ref<ReturnType<typeof setInterval> | null>(null);
 
 const globalBalanceRuleForm = reactive({
@@ -1915,6 +1985,34 @@ const officialAutoProviderOptions = computed(() =>
   safeArray(officialProviderCatalogProviders.value)
 );
 const officialAutoRegionOptions = computed(() => safeArray(officialProviderCatalogRegions.value));
+const officialAutoSelectedRegionValueSet = computed(
+  () => new Set(selectedOfficialAutoRegions.value)
+);
+const officialAutoRegionSelectOptions = computed(() => {
+  const keyword = normalizeOfficialAutoRegionSearch(officialAutoRegionKeyword.value);
+
+  return safeArray(officialAutoRegionOptions.value)
+    .filter((region) => !keyword || officialAutoRegionMatchesKeyword(region, keyword))
+    .sort((left, right) => {
+      const leftSelected = officialAutoSelectedRegionValueSet.value.has(left.value);
+      const rightSelected = officialAutoSelectedRegionValueSet.value.has(right.value);
+      if (leftSelected !== rightSelected) return leftSelected ? -1 : 1;
+
+      const leftRank = getOfficialAutoRegionSearchRank(left, keyword);
+      const rightRank = getOfficialAutoRegionSearchRank(right, keyword);
+      if (leftRank !== rightRank) return leftRank - rightRank;
+
+      return getOfficialAutoRegionDisplayLabel(left).localeCompare(
+        getOfficialAutoRegionDisplayLabel(right),
+        'zh-CN'
+      );
+    });
+});
+const officialAutoRegionSelectionSummary = computed(() => {
+  const selectedCount = selectedOfficialAutoRegions.value.length;
+  if (!selectedCount) return `全部地区 ${officialAutoRegionOptions.value.length}`;
+  return `已选 ${selectedCount}`;
+});
 const officialSourceProviderPreset = computed(() =>
   getOfficialProviderCatalogOption(officialSourceForm.provider)
 );
@@ -3528,27 +3626,18 @@ async function loadOfficialProviderCatalog() {
     );
   }
 
-  syncOfficialAutoRegionSelection(true);
+  syncOfficialAutoRegionSelection();
 }
 
-function syncOfficialAutoRegionSelection(forceAll = false) {
+function syncOfficialAutoRegionSelection() {
   const catalogRegions = Array.isArray(officialProviderCatalogRegions.value)
     ? officialProviderCatalogRegions.value
     : fallbackOfficialAutoRegionOptions;
   const availableValues = catalogRegions.map((region) => region.value);
-  if (forceAll) {
-    const defaultValues = catalogRegions
-      .filter((region) => defaultOfficialAutoRegions.has(region.region))
-      .map((region) => region.value);
-    selectedOfficialAutoRegions.value = defaultValues.length ? defaultValues : availableValues;
-    return;
-  }
-
   const availableSet = new Set(availableValues);
-  const currentSelected = selectedOfficialAutoRegions.value.filter((value) =>
+  selectedOfficialAutoRegions.value = selectedOfficialAutoRegions.value.filter((value) =>
     availableSet.has(value)
   );
-  selectedOfficialAutoRegions.value = currentSelected.length ? currentSelected : availableValues;
 }
 
 async function loadOfficialPricePanel(
@@ -4290,6 +4379,101 @@ async function handleOfficialProviderCheck(provider: string) {
   }
 }
 
+function handleOfficialAutoRegionSearch(keyword: string) {
+  officialAutoRegionKeyword.value = keyword;
+}
+
+function handleOfficialAutoRegionVisibleChange(visible: boolean) {
+  if (!visible) {
+    officialAutoRegionKeyword.value = '';
+  }
+}
+
+function handleOfficialAutoRegionsChange(values: string[] | string) {
+  const selectedValues = Array.isArray(values) ? values : values ? [values] : [];
+  selectedOfficialAutoRegions.value = orderOfficialAutoRegionValues(selectedValues);
+}
+
+function orderOfficialAutoRegionValues(values: string[]) {
+  const selectedSet = new Set(values);
+  return officialAutoRegionOptions.value
+    .filter((region) => selectedSet.has(region.value))
+    .map((region) => region.value);
+}
+
+function getOfficialAutoRegionDisplayLabel(region: AppleOfficialPriceProviderCatalogRegion) {
+  const sharedLabel = formatSharedAppleRegionLabel(region.region, appleRegionOptions.value, '');
+  const rawLabel = sharedLabel || region.label || region.region;
+  const withoutRegion = removeOfficialAutoRegionTrailingToken(rawLabel, region.region);
+  const withoutCurrency = removeOfficialAutoRegionTrailingToken(withoutRegion, region.currency);
+  return withoutCurrency || rawLabel || region.region;
+}
+
+function removeOfficialAutoRegionTrailingToken(label: string, token?: string | null) {
+  const normalizedToken = normalizeOfficialReviewCode(token);
+  if (!normalizedToken) return label.trim();
+
+  const trimmed = label.trim();
+  if (trimmed.toUpperCase().endsWith(` ${normalizedToken}`)) {
+    return trimmed.slice(0, -normalizedToken.length).trim();
+  }
+
+  return trimmed;
+}
+
+function officialAutoRegionMatchesKeyword(
+  region: AppleOfficialPriceProviderCatalogRegion,
+  keyword: string
+) {
+  return getOfficialAutoRegionSearchRank(region, keyword) < 4;
+}
+
+function getOfficialAutoRegionSearchRank(
+  region: AppleOfficialPriceProviderCatalogRegion,
+  keyword: string
+) {
+  if (!keyword) return 0;
+
+  const parts = getOfficialAutoRegionSearchParts(region);
+  if (parts.some((part) => part === keyword)) return 0;
+  if (parts.some((part) => part.startsWith(keyword))) return 1;
+  if (parts.some((part) => part.includes(keyword))) return 2;
+
+  const joined = parts.join('');
+  return joined.includes(keyword) ? 3 : 4;
+}
+
+function getOfficialAutoRegionSearchParts(region: AppleOfficialPriceProviderCatalogRegion) {
+  const regionCode = normalizeOfficialReviewCode(region.region);
+  const currencyCode = normalizeOfficialReviewCode(region.currency);
+  const displayLabel = getOfficialAutoRegionDisplayLabel(region);
+  const sharedLabel = formatSharedAppleRegionLabel(region.region, appleRegionOptions.value, '');
+  const aliases = officialAutoRegionSearchAliasMap[regionCode] ?? [];
+
+  return [
+    region.label,
+    displayLabel,
+    sharedLabel,
+    region.value,
+    region.region,
+    regionCode,
+    region.currency,
+    currencyCode,
+    `${regionCode}${currencyCode}`,
+    `${displayLabel}${regionCode}${currencyCode}`,
+    ...aliases
+  ]
+    .map((item) => normalizeOfficialAutoRegionSearch(item))
+    .filter(Boolean);
+}
+
+function normalizeOfficialAutoRegionSearch(value?: string | null) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_·/:|,，()（）[\]{}-]+/g, '');
+}
+
 function buildOfficialProviderRegionsPayload() {
   const selected = getSelectedOfficialAutoRegionOptions();
   return selected.length
@@ -4778,7 +4962,35 @@ onBeforeUnmount(() => {
 }
 
 .apple-official-region-select {
-  width: min(420px, 58vw);
+  width: min(520px, 62vw);
+}
+
+.apple-official-region-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.apple-official-region-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apple-official-region-option small {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.apple-official-region-empty {
+  padding: 10px 12px;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
 }
 
 .apple-official-provider-runner__actions {
