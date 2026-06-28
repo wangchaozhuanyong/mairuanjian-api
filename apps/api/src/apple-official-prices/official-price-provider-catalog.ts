@@ -176,20 +176,17 @@ export const OFFICIAL_PRICE_PROVIDER_PROFILES: Record<
         periodValue: 1
       },
       {
-        planCode: 'google_ai_ultra_5x_monthly',
-        serviceName: 'Google AI Ultra 5x 1个月',
+        planCode: 'google_ai_ultra_monthly',
+        serviceName: 'Google AI Ultra 1个月',
         category: 'Gemini',
-        aliases: ['Google AI Ultra 5x', 'AI Ultra 5x', 'Ultra 5x', '5x higher usage'],
+        aliases: [
+          'Google AI Ultra',
+          'AI Ultra',
+          'Gemini Ultra',
+          'Ultra',
+          'PRICE_GEN_AI_ULTRA_100_MONTHLY'
+        ],
         currencyPrices: { USD: '99.99' },
-        periodType: 'month',
-        periodValue: 1
-      },
-      {
-        planCode: 'google_ai_ultra_20x_monthly',
-        serviceName: 'Google AI Ultra 20x 1个月',
-        category: 'Gemini',
-        aliases: ['Google AI Ultra 20x', 'AI Ultra 20x', 'Ultra 20x', '20x higher usage'],
-        currencyPrices: { USD: '199.99' },
         periodType: 'month',
         periodValue: 1
       }

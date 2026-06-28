@@ -719,31 +719,32 @@
           <div class="apple-official-tab-note">
             <strong>当前批次结果</strong>
             <span>
-              这里只展示最新采集批次的来源、地区、状态和原因，避免和历史待确认变化混在一起看。
+              这里按套餐展示最新采集批次产出的快照、待确认变化和异常项，避免只看到来源汇总。
             </span>
+            <StatusChip tone="blue">{{ officialBatchRows.length }} 条结果</StatusChip>
           </div>
           <div class="apple-official-bulk-actions">
             <span>
               {{
-                selectedOfficialBatchItems.length
-                  ? `已选 ${selectedOfficialBatchItems.length} 条批次结果`
+                selectedOfficialBatchRows.length
+                  ? `已选 ${selectedOfficialBatchRows.length} 条批次结果`
                   : '未选择批次结果'
               }}
             </span>
             <AppButton
               size="small"
               variant="danger"
-              :disabled="!selectedOfficialBatchItems.length"
+              :disabled="!selectedOfficialBatchRows.length"
               :loading="officialBulkDeleteKey === 'batch-items'"
               @click="bulkRemoveOfficialBatchItems"
             >
-              批量删除
+              批量删除异常来源
             </AppButton>
           </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table official-batch-items-table"
-            :data="paginatedOfficialBatchItems"
+            :data="paginatedOfficialBatchRows"
             row-key="id"
             empty-text="暂无采集批次结果"
             @selection-change="handleOfficialBatchItemSelectionChange"
@@ -755,29 +756,48 @@
                 <div class="muted-block">{{ row.sourceName || '-' }}</div>
               </template>
             </el-table-column>
+            <el-table-column label="套餐" min-width="210" show-overflow-tooltip>
+              <template #default="{ row }">
+                <strong>{{ row.serviceName || '-' }}</strong>
+                <div class="muted-block">{{ row.category || '通用' }}</div>
+              </template>
+            </el-table-column>
             <el-table-column label="地区/币种" width="150">
-              <template #default="{ row }">{{ getOfficialBatchItemRegionLabel(row) }}</template>
+              <template #default="{ row }">{{ getOfficialBatchResultRegionLabel(row) }}</template>
             </el-table-column>
             <el-table-column label="状态" width="130">
               <template #default="{ row }">
-                <StatusChip :tone="getOfficialBatchItemStatusTone(row.status)" dot>
-                  {{ getOfficialBatchItemStatusLabel(row.status) }}
+                <StatusChip :tone="getOfficialBatchResultStatusTone(row.status)" dot>
+                  {{ getOfficialBatchResultStatusLabel(row.status) }}
                 </StatusChip>
               </template>
             </el-table-column>
-            <el-table-column label="产出" width="150">
+            <el-table-column label="官方价" width="150">
               <template #default="{ row }">
-                快照 {{ row.snapshotCount }} / 待确认 {{ row.reviewCount }}
+                {{ getOfficialBatchResultOfficialPrice(row) }}
+                <div v-if="getOfficialBatchResultOldOfficialPrice(row)" class="muted-block">
+                  原 {{ getOfficialBatchResultOldOfficialPrice(row) }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="Apple余额价" width="150">
+              <template #default="{ row }">
+                {{ getOfficialBatchResultApplePrice(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="周期" width="110">
+              <template #default="{ row }">
+                {{ getOfficialBatchResultPeriod(row) }}
               </template>
             </el-table-column>
             <el-table-column label="原因/说明" min-width="300" show-overflow-tooltip>
               <template #default="{ row }">
-                {{ getOfficialBatchItemMessage(row) }}
+                {{ getOfficialBatchResultMessage(row) }}
               </template>
             </el-table-column>
             <el-table-column label="完成时间" min-width="170">
               <template #default="{ row }">
-                {{ formatDate(row.finishedAt || row.updatedAt || row.createdAt) }}
+                {{ formatDate(row.collectedAt) }}
               </template>
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
@@ -785,10 +805,11 @@
                 <AppButton
                   size="small"
                   variant="danger"
-                  :loading="officialRecordDeleteKey === `batch-item:${row.id}`"
+                  :disabled="!isOfficialBatchResultDeletable(row)"
+                  :loading="officialRecordDeleteKey === `batch-item:${row.batchItemId}`"
                   @click="removeOfficialBatchItem(row)"
                 >
-                  删除
+                  删异常
                 </AppButton>
               </template>
             </el-table-column>
@@ -796,7 +817,7 @@
           <PaginationBar
             v-model:page="officialBatchItemQuery.page"
             v-model:page-size="officialBatchItemQuery.pageSize"
-            :total="officialBatchItems.length"
+            :total="officialBatchRows.length"
           />
         </el-tab-pane>
 
@@ -1488,7 +1509,8 @@ import type {
   AppleService,
   AppleBalancePriceRuleType,
   AppleOfficialPriceCheckBatch,
-  AppleOfficialPriceCheckBatchItem,
+  AppleOfficialPriceCheckBatchResultRow,
+  AppleOfficialPriceCheckBatchResults,
   AppleOfficialPriceSource,
   AppleOfficialPriceSnapshot,
   ApplePriceChangeReview,
@@ -1761,10 +1783,11 @@ const selectedOfficialSources = ref<AppleOfficialPriceSource[]>([]);
 const selectedOfficialReviews = ref<ApplePriceChangeReview[]>([]);
 const selectedOfficialSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
 const selectedOfficialRegionPrices = ref<AppleServiceRegionPrice[]>([]);
-const selectedOfficialBatchItems = ref<AppleOfficialPriceCheckBatchItem[]>([]);
+const selectedOfficialBatchRows = ref<AppleOfficialPriceCheckBatchResultRow[]>([]);
 const officialPriceOptionReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceOptionSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
 const officialPriceBatch = ref<AppleOfficialPriceCheckBatch | null>(null);
+const officialPriceBatchResults = ref<AppleOfficialPriceCheckBatchResults | null>(null);
 const officialProviderCatalogProviders = ref<OfficialProviderCatalogOption[]>(
   fallbackOfficialAutoProviderOptions
 );
@@ -2138,9 +2161,14 @@ const officialBatchProblemItems = computed(() =>
   )
 );
 const officialBatchItems = computed(() => officialPriceBatch.value?.items ?? []);
-const paginatedOfficialBatchItems = computed(() => {
+const officialBatchRows = computed(() => {
+  const rows = officialPriceBatchResults.value?.items ?? [];
+  if (rows.length) return rows;
+  return officialBatchItems.value.map((item) => toOfficialBatchFallbackRow(item));
+});
+const paginatedOfficialBatchRows = computed(() => {
   const start = (officialBatchItemQuery.page - 1) * officialBatchItemQuery.pageSize;
-  return officialBatchItems.value.slice(start, start + officialBatchItemQuery.pageSize);
+  return officialBatchRows.value.slice(start, start + officialBatchItemQuery.pageSize);
 });
 const officialBatchProgressStatus = computed(() => {
   if (!officialPriceBatch.value) return undefined;
@@ -2600,35 +2628,6 @@ function getOfficialBatchStatusTone(status: AppleOfficialPriceCheckBatch['status
   return 'neutral';
 }
 
-function getOfficialBatchItemStatusLabel(
-  status: AppleOfficialPriceCheckBatch['items'][number]['status']
-) {
-  return (
-    {
-      queued: '排队中',
-      running: '采集中',
-      success: '成功',
-      failed: '失败',
-      waiting_manual_verify: '人工确认',
-      completed: '已完成',
-      cancelled: '已取消',
-      pending: '待开始',
-      need_review: '待复核',
-      skipped: '已跳过'
-    }[status] ?? status
-  );
-}
-
-function getOfficialBatchItemStatusTone(
-  status: AppleOfficialPriceCheckBatch['items'][number]['status']
-) {
-  if (status === 'success') return 'green';
-  if (status === 'failed') return 'red';
-  if (status === 'waiting_manual_verify' || status === 'need_review') return 'orange';
-  if (status === 'running' || status === 'queued' || status === 'pending') return 'blue';
-  return 'neutral';
-}
-
 function getRegionPriceStatusLabel(status: AppleServiceRegionPrice['status']) {
   return (
     {
@@ -2662,6 +2661,102 @@ function getOfficialBatchItemMessage(item: AppleOfficialPriceCheckBatch['items']
   if (item.status === 'running') return '正在采集官网价格';
   if (item.status === 'queued' || item.status === 'pending') return '等待后台任务执行';
   return '暂无说明';
+}
+
+function toOfficialBatchFallbackRow(
+  item: AppleOfficialPriceCheckBatch['items'][number]
+): AppleOfficialPriceCheckBatchResultRow {
+  return {
+    id: item.id,
+    batchItemId: item.id,
+    taskId: item.taskId,
+    snapshotId: null,
+    reviewId: null,
+    sourceId: item.sourceId,
+    sourceName: item.sourceName,
+    provider: item.provider,
+    serviceName: item.sourceName,
+    category: '官方来源',
+    region: item.region,
+    currency: item.currency,
+    status:
+      item.status === 'waiting_manual_verify' ? 'manual_required' : mapBatchItemStatus(item.status),
+    reviewStatus: null,
+    oldOfficialPrice: null,
+    newOfficialPrice: null,
+    oldAppleBalancePrice: null,
+    newAppleBalancePrice: null,
+    periodType: null,
+    periodValue: null,
+    message: getOfficialBatchItemMessage(item),
+    collectedAt: item.finishedAt ?? item.updatedAt ?? item.createdAt
+  };
+}
+
+function mapBatchItemStatus(
+  status: AppleOfficialPriceCheckBatch['items'][number]['status']
+): AppleOfficialPriceCheckBatchResultRow['status'] {
+  if (status === 'failed') return 'failed';
+  if (status === 'success') return 'unchanged';
+  return 'manual_required';
+}
+
+function getOfficialBatchResultStatusLabel(
+  status: AppleOfficialPriceCheckBatchResultRow['status']
+) {
+  if (status === 'unchanged') return '已采集';
+  if (status === 'failed') return '失败';
+  if (status === 'manual_required') return '人工确认';
+  return getOfficialReviewTypeLabel(status);
+}
+
+function getOfficialBatchResultStatusTone(status: AppleOfficialPriceCheckBatchResultRow['status']) {
+  if (status === 'unchanged') return 'green';
+  if (status === 'failed') return 'red';
+  if (status === 'manual_required') return 'orange';
+  return getOfficialReviewTone(status);
+}
+
+function getOfficialBatchResultRegionLabel(row: AppleOfficialPriceCheckBatchResultRow) {
+  return formatOfficialRegionCurrency(row.region, row.currency);
+}
+
+function getOfficialBatchResultOfficialPrice(row: AppleOfficialPriceCheckBatchResultRow) {
+  const price = row.newOfficialPrice ?? row.oldOfficialPrice;
+  return price ? `${price} ${row.currency}` : '-';
+}
+
+function getOfficialBatchResultOldOfficialPrice(row: AppleOfficialPriceCheckBatchResultRow) {
+  if (!row.oldOfficialPrice || row.oldOfficialPrice === row.newOfficialPrice) return '';
+  return `${row.oldOfficialPrice} ${row.currency}`;
+}
+
+function getOfficialBatchResultApplePrice(row: AppleOfficialPriceCheckBatchResultRow) {
+  const price = row.newAppleBalancePrice ?? row.oldAppleBalancePrice;
+  return price ? `${price} ${row.currency}` : '-';
+}
+
+function getOfficialBatchResultPeriod(row: AppleOfficialPriceCheckBatchResultRow) {
+  if (!row.periodType || !row.periodValue) return '-';
+  return formatOfficialPeriod(row.periodType, String(row.periodValue));
+}
+
+function getOfficialBatchResultMessage(row: AppleOfficialPriceCheckBatchResultRow) {
+  if (row.message) return row.message;
+  if (row.status === 'unchanged') return row.snapshotId ? '已生成采集快照' : '本次巡检未发现变化';
+  if (row.status === 'manual_required') return '没有识别到可用套餐价格，已转人工确认';
+  if (row.status === 'failed') return '采集失败';
+  if (row.reviewId) return '已生成待确认变化，确认后才会同步业务价格';
+  return '暂无说明';
+}
+
+function getOfficialBatchResultTitle(row: AppleOfficialPriceCheckBatchResultRow) {
+  const serviceName = row.serviceName || row.sourceName || '-';
+  return `${getProviderLabel(row.provider)} / ${getOfficialBatchResultRegionLabel(row)} / ${serviceName}`;
+}
+
+function isOfficialBatchResultDeletable(row: AppleOfficialPriceCheckBatchResultRow) {
+  return Boolean(row.batchItemId && !row.snapshotId && !row.reviewId);
 }
 
 function getStatusLabel(status: AppleService['status']) {
@@ -2830,8 +2925,8 @@ function handleOfficialSourceSelectionChange(rows: AppleOfficialPriceSource[]) {
   selectedOfficialSources.value = rows;
 }
 
-function handleOfficialBatchItemSelectionChange(rows: AppleOfficialPriceCheckBatchItem[]) {
-  selectedOfficialBatchItems.value = rows;
+function handleOfficialBatchItemSelectionChange(rows: AppleOfficialPriceCheckBatchResultRow[]) {
+  selectedOfficialBatchRows.value = rows;
 }
 
 function handleOfficialRegionPriceSelectionChange(rows: AppleServiceRegionPrice[]) {
@@ -3730,20 +3825,27 @@ async function loadLatestOfficialPriceBatch() {
   try {
     const previousStatus = officialPriceBatch.value?.status;
     const batch = await appleOfficialPricesApi.getLatestCheckBatch();
-    officialPriceBatch.value = batch;
+    if (batch) {
+      await loadOfficialPriceBatchResults(batch.id);
+    } else {
+      officialPriceBatch.value = null;
+      officialPriceBatchResults.value = null;
+      selectedOfficialBatchRows.value = [];
+    }
     normalizeOfficialBatchItemPage();
 
-    if (batch && (batch.status === 'queued' || batch.status === 'running')) {
+    const currentBatch = officialPriceBatch.value;
+    if (currentBatch && (currentBatch.status === 'queued' || currentBatch.status === 'running')) {
       startOfficialBatchPolling();
       return;
     }
 
     stopOfficialBatchPolling();
     if (
-      batch &&
+      currentBatch &&
       previousStatus &&
       (previousStatus === 'queued' || previousStatus === 'running') &&
-      batch.status !== previousStatus
+      currentBatch.status !== previousStatus
     ) {
       await loadOfficialPricePanel({ silent: true });
     }
@@ -3756,8 +3858,8 @@ async function loadLatestOfficialPriceBatch() {
 async function loadOfficialPriceBatch(batchId: string) {
   try {
     const previousStatus = officialPriceBatch.value?.status;
-    const batch = await appleOfficialPricesApi.getCheckBatch(batchId);
-    officialPriceBatch.value = batch;
+    const results = await loadOfficialPriceBatchResults(batchId);
+    const batch = results.batch;
     normalizeOfficialBatchItemPage();
 
     if (batch.status === 'queued' || batch.status === 'running') {
@@ -3773,6 +3875,14 @@ async function loadOfficialPriceBatch(batchId: string) {
     stopOfficialBatchPolling();
     ElMessage.error(error instanceof Error ? error.message : '刷新采集进度失败');
   }
+}
+
+async function loadOfficialPriceBatchResults(batchId: string) {
+  const results = await appleOfficialPricesApi.getCheckBatchResults(batchId);
+  officialPriceBatch.value = results.batch;
+  officialPriceBatchResults.value = results;
+  selectedOfficialBatchRows.value = [];
+  return results;
 }
 
 function startOfficialBatchPolling() {
@@ -3796,7 +3906,7 @@ function stopOfficialBatchPolling() {
 function normalizeOfficialBatchItemPage() {
   const totalPages = Math.max(
     1,
-    Math.ceil(officialBatchItems.value.length / officialBatchItemQuery.pageSize)
+    Math.ceil(officialBatchRows.value.length / officialBatchItemQuery.pageSize)
   );
 
   if (officialBatchItemQuery.page > totalPages) {
@@ -4034,31 +4144,35 @@ async function bulkRemoveOfficialSources() {
 }
 
 async function bulkRemoveOfficialBatchItems() {
-  const rows = [...selectedOfficialBatchItems.value];
+  const selectedRows = [...selectedOfficialBatchRows.value];
+  const rows = selectedRows
+    .filter(isOfficialBatchResultDeletable)
+    .map((row) => ({ ...row, id: row.batchItemId! }));
+
+  if (selectedRows.length && rows.length !== selectedRows.length) {
+    ElMessage.warning('只能删除未生成快照/待确认变化的异常来源；套餐结果请到对应列表删除');
+  }
+
   await bulkRemoveOfficialRecords({
     rows,
     deleteKey: 'batch-items',
-    emptyMessage: '请先勾选要删除的当前批次结果',
-    title: '确认批量删除当前批次结果？',
-    actionName: '批量删除当前批次结果',
-    description: `将彻底删除选中的 ${rows.length} 条当前批次结果。`,
+    emptyMessage: '请先勾选可删除的异常来源',
+    title: '确认批量删除异常来源？',
+    actionName: '批量删除异常来源',
+    description: `将彻底删除选中的 ${rows.length} 条异常来源记录。`,
     impact: [
-      buildOfficialBulkPreview(
-        rows.map(
-          (row) => `${getProviderLabel(row.provider)} / ${getOfficialBatchItemRegionLabel(row)}`
-        )
-      ),
-      '删除后会从当前批次结果列表移除。',
+      buildOfficialBulkPreview(rows.map((row) => getOfficialBatchResultTitle(row))),
+      '删除后会从当前批次结果列表移除这些异常来源。',
       '最新批次统计会重新计算。'
     ],
-    riskNotes: '这只删除批次结果记录，不会删除已经生成的采集记录或待确认变化。',
-    confirmButtonText: '确认批量删除结果',
+    riskNotes: '这只删除异常来源记录，不会删除已经生成的采集记录或待确认变化。',
+    confirmButtonText: '确认批量删除异常来源',
     remove: (payload) => appleOfficialPricesApi.bulkRemoveCheckBatchItems(payload),
     clearSelection: () => {
-      selectedOfficialBatchItems.value = [];
+      selectedOfficialBatchRows.value = [];
     },
     afterSuccess: () => loadLatestOfficialPriceBatch(),
-    successMessage: (count) => `已删除 ${count} 条当前批次结果`
+    successMessage: (count) => `已删除 ${count} 条异常来源`
   });
 }
 
@@ -4180,32 +4294,35 @@ async function removeOfficialReview(review: ApplePriceChangeReview) {
   }
 }
 
-async function removeOfficialBatchItem(item: AppleOfficialPriceCheckBatchItem) {
+async function removeOfficialBatchItem(item: AppleOfficialPriceCheckBatchResultRow) {
   if (officialRecordDeleteKey.value) return;
+  if (!isOfficialBatchResultDeletable(item) || !item.batchItemId) {
+    ElMessage.warning('这条已经生成采集记录或待确认变化，请到对应列表删除');
+    return;
+  }
 
   try {
     const confirmed = await confirmAction({
-      title: '确认删除当前批次结果？',
-      actionName: '删除当前批次结果记录',
-      description: `将彻底删除「${getProviderLabel(item.provider)} / ${getOfficialBatchItemRegionLabel(item)}」这条批次结果。`,
+      title: '确认删除异常来源？',
+      actionName: '删除异常来源记录',
+      description: `将彻底删除「${getOfficialBatchResultTitle(item)}」这条异常来源。`,
       impact: [
-        `状态：${getOfficialBatchItemStatusLabel(item.status)}`,
-        `产出：快照 ${item.snapshotCount} / 待确认 ${item.reviewCount}`,
+        `状态：${getOfficialBatchResultStatusLabel(item.status)}`,
         '删除后会从当前批次结果列表移除'
       ],
-      riskNotes: '这条批次结果会被彻底删除，批次统计会重新计算。',
+      riskNotes: '这条异常来源会被彻底删除，批次统计会重新计算。',
       irreversible: true,
       risk: 'strong',
-      confirmButtonText: '确认删除结果'
+      confirmButtonText: '确认删除异常来源'
     });
     if (!confirmed) return;
 
-    officialRecordDeleteKey.value = `batch-item:${item.id}`;
-    await appleOfficialPricesApi.removeCheckBatchItem(item.id);
-    ElMessage.success('当前批次结果已彻底删除');
+    officialRecordDeleteKey.value = `batch-item:${item.batchItemId}`;
+    await appleOfficialPricesApi.removeCheckBatchItem(item.batchItemId);
+    ElMessage.success('异常来源已彻底删除');
     await loadLatestOfficialPriceBatch();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '删除当前批次结果失败');
+    ElMessage.error(error instanceof Error ? error.message : '删除异常来源失败');
   } finally {
     officialRecordDeleteKey.value = '';
   }
@@ -4364,6 +4481,8 @@ async function handleOfficialProviderCheck(provider: string) {
             regions
           });
     officialPriceBatch.value = batch;
+    officialPriceBatchResults.value = null;
+    selectedOfficialBatchRows.value = [];
     officialBatchItemQuery.page = 1;
     showOfficialBatchResults();
     startOfficialBatchPolling();
@@ -4505,6 +4624,14 @@ function getOfficialProviderRegionCount() {
   return selected.length || officialAutoRegionOptions.value.length;
 }
 
+function getOfficialProviderRegionPreview() {
+  const selected = getSelectedOfficialAutoRegionOptions();
+  const regions = selected.length ? selected : officialAutoRegionOptions.value;
+  return buildOfficialBulkPreview(
+    regions.map((region) => formatOfficialRegionCurrency(region.region, region.currency))
+  );
+}
+
 function getOfficialProviderTaskCount(provider: string) {
   return getOfficialProviderCount(provider) * getOfficialProviderRegionCount();
 }
@@ -4523,6 +4650,7 @@ function confirmOfficialProviderCheck(provider: string) {
     impact: [
       `供应商：${providerLabel}`,
       `地区数量：${regionCount} 个`,
+      `地区范围：${getOfficialProviderRegionPreview()}`,
       '结果进入待确认变化，需要再次确认后才会同步业务价格'
     ],
     expectedCount: `${providerCount} 个供应商 × ${regionCount} 个地区，共 ${taskCount} 个任务`,

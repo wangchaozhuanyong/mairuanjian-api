@@ -596,7 +596,11 @@ describe('AppleOfficialPricesService', () => {
       'text/html'
     );
 
-    const result = await service.checkProvider('chatgpt', {}, operator);
+    const result = await service.checkProvider(
+      'chatgpt',
+      { regions: [{ region: 'US', currency: 'USD' }] },
+      operator
+    );
 
     expect(result.provider).toBe('chatgpt');
     expect(result.snapshotCount).toBeGreaterThan(0);
@@ -625,7 +629,11 @@ describe('AppleOfficialPricesService', () => {
     });
     mockFetchBlockedResponse();
 
-    const result = await service.checkProvider('chatgpt', {}, operator);
+    const result = await service.checkProvider(
+      'chatgpt',
+      { regions: [{ region: 'US', currency: 'USD' }] },
+      operator
+    );
 
     expect(result.provider).toBe('chatgpt');
     expect(result.failedCount).toBe(0);
@@ -913,6 +921,25 @@ describe('AppleOfficialPricesService', () => {
     );
   });
 
+  it('resolves all default provider regions when no regions are explicitly selected', async () => {
+    const { service } = createService();
+    const regions = await (
+      service as unknown as {
+        resolveProviderRegions: (
+          provider: 'chatgpt'
+        ) => Promise<Array<{ currency: string; region: string }>>;
+      }
+    ).resolveProviderRegions('chatgpt');
+
+    expect(regions).toHaveLength(OFFICIAL_PRICE_PROVIDER_PROFILES.chatgpt.defaultRegions.length);
+    expect(regions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ region: 'JP', currency: 'JPY' }),
+        expect.objectContaining({ region: 'PH', currency: 'PHP' })
+      ])
+    );
+  });
+
   it('parses localized currency prices from provider pages', async () => {
     const { service, tx } = createService({
       source: {
@@ -952,7 +979,70 @@ describe('AppleOfficialPricesService', () => {
     );
   });
 
-  it('parses Google AI Ultra tier prices when localized prices appear before tier text', async () => {
+  it('uses rendered provider cards when static pages only contain dynamic price placeholders', async () => {
+    const { service, tx } = createService({
+      source: {
+        name: 'Gemini 官方价格 JP/JPY',
+        provider: 'gemini',
+        region: 'JP',
+        currency: 'JPY',
+        collectMethod: 'webpage',
+        sourceUrl: 'https://one.google.com/intl/ja_jp/about/google-ai-plans/'
+      },
+      appleService: {
+        name: 'Google AI Pro 1个月',
+        currency: 'JPY'
+      }
+    });
+    mockFetchResponse(
+      '<html><body>Google AI Pro <g1-localized-price variant="PRICE_GEN_AI_PRO_MONTHLY" country="JP"></g1-localized-price></body></html>',
+      'text/html'
+    );
+    jest
+      .spyOn(
+        service as unknown as {
+          collectRenderedSourceItems: () => Promise<unknown[]>;
+        },
+        'collectRenderedSourceItems'
+      )
+      .mockResolvedValue([
+        {
+          planCode: 'google_ai_pro_monthly',
+          serviceName: 'Google AI Pro 1个月',
+          category: 'Gemini',
+          region: 'JP',
+          currency: 'JPY',
+          officialPrice: '2900',
+          periodType: 'month',
+          periodValue: 1,
+          rawPayload: { parser: 'provider_browser_rendered' }
+        }
+      ]);
+
+    const result = await service.checkProvider(
+      'gemini',
+      { regions: [{ region: 'JP', currency: 'JPY' }] },
+      operator
+    );
+
+    expect(result.provider).toBe('gemini');
+    expect(result.snapshotCount).toBeGreaterThan(0);
+    expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          planCode: 'google_ai_pro_monthly',
+          region: 'JP',
+          currency: 'JPY',
+          officialPrice: '2900',
+          rawPayload: expect.objectContaining({
+            parser: 'provider_browser_rendered'
+          })
+        })
+      })
+    );
+  });
+
+  it('parses current Google AI Ultra plan prices from localized provider pages', async () => {
     const { service, tx } = createService({
       source: {
         name: 'Gemini 官方价格 SG/SGD',
@@ -986,10 +1076,10 @@ describe('AppleOfficialPricesService', () => {
     expect(tx.appleOfficialPriceSnapshot.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          planCode: 'google_ai_ultra_20x_monthly',
+          planCode: 'google_ai_ultra_monthly',
           region: 'SG',
           currency: 'SGD',
-          officialPrice: '289.98'
+          officialPrice: '139.99'
         })
       })
     );

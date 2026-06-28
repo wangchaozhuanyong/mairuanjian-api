@@ -5,6 +5,7 @@ import {
   NotFoundException
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { chromium, type Page } from 'playwright';
 import type {
   AppleOfficialPriceCollectMethod,
   AppleOfficialPriceCheckBatch,
@@ -1907,11 +1908,20 @@ export class AppleOfficialPricesService {
 
     const contentType = response.headers.get('content-type') ?? '';
     const body = await response.text();
-    const collectedItems =
-      source.collectMethod === 'api' || contentType.toLowerCase().includes('json')
-        ? this.collectApiItems(body, source)
-        : this.collectOfficialProviderItems(body, source, sourceUrl) ||
-          this.collectWebpageItems(body, source);
+    let collectedItems: OfficialPriceCollectedItemDto[];
+
+    if (source.collectMethod === 'api' || contentType.toLowerCase().includes('json')) {
+      collectedItems = this.collectApiItems(body, source);
+    } else {
+      const providerItems = this.collectOfficialProviderItems(body, source, sourceUrl);
+      collectedItems = providerItems?.length
+        ? providerItems
+        : this.collectWebpageItems(body, source);
+
+      if (!collectedItems.length && this.shouldRenderOfficialPriceSource(body, source, sourceUrl)) {
+        collectedItems = await this.collectRenderedSourceItems(source, sourceUrl);
+      }
+    }
 
     return this.normalizeCollectedItems(collectedItems.slice(0, AUTO_COLLECT_LIMIT), source);
   }
@@ -2034,25 +2044,6 @@ export class AppleOfficialPricesService {
       blockedKeys.has(this.buildOfficialSourceKey(provider, region.region, region.currency));
 
     if (!Array.isArray(regions) || regions.length === 0) {
-      const configuredSources = await this.prisma.appleOfficialPriceSource.findMany({
-        where: {
-          deletedAt: null,
-          provider,
-          status: 'enabled'
-        },
-        orderBy: [{ region: 'asc' }, { currency: 'asc' }]
-      });
-
-      if (configuredSources.length) {
-        return this.dedupeProviderRegions(
-          configuredSources.map((source) => ({
-            region: source.region,
-            currency: source.currency,
-            sourceUrl: source.sourceUrl
-          }))
-        );
-      }
-
       return profile.defaultRegions.filter((region) => !isBlocked(region));
     }
 
@@ -2099,6 +2090,122 @@ export class AppleOfficialPricesService {
       .filter((item): item is OfficialPriceCollectedItemDto => Boolean(item));
 
     return items.length ? this.dedupeCollectedItems(items) : [];
+  }
+
+  private shouldRenderOfficialPriceSource(
+    html: string,
+    source: AppleOfficialPriceSource,
+    sourceUrl: string
+  ) {
+    const provider = normalizeOfficialPriceProvider(source.provider);
+    if (!provider || !this.isOfficialProviderUrl(provider, sourceUrl)) return false;
+    if (html.includes('g1-localized-price')) return true;
+    return provider === 'gemini';
+  }
+
+  private async collectRenderedSourceItems(
+    source: AppleOfficialPriceSource,
+    sourceUrl: string
+  ): Promise<OfficialPriceCollectedItemDto[]> {
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+
+    try {
+      browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage({
+        locale: this.getOfficialPriceBrowserLocale(source),
+        userAgent: OFFICIAL_PRICE_BROWSER_USER_AGENT
+      });
+
+      await page.goto(sourceUrl, {
+        timeout: OFFICIAL_PRICE_FETCH_TIMEOUT_MS * 2,
+        waitUntil: 'domcontentloaded'
+      });
+      await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
+      await page.waitForTimeout(1_000);
+
+      const providerItems = await this.collectRenderedOfficialProviderItems(
+        page,
+        source,
+        sourceUrl
+      );
+      if (providerItems.length) return this.dedupeCollectedItems(providerItems);
+
+      const renderedText = await page.evaluate(() => document.body?.innerText ?? '');
+      const providerTextItems = this.collectOfficialProviderItems(renderedText, source, sourceUrl);
+      if (providerTextItems?.length) return providerTextItems;
+
+      const renderedHtml = await page.content();
+      return this.collectWebpageItems(renderedHtml, source);
+    } catch {
+      return [];
+    } finally {
+      await browser?.close().catch(() => undefined);
+    }
+  }
+
+  private async collectRenderedOfficialProviderItems(
+    page: Page,
+    source: AppleOfficialPriceSource,
+    sourceUrl: string
+  ) {
+    const provider = normalizeOfficialPriceProvider(source.provider);
+    if (provider !== 'gemini') return [];
+
+    const cards = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll('div[class^="planCard_"], div[class*=" planCard_"]')
+      ).map((card) => ({
+        priceText: (card.querySelector('[class*="planCardPrice"]')?.textContent ?? '').replace(
+          /\s+/g,
+          ' '
+        ),
+        title: (card.querySelector('h3')?.textContent ?? '').replace(/\s+/g, ' ')
+      }))
+    );
+
+    return cards
+      .map((card) =>
+        this.buildProviderPlanItemFromRenderedCard(card.title, card.priceText, source, sourceUrl)
+      )
+      .filter((item): item is OfficialPriceCollectedItemDto => Boolean(item));
+  }
+
+  private buildProviderPlanItemFromRenderedCard(
+    rawTitle: string,
+    rawPriceText: string,
+    source: AppleOfficialPriceSource,
+    sourceUrl: string
+  ): OfficialPriceCollectedItemDto | null {
+    const provider = normalizeOfficialPriceProvider(source.provider);
+    if (!provider) return null;
+
+    const title = this.normalizeProviderPlanTitle(rawTitle);
+    const plan = OFFICIAL_PRICE_PROVIDER_PROFILES[provider].plans.find((item) =>
+      item.aliases.some((alias) => title.includes(this.normalizeProviderPlanTitle(alias)))
+    );
+    const officialPrice =
+      this.extractCurrencyPrice(rawPriceText, source.currency) ??
+      this.extractDecimalString(rawPriceText);
+    if (!plan || !officialPrice) return null;
+
+    return {
+      planCode: plan.planCode,
+      serviceName: plan.serviceName,
+      category: plan.category,
+      region: source.region,
+      currency: source.currency.toUpperCase(),
+      officialPrice,
+      periodType: plan.periodType,
+      periodValue: plan.periodValue,
+      rawPayload: {
+        parser: 'provider_browser_rendered',
+        provider: source.provider,
+        planCode: plan.planCode,
+        planTitle: this.normalizeWhitespace(rawTitle),
+        priceText: this.normalizeWhitespace(rawPriceText),
+        sourceUrl
+      }
+    };
   }
 
   private buildProviderPlanItem(
@@ -2661,6 +2768,27 @@ export class AppleOfficialPricesService {
 
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private normalizeProviderPlanTitle(value: string) {
+    return this.normalizeWhitespace(value)
+      .toLowerCase()
+      .replace(/\b1\s*个月\b/g, '')
+      .replace(/\b1\s*month\b/g, '')
+      .replace(/\d+$/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  private getOfficialPriceBrowserLocale(source: AppleOfficialPriceSource) {
+    const localeByRegion: Record<string, string> = {
+      HK: 'zh-HK',
+      JP: 'ja-JP',
+      KR: 'ko-KR',
+      PH: 'en-PH',
+      TW: 'zh-TW'
+    };
+    return localeByRegion[source.region.toUpperCase()] ?? 'en-US';
   }
 
   private safeRawPayload(record: JsonRecord): JsonRecord {
