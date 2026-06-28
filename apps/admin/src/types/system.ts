@@ -73,6 +73,34 @@ export interface SourcePlatform {
 
 export type PaidCurrency = 'CNY' | 'MYR' | 'USD' | 'USDT';
 
+export interface OrderEntryP2pExchangeRateQuote {
+  provider: string;
+  available: boolean;
+  merchantBuyRateToRmb?: string;
+  merchantSellRateToRmb?: string;
+  midRateToRmb?: string;
+  adCount: number;
+  usedAdCount: number;
+  errorMessage?: string;
+}
+
+export interface OrderEntryExchangeRateQuote {
+  paidCurrency: PaidCurrency;
+  available: boolean;
+  rateToRmb: string;
+  rawRateToRmb: string;
+  bufferPercent: string;
+  source: 'fixed' | 'free_daily' | 'p2p_otc';
+  provider: string;
+  collectedAt: string;
+  expiresAt: string;
+  errorMessage?: string;
+  merchantBuyRateToRmb?: string;
+  merchantSellRateToRmb?: string;
+  midRateToRmb?: string;
+  p2pQuotes?: OrderEntryP2pExchangeRateQuote[];
+}
+
 export interface AppleAccountSourceChannel {
   id: string;
   name: string;

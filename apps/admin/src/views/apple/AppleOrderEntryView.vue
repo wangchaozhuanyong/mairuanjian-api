@@ -327,11 +327,37 @@
                         · 未选来源平台，建议实收未包含平台手续费
                       </template>
                     </div>
-                    <div class="order-entry-margin-calculator">
-                      <span class="order-entry-margin-calculator__label">毛利率</span>
+                    <div class="order-entry-revenue-calculator">
+                      <el-radio-group
+                        v-model="form.revenueCalculatorMode"
+                        class="order-entry-revenue-calculator__mode"
+                        size="small"
+                      >
+                        <el-radio-button
+                          v-for="option in revenueCalculatorModes"
+                          :key="option.value"
+                          :label="option.value"
+                        >
+                          {{ option.label }}
+                        </el-radio-button>
+                      </el-radio-group>
                       <el-input
+                        v-if="form.revenueCalculatorMode === 'profit'"
+                        v-model.trim="form.targetProfitRmb"
+                        class="order-entry-revenue-calculator__input"
+                        type="number"
+                        inputmode="decimal"
+                        min="0"
+                        placeholder="0"
+                      >
+                        <template #suffix>
+                          <span class="order-entry-revenue-calculator__suffix">CNY</span>
+                        </template>
+                      </el-input>
+                      <el-input
+                        v-else
                         v-model.trim="form.targetGrossMargin"
-                        class="order-entry-margin-calculator__input"
+                        class="order-entry-revenue-calculator__input"
                         type="number"
                         inputmode="decimal"
                         min="0"
@@ -339,19 +365,19 @@
                         placeholder="0"
                       >
                         <template #suffix>
-                          <span class="order-entry-margin-calculator__suffix">%</span>
+                          <span class="order-entry-revenue-calculator__suffix">%</span>
                         </template>
                       </el-input>
                       <AppButton
-                        class="order-entry-margin-calculator__action"
+                        class="order-entry-revenue-calculator__action"
                         size="small"
                         variant="soft"
-                        @click="fillPaidAmountByMargin"
+                        @click="fillPaidAmountByCalculator"
                       >
                         反算实收
                       </AppButton>
-                      <span class="order-entry-margin-calculator__hint">
-                        {{ suggestedPaidAmountHint }}
+                      <span class="order-entry-revenue-calculator__hint">
+                        {{ revenueCalculatorHint }}
                       </span>
                     </div>
                   </div>
@@ -373,6 +399,39 @@
                     placeholder="例如 7.20"
                     @change="syncDerivedOrderAmounts"
                   />
+                  <div class="order-entry-exchange-rate-meta">
+                    <div class="order-entry-exchange-rate-status">
+                      <template v-if="exchangeRateQuoteLoading">正在获取最新汇率...</template>
+                      <template v-else-if="exchangeRateQuote?.available">
+                        {{ exchangeRateQuoteLabel }}
+                      </template>
+                      <template v-else-if="exchangeRateQuoteError">
+                        {{ exchangeRateQuoteError }}，可手动填写汇率。
+                      </template>
+                      <template v-else>选择币种后自动获取汇率，也可以手动修改。</template>
+                    </div>
+                    <AppButton size="small" variant="ghost" @click="refreshExchangeRateQuote">
+                      刷新汇率
+                    </AppButton>
+                  </div>
+                  <div
+                    v-if="form.paidCurrency === 'USDT' && exchangeRateQuote?.p2pQuotes?.length"
+                    class="order-entry-p2p-quotes"
+                  >
+                    <div
+                      v-for="quote in exchangeRateQuote.p2pQuotes"
+                      :key="quote.provider"
+                      class="order-entry-p2p-quote"
+                    >
+                      <strong>{{ quote.provider }}</strong>
+                      <span v-if="quote.available">
+                        买入 {{ formatRate(quote.merchantBuyRateToRmb) }} / 卖出
+                        {{ formatRate(quote.merchantSellRateToRmb) }} / 折中
+                        {{ formatRate(quote.midRateToRmb) }}
+                      </span>
+                      <span v-else>{{ quote.errorMessage || '报价不可用' }}</span>
+                    </div>
+                  </div>
                 </el-form-item>
               </div>
             </div>
@@ -853,7 +912,8 @@ import {
   appleOrdersApi,
   appleServicesApi,
   customersApi,
-  dataCenterApi
+  dataCenterApi,
+  exchangeRatesApi
 } from '@/api/system';
 import type { DataDictionaryQuery, SaveCustomerPayload } from '@/api/system';
 import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
@@ -879,6 +939,7 @@ import type {
   AvailableAppleAccount,
   Customer,
   DataDictionary,
+  OrderEntryExchangeRateQuote,
   PageResult,
   PaidCurrency,
   SourcePlatform
@@ -911,6 +972,8 @@ const ORDER_ENTRY_REALTIME_SCOPES = [
   'apple-services',
   ORDER_ENTRY_BASE_SCOPE
 ];
+type RevenueCalculatorMode = 'profit' | 'margin';
+
 const authStore = useAuthStore();
 const loading = ref(false);
 const saving = ref(false);
@@ -929,6 +992,9 @@ const servicePrices = ref<AppleServiceRegionPrice[]>([]);
 const availableAccounts = ref<AvailableAppleAccount[]>([]);
 const selectedAccount = ref<AvailableAppleAccount | null>(null);
 const orderContext = ref<AppleOrderEntryContext['latestOrder'] | null>(null);
+const exchangeRateQuote = ref<OrderEntryExchangeRateQuote | null>(null);
+const exchangeRateQuoteLoading = ref(false);
+const exchangeRateQuoteError = ref('');
 const newCustomerDialogVisible = ref(false);
 const newCustomerDraft = ref<SaveCustomerPayload | null>(null);
 const customerNoticeVisible = ref(false);
@@ -936,12 +1002,18 @@ const matchKeyword = ref('');
 const customerSearchKeyword = ref('');
 let customerSearchRequestId = 0;
 let orderContextRequestId = 0;
+let exchangeRateQuoteRequestId = 0;
 
 const paidCurrencyOptions: Array<{ label: string; value: PaidCurrency }> = [
   { label: '人民币 CNY', value: 'CNY' },
   { label: '马币 MYR', value: 'MYR' },
   { label: '美元 USD', value: 'USD' },
   { label: 'USDT', value: 'USDT' }
+];
+
+const revenueCalculatorModes: Array<{ label: string; value: RevenueCalculatorMode }> = [
+  { label: '目标利润', value: 'profit' },
+  { label: '毛利率', value: 'margin' }
 ];
 
 const form = reactive({
@@ -962,6 +1034,8 @@ const form = reactive({
   paidAmount: '',
   paidCurrency: 'CNY' as PaidCurrency,
   paidExchangeRateToRmb: '1',
+  revenueCalculatorMode: 'profit' as RevenueCalculatorMode,
+  targetProfitRmb: '',
   targetGrossMargin: '',
   platformFee: '0.00',
   refundLoss: '0',
@@ -1227,11 +1301,56 @@ const suggestedPaidAmountRmb = computed(() => {
 
   return (estimatedCostBeforePlatformFee.value + feeFixedRmb) / denominator;
 });
-const suggestedPaidAmountHint = computed(() =>
-  suggestedPaidAmountRmb.value === null
-    ? '选择 ID 后可按目标毛利率反算'
-    : `建议实收 ${formatMoney(suggestedPaidAmountRmb.value)} CNY`
+const suggestedProfitPaidAmountRmb = computed(() => {
+  const targetProfit = readAmount(form.targetProfitRmb);
+  const feeRate = selectedSourcePlatform.value
+    ? readAmount(selectedSourcePlatform.value.feeRate)
+    : 0;
+  const feeFixedRmb = selectedSourcePlatform.value
+    ? readAmount(selectedSourcePlatform.value.feeFixed) * paidExchangeRateValue.value
+    : 0;
+  const denominator = 1 - feeRate;
+
+  if (estimatedCostBeforePlatformFee.value <= 0 || targetProfit <= 0 || denominator <= 0) {
+    return null;
+  }
+
+  return (estimatedCostBeforePlatformFee.value + feeFixedRmb + targetProfit) / denominator;
+});
+const activeSuggestedPaidAmountRmb = computed(() =>
+  form.revenueCalculatorMode === 'profit'
+    ? suggestedProfitPaidAmountRmb.value
+    : suggestedPaidAmountRmb.value
 );
+const revenueCalculatorHint = computed(() => {
+  const amount = activeSuggestedPaidAmountRmb.value;
+
+  if (amount === null) {
+    return form.revenueCalculatorMode === 'profit'
+      ? '选好 ID 和目标利润后可反算'
+      : '选择 ID 后可按目标毛利率反算';
+  }
+
+  return `建议实收 ${formatMoney(amount)} CNY`;
+});
+const exchangeRateQuoteLabel = computed(() => {
+  if (!exchangeRateQuote.value?.available) {
+    return '';
+  }
+
+  const sourceLabel =
+    exchangeRateQuote.value.source === 'free_daily'
+      ? '今日汇率'
+      : exchangeRateQuote.value.source === 'p2p_otc'
+        ? 'USDT OTC'
+        : '固定汇率';
+  const buffer = readAmount(exchangeRateQuote.value.bufferPercent);
+  const bufferLabel = buffer > 0 ? `，缓冲 ${formatMoney(buffer)}%` : '';
+
+  return `${sourceLabel} ${formatRate(exchangeRateQuote.value.rawRateToRmb)}，采用 ${formatRate(
+    exchangeRateQuote.value.rateToRmb
+  )}${bufferLabel}，${formatDateTime(exchangeRateQuote.value.collectedAt)}`;
+});
 const orderCostBars = computed(() => {
   const paidAmount = paidAmountRmbValue.value;
   const appleCost = estimatedAppleCostValue.value ?? 0;
@@ -1294,6 +1413,37 @@ function getCostPercent(value: number, base: number) {
 
 function formatMoney(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : '-';
+}
+
+function formatRate(value: string | number | null | undefined) {
+  const rate = readAmount(value);
+  return rate > 0 ? rate.toFixed(4) : '-';
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return '-';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+
+  return `${month}-${day} ${hour}:${minute}`;
+}
+
+function ceilMoney(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    return '0.00';
+  }
+
+  return (Math.ceil((value + Number.EPSILON) * 100) / 100).toFixed(2);
 }
 
 function formatAverageCost(value: string | number | null | undefined) {
@@ -1402,27 +1552,138 @@ function syncDerivedOrderAmounts() {
   form.platformFee = calculatePlatformFee();
 }
 
-function handlePaidCurrencyChange() {
+async function handlePaidCurrencyChange() {
   if (form.paidCurrency === 'CNY') {
     form.paidExchangeRateToRmb = '1';
+    exchangeRateQuote.value = null;
+    exchangeRateQuoteError.value = '';
   } else if (!form.paidExchangeRateToRmb || form.paidExchangeRateToRmb === '1') {
     form.paidExchangeRateToRmb = '';
   }
 
   syncDerivedOrderAmounts();
+  if (form.paidCurrency !== 'CNY') {
+    await loadExchangeRateQuote({ silent: true });
+  }
 }
 
-function fillPaidAmountByMargin() {
+async function refreshExchangeRateQuote() {
+  await loadExchangeRateQuote({ force: true });
+}
+
+async function loadExchangeRateQuote(options: { silent?: boolean; force?: boolean } = {}) {
+  if (form.paidCurrency === 'CNY') {
+    form.paidExchangeRateToRmb = '1';
+    exchangeRateQuote.value = null;
+    exchangeRateQuoteError.value = '';
+    syncDerivedOrderAmounts();
+    return;
+  }
+
+  const requestId = ++exchangeRateQuoteRequestId;
+  exchangeRateQuoteLoading.value = true;
+  if (!options.silent) {
+    exchangeRateQuoteError.value = '';
+  }
+
+  try {
+    const targetAmountRmb = getExchangeRateTargetAmountRmb();
+    const quote = await exchangeRatesApi.getOrderEntryQuote({
+      paidCurrency: form.paidCurrency,
+      targetAmountRmb: targetAmountRmb ? formatMoney(targetAmountRmb) : undefined
+    });
+
+    if (requestId !== exchangeRateQuoteRequestId) {
+      return;
+    }
+
+    exchangeRateQuote.value = quote;
+    if (quote.available && readAmount(quote.rateToRmb) > 0) {
+      form.paidExchangeRateToRmb = quote.rateToRmb;
+      exchangeRateQuoteError.value = '';
+      syncDerivedOrderAmounts();
+      if (!options.silent && options.force) {
+        ElMessage.success('汇率已刷新');
+      }
+      return;
+    }
+
+    exchangeRateQuoteError.value = quote.errorMessage || '自动汇率暂不可用';
+    if (!options.silent) {
+      ElMessage.warning(exchangeRateQuoteError.value);
+    }
+  } catch (error) {
+    if (requestId !== exchangeRateQuoteRequestId) {
+      return;
+    }
+
+    exchangeRateQuote.value = null;
+    exchangeRateQuoteError.value = error instanceof Error ? error.message : '自动汇率获取失败';
+    if (!options.silent) {
+      ElMessage.warning(exchangeRateQuoteError.value);
+    }
+  } finally {
+    if (requestId === exchangeRateQuoteRequestId) {
+      exchangeRateQuoteLoading.value = false;
+    }
+  }
+}
+
+function getExchangeRateTargetAmountRmb() {
+  const calculatedAmount = activeSuggestedPaidAmountRmb.value;
+
+  if (calculatedAmount !== null && calculatedAmount > 0) {
+    return calculatedAmount;
+  }
+
+  const targetProfit = readAmount(form.targetProfitRmb);
+  if (targetProfit > 0 && estimatedCostBeforePlatformFee.value > 0) {
+    return estimatedCostBeforePlatformFee.value + targetProfit;
+  }
+
+  return paidAmountRmbValue.value > 0 ? paidAmountRmbValue.value : null;
+}
+
+async function fillPaidAmountByCalculator() {
+  if (form.revenueCalculatorMode === 'margin') {
+    await fillPaidAmountByMargin();
+    return;
+  }
+
+  await fillPaidAmountByProfit();
+}
+
+async function fillPaidAmountByProfit() {
+  if (suggestedProfitPaidAmountRmb.value === null) {
+    ElMessage.warning('请先选择 Apple ID，并填写目标利润');
+    return;
+  }
+
+  await fillPaidAmountFromRmb(suggestedProfitPaidAmountRmb.value, '请先填写或刷新折算人民币汇率');
+}
+
+async function fillPaidAmountByMargin() {
   if (suggestedPaidAmountRmb.value === null) {
     ElMessage.warning('请先选择 Apple ID，并填写 0-99 之间的目标毛利率');
     return;
   }
 
-  const exchangeRate = paidExchangeRateValue.value || 1;
+  await fillPaidAmountFromRmb(suggestedPaidAmountRmb.value, '请先填写或刷新折算人民币汇率');
+}
+
+async function fillPaidAmountFromRmb(amountRmb: number, missingRateMessage: string) {
+  if (form.paidCurrency !== 'CNY' && paidExchangeRateValue.value <= 0) {
+    await loadExchangeRateQuote({ silent: true, force: true });
+  }
+
+  const exchangeRate = form.paidCurrency === 'CNY' ? 1 : paidExchangeRateValue.value;
+  if (exchangeRate <= 0) {
+    ElMessage.warning(missingRateMessage);
+    return;
+  }
+
   form.paidAmount =
-    form.paidCurrency === 'CNY'
-      ? formatMoney(suggestedPaidAmountRmb.value)
-      : formatMoney(suggestedPaidAmountRmb.value / exchangeRate);
+    form.paidCurrency === 'CNY' ? ceilMoney(amountRmb) : ceilMoney(amountRmb / exchangeRate);
   syncDerivedOrderAmounts();
 }
 
@@ -2059,6 +2320,8 @@ function resetOrderForm() {
   form.paidAmount = '';
   form.paidCurrency = 'CNY';
   form.paidExchangeRateToRmb = '1';
+  form.revenueCalculatorMode = 'profit';
+  form.targetProfitRmb = '';
   form.targetGrossMargin = '';
   form.platformFee = '0.00';
   form.refundLoss = '0';
@@ -2066,6 +2329,10 @@ function resetOrderForm() {
   form.remark = '';
   selectedAccount.value = null;
   orderContext.value = null;
+  exchangeRateQuote.value = null;
+  exchangeRateQuoteError.value = '';
+  exchangeRateQuoteLoading.value = false;
+  exchangeRateQuoteRequestId += 1;
   newCustomerDraft.value = null;
   customerNoticeVisible.value = false;
   resetCustomerProfileForm(newCustomerForm);
@@ -2376,9 +2643,9 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.order-entry-margin-calculator {
+.order-entry-revenue-calculator {
   display: grid;
-  grid-template-columns: auto 112px auto minmax(120px, auto);
+  grid-template-columns: auto 124px auto minmax(120px, auto);
   align-items: center;
   gap: 8px;
   justify-content: end;
@@ -2393,8 +2660,17 @@ onBeforeUnmount(() => {
   margin-top: 8px;
 }
 
-.order-entry-margin-calculator__label,
-.order-entry-margin-calculator__hint {
+.order-entry-exchange-rate-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.order-entry-exchange-rate-status,
+.order-entry-p2p-quote,
+.order-entry-revenue-calculator__hint {
   min-width: 0;
   overflow: hidden;
   color: #64748b;
@@ -2403,16 +2679,27 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.order-entry-margin-calculator__input {
-  width: 112px;
+.order-entry-p2p-quotes {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
 }
 
-.order-entry-margin-calculator__suffix {
+.order-entry-p2p-quote strong {
+  margin-right: 6px;
+  color: #334155;
+}
+
+.order-entry-revenue-calculator__input {
+  width: 124px;
+}
+
+.order-entry-revenue-calculator__suffix {
   color: #64748b;
   font-size: 12px;
 }
 
-.order-entry-margin-calculator__action {
+.order-entry-revenue-calculator__action {
   min-width: 84px;
 }
 
@@ -2452,16 +2739,21 @@ onBeforeUnmount(() => {
   .order-entry-money-input,
   .order-entry-money-meta,
   .order-entry-service-select-row,
-  .order-entry-margin-calculator {
+  .order-entry-revenue-calculator {
     grid-template-columns: 1fr;
     justify-content: stretch;
   }
 
   .order-entry-customer-picker__create,
   .order-entry-money-input__currency,
-  .order-entry-margin-calculator__input,
-  .order-entry-margin-calculator__action {
+  .order-entry-revenue-calculator__input,
+  .order-entry-revenue-calculator__action {
     width: 100%;
+  }
+
+  .order-entry-exchange-rate-meta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .order-entry-history-card {
@@ -2474,7 +2766,8 @@ onBeforeUnmount(() => {
 
   .order-entry-history-card span:last-child,
   .order-entry-selected-plan-card strong,
-  .order-entry-margin-calculator__hint {
+  .order-entry-p2p-quote,
+  .order-entry-revenue-calculator__hint {
     white-space: normal;
   }
 }

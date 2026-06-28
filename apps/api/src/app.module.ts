@@ -26,6 +26,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { validateEnv } from './config/env.validation';
 import { CustomersModule } from './customers/customers.module';
 import { DataCenterModule } from './data-center/data-center.module';
+import { ExchangeRatesModule } from './exchange-rates/exchange-rates.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { MessageTemplatesModule } from './message-templates/message-templates.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -62,6 +63,7 @@ import { UsersModule } from './users/users.module';
     AttachmentsModule,
     CustomersModule,
     DataCenterModule,
+    ExchangeRatesModule,
     MaintenanceModule,
     SourcePlatformsModule,
     MessageTemplatesModule,

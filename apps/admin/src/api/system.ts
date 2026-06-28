@@ -96,6 +96,7 @@ import type {
   OpsHealthStatus,
   OpsOverview,
   OpsQueueCurrent,
+  OrderEntryExchangeRateQuote,
   PlatformAuthorizationConfig,
   PlatformOAuthStartResult,
   PlatformCurrentStatus,
@@ -1553,6 +1554,11 @@ export interface AvailableAppleAccountQuery {
   showUnavailable?: string;
 }
 
+export interface OrderEntryExchangeRateQuoteQuery {
+  paidCurrency: PaidCurrency;
+  targetAmountRmb?: string;
+}
+
 export interface CreateRenewalTaskPayload {
   activationId: string;
   taskType: RenewalTask['taskType'];
@@ -2744,6 +2750,14 @@ export const codeReportsApi = {
   },
   platformProfit(params: CodeProfitReportQuery) {
     return request<CodeProfitReport>(http.get('/codes/reports/platform-profit', { params }));
+  }
+};
+
+export const exchangeRatesApi = {
+  getOrderEntryQuote(params: OrderEntryExchangeRateQuoteQuery) {
+    return request<OrderEntryExchangeRateQuote>(
+      http.get('/exchange-rates/order-entry-quote', { params })
+    );
   }
 };
 
