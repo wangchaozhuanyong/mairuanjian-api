@@ -254,4 +254,99 @@ describe('AppleServicesService platform mappings', () => {
       })
     ).rejects.toThrow(ConflictException);
   });
+
+  it('bulk deletes current region prices and blocks automatic restoration', async () => {
+    const priceId = '44444444-4444-4444-8444-444444444444';
+    const serviceId = '11111111-1111-4111-8111-111111111111';
+    const createdAt = new Date('2026-06-18T00:00:00.000Z');
+    const appleService = {
+      id: serviceId,
+      name: 'ChatGPT Plus',
+      category: 'AI 会员',
+      defaultPrice: new Prisma.Decimal('0'),
+      officialBasePrice: new Prisma.Decimal('20'),
+      officialCostValue: new Prisma.Decimal('20'),
+      appleBalancePriceRuleType: 'manual',
+      appleBalancePriceRuleValue: null,
+      currency: 'USD',
+      defaultPeriodType: 'month',
+      defaultPeriodValue: 1,
+      expireCalcType: 'by_month',
+      requireAppleId: true,
+      requireServiceAccount: true,
+      autoMatchAppleId: true,
+      lockRule: 'by_service',
+      allowedRegions: ['US'],
+      minBalanceRequired: new Prisma.Decimal('0'),
+      status: 'enabled',
+      remark: null,
+      createdAt,
+      updatedAt: createdAt
+    };
+    const price = {
+      id: priceId,
+      serviceId,
+      sourceSnapshotId: null,
+      sourceSnapshot: null,
+      provider: 'chatgpt',
+      serviceName: 'ChatGPT Plus',
+      category: 'AI 会员',
+      region: 'US',
+      currency: 'USD',
+      officialPrice: new Prisma.Decimal('20'),
+      appleBalancePrice: new Prisma.Decimal('20'),
+      periodType: 'month',
+      periodValue: 1,
+      status: 'active',
+      collectedAt: createdAt,
+      confirmedAt: createdAt,
+      remark: null,
+      service: appleService,
+      createdAt,
+      updatedAt: createdAt,
+      deletedAt: null
+    };
+    const systemParameterUpsert = jest.fn().mockResolvedValue({});
+    const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+    const { service, auditLogsService } = createService({
+      $transaction: jest.fn(async (queries: Array<Promise<unknown>>) => Promise.all(queries)),
+      systemParameter: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: systemParameterUpsert
+      },
+      appleServiceRegionPrice: {
+        findMany: jest.fn().mockResolvedValue([price]),
+        deleteMany
+      }
+    } as unknown as Partial<PrismaService>);
+
+    const result = await service.bulkRemoveRegionPrices(
+      { ids: [priceId] },
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        username: 'admin',
+        displayName: '管理员',
+        roles: ['admin'],
+        permissions: []
+      }
+    );
+
+    expect(result).toEqual({ deleted: true, count: 1, ids: [priceId] });
+    expect(systemParameterUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'apple_service_deleted_region_price_keys' },
+        update: expect.objectContaining({
+          value: expect.objectContaining({ keys: [`${serviceId}:US:USD`] })
+        })
+      })
+    );
+    expect(deleteMany).toHaveBeenCalledWith({ where: { id: { in: [priceId] } } });
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_service.region_price.bulk_delete',
+        objectType: 'apple_service_region_price',
+        objectId: priceId
+      })
+    );
+  });
 });

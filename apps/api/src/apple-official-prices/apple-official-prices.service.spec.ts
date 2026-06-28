@@ -238,16 +238,20 @@ describe('AppleOfficialPricesService', () => {
         findMany: jest.fn().mockResolvedValue([currentAppleService])
       },
       appleOfficialPriceSnapshot: {
-        create: jest.fn().mockResolvedValue(snapshot)
+        create: jest.fn().mockResolvedValue(snapshot),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
       },
       appleServiceRegionPrice: {
-        upsert: jest.fn().mockResolvedValue({})
+        upsert: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
       },
       applePriceChangeReview: {
-        create: jest.fn().mockResolvedValue(pendingReview)
+        create: jest.fn().mockResolvedValue(pendingReview),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
       },
       appleOfficialPriceSource: {
-        update: jest.fn().mockResolvedValue({ ...currentSource, lastCheckedAt: now })
+        update: jest.fn().mockResolvedValue({ ...currentSource, lastCheckedAt: now }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
       },
       systemParameter: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -291,8 +295,66 @@ describe('AppleOfficialPricesService', () => {
       },
       applePriceChangeReview: {
         findUnique: jest.fn().mockResolvedValue(pendingReview),
+        findMany: jest.fn().mockResolvedValue([pendingReview]),
         update: jest.fn().mockResolvedValue(approvedReview),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(1)
+      },
+      appleOfficialPriceSnapshot: {
+        findMany: jest.fn().mockResolvedValue([snapshot]),
+        findUnique: jest.fn().mockResolvedValue(snapshot),
+        delete: jest.fn().mockResolvedValue(snapshot),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
+      },
+      appleOfficialPriceCheckBatch: {
+        update: jest.fn().mockResolvedValue({
+          id: '99999999-9999-4999-8999-999999999999',
+          scopeKey: 'chatgpt:us',
+          provider: 'chatgpt',
+          trigger: 'manual',
+          scanRemovedPlans: false,
+          status: 'success',
+          totalCount: 0,
+          completedCount: 0,
+          successCount: 0,
+          failedCount: 0,
+          manualRequiredCount: 0,
+          snapshotCount: 0,
+          reviewCount: 0,
+          pendingReviewCount: 0,
+          message: '官方价格采集完成：成功 0，失败 0，人工确认 0，新增待确认 0',
+          errorMessage: null,
+          createdByUserId: userId,
+          startedAt: now,
+          finishedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          items: []
+        })
+      },
+      appleOfficialPriceCheckBatchItem: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: '99999999-9999-4999-8999-999999999991',
+          batchId: '99999999-9999-4999-8999-999999999999',
+          sourceId,
+          sourceName: source.name,
+          provider: source.provider,
+          region: source.region,
+          currency: source.currency,
+          status: 'success',
+          taskId,
+          snapshotCount: 1,
+          reviewCount: 1,
+          message: null,
+          errorMessage: null,
+          startedAt: now,
+          finishedAt: now,
+          createdAt: now,
+          updatedAt: now
+        }),
+        findMany: jest.fn().mockResolvedValue([]),
+        delete: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
       },
       dataDictionary: {
         findFirst: jest.fn().mockResolvedValue(categoryDictionary),
@@ -943,5 +1005,94 @@ describe('AppleOfficialPricesService', () => {
       })
     );
     expect(appleServicesService.update).not.toHaveBeenCalled();
+  });
+
+  it('bulk deletes official sources with related snapshots, reviews, and restored-price blockers', async () => {
+    const { service, tx, auditLogsService, realtimeService } = createService();
+
+    const result = await service.bulkRemoveSources({ ids: [sourceId] }, operator);
+
+    expect(result).toEqual({ deleted: true, count: 1, ids: [sourceId] });
+    expect(tx.systemParameter.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'apple_official_price_deleted_source_keys' },
+        update: expect.objectContaining({
+          value: expect.objectContaining({ keys: ['chatgpt:US:USD'] })
+        })
+      })
+    );
+    expect(tx.appleServiceRegionPrice.deleteMany).toHaveBeenCalledWith({
+      where: { sourceSnapshotId: { in: [snapshotId] } }
+    });
+    expect(tx.applePriceChangeReview.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [{ sourceId: { in: [sourceId] } }, { snapshotId: { in: [snapshotId] } }]
+      }
+    });
+    expect(tx.appleOfficialPriceSnapshot.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: [snapshotId] } }
+    });
+    expect(tx.appleOfficialPriceSource.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: [sourceId] } }
+    });
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_official_price.source.bulk_delete',
+        objectId: sourceId
+      })
+    );
+    expect(realtimeService.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'apple.official_price.sources_bulk_deleted',
+        action: 'bulk_deleted'
+      })
+    );
+  });
+
+  it('bulk deletes current batch result items and refreshes batch progress', async () => {
+    const { service, prisma, auditLogsService } = createService();
+    const batchId = '99999999-9999-4999-8999-999999999999';
+    const itemId = '99999999-9999-4999-8999-999999999991';
+    const item = {
+      id: itemId,
+      batchId,
+      sourceId,
+      sourceName: source.name,
+      provider: source.provider,
+      region: source.region,
+      currency: source.currency,
+      status: 'success',
+      taskId,
+      snapshotCount: 1,
+      reviewCount: 1,
+      message: null,
+      errorMessage: null,
+      startedAt: now,
+      finishedAt: now,
+      createdAt: now,
+      updatedAt: now
+    };
+    const batchItemsModel = prisma.appleOfficialPriceCheckBatchItem as unknown as {
+      findMany: jest.Mock;
+      deleteMany: jest.Mock;
+    };
+    batchItemsModel.findMany.mockResolvedValueOnce([item]).mockResolvedValueOnce([]);
+
+    const result = await service.bulkRemoveCheckBatchItems({ ids: [itemId] }, operator);
+
+    expect(result).toEqual({ deleted: true, count: 1, ids: [itemId] });
+    expect(batchItemsModel.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [itemId] } } });
+    expect(prisma.appleOfficialPriceCheckBatch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: batchId },
+        data: expect.objectContaining({ totalCount: 0, status: 'success' })
+      })
+    );
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_official_price.batch_item.bulk_delete',
+        objectId: itemId
+      })
+    );
   });
 });

@@ -32,6 +32,7 @@ import type {
   CheckOfficialPriceSourceDto,
   OfficialPriceCollectedItemDto
 } from './dto/check-official-price-source.dto';
+import type { BulkDeleteOfficialPriceRecordsDto } from './dto/bulk-delete-official-price-records.dto';
 import type { CreateOfficialPriceSourceDto } from './dto/create-official-price-source.dto';
 import type { UpdateOfficialPriceSourceDto } from './dto/update-official-price-source.dto';
 import type { CheckOfficialPriceProviderDto } from './dto/check-official-price-provider.dto';
@@ -391,6 +392,88 @@ export class AppleOfficialPricesService {
 
     this.publishChanged('apple.official_price.source_deleted', 'source', 'deleted', sourceId);
     return { deleted: true };
+  }
+
+  async bulkRemoveSources(dto: BulkDeleteOfficialPriceRecordsDto, operator?: AuthenticatedUser) {
+    const ids = this.normalizeRecordIds(dto.ids);
+    const sources = await this.prisma.appleOfficialPriceSource.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      include: this.getSourceInclude()
+    });
+    this.assertFoundIds(ids, sources, 'Apple official price source');
+
+    const sourceSnapshotIds = (
+      await this.prisma.appleOfficialPriceSnapshot.findMany({
+        where: { sourceId: { in: ids } },
+        select: { id: true }
+      })
+    ).map((snapshot) => snapshot.id);
+    const blockedKeys = await this.getBlockedOfficialSourceAutoRestoreKeys();
+    for (const source of sources) {
+      blockedKeys.add(this.buildOfficialSourceKey(source.provider, source.region, source.currency));
+    }
+    const blockedValue = this.toJson({ keys: [...blockedKeys].sort() });
+    const reviewDeleteFilters: Prisma.ApplePriceChangeReviewWhereInput[] = [
+      { sourceId: { in: ids } }
+    ];
+    if (sourceSnapshotIds.length) {
+      reviewDeleteFilters.push({ snapshotId: { in: sourceSnapshotIds } });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.systemParameter.upsert({
+        where: { key: DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER },
+        update: {
+          value: blockedValue,
+          group: 'apple_official_price',
+          remark: '官方价格来源手动删除记录，阻止默认来源自动恢复',
+          updatedByUserId: operator?.id
+        },
+        create: {
+          key: DELETED_OFFICIAL_SOURCE_KEYS_PARAMETER,
+          value: blockedValue,
+          group: 'apple_official_price',
+          remark: '官方价格来源手动删除记录，阻止默认来源自动恢复',
+          updatedByUserId: operator?.id
+        }
+      });
+      if (sourceSnapshotIds.length) {
+        await tx.appleServiceRegionPrice.deleteMany({
+          where: { sourceSnapshotId: { in: sourceSnapshotIds } }
+        });
+      }
+      await tx.applePriceChangeReview.deleteMany({
+        where: { OR: reviewDeleteFilters }
+      });
+      if (sourceSnapshotIds.length) {
+        await tx.appleOfficialPriceSnapshot.deleteMany({
+          where: { id: { in: sourceSnapshotIds } }
+        });
+      }
+      await tx.appleOfficialPriceSource.deleteMany({ where: { id: { in: ids } } });
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_official_price',
+      action: 'apple_official_price.source.bulk_delete',
+      objectType: 'apple_official_price_source',
+      objectId: ids[0],
+      beforeData: this.toJson({
+        ids,
+        sources: sources.map((source) => this.toSourceResponse(source))
+      }),
+      remark: `Bulk deleted ${sources.length} Apple official price sources`
+    });
+
+    this.publishChanged(
+      'apple.official_price.sources_bulk_deleted',
+      'source',
+      'bulk_deleted',
+      ids[0],
+      { deletedCount: sources.length }
+    );
+    return { deleted: true, count: sources.length, ids };
   }
 
   async checkSource(
@@ -829,6 +912,39 @@ export class AppleOfficialPricesService {
     return { deleted: true };
   }
 
+  async bulkRemoveReviews(dto: BulkDeleteOfficialPriceRecordsDto, operator?: AuthenticatedUser) {
+    const ids = this.normalizeRecordIds(dto.ids);
+    const reviews = await this.prisma.applePriceChangeReview.findMany({
+      where: { id: { in: ids } },
+      include: this.getReviewInclude()
+    });
+    this.assertFoundIds(ids, reviews, 'Apple official price review');
+
+    await this.prisma.applePriceChangeReview.deleteMany({ where: { id: { in: ids } } });
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_official_price',
+      action: 'apple_official_price.review.bulk_delete',
+      objectType: 'apple_price_change_review',
+      objectId: ids[0],
+      beforeData: this.toJson({
+        ids,
+        reviews: reviews.map((review) => this.toReviewResponse(review))
+      }),
+      remark: `Bulk deleted ${reviews.length} Apple official price reviews`
+    });
+
+    this.publishChanged(
+      'apple.official_price.reviews_bulk_deleted',
+      'price_change_review',
+      'bulk_deleted',
+      ids[0],
+      { deletedCount: reviews.length }
+    );
+
+    return { deleted: true, count: reviews.length, ids };
+  }
+
   async removeSnapshot(id: string, operator?: AuthenticatedUser) {
     const snapshotId = this.normalizeRequiredUuid(id, 'id');
     const snapshot = await this.prisma.appleOfficialPriceSnapshot.findUnique({
@@ -864,6 +980,42 @@ export class AppleOfficialPricesService {
     return { deleted: true };
   }
 
+  async bulkRemoveSnapshots(dto: BulkDeleteOfficialPriceRecordsDto, operator?: AuthenticatedUser) {
+    const ids = this.normalizeRecordIds(dto.ids);
+    const snapshots = await this.prisma.appleOfficialPriceSnapshot.findMany({
+      where: { id: { in: ids } },
+      include: this.getSnapshotInclude()
+    });
+    this.assertFoundIds(ids, snapshots, 'Apple official price snapshot');
+
+    await this.prisma.$transaction([
+      this.prisma.applePriceChangeReview.deleteMany({ where: { snapshotId: { in: ids } } }),
+      this.prisma.appleOfficialPriceSnapshot.deleteMany({ where: { id: { in: ids } } })
+    ]);
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_official_price',
+      action: 'apple_official_price.snapshot.bulk_delete',
+      objectType: 'apple_official_price_snapshot',
+      objectId: ids[0],
+      beforeData: this.toJson({
+        ids,
+        snapshots: snapshots.map((snapshot) => this.toSnapshotResponse(snapshot))
+      }),
+      remark: `Bulk deleted ${snapshots.length} Apple official price snapshots`
+    });
+
+    this.publishChanged(
+      'apple.official_price.snapshots_bulk_deleted',
+      'official_price_snapshot',
+      'bulk_deleted',
+      ids[0],
+      { deletedCount: snapshots.length }
+    );
+
+    return { deleted: true, count: snapshots.length, ids };
+  }
+
   async removeCheckBatchItem(id: string, operator?: AuthenticatedUser) {
     const itemId = this.normalizeRequiredUuid(id, 'id');
     const item = await this.prisma.appleOfficialPriceCheckBatchItem.findUnique({
@@ -896,6 +1048,47 @@ export class AppleOfficialPricesService {
     );
 
     return { deleted: true };
+  }
+
+  async bulkRemoveCheckBatchItems(
+    dto: BulkDeleteOfficialPriceRecordsDto,
+    operator?: AuthenticatedUser
+  ) {
+    const ids = this.normalizeRecordIds(dto.ids);
+    const items = await this.prisma.appleOfficialPriceCheckBatchItem.findMany({
+      where: { id: { in: ids } }
+    });
+    this.assertFoundIds(ids, items, 'Apple official price check batch item');
+    const batchIds = Array.from(new Set(items.map((item) => item.batchId)));
+
+    await this.prisma.appleOfficialPriceCheckBatchItem.deleteMany({ where: { id: { in: ids } } });
+    const refreshedBatches: OfficialPriceBatchWithItems[] = [];
+    for (const batchId of batchIds) {
+      refreshedBatches.push(await this.refreshOfficialPriceBatchProgress(batchId, true));
+    }
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_official_price',
+      action: 'apple_official_price.batch_item.bulk_delete',
+      objectType: 'apple_official_price_check_batch_item',
+      objectId: ids[0],
+      beforeData: this.toJson({ ids, items }),
+      afterData: this.toJson({
+        batches: refreshedBatches.map((batch) => this.toCheckBatchResponse(batch))
+      }),
+      remark: `Bulk deleted ${items.length} Apple official price batch items`
+    });
+
+    this.publishChanged(
+      'apple.official_price.batch_items_bulk_deleted',
+      'official_price_check_batch_item',
+      'bulk_deleted',
+      ids[0],
+      { deletedCount: items.length, batchCount: batchIds.length }
+    );
+
+    return { deleted: true, count: items.length, ids };
   }
 
   async runDueSourceChecks(
@@ -3230,6 +3423,35 @@ export class AppleOfficialPricesService {
       throw new BadRequestException(`${field} must be a uuid`);
     }
     return normalized;
+  }
+
+  private normalizeRecordIds(value: unknown, field = 'ids') {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException(`${field} must be an array`);
+    }
+
+    const ids = Array.from(
+      new Set(value.map((id, index) => this.normalizeRequiredUuid(id, `${field}[${index}]`)))
+    );
+    if (!ids.length) {
+      throw new BadRequestException(`${field} is required`);
+    }
+    if (ids.length > 200) {
+      throw new BadRequestException(`${field} cannot exceed 200 items`);
+    }
+    return ids;
+  }
+
+  private assertFoundIds<T extends { id: string }>(
+    ids: string[],
+    records: T[],
+    entityLabel: string
+  ) {
+    if (records.length === ids.length) return;
+
+    const foundIds = new Set(records.map((record) => record.id));
+    const missingId = ids.find((id) => !foundIds.has(id));
+    throw new NotFoundException(`${entityLabel} not found: ${missingId}`);
   }
 
   private normalizeCode(value: string | undefined, fallback: string, upperCase = true) {

@@ -6,6 +6,7 @@ import type {
   CreateAppleServiceDto,
   SaveAppleBalancePriceRuleDto
 } from './dto/create-apple-service.dto';
+import type { BulkDeleteAppleServiceRegionPricesDto } from './dto/bulk-delete-apple-service-region-prices.dto';
 import type { CreateAppleServicePlatformMappingDto } from './dto/create-apple-service-platform-mapping.dto';
 import type { UpdateAppleServiceDto } from './dto/update-apple-service.dto';
 import type { UpdateAppleServicePlatformMappingDto } from './dto/update-apple-service-platform-mapping.dto';
@@ -82,6 +83,15 @@ export class AppleServicesController {
   @RequirePermissions('apple.service.manage')
   removeRegionPrice(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
     return this.appleServicesService.removeRegionPrice(id, operator);
+  }
+
+  @Post('region-prices/bulk-delete')
+  @RequirePermissions('apple.service.manage')
+  bulkRemoveRegionPrices(
+    @Body() dto: BulkDeleteAppleServiceRegionPricesDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.appleServicesService.bulkRemoveRegionPrices(dto, operator);
   }
 
   @Get(':id')

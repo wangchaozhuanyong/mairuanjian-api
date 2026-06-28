@@ -27,6 +27,7 @@ import type {
   CreateAppleServiceDto,
   SaveAppleBalancePriceRuleDto
 } from './dto/create-apple-service.dto';
+import type { BulkDeleteAppleServiceRegionPricesDto } from './dto/bulk-delete-apple-service-region-prices.dto';
 import type { CreateAppleServicePlatformMappingDto } from './dto/create-apple-service-platform-mapping.dto';
 import type { UpdateAppleServiceDto } from './dto/update-apple-service.dto';
 import type { UpdateAppleServicePlatformMappingDto } from './dto/update-apple-service-platform-mapping.dto';
@@ -347,6 +348,60 @@ export class AppleServicesService {
 
     this.clearListCaches();
     return { deleted: true };
+  }
+
+  async bulkRemoveRegionPrices(
+    dto: BulkDeleteAppleServiceRegionPricesDto,
+    operator?: AuthenticatedUser
+  ) {
+    const ids = this.normalizeRecordIds(dto.ids);
+    const prices = await this.prisma.appleServiceRegionPrice.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      include: this.getRegionPriceInclude()
+    });
+    this.assertFoundIds(ids, prices, 'Apple service region price');
+
+    const blockedKeys = await this.getBlockedRegionPriceAutoRestoreKeys();
+    for (const price of prices) {
+      blockedKeys.add(this.buildRegionPriceKey(price.serviceId, price.region, price.currency));
+    }
+    const blockedValue = this.toAuditJson({ keys: [...blockedKeys].sort() });
+
+    await this.prisma.$transaction([
+      this.prisma.systemParameter.upsert({
+        where: { key: DELETED_REGION_PRICE_KEYS_PARAMETER },
+        update: {
+          value: blockedValue,
+          group: 'apple_service',
+          remark: 'Apple ID 当前价格表手动删除记录，阻止旧价格自动恢复',
+          updatedByUserId: operator?.id
+        },
+        create: {
+          key: DELETED_REGION_PRICE_KEYS_PARAMETER,
+          value: blockedValue,
+          group: 'apple_service',
+          remark: 'Apple ID 当前价格表手动删除记录，阻止旧价格自动恢复',
+          updatedByUserId: operator?.id
+        }
+      }),
+      this.prisma.appleServiceRegionPrice.deleteMany({ where: { id: { in: ids } } })
+    ]);
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_service',
+      action: 'apple_service.region_price.bulk_delete',
+      objectType: 'apple_service_region_price',
+      objectId: ids[0],
+      beforeData: this.toAuditJson({
+        ids,
+        prices: prices.map((price) => this.toRegionPriceResponse(price))
+      }),
+      remark: `Bulk deleted ${prices.length} Apple service region prices`
+    });
+
+    this.clearListCaches();
+    return { deleted: true, count: prices.length, ids };
   }
 
   async create(dto: CreateAppleServiceDto, operator?: AuthenticatedUser) {
@@ -1180,6 +1235,35 @@ export class AppleServicesService {
     }
 
     return normalized;
+  }
+
+  private normalizeRecordIds(value: unknown, field = 'ids') {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException(`${field} must be an array`);
+    }
+
+    const ids = Array.from(
+      new Set(value.map((id, index) => this.normalizeRequiredId(id, `${field}[${index}]`)))
+    );
+    if (!ids.length) {
+      throw new BadRequestException(`${field} is required`);
+    }
+    if (ids.length > 200) {
+      throw new BadRequestException(`${field} cannot exceed 200 items`);
+    }
+    return ids;
+  }
+
+  private assertFoundIds<T extends { id: string }>(
+    ids: string[],
+    records: T[],
+    entityLabel: string
+  ) {
+    if (records.length === ids.length) return;
+
+    const foundIds = new Set(records.map((record) => record.id));
+    const missingId = ids.find((id) => !foundIds.has(id));
+    throw new NotFoundException(`${entityLabel} not found: ${missingId}`);
   }
 
   private normalizeNullableString(value: string | null | undefined) {

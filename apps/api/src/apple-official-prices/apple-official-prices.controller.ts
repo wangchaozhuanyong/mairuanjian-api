@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { AppleOfficialPricesService } from './apple-official-prices.service';
+import type { BulkDeleteOfficialPriceRecordsDto } from './dto/bulk-delete-official-price-records.dto';
 import type { CheckOfficialPriceProviderDto } from './dto/check-official-price-provider.dto';
 import type { CheckOfficialPriceSourceDto } from './dto/check-official-price-source.dto';
 import type { CreateOfficialPriceSourceDto } from './dto/create-official-price-source.dto';
@@ -59,6 +60,14 @@ export class AppleOfficialPricesController {
   @Delete('sources/:id')
   removeSource(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
     return this.officialPricesService.removeSource(id, operator);
+  }
+
+  @Post('sources/bulk-delete')
+  bulkRemoveSources(
+    @Body() dto: BulkDeleteOfficialPriceRecordsDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.bulkRemoveSources(dto, operator);
   }
 
   @Post('sources/:id/check')
@@ -129,6 +138,14 @@ export class AppleOfficialPricesController {
     return this.officialPricesService.removeCheckBatchItem(id, operator);
   }
 
+  @Post('check-batch-items/bulk-delete')
+  bulkRemoveCheckBatchItems(
+    @Body() dto: BulkDeleteOfficialPriceRecordsDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.bulkRemoveCheckBatchItems(dto, operator);
+  }
+
   @Get('snapshots')
   listSnapshots(
     @Query('page') page?: string,
@@ -153,6 +170,14 @@ export class AppleOfficialPricesController {
   @Delete('snapshots/:id')
   removeSnapshot(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
     return this.officialPricesService.removeSnapshot(id, operator);
+  }
+
+  @Post('snapshots/bulk-delete')
+  bulkRemoveSnapshots(
+    @Body() dto: BulkDeleteOfficialPriceRecordsDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.bulkRemoveSnapshots(dto, operator);
   }
 
   @Get('reviews')
@@ -188,6 +213,14 @@ export class AppleOfficialPricesController {
   @Delete('reviews/:id')
   removeReview(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
     return this.officialPricesService.removeReview(id, operator);
+  }
+
+  @Post('reviews/bulk-delete')
+  bulkRemoveReviews(
+    @Body() dto: BulkDeleteOfficialPriceRecordsDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.officialPricesService.bulkRemoveReviews(dto, operator);
   }
 
   @Post('reviews/:id/ignore')

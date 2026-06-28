@@ -1388,6 +1388,10 @@ export interface CheckOfficialPriceProviderPayload {
   trigger?: 'manual' | 'worker' | 'system';
 }
 
+export interface BulkDeleteRecordsPayload {
+  ids: string[];
+}
+
 export interface AppleOfficialPriceProviderCatalogRegion {
   currency: string;
   label: string;
@@ -2478,6 +2482,11 @@ export const appleServicesApi = {
   removeRegionPrice(id: string) {
     return request<{ deleted: boolean }>(http.delete(`/apple/services/region-prices/${id}`));
   },
+  bulkRemoveRegionPrices(payload: BulkDeleteRecordsPayload) {
+    return request<{ deleted: boolean; count: number; ids: string[] }>(
+      http.post('/apple/services/region-prices/bulk-delete', payload)
+    );
+  },
   updateBalancePriceRule(payload: AppleBalancePriceRule) {
     return request<AppleBalancePriceRule>(
       http.patch('/apple/services/balance-price-rule', payload)
@@ -2536,6 +2545,11 @@ export const appleOfficialPricesApi = {
   removeSource(id: string) {
     return request<{ deleted: boolean }>(http.delete(`/apple/official-prices/sources/${id}`));
   },
+  bulkRemoveSources(payload: BulkDeleteRecordsPayload) {
+    return request<{ deleted: boolean; count: number; ids: string[] }>(
+      http.post('/apple/official-prices/sources/bulk-delete', payload)
+    );
+  },
   checkSource(id: string, payload: CheckOfficialPriceSourcePayload = {}) {
     return request<{
       status: 'checked' | 'manual_required';
@@ -2587,6 +2601,11 @@ export const appleOfficialPricesApi = {
       http.delete(`/apple/official-prices/check-batch-items/${id}`)
     );
   },
+  bulkRemoveCheckBatchItems(payload: BulkDeleteRecordsPayload) {
+    return request<{ deleted: boolean; count: number; ids: string[] }>(
+      http.post('/apple/official-prices/check-batch-items/bulk-delete', payload)
+    );
+  },
   listSnapshots(params: AppleOfficialPriceSnapshotQuery) {
     return request<PageResult<AppleOfficialPriceSnapshot>>(
       http.get('/apple/official-prices/snapshots', { params })
@@ -2595,6 +2614,11 @@ export const appleOfficialPricesApi = {
   removeSnapshot(id: string) {
     return request<{ deleted: boolean }>(http.delete(`/apple/official-prices/snapshots/${id}`));
   },
+  bulkRemoveSnapshots(payload: BulkDeleteRecordsPayload) {
+    return request<{ deleted: boolean; count: number; ids: string[] }>(
+      http.post('/apple/official-prices/snapshots/bulk-delete', payload)
+    );
+  },
   listReviews(params: ApplePriceChangeReviewQuery) {
     return request<PageResult<ApplePriceChangeReview>>(
       http.get('/apple/official-prices/reviews', { params })
@@ -2602,6 +2626,11 @@ export const appleOfficialPricesApi = {
   },
   removeReview(id: string) {
     return request<{ deleted: boolean }>(http.delete(`/apple/official-prices/reviews/${id}`));
+  },
+  bulkRemoveReviews(payload: BulkDeleteRecordsPayload) {
+    return request<{ deleted: boolean; count: number; ids: string[] }>(
+      http.post('/apple/official-prices/reviews/bulk-delete', payload)
+    );
   },
   approveReview(id: string) {
     return request<ApplePriceChangeReview>(

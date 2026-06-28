@@ -468,13 +468,33 @@
               这里汇总所有还没处理的价格变化，可能来自旧批次；本次采集跑了哪些国家、哪些失败，请看“当前批次结果”。
             </span>
           </div>
+          <div class="apple-official-bulk-actions">
+            <span>
+              {{
+                selectedOfficialReviews.length
+                  ? `已选 ${selectedOfficialReviews.length} 条待确认变化`
+                  : '未选择待确认变化'
+              }}
+            </span>
+            <AppButton
+              size="small"
+              variant="danger"
+              :disabled="!selectedOfficialReviews.length"
+              :loading="officialBulkDeleteKey === 'reviews'"
+              @click="bulkRemoveOfficialReviews"
+            >
+              批量删除
+            </AppButton>
+          </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table official-review-table"
             :data="officialPriceReviews"
             row-key="id"
             empty-text="暂无价格变化"
+            @selection-change="handleOfficialReviewSelectionChange"
           >
+            <el-table-column type="selection" width="46" fixed="left" />
             <el-table-column label="变化" width="120">
               <template #default="{ row }">
                 <StatusChip :tone="getOfficialReviewTone(row.changeType)" dot>
@@ -599,13 +619,33 @@
               {{ getOfficialSourceCheckLabel(officialPriceSources[0]) }}
             </AppButton>
           </div>
+          <div class="apple-official-bulk-actions">
+            <span>
+              {{
+                selectedOfficialSources.length
+                  ? `已选 ${selectedOfficialSources.length} 个官方来源`
+                  : '未选择官方来源'
+              }}
+            </span>
+            <AppButton
+              size="small"
+              variant="danger"
+              :disabled="!selectedOfficialSources.length"
+              :loading="officialBulkDeleteKey === 'sources'"
+              @click="bulkRemoveOfficialSources"
+            >
+              批量删除
+            </AppButton>
+          </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table"
             :data="officialPriceSources"
             row-key="id"
             empty-text="暂无官方来源"
+            @selection-change="handleOfficialSourceSelectionChange"
           >
+            <el-table-column type="selection" width="46" fixed="left" />
             <el-table-column label="来源" min-width="220">
               <template #default="{ row }">
                 <strong>{{ row.name }}</strong>
@@ -665,13 +705,33 @@
               这里只展示最新采集批次的来源、地区、状态和原因，避免和历史待确认变化混在一起看。
             </span>
           </div>
+          <div class="apple-official-bulk-actions">
+            <span>
+              {{
+                selectedOfficialBatchItems.length
+                  ? `已选 ${selectedOfficialBatchItems.length} 条批次结果`
+                  : '未选择批次结果'
+              }}
+            </span>
+            <AppButton
+              size="small"
+              variant="danger"
+              :disabled="!selectedOfficialBatchItems.length"
+              :loading="officialBulkDeleteKey === 'batch-items'"
+              @click="bulkRemoveOfficialBatchItems"
+            >
+              批量删除
+            </AppButton>
+          </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table official-batch-items-table"
             :data="paginatedOfficialBatchItems"
             row-key="id"
             empty-text="暂无采集批次结果"
+            @selection-change="handleOfficialBatchItemSelectionChange"
           >
+            <el-table-column type="selection" width="46" fixed="left" />
             <el-table-column label="来源" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">
                 <strong>{{ getProviderLabel(row.provider) }}</strong>
@@ -731,13 +791,33 @@
             </span>
             <StatusChip tone="blue">{{ officialRegionPriceTotal }} 条</StatusChip>
           </div>
+          <div class="apple-official-bulk-actions">
+            <span>
+              {{
+                selectedOfficialRegionPrices.length
+                  ? `已选 ${selectedOfficialRegionPrices.length} 条当前价格`
+                  : '未选择当前价格'
+              }}
+            </span>
+            <AppButton
+              size="small"
+              variant="danger"
+              :disabled="!selectedOfficialRegionPrices.length"
+              :loading="officialBulkDeleteKey === 'region-prices'"
+              @click="bulkRemoveOfficialRegionPrices"
+            >
+              批量删除
+            </AppButton>
+          </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table"
             :data="officialRegionPrices"
             row-key="id"
             empty-text="暂无当前价格"
+            @selection-change="handleOfficialRegionPriceSelectionChange"
           >
+            <el-table-column type="selection" width="46" fixed="left" />
             <el-table-column label="国家/币种" width="150">
               <template #default="{ row }">{{
                 formatOfficialRegionCurrency(row.region, row.currency)
@@ -789,13 +869,33 @@
         </el-tab-pane>
 
         <el-tab-pane label="采集记录" name="snapshots">
+          <div class="apple-official-bulk-actions">
+            <span>
+              {{
+                selectedOfficialSnapshots.length
+                  ? `已选 ${selectedOfficialSnapshots.length} 条采集记录`
+                  : '未选择采集记录'
+              }}
+            </span>
+            <AppButton
+              size="small"
+              variant="danger"
+              :disabled="!selectedOfficialSnapshots.length"
+              :loading="officialBulkDeleteKey === 'snapshots'"
+              @click="bulkRemoveOfficialSnapshots"
+            >
+              批量删除
+            </AppButton>
+          </div>
           <el-table
             v-loading="officialPriceLoading"
             class="desktop-data-table"
             :data="officialPriceSnapshots"
             row-key="id"
             empty-text="暂无采集记录"
+            @selection-change="handleOfficialSnapshotSelectionChange"
           >
+            <el-table-column type="selection" width="46" fixed="left" />
             <el-table-column label="套餐" min-width="220">
               <template #default="{ row }">
                 <strong>{{ row.serviceName }}</strong>
@@ -1327,6 +1427,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { useAuthenticatedPageLoader } from '@/composables/useAuthenticatedPageLoader';
 import {
   APPLE_ACCOUNT_REGION_DICTIONARY_GROUP,
@@ -1414,6 +1515,24 @@ interface OfficialCollectedServiceOption {
   region: string;
   serviceName: string;
   sourceLabel: string;
+}
+
+interface BulkRemoveOfficialRecordsOptions<TRecord extends { id: string }> {
+  rows: TRecord[];
+  deleteKey: string;
+  emptyMessage: string;
+  title: string;
+  actionName: string;
+  description: string;
+  impact: string[];
+  riskNotes: string;
+  confirmButtonText: string;
+  remove: (payload: {
+    ids: string[];
+  }) => Promise<{ deleted: boolean; count: number; ids: string[] }>;
+  clearSelection: () => void;
+  afterSuccess: () => Promise<void>;
+  successMessage: (count: number) => string;
 }
 
 const officialProviderOptions = [
@@ -1518,6 +1637,11 @@ const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
 const officialPriceReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
 const officialRegionPrices = ref<AppleServiceRegionPrice[]>([]);
+const selectedOfficialSources = ref<AppleOfficialPriceSource[]>([]);
+const selectedOfficialReviews = ref<ApplePriceChangeReview[]>([]);
+const selectedOfficialSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
+const selectedOfficialRegionPrices = ref<AppleServiceRegionPrice[]>([]);
+const selectedOfficialBatchItems = ref<AppleOfficialPriceCheckBatchItem[]>([]);
 const officialPriceOptionReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceOptionSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
 const officialPriceBatch = ref<AppleOfficialPriceCheckBatch | null>(null);
@@ -1542,6 +1666,7 @@ const serviceAdvancedPanels = ref<string[]>([]);
 const officialPriceTab = ref('reviews');
 const officialReviewActionId = ref('');
 const officialRecordDeleteKey = ref('');
+const officialBulkDeleteKey = ref('');
 const selectedOfficialAutoRegions = ref<string[]>(
   fallbackOfficialAutoRegionOptions
     .filter((region) => defaultOfficialAutoRegions.has(region.region))
@@ -2533,6 +2658,26 @@ function handleSelectionChange(rows: AppleService[]) {
   selectedServices.value = rows;
 }
 
+function handleOfficialReviewSelectionChange(rows: ApplePriceChangeReview[]) {
+  selectedOfficialReviews.value = rows;
+}
+
+function handleOfficialSourceSelectionChange(rows: AppleOfficialPriceSource[]) {
+  selectedOfficialSources.value = rows;
+}
+
+function handleOfficialBatchItemSelectionChange(rows: AppleOfficialPriceCheckBatchItem[]) {
+  selectedOfficialBatchItems.value = rows;
+}
+
+function handleOfficialRegionPriceSelectionChange(rows: AppleServiceRegionPrice[]) {
+  selectedOfficialRegionPrices.value = rows;
+}
+
+function handleOfficialSnapshotSelectionChange(rows: AppleOfficialPriceSnapshot[]) {
+  selectedOfficialSnapshots.value = rows;
+}
+
 function clearFilters() {
   query.page = 1;
   query.keyword = '';
@@ -2891,6 +3036,30 @@ async function initializePage() {
     loadOfficialProviderCatalog(),
     loadServices({ force: false }),
     loadOfficialPricePanel()
+  ]);
+  await loadLatestOfficialPriceBatch();
+}
+
+usePageRefresh(
+  (options) =>
+    refreshAppleServicesPage({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined,
+      force: options.force ?? true
+    }),
+  { label: 'Apple ID 业务设置' }
+);
+
+async function refreshAppleServicesPage(
+  options: { silent?: boolean; dedupeMs?: number; force?: boolean } = {}
+) {
+  await Promise.all([
+    loadAppleServiceCategories(),
+    loadAppleRegions(),
+    loadAppleServiceQuickOptions(),
+    loadGlobalBalanceRule(),
+    loadServices(options),
+    loadOfficialPricePanel({ silent: options.silent })
   ]);
   await loadLatestOfficialPriceBatch();
 }
@@ -3551,6 +3720,185 @@ async function saveOfficialSource() {
   } finally {
     savingOfficialSource.value = false;
   }
+}
+
+function buildOfficialBulkPreview(labels: string[]) {
+  const visibleLabels = labels.filter(Boolean).slice(0, 5);
+  const preview = visibleLabels.map((label) => `「${label}」`).join('、');
+  const overflowText = labels.length > 5 ? `，另外还有 ${labels.length - 5} 条` : '';
+  return preview ? `包含：${preview}${overflowText}` : `共 ${labels.length} 条记录`;
+}
+
+async function bulkRemoveOfficialRecords<TRecord extends { id: string }>(
+  options: BulkRemoveOfficialRecordsOptions<TRecord>
+) {
+  if (!options.rows.length) {
+    ElMessage.warning(options.emptyMessage);
+    return;
+  }
+  if (officialBulkDeleteKey.value || officialRecordDeleteKey.value) return;
+
+  const ids = options.rows.map((row) => row.id);
+  const confirmed = await confirmAction({
+    title: options.title,
+    actionName: options.actionName,
+    description: options.description,
+    expectedCount: ids.length,
+    impact: options.impact,
+    riskNotes: options.riskNotes,
+    irreversible: true,
+    risk: 'strong',
+    confirmButtonText: options.confirmButtonText,
+    cancelButtonText: '返回'
+  });
+  if (!confirmed) return;
+
+  officialBulkDeleteKey.value = options.deleteKey;
+  try {
+    const result = await options.remove({ ids });
+    options.clearSelection();
+    await options.afterSuccess();
+    ElMessage.success(options.successMessage(result.count));
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : `${options.actionName}失败`);
+  } finally {
+    officialBulkDeleteKey.value = '';
+  }
+}
+
+async function bulkRemoveOfficialReviews() {
+  const rows = [...selectedOfficialReviews.value];
+  await bulkRemoveOfficialRecords({
+    rows,
+    deleteKey: 'reviews',
+    emptyMessage: '请先勾选要删除的待确认变化',
+    title: '确认批量删除待确认变化？',
+    actionName: '批量删除待确认变化',
+    description: `将彻底删除选中的 ${rows.length} 条待确认变化。`,
+    impact: [
+      buildOfficialBulkPreview(rows.map((row) => getOfficialReviewServiceName(row))),
+      '删除后不会同步价格，也不会修改当前价格表。',
+      '这些记录不会再出现在历史待确认变化列表。'
+    ],
+    riskNotes: '删除后不能从列表直接恢复；如果后续重新采集，系统可能生成新的待确认变化。',
+    confirmButtonText: '确认批量删除',
+    remove: (payload) => appleOfficialPricesApi.bulkRemoveReviews(payload),
+    clearSelection: () => {
+      selectedOfficialReviews.value = [];
+    },
+    afterSuccess: () => loadOfficialPricePanel(),
+    successMessage: (count) => `已删除 ${count} 条待确认变化`
+  });
+}
+
+async function bulkRemoveOfficialSources() {
+  const rows = [...selectedOfficialSources.value];
+  await bulkRemoveOfficialRecords({
+    rows,
+    deleteKey: 'sources',
+    emptyMessage: '请先勾选要删除的官方来源',
+    title: '确认批量删除官方来源？',
+    actionName: '批量删除官方来源',
+    description: `将彻底删除选中的 ${rows.length} 个官方来源。`,
+    impact: [
+      buildOfficialBulkPreview(rows.map((row) => row.name)),
+      '这些来源关联的采集记录、待确认变化和来源生成的当前价格会一起清理。',
+      '同供应商、同地区、同币种的默认来源不会自动恢复。'
+    ],
+    riskNotes: '删除后需要重新使用时，请手动新增来源并重新采集。',
+    confirmButtonText: '确认批量删除来源',
+    remove: (payload) => appleOfficialPricesApi.bulkRemoveSources(payload),
+    clearSelection: () => {
+      selectedOfficialSources.value = [];
+    },
+    afterSuccess: async () => {
+      invalidateAppleServiceConsumers();
+      await loadOfficialPricePanel();
+    },
+    successMessage: (count) => `已删除 ${count} 个官方来源`
+  });
+}
+
+async function bulkRemoveOfficialBatchItems() {
+  const rows = [...selectedOfficialBatchItems.value];
+  await bulkRemoveOfficialRecords({
+    rows,
+    deleteKey: 'batch-items',
+    emptyMessage: '请先勾选要删除的当前批次结果',
+    title: '确认批量删除当前批次结果？',
+    actionName: '批量删除当前批次结果',
+    description: `将彻底删除选中的 ${rows.length} 条当前批次结果。`,
+    impact: [
+      buildOfficialBulkPreview(
+        rows.map(
+          (row) => `${getProviderLabel(row.provider)} / ${getOfficialBatchItemRegionLabel(row)}`
+        )
+      ),
+      '删除后会从当前批次结果列表移除。',
+      '最新批次统计会重新计算。'
+    ],
+    riskNotes: '这只删除批次结果记录，不会删除已经生成的采集记录或待确认变化。',
+    confirmButtonText: '确认批量删除结果',
+    remove: (payload) => appleOfficialPricesApi.bulkRemoveCheckBatchItems(payload),
+    clearSelection: () => {
+      selectedOfficialBatchItems.value = [];
+    },
+    afterSuccess: () => loadLatestOfficialPriceBatch(),
+    successMessage: (count) => `已删除 ${count} 条当前批次结果`
+  });
+}
+
+async function bulkRemoveOfficialRegionPrices() {
+  const rows = [...selectedOfficialRegionPrices.value];
+  await bulkRemoveOfficialRecords({
+    rows,
+    deleteKey: 'region-prices',
+    emptyMessage: '请先勾选要删除的当前价格',
+    title: '确认批量删除当前价格？',
+    actionName: '批量删除当前价格',
+    description: `将彻底删除选中的 ${rows.length} 条当前价格。`,
+    impact: [
+      buildOfficialBulkPreview(rows.map((row) => getRegionPriceServiceName(row))),
+      '删除后订单录入不会再使用这些当前价格。',
+      '同业务、同国家、同币种的旧价格不会被自动同步恢复。'
+    ],
+    riskNotes: '需要重新使用时，请重新确认官方价格或编辑业务设置。',
+    confirmButtonText: '确认批量删除价格',
+    remove: (payload) => appleServicesApi.bulkRemoveRegionPrices(payload),
+    clearSelection: () => {
+      selectedOfficialRegionPrices.value = [];
+    },
+    afterSuccess: async () => {
+      invalidateAppleServiceConsumers();
+      await loadOfficialPricePanel();
+    },
+    successMessage: (count) => `已删除 ${count} 条当前价格`
+  });
+}
+
+async function bulkRemoveOfficialSnapshots() {
+  const rows = [...selectedOfficialSnapshots.value];
+  await bulkRemoveOfficialRecords({
+    rows,
+    deleteKey: 'snapshots',
+    emptyMessage: '请先勾选要删除的采集记录',
+    title: '确认批量删除采集记录？',
+    actionName: '批量删除采集记录',
+    description: `将彻底删除选中的 ${rows.length} 条采集记录。`,
+    impact: [
+      buildOfficialBulkPreview(rows.map((row) => row.serviceName)),
+      '关联的待确认变化会一起删除。',
+      '已经确认到当前价格表的价格不会自动删除。'
+    ],
+    riskNotes: '删除后不能从列表直接恢复；如需重新生成，请重新采集官方价格。',
+    confirmButtonText: '确认批量删除采集记录',
+    remove: (payload) => appleOfficialPricesApi.bulkRemoveSnapshots(payload),
+    clearSelection: () => {
+      selectedOfficialSnapshots.value = [];
+    },
+    afterSuccess: () => loadOfficialPricePanel(),
+    successMessage: (count) => `已删除 ${count} 条采集记录`
+  });
 }
 
 async function removeOfficialSource(source: AppleOfficialPriceSource) {
@@ -4415,6 +4763,21 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 
+.apple-official-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .official-review-table :deep(.el-table__cell .cell) {
   white-space: nowrap;
 }
@@ -4503,6 +4866,11 @@ onBeforeUnmount(() => {
 
   .apple-official-tab-note {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .apple-official-bulk-actions {
+    align-items: stretch;
     flex-direction: column;
   }
 
