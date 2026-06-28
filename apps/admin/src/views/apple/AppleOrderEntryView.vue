@@ -928,6 +928,7 @@ import {
   buildQuickSettingCode,
   CUSTOMER_TAG_DICTIONARY_GROUP
 } from '@/config/quickSettings';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type { CustomerProfileFormModel } from '@/types/customerProfileForm';
@@ -2347,6 +2348,16 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(ORDER_ENTRY_REALTIME_SCOP
 });
 
 onMounted(() => loadInitialData({ force: true, dedupeMs: 0 }));
+
+usePageRefresh(
+  (options) =>
+    loadInitialData({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined,
+      force: options.force ?? true
+    }),
+  { label: '订单录入' }
+);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();

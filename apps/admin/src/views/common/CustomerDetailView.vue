@@ -369,6 +369,7 @@ import AppState from '@/components/ui/AppState.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type {
@@ -624,6 +625,16 @@ function syncActiveCustomerDetailTab() {
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(CUSTOMER_DETAIL_SCOPES, () => {
   void loadDetail({ silent: true, dedupeMs: 0 });
 });
+
+usePageRefresh(
+  (options) =>
+    loadDetail({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined,
+      force: options.force ?? true
+    }),
+  { label: '客户详情' }
+);
 
 watch(visibleCustomerDetailTabs, syncActiveCustomerDetailTab, {
   immediate: true

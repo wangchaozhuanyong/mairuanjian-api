@@ -177,6 +177,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import type { AppleAccountSourceChannel } from '@/types/system';
 import { invalidateSmartQueries } from '@/utils/smartQuery';
 
@@ -221,8 +222,8 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
 }
 
-async function loadChannels() {
-  loading.value = true;
+async function loadChannels(options: { background?: boolean } = {}) {
+  loading.value = !options.background;
   try {
     const data = await appleAccountSourceChannelsApi.list({
       page: query.page,
@@ -235,7 +236,9 @@ async function loadChannels() {
     channels.value = data.items;
     total.value = data.total;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载来源渠道失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '加载来源渠道失败');
+    }
   } finally {
     loading.value = false;
   }
@@ -345,4 +348,12 @@ async function deleteChannel(channel: AppleAccountSourceChannel) {
 }
 
 onMounted(loadChannels);
+
+usePageRefresh(
+  (options) =>
+    loadChannels({
+      background: options.background
+    }),
+  { label: 'Apple ID 来源渠道' }
+);
 </script>

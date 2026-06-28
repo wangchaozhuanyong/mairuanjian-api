@@ -807,6 +807,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { OPS_ERROR_LEVEL_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { formatAppleRegionLabel } from '@/utils/appleAccountRegion';
 import type {
@@ -1025,6 +1026,15 @@ onActivated(() => {
     force: false
   });
 });
+
+usePageRefresh(
+  (options) =>
+    refreshCurrentTab({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '运维监控' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   [

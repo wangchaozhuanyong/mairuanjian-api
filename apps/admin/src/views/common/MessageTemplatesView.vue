@@ -277,6 +277,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { MessageTemplate, PageResult, TableDensity, UserTableView } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
@@ -666,6 +667,15 @@ async function removeTemplate(template: MessageTemplate) {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    loadTemplates({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '发货模板' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['message-templates'], () => {
   void loadTemplates({

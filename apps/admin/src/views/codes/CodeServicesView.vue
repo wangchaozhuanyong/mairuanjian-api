@@ -601,6 +601,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { CODE_SERVICE_DELIVERY_MODE_DICTIONARY_GROUP } from '@/config/quickSettings';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodePlatformMapping,
@@ -1337,6 +1338,23 @@ async function deleteMapping(mapping: CodePlatformMapping) {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    refreshServicesPage({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '兑换码业务设置' }
+);
+
+async function refreshServicesPage(options: { background?: boolean; force?: boolean } = {}) {
+  await Promise.all([
+    loadDeliveryModes(options),
+    loadServices(options),
+    mappingDrawerVisible.value ? loadMappings(options) : Promise.resolve()
+  ]);
+}
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   ['code-services', 'code-service-mappings', 'data-dictionaries'],

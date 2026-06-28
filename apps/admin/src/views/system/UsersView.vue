@@ -305,6 +305,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { ManagedUser, PageResult, Role, TableDensity, UserTableView } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
@@ -698,6 +699,19 @@ async function saveUser() {
 onMounted(async () => {
   await Promise.all([loadRoles({ force: false }), initializePage()]);
 });
+
+usePageRefresh(
+  (options) =>
+    refreshUsersPage({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '员工账号' }
+);
+
+async function refreshUsersPage(options: { background?: boolean; force?: boolean } = {}) {
+  await Promise.all([loadRoles(options), loadUsers(options)]);
+}
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   ['system-users', 'system-user-roles'],

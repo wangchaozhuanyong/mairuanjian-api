@@ -274,6 +274,7 @@ import AppDrawer from '@/components/ui/AppDrawer.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import {
   getModulePermission,
   getStatusText,
@@ -794,6 +795,16 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(DASHBOARD_REALTIME_SCOPES
 onMounted(() => {
   void loadDashboardOverview({ force: false });
 });
+
+usePageRefresh(
+  (options) =>
+    loadDashboardOverview({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined,
+      force: options.force ?? true
+    }),
+  { label: '工作台' }
+);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();

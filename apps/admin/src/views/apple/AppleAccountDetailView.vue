@@ -842,6 +842,7 @@ import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type {
@@ -1077,6 +1078,15 @@ watch(visibleAccountDetailTabs, syncActiveAccountDetailTab, {
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(DETAIL_REALTIME_SCOPES, () => {
   void loadDetail({ silent: true, dedupeMs: 0 });
 });
+
+usePageRefresh(
+  (options) =>
+    loadDetail({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined
+    }),
+  { label: 'Apple ID 详情' }
+);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();

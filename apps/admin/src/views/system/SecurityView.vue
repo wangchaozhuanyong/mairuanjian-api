@@ -1294,6 +1294,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   ActiveSession,
@@ -1629,6 +1630,15 @@ watch(
     activeTab.value = nextTab;
     await refreshCurrentTab({ force: false });
   }
+);
+
+usePageRefresh(
+  (options) =>
+    refreshCurrentTab({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '安全中心' }
 );
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(

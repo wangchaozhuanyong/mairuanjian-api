@@ -25,7 +25,7 @@
       <el-tabs
         v-model="activeTab"
         class="system-tabs audit-log-tabs"
-        @tab-change="refreshCurrentTab"
+        @tab-change="() => refreshCurrentTab()"
       >
         <el-tab-pane label="操作日志" name="operation">
           <TableToolbar
@@ -1129,6 +1129,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AuditLog,
@@ -1149,6 +1150,7 @@ import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/uti
 
 const route = useRoute();
 const activeTab = ref('operation');
+type LoadOptions = { background?: boolean; force?: boolean };
 
 const operationTableKey = 'audit_operation_logs';
 const operationColumnOptions = [
@@ -1473,39 +1475,48 @@ watch(
   () => route.meta.moduleKey,
   (moduleKey) => {
     activeTab.value = getRouteTab(String(moduleKey ?? 'audit-log'));
-    void refreshCurrentTab();
+    void refreshCurrentTab({ force: false });
   },
   { immediate: true }
 );
 
-async function refreshCurrentTab() {
+usePageRefresh(
+  (options) =>
+    refreshCurrentTab({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '操作日志' }
+);
+
+async function refreshCurrentTab(options: LoadOptions = {}) {
   if (activeTab.value === 'operation') {
     await ensureOperationTableViews();
-    await loadOperationLogs();
+    await loadOperationLogs(options);
   }
   if (activeTab.value === 'sensitive') {
     await ensureSensitiveTableViews();
-    await loadSensitiveLogs();
+    await loadSensitiveLogs(options);
   }
   if (activeTab.value === 'login') {
     await ensureLoginTableViews();
-    await loadLoginLogs();
+    await loadLoginLogs(options);
   }
   if (activeTab.value === 'exports') {
     await ensureExportTableViews();
-    await loadExportLogs();
+    await loadExportLogs(options);
   }
   if (activeTab.value === 'permission') {
     await ensurePermissionTableViews();
-    await loadPermissionLogs();
+    await loadPermissionLogs(options);
   }
   if (activeTab.value === 'automation') {
     await ensureAutomationTableViews();
-    await loadAutomationLogs();
+    await loadAutomationLogs(options);
   }
   if (activeTab.value === 'platform') {
     await ensurePlatformTableViews();
-    await loadPlatformLogs();
+    await loadPlatformLogs(options);
   }
 }
 

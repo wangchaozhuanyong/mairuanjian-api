@@ -370,6 +370,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type { CodePlatformOrder, PageResult, SourcePlatform, TableDensity } from '@/types/system';
@@ -926,6 +927,15 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    reloadAll({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '发货异常' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['code-delivery-exceptions'], () => {
   void reloadAll({

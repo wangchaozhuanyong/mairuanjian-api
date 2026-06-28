@@ -863,6 +863,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { useAuthenticatedPageLoader } from '@/composables/useAuthenticatedPageLoader';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
@@ -1133,6 +1134,20 @@ useAuthenticatedPageLoader(async () => {
   void loadOfficialProviders({ background: true });
   await loadWorkbenchStatus();
 });
+
+usePageRefresh(
+  async (options) => {
+    await Promise.all([
+      loadTasks({
+        background: options.background,
+        force: options.force ?? true
+      }),
+      loadWorkbenchStatus({ background: true }),
+      loadOfficialProviders({ background: true })
+    ]);
+  },
+  { label: 'Apple ID 自动化任务' }
+);
 
 watch(activeTab, (tab) => {
   if (tab === 'manual' || tab === 'history') {

@@ -771,6 +771,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type {
@@ -1027,6 +1028,16 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated([ACCOUNT_SCOPE], () => {
 });
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    loadAccounts({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined,
+      force: options.force ?? true
+    }),
+  { label: 'Apple ID 余额校准' }
+);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();

@@ -605,6 +605,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import type { RenewalTask, TableDensity, UserTableView } from '@/types/system';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
@@ -913,6 +914,15 @@ onActivated(() => {
     force: false
   });
 });
+
+usePageRefresh(
+  (options) =>
+    loadTasks({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '续费任务' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['apple-renewal-tasks'], () => {
   void loadTasks({

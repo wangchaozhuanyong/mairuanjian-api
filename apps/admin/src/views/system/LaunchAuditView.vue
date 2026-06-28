@@ -305,6 +305,7 @@ import AppCard from '@/components/ui/AppCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { LaunchChecklistItem, LaunchChecklistStatus } from '@/types/system';
 import { createSmartQueryKey, invalidateSmartQueries, refreshSmartQuery } from '@/utils/smartQuery';
@@ -428,6 +429,16 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated([LAUNCH_AUDIT_SCOPE], () 
 });
 
 onMounted(() => loadChecklist({ force: false }));
+
+usePageRefresh(
+  (options) =>
+    loadChecklist({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined,
+      force: options.force ?? true
+    }),
+  { label: '上线检查清单' }
+);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();

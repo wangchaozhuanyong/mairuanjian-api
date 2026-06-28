@@ -358,6 +358,7 @@ import {
   ATTACHMENT_BUSINESS_MODULE_DICTIONARY_GROUP,
   ATTACHMENT_PURPOSE_DICTIONARY_GROUP
 } from '@/config/quickSettings';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   Attachment,
@@ -911,6 +912,22 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  async (options) => {
+    await Promise.all([
+      loadAttachmentOptions({
+        background: options.background,
+        force: options.force ?? true
+      }),
+      loadAttachments({
+        background: options.background,
+        force: options.force ?? true
+      })
+    ]);
+  },
+  { label: '附件管理' }
+);
 </script>
 
 <style scoped>

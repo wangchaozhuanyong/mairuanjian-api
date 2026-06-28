@@ -1382,6 +1382,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppAnnouncement,
@@ -1791,9 +1792,18 @@ watch(
   () => route.meta.moduleKey,
   (moduleKey) => {
     activeTab.value = getRouteTab(String(moduleKey ?? 'maintenance'));
-    void refreshCurrentTab();
+    void refreshCurrentTab({ force: false });
   },
   { immediate: true }
+);
+
+usePageRefresh(
+  (options) =>
+    refreshCurrentTab({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '系统配置' }
 );
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(

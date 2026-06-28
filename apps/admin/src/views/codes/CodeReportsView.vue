@@ -463,6 +463,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   CodePlatformOrder,
@@ -1013,6 +1014,15 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(['code-reports'], () => {
     force: true
   });
 });
+
+usePageRefresh(
+  (options) =>
+    loadReport({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '兑换码利润报表' }
+);
 
 onBeforeUnmount(stopRealtimeRefresh);
 </script>

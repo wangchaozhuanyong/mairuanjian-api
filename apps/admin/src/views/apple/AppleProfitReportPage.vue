@@ -383,6 +383,7 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableHeaderHelp from '@/components/ui/TableHeaderHelp.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type {
   AppleOrder,
@@ -580,6 +581,16 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated([APPLE_REPORT_SCOPE], () 
 });
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    loadReport({
+      silent: options.background,
+      dedupeMs: options.force ? 0 : undefined,
+      force: options.force ?? true
+    }),
+  { label: 'Apple ID 利润报表' }
+);
 
 onBeforeUnmount(() => {
   stopRealtimeRefresh();

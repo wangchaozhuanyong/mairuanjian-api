@@ -2278,6 +2278,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import {
   DATA_BACKUP_TYPE_DICTIONARY_GROUP,
@@ -2734,6 +2735,15 @@ watch(
   }
 );
 
+usePageRefresh(
+  (options) =>
+    refreshCurrentTab({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '数据备份' }
+);
+
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   [
     'data-overview',
@@ -2776,23 +2786,23 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
     }
 
     if (activeTab.value === 'recycle' && scopes.includes('data-recycle-bin')) {
-      void loadRecycleBin();
+      void loadRecycleBin({ background: recycleRecords.value.length > 0, force: true });
     }
 
     if (activeTab.value === 'cleanup' && scopes.includes('data-cleanup-jobs')) {
-      void loadCleanupJobs();
+      void loadCleanupJobs({ background: cleanupJobs.value.length > 0, force: true });
     }
 
     if (activeTab.value === 'duplicates' && scopes.includes('data-duplicate-merge-jobs')) {
-      void loadDuplicateJobs();
+      void loadDuplicateJobs({ background: duplicateJobs.value.length > 0, force: true });
     }
 
     if (activeTab.value === 'dictionaries' && scopes.includes('data-dictionaries')) {
-      void loadDictionaries();
+      void loadDictionaries({ background: dictionaries.value.length > 0, force: true });
     }
 
     if (activeTab.value === 'parameters' && scopes.includes('data-parameters')) {
-      void loadParameters();
+      void loadParameters({ background: parameters.value.length > 0, force: true });
     }
   }
 );

@@ -1459,6 +1459,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { APPLE_ACCOUNT_REGION_DICTIONARY_GROUP } from '@/config/quickSettings';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { useAuthStore } from '@/stores/auth';
 import type {
   AppleAccount,
@@ -2844,6 +2845,20 @@ onActivated(() => {
     force: false
   });
 });
+
+usePageRefresh(
+  async (options) => {
+    await Promise.all([
+      loadAppleAccountSourceChannels(),
+      loadAppleRegions(),
+      loadAccounts({
+        background: options.background,
+        force: options.force ?? true
+      })
+    ]);
+  },
+  { label: 'Apple ID 列表' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   ['apple-accounts', 'data-dictionaries'],

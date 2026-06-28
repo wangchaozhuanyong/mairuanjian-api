@@ -467,6 +467,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { CODE_DELIVERY_METHOD_DICTIONARY_GROUP } from '@/config/quickSettings';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type {
@@ -770,11 +771,13 @@ function handleSelectionChange(rows: CodeAfterSale[]) {
   selectedAfterSales.value = rows;
 }
 
-async function reloadAll() {
+async function reloadAll(options: { background?: boolean; force?: boolean } = {}) {
   try {
-    await Promise.all([loadDeliveredOrders(), loadDeliveryMethods(), loadAfterSales()]);
+    await Promise.all([loadDeliveredOrders(), loadDeliveryMethods(options), loadAfterSales(options)]);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '刷新售后补发失败');
+    if (!options.background) {
+      ElMessage.error(error instanceof Error ? error.message : '刷新售后补发失败');
+    }
   }
 }
 
@@ -1064,10 +1067,22 @@ async function initializePage() {
 
 onMounted(initializePage);
 
+usePageRefresh(
+  (options) =>
+    reloadAll({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '售后补发' }
+);
+
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(
   ['code-after-sales', 'data-dictionaries'],
   () => {
-    void reloadAll();
+    void reloadAll({
+      background: afterSales.value.length > 0,
+      force: true
+    });
   }
 );
 

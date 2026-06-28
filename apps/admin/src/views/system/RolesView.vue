@@ -300,6 +300,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
+import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { Permission, Role, TableDensity, UserTableView } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
@@ -717,6 +718,15 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+usePageRefresh(
+  (options) =>
+    loadData({
+      background: options.background,
+      force: options.force ?? true
+    }),
+  { label: '角色权限' }
+);
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(['system-roles'], () => {
   void loadData({
