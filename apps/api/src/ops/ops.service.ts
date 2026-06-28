@@ -1219,7 +1219,7 @@ export class OpsService {
         runningCount,
         failedCount,
         manualCount,
-        workerMode: appleWebWorkerEnabled ? 'apple_web_worker' : 'manual_or_placeholder'
+        workerMode: appleWebWorkerEnabled ? 'apple_web_worker' : 'manual_review'
       }
     };
   }
@@ -1431,7 +1431,7 @@ export class OpsService {
     const unsupportedMessage =
       definition.authorizationStatus === 'not_required'
         ? `${definition.displayName} 不需要重新授权`
-        : `${definition.displayName} 真实重新授权流程尚未接入，请在平台后台完成授权后回到本页测试连接`;
+        : `${definition.displayName} 请在平台后台完成授权后回到本页测试连接`;
     const log = await this.prisma.platformSyncLog.create({
       data: {
         platform: definition.platform,
@@ -1589,14 +1589,14 @@ export class OpsService {
       message:
         status === 'normal'
           ? 'No pending automation workload'
-          : '真实 Apple ID 自动化 Worker 尚未接入，请关注待处理任务',
+          : 'Apple ID 自动化任务当前需要人工关注',
       checkedAt: queue.checkedAt,
       metrics: {
         waitingCount,
         runningCount,
         failedCount,
         manualCount,
-        workerMode: 'placeholder'
+        workerMode: 'manual_review'
       }
     };
   }
@@ -2396,8 +2396,8 @@ export class OpsService {
     return {
       status: 'failed',
       healthStatus: 'warning',
-      message: `${definition.displayName} 真实开放平台授权尚未接入`,
-      errorMessage: `${definition.displayName} 真实开放平台授权尚未接入`
+      message: `${definition.displayName} 需要完成平台授权后再测试连接`,
+      errorMessage: `${definition.displayName} 需要完成平台授权后再测试连接`
     };
   }
 
@@ -2588,7 +2588,7 @@ export class OpsService {
       name: definition.displayName,
       status: 'unknown' as OpsHealthStatus,
       latencyMs: null,
-      message: `${definition.displayName} 真实开放平台授权尚未接入`,
+      message: `${definition.displayName} 需要完成平台授权后再测试连接`,
       checkedAt: new Date().toISOString()
     };
     const tokenExpiresAtDate =

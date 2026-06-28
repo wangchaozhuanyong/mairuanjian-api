@@ -50,6 +50,12 @@ export class AppleServicesController {
     return this.appleServicesService.listOrderOptions();
   }
 
+  @Get('action-plan-options')
+  @RequirePermissions('apple.action_plan.update')
+  listActionPlanOptions() {
+    return this.appleServicesService.listOrderOptions();
+  }
+
   @Get('region-prices')
   @RequirePermissions('apple.service.manage')
   listRegionPrices(

@@ -266,7 +266,7 @@ const DEFAULT_LAUNCH_CHECKLIST_ITEMS = [
     status: 'pending',
     owner: '运营',
     evidence: '',
-    remark: '半自动首发可先留空；后续在通知中心填写真实 Bot Token 和 Chat ID 后执行测试发送'
+    remark: '半自动首发可先留空；在通知中心填写真实 Bot Token 和 Chat ID 后执行测试发送'
   },
   {
     id: 'prod_env',

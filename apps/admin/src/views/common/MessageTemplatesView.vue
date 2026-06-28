@@ -279,6 +279,7 @@ import StatusTag from '@/components/ui/StatusTag.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { MessageTemplate, PageResult, TableDensity, UserTableView } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const DELIVERY_TEMPLATE_TYPE = 'delivery' as const satisfies MessageTemplate['type'];
@@ -443,7 +444,30 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('发货模板导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedTemplates.value.length ? selectedTemplates.value : templates.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的发货模板');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'delivery-templates',
+    [
+      { header: '模板名称', value: (row) => row.name },
+      { header: '类型', value: (row) => row.type },
+      { header: '渠道', value: (row) => row.channel },
+      { header: '内容', value: (row) => row.content },
+      { header: '变量', value: (row) => row.variables.join('、') },
+      { header: '状态', value: (row) => (row.status === 'active' ? '启用' : '停用') },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条发货模板`);
 }
 
 function handleBatchAction(action: string) {

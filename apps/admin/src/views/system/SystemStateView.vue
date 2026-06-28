@@ -8,8 +8,8 @@
     <template #actions>
       <StatusChip :tone="state.tone" dot>{{ state.actionTag }}</StatusChip>
       <AppButton @click="router.back()">返回上一页</AppButton>
-      <AppButton variant="primary" @click="router.push(state.primaryRoute)">
-        {{ state.primaryLabel }}
+      <AppButton variant="primary" @click="router.push(primaryAction.route)">
+        {{ primaryAction.label }}
       </AppButton>
     </template>
 
@@ -70,13 +70,16 @@ import AppState from '@/components/ui/AppState.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
+import { useAuthStore } from '@/stores/auth';
 import { buildHelpText } from '@/utils/helpText';
+import { hasUserRoutePermission } from '@/utils/permissions';
 
 type StateTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
 type AppStateType = 'empty' | 'error' | 'forbidden' | 'info' | 'loading' | 'success' | 'warning';
 
 const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
 
 const stateMap: Record<
   string,
@@ -111,21 +114,27 @@ const stateMap: Record<
     description: '当前账号没有访问该页面或操作的权限。',
     tone: 'purple',
     actionTag: '权限限制',
-    primaryLabel: '去安全中心',
-    primaryRoute: '/system/security',
+    primaryLabel: '回到首页',
+    primaryRoute: '/dashboard',
     cardTitle: '访问被拦截',
-    cardSubtitle: '系统已按角色权限和字段权限阻止本次访问。',
+    cardSubtitle: '当前账号不能访问这个页面，系统已停止本次访问以保护业务数据。',
     stateType: 'forbidden',
     stateTitle: '没有访问权限',
-    stateDescription: '请确认当前员工账号的角色、权限点和敏感字段授权是否已经配置。',
+    stateDescription: '请回到工作台继续处理可访问业务；确实需要该页面时，请联系管理员开通。',
     metrics: [
-      { label: '状态码', value: '403', hint: '权限校验未通过', tag: '拦截', tagTone: 'purple' },
+      {
+        label: '访问状态',
+        value: '已拦截',
+        hint: '当前账号不可访问',
+        tag: '受限',
+        tagTone: 'purple'
+      },
       { label: '数据安全', value: '已保护', hint: '不会展示敏感业务数据' },
-      { label: '处理建议', value: '申请授权', hint: '由管理员调整角色权限' }
+      { label: '处理建议', value: '联系管理员', hint: '确认是否需要开通该页面' }
     ],
     actions: [
-      { title: '检查角色', description: '进入权限管理确认当前账号是否拥有页面权限。' },
-      { title: '申请授权', description: '敏感字段或高风险页面需要管理员审批后再访问。' },
+      { title: '联系管理员', description: '说明要访问的页面和业务原因，由管理员判断是否开通。' },
+      { title: '重新导航', description: '从左侧菜单进入当前账号已经开通的业务页面。' },
       { title: '返回工作台', description: '回到可访问页面继续处理订单、续费和发货任务。' }
     ]
   },
@@ -155,28 +164,28 @@ const stateMap: Record<
     ]
   },
   'maintenance-mode': {
-    title: '系统维护模式页',
-    group: '系统管理',
+    title: '系统维护中',
+    group: '服务状态',
     phase: 'Phase 13',
     description: '系统维护期间展示影响范围、恢复时间和可用入口。',
     tone: 'blue',
     actionTag: '维护中',
-    primaryLabel: '查看维护配置',
-    primaryRoute: '/system/maintenance',
+    primaryLabel: '回到首页',
+    primaryRoute: '/dashboard',
     cardTitle: '系统正在维护',
-    cardSubtitle: '维护模式会保护正在迁移或更新的数据，避免员工误操作。',
+    cardSubtitle: '维护期间部分功能会暂停，避免更新中的业务数据出错。',
     stateType: 'info',
     stateTitle: '当前功能暂时不可用',
-    stateDescription: '请等待维护窗口结束，管理员角色可进入网站维护页面查看公告和恢复时间。',
+    stateDescription: '请稍后再试，或先回到首页处理仍可访问的业务。',
     metrics: [
-      { label: '维护状态', value: '启用', hint: '访问已按角色范围限制', tag: '保护中' },
-      { label: '数据写入', value: '受控', hint: '避免更新期间产生不一致' },
-      { label: '管理员入口', value: '维护配置', hint: '查看公告、窗口和功能开关' }
+      { label: '维护状态', value: '进行中', hint: '部分页面暂不可用', tag: '保护中' },
+      { label: '业务数据', value: '已保护', hint: '避免更新期间产生不一致' },
+      { label: '建议操作', value: '稍后重试', hint: '恢复后继续处理业务' }
     ],
     actions: [
-      { title: '查看公告', description: '维护说明应写清影响模块、开始时间和预计恢复时间。' },
-      { title: '等待恢复', description: '普通员工等待维护完成后再继续处理业务。' },
-      { title: '管理员处理', description: '管理员可进入网站维护页面关闭维护模式或调整白名单。' }
+      { title: '等待恢复', description: '维护完成后再继续处理当前页面的业务。' },
+      { title: '回到首页', description: '先查看首页里仍可处理的订单、续费和发货任务。' },
+      { title: '联系管理员', description: '如果维护时间影响业务处理，请联系管理员确认恢复安排。' }
     ]
   }
 };
@@ -185,18 +194,31 @@ const state = computed(() => {
   const moduleKey = String(route.meta.moduleKey ?? '');
   return stateMap[moduleKey] ?? stateMap['not-found'];
 });
+const primaryAction = computed(() => {
+  if (canAccessRoute(state.value.primaryRoute)) {
+    return {
+      label: state.value.primaryLabel,
+      route: state.value.primaryRoute
+    };
+  }
+
+  return {
+    label: '回到首页',
+    route: '/dashboard'
+  };
+});
 const stateOverviewHelp = computed(() =>
   buildHelpText({
     description: `${state.value.title}概览会说明当前访问为什么被限制，以及业务数据是否受影响。`,
-    suggestion: '先看状态码和处理建议，再决定返回上一页、回首页还是进入对应配置页。',
-    example: '例如遇到 403，先确认角色权限；遇到维护模式，先看维护公告和恢复时间。'
+    suggestion: '先看访问状态和处理建议，再决定返回上一页、回首页或联系管理员。',
+    example: '例如遇到 403，先回到工作台继续处理可访问业务；遇到维护中，等待恢复后再进入。'
   })
 );
 const stateCardHelp = computed(() =>
   buildHelpText({
     description: state.value.cardSubtitle,
-    suggestion: '不要在异常页反复刷新写入型操作，先回到安全入口或首页确认状态。',
-    example: `例如看到“${state.value.stateTitle}”，可以用下方按钮回到首页或进入${state.value.primaryLabel}。`
+    suggestion: '不要在异常页反复刷新写入型操作，先回到首页确认当前可处理任务。',
+    example: `例如看到“${state.value.stateTitle}”，可以用下方按钮回到首页或返回上一页。`
   })
 );
 const stateActionHelp = computed(() =>
@@ -206,4 +228,14 @@ const stateActionHelp = computed(() =>
     example: '例如旧链接打不开时，从左侧菜单重新进入页面，比手动改地址更稳。'
   })
 );
+
+function canAccessRoute(path: string) {
+  const targetRoute = router.resolve(path);
+
+  if (targetRoute.matched.some((record) => Boolean(record.meta.adminOnly))) {
+    return Boolean(authStore.user?.roles.includes('admin'));
+  }
+
+  return hasUserRoutePermission(authStore.user, targetRoute.meta.permission);
+}
 </script>

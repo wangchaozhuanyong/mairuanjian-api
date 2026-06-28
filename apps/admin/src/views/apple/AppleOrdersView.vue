@@ -6,13 +6,19 @@
     description="查看 ID 订单、开通记录、余额消耗和利润。订单创建后会自动生成消费流水和开通记录。"
   >
     <template #actions>
-      <AppButton variant="primary" @click="router.push('/apple/order-entry')">新建订单</AppButton>
+      <AppButton
+        v-if="canCreateOrders"
+        variant="primary"
+        @click="router.push('/apple/order-entry')"
+      >
+        新建订单
+      </AppButton>
     </template>
 
     <section class="content-panel apple-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
-          title="订单队列"
+          title="订单列表"
           :help="[
             '这里看每一单有没有开通、用了哪个 ID、客户付了多少、系统算出来赚了多少。',
             '订单、开通记录和余额消费会分开记账，不会和兑换码发货混在一起。'
@@ -48,6 +54,7 @@
         :selected-count="selectedOrders.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        :show-primary="canCreateOrders"
         primary-label="新建订单"
         placeholder="搜索订单号、客户、业务、平台订单号"
         @search="handleSearch"
@@ -72,10 +79,14 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无 Apple ID 订单</strong>
-            <span>可以新建订单录入业务，或清空筛选后重新查看订单队列。</span>
+            <span>可以新建订单录入业务，或清空筛选后重新查看订单列表。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-              <AppButton variant="primary" @click="router.push('/apple/order-entry')">
+              <AppButton
+                v-if="canCreateOrders"
+                variant="primary"
+                @click="router.push('/apple/order-entry')"
+              >
                 新建订单
               </AppButton>
             </div>
@@ -259,11 +270,11 @@
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
-              <AppButton v-if="canManageOrders" size="small" variant="ghost" @click="openEdit(row)">
+              <AppButton v-if="canUpdateOrders" size="small" variant="ghost" @click="openEdit(row)">
                 编辑
               </AppButton>
               <AppButton
-                v-if="canManageOrders"
+                v-if="canDeleteOrders"
                 size="small"
                 variant="danger"
                 :loading="deletingOrderId === row.id"
@@ -337,11 +348,11 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(order)">详情</AppButton>
-            <AppButton v-if="canManageOrders" size="small" variant="ghost" @click="openEdit(order)">
+            <AppButton v-if="canUpdateOrders" size="small" variant="ghost" @click="openEdit(order)">
               编辑
             </AppButton>
             <AppButton
-              v-if="canManageOrders"
+              v-if="canDeleteOrders"
               size="small"
               variant="danger"
               :loading="deletingOrderId === order.id"
@@ -356,10 +367,14 @@
       <div v-else class="mobile-record-list" aria-label="Apple ID 订单空状态">
         <div class="apple-core-empty-state">
           <strong>暂无 Apple ID 订单</strong>
-          <span>可以新建订单录入业务，或清空筛选后重新查看订单队列。</span>
+          <span>可以新建订单录入业务，或清空筛选后重新查看订单列表。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-            <AppButton variant="primary" @click="router.push('/apple/order-entry')">
+            <AppButton
+              v-if="canCreateOrders"
+              variant="primary"
+              @click="router.push('/apple/order-entry')"
+            >
               新建订单
             </AppButton>
           </div>
@@ -479,7 +494,14 @@
       </el-form>
       <template #footer>
         <AppButton @click="editDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="savingEdit" @click="saveOrderEdit"> 保存 </AppButton>
+        <AppButton
+          v-if="canUpdateOrders"
+          variant="primary"
+          :loading="savingEdit"
+          @click="saveOrderEdit"
+        >
+          保存
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -594,7 +616,7 @@
             <div>
               <span>开通记录</span>
               <AppButton
-                v-if="selectedOrder.activationId"
+                v-if="selectedOrder.activationId && canViewActivations"
                 size="small"
                 variant="soft"
                 @click="router.push('/apple/activations')"
@@ -660,6 +682,8 @@ import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type { AppleOrder, PageResult, TableDensity, UserTableView } from '@/types/system';
 import { formatAppleRegionLabel } from '@/utils/appleAccountRegion';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const router = useRouter();
@@ -781,7 +805,15 @@ const editRules: FormRules<EditOrderForm> = {
   status: [{ required: true, message: '请选择订单状态', trigger: 'change' }]
 };
 
-const canManageOrders = computed(() => authStore.user?.roles.includes('admin') ?? false);
+function hasOrderPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
+const canCreateOrders = computed(() => hasOrderPermission('apple.order.create'));
+const canUpdateOrders = computed(() => hasOrderPermission('apple.order.update'));
+const canDeleteOrders = computed(() => hasOrderPermission('apple.order.delete'));
+const canViewActivations = computed(() => hasOrderPermission('apple.activation.view'));
+const canManageOrders = computed(() => canUpdateOrders.value || canDeleteOrders.value);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -982,8 +1014,8 @@ function openDetail(order: AppleOrder) {
 }
 
 function openEdit(order: AppleOrder) {
-  if (!canManageOrders.value) {
-    ElMessage.error('只有管理员可以编辑订单');
+  if (!canUpdateOrders.value) {
+    ElMessage.error('当前账号没有编辑订单权限');
     return;
   }
 
@@ -1034,6 +1066,11 @@ function buildUpdatePayload(): UpdateAppleOrderPayload {
 async function saveOrderEdit() {
   if (!editingOrder.value) return;
 
+  if (!canUpdateOrders.value) {
+    ElMessage.error('当前账号没有编辑订单权限');
+    return;
+  }
+
   try {
     await editFormRef.value?.validate();
     savingEdit.value = true;
@@ -1053,8 +1090,8 @@ async function saveOrderEdit() {
 }
 
 async function removeOrder(order: AppleOrder) {
-  if (!canManageOrders.value) {
-    ElMessage.error('只有管理员可以删除订单');
+  if (!canDeleteOrders.value) {
+    ElMessage.error('当前账号没有删除订单权限');
     return;
   }
 
@@ -1099,7 +1136,43 @@ async function clearFiltersAndSearch() {
 }
 
 function exportList() {
-  ElMessage.info('Apple ID 订单导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedOrders.value.length ? selectedOrders.value : orders.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的订单数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-orders',
+    [
+      { header: '订单号', value: (row) => row.orderNo },
+      { header: '客户', value: (row) => row.customer.name },
+      { header: '手机号', value: (row) => formatCustomerPhone(row) },
+      { header: '微信', value: (row) => row.customer.wechat ?? '' },
+      { header: '来源平台', value: (row) => row.sourcePlatform?.name ?? '' },
+      { header: '平台订单号', value: (row) => row.externalOrderNo ?? '' },
+      { header: '业务', value: (row) => formatOrderService(row) },
+      { header: 'Apple ID', value: (row) => row.appleAccount?.appleIdMasked ?? '' },
+      { header: 'ID 类型', value: (row) => formatOwnershipType(row.appleAccountOwnershipType) },
+      { header: '套餐', value: (row) => formatPlanChange(row) },
+      { header: '实收', value: (row) => formatPaidAmount(row) },
+      { header: '实收人民币', value: (row) => row.paidAmountRmb },
+      { header: 'Apple 余额成本', value: (row) => row.appleCostRmb },
+      { header: '总成本', value: (row) => formatMoneyNumber(getOrderTotalCost(row)) },
+      { header: '平台手续费', value: (row) => row.platformFeeRmb },
+      { header: '退款/补发损耗', value: (row) => row.refundLossRmb },
+      { header: '利润', value: (row) => formatOrderProfit(row) },
+      { header: '利润率', value: (row) => formatProfitRate(row) },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '开始时间', value: (row) => formatDate(row.startTime) },
+      { header: '到期时间', value: (row) => formatDate(row.expireTime) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条 Apple ID 订单`);
 }
 
 function handleBatchAction(action: string) {

@@ -245,7 +245,7 @@
             @clear-filters="clearBackupFilters"
             @save-view="saveBackupTableView"
             @apply-view="applyBackupSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-select
@@ -420,7 +420,7 @@
             @clear-filters="clearRestoreFilters"
             @save-view="saveRestoreTableView"
             @apply-view="applyRestoreSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -578,7 +578,7 @@
             @clear-filters="clearImportFilters"
             @save-view="saveImportTableView"
             @apply-view="applyImportSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -792,7 +792,7 @@
             @clear-filters="clearExportFilters"
             @save-view="saveExportTableView"
             @apply-view="applyExportSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -1005,7 +1005,7 @@
             @clear-filters="clearRecycleFilters"
             @save-view="saveRecycleTableView"
             @apply-view="applyRecycleSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -1188,7 +1188,7 @@
             @clear-filters="clearCleanupFilters"
             @save-view="saveCleanupTableView"
             @apply-view="applyCleanupSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -1350,7 +1350,7 @@
             @clear-filters="clearDuplicateFilters"
             @save-view="saveDuplicateTableView"
             @apply-view="applyDuplicateSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -1530,7 +1530,7 @@
             @clear-filters="clearDictionaryFilters"
             @save-view="saveDictionaryTableView"
             @apply-view="applyDictionarySavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -1710,7 +1710,7 @@
             @clear-filters="clearParameterFilters"
             @save-view="saveParameterTableView"
             @apply-view="applyParameterSavedView"
-            @export="showExportMessage"
+            @export="exportCurrentTab"
           >
             <template #filters>
               <el-input
@@ -2303,6 +2303,7 @@ import type {
   UserTableView
 } from '@/types/system';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { exportRowsToCsv, type CsvColumn } from '@/utils/exportCsv';
 import {
   buildDataBackupTypeOptions,
   buildDataExportModuleOptions,
@@ -4476,6 +4477,309 @@ async function maybeAskFailureReason(status: DataJobStatus) {
   return result.value || '人工标记失败';
 }
 
+async function exportCurrentTab() {
+  try {
+    if (activeTab.value === 'backups') {
+      await exportBackups();
+      return;
+    }
+    if (activeTab.value === 'restores') {
+      await exportRestores();
+      return;
+    }
+    if (activeTab.value === 'imports') {
+      await exportImports();
+      return;
+    }
+    if (activeTab.value === 'exports') {
+      await exportExports();
+      return;
+    }
+    if (activeTab.value === 'recycle') {
+      await exportRecycleBin();
+      return;
+    }
+    if (activeTab.value === 'cleanup') {
+      await exportCleanupJobs();
+      return;
+    }
+    if (activeTab.value === 'duplicates') {
+      await exportDuplicateJobs();
+      return;
+    }
+    if (activeTab.value === 'dictionaries') {
+      await exportDictionaries();
+      return;
+    }
+    if (activeTab.value === 'parameters') {
+      await exportParameters();
+      return;
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出失败');
+  }
+}
+
+async function exportBackups() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-backup-jobs',
+    label: '备份任务',
+    params: buildBackupParams(),
+    fetcher: dataCenterApi.listBackupJobs,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '类型', value: (row) => getBackupTypeLabel(row.jobType) },
+      { header: '状态', value: (row) => getDataJobStatusLabel(row.status) },
+      { header: '文件路径', value: (row) => row.storagePath },
+      { header: '文件大小', value: (row) => formatFileSize(row.fileSize) },
+      { header: '失败原因', value: (row) => row.errorMessage },
+      { header: '备注', value: (row) => row.remark },
+      { header: '发起人', value: (row) => getUserDisplayName(row.createdBy) },
+      { header: '开始时间', value: (row) => formatDate(row.startedAt) },
+      { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportRestores() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-restore-jobs',
+    label: '恢复任务',
+    params: buildRestoreParams(),
+    fetcher: dataCenterApi.listRestoreJobs,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '恢复范围', value: (row) => row.restoreScope },
+      { header: '备份任务', value: (row) => getBackupJobSummary(row) },
+      { header: '状态', value: (row) => getDataJobStatusLabel(row.status) },
+      { header: '审批说明', value: (row) => row.approvalNote },
+      { header: '失败原因', value: (row) => row.errorMessage },
+      { header: '发起人', value: (row) => getUserDisplayName(row.createdBy) },
+      { header: '开始时间', value: (row) => formatDate(row.startedAt) },
+      { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportImports() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-import-jobs',
+    label: '导入任务',
+    params: buildImportParams(),
+    fetcher: dataCenterApi.listImportJobs,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '模块', value: (row) => getImportModuleLabel(row.module) },
+      { header: '状态', value: (row) => getDataJobStatusLabel(row.status) },
+      { header: '总数', value: (row) => row.totalCount },
+      { header: '成功数', value: (row) => row.successCount },
+      { header: '失败数', value: (row) => row.failedCount },
+      { header: '文件', value: (row) => row.filePath },
+      { header: '错误报告', value: (row) => row.errorReport },
+      { header: '备注', value: (row) => row.remark },
+      { header: '发起人', value: (row) => getUserDisplayName(row.createdBy) },
+      { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportExports() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-export-jobs',
+    label: '导出任务',
+    params: buildExportParams(),
+    fetcher: dataCenterApi.listExportJobs,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '模块', value: (row) => getExportModuleLabel(row.module) },
+      { header: '状态', value: (row) => getDataJobStatusLabel(row.status) },
+      { header: '字段', value: (row) => row.fields.join(', ') },
+      { header: '包含敏感字段', value: (row) => (row.containsSensitive ? '是' : '否') },
+      { header: '文件路径', value: (row) => row.filePath },
+      { header: '下载过期', value: (row) => formatDate(row.downloadExpiresAt) },
+      { header: '失败原因', value: (row) => row.errorMessage },
+      { header: '发起人', value: (row) => getUserDisplayName(row.createdBy) },
+      { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportRecycleBin() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-recycle-bin',
+    label: '回收站记录',
+    params: buildRecycleParams(),
+    fetcher: dataCenterApi.listRecycleBin,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '模块', value: (row) => row.module },
+      { header: '对象类型', value: (row) => row.objectType },
+      { header: '对象 ID', value: (row) => row.objectId },
+      { header: '对象名称', value: (row) => row.objectLabel },
+      { header: '删除人', value: (row) => getUserDisplayName(row.deletedBy) },
+      { header: '删除时间', value: (row) => formatDate(row.deletedAt) },
+      { header: '恢复状态', value: (row) => (row.restoredAt ? '已恢复' : '未恢复') },
+      { header: '恢复人', value: (row) => getUserDisplayName(row.restoredBy) },
+      { header: '恢复时间', value: (row) => formatDate(row.restoredAt) }
+    ]
+  });
+}
+
+async function exportCleanupJobs() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-cleanup-jobs',
+    label: '数据清理任务',
+    params: buildCleanupParams(),
+    fetcher: dataCenterApi.listCleanupJobs,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '模块', value: (row) => row.module },
+      { header: '状态', value: (row) => getDataJobStatusLabel(row.status) },
+      { header: '影响数量', value: (row) => row.affectedCount },
+      { header: '清理范围', value: (row) => stringifyExportValue(row.cleanupScope) },
+      { header: '审批说明', value: (row) => row.approvalNote },
+      { header: '失败原因', value: (row) => row.errorMessage },
+      { header: '发起人', value: (row) => getUserDisplayName(row.createdBy) },
+      { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportDuplicateJobs() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-duplicate-merge-jobs',
+    label: '重复合并任务',
+    params: buildDuplicateParams(),
+    fetcher: dataCenterApi.listDuplicateMergeJobs,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '模块', value: (row) => row.module },
+      { header: '状态', value: (row) => getDataJobStatusLabel(row.status) },
+      { header: '主对象 ID', value: (row) => row.primaryObjectId },
+      { header: '重复对象 ID', value: (row) => row.duplicateObjectIds.join(', ') },
+      { header: '重复对象数', value: (row) => row.duplicateObjectIds.length },
+      { header: '影响数量', value: (row) => row.affectedCount },
+      { header: '匹配规则', value: (row) => stringifyExportValue(row.matchRule) },
+      { header: '审批说明', value: (row) => row.approvalNote },
+      { header: '失败原因', value: (row) => row.errorMessage },
+      { header: '发起人', value: (row) => getUserDisplayName(row.createdBy) },
+      { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportDictionaries() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-dictionaries',
+    label: '数据字典',
+    params: buildDictionaryParams(),
+    fetcher: dataCenterApi.listDictionaries,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: '分组', value: (row) => row.group },
+      { header: '编码', value: (row) => row.code },
+      { header: '名称', value: (row) => row.label },
+      { header: '值', value: (row) => row.value },
+      { header: '排序', value: (row) => row.sortOrder },
+      { header: '状态', value: (row) => getDictionaryStatusLabel(row.status) },
+      { header: '备注', value: (row) => row.remark },
+      { header: '更新人', value: (row) => getUserDisplayName(row.updatedBy) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportParameters() {
+  await exportDataCenterRows({
+    filenamePrefix: 'data-system-parameters',
+    label: '系统参数',
+    params: buildParameterParams(),
+    fetcher: dataCenterApi.listSystemParameters,
+    columns: [
+      { header: 'ID', value: (row) => row.id },
+      { header: 'Key', value: (row) => row.key },
+      { header: '分组', value: (row) => row.group },
+      { header: '值', value: (row) => stringifyExportValue(row.value) },
+      { header: '备注', value: (row) => row.remark },
+      { header: '更新人', value: (row) => getUserDisplayName(row.updatedBy) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ]
+  });
+}
+
+async function exportDataCenterRows<
+  TItem,
+  TParams extends { page: number; pageSize: number }
+>(config: {
+  filenamePrefix: string;
+  label: string;
+  params: TParams;
+  fetcher: (params: TParams) => Promise<PageResult<TItem>>;
+  columns: Array<CsvColumn<TItem>>;
+}) {
+  saving.value = true;
+  try {
+    const rows = await fetchAllDataCenterRows(config.params, config.fetcher);
+    const count = exportRowsToCsv(config.filenamePrefix, config.columns, rows);
+    ElMessage.success(`已导出${config.label} ${count} 条`);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function fetchAllDataCenterRows<TItem, TParams extends { page: number; pageSize: number }>(
+  params: TParams,
+  fetcher: (params: TParams) => Promise<PageResult<TItem>>
+) {
+  const rows: TItem[] = [];
+  let page = 1;
+  const pageSize = 200;
+
+  while (true) {
+    const result = await fetcher({ ...params, page, pageSize } as TParams);
+    rows.push(...result.items);
+
+    if (rows.length >= result.total || result.items.length === 0) {
+      return rows;
+    }
+
+    page += 1;
+  }
+}
+
+function getDataJobStatusLabel(status: DataJobStatus) {
+  return jobStatusOptions.find((option) => option.value === status)?.label ?? status;
+}
+
+function getDictionaryStatusLabel(status: DataDictionaryStatus) {
+  return dictionaryStatusOptions.find((option) => option.value === status)?.label ?? status;
+}
+
+function getUserDisplayName(
+  user?: { displayName?: string | null; username?: string | null } | null
+) {
+  return user?.displayName || user?.username || '-';
+}
+
+function getBackupJobSummary(row: RestoreJob) {
+  if (row.backupJob?.storagePath) return row.backupJob.storagePath;
+  if (row.backupJob?.id) return row.backupJob.id;
+  return row.backupJobId ?? '-';
+}
+
+function stringifyExportValue(value?: Record<string, unknown> | null) {
+  if (!value) return '';
+  return JSON.stringify(value);
+}
+
 async function showDownload(row: DataExportJob) {
   const response = await dataCenterApi.downloadExportJob(row.id);
   const url = URL.createObjectURL(response.data);
@@ -4632,10 +4936,6 @@ function isBackupJobType(value: unknown): value is BackupJobType {
 
 function isDictionaryStatus(value: unknown): value is DataDictionaryStatus {
   return value === 'active' || value === 'disabled';
-}
-
-function showExportMessage() {
-  ElMessage.info('数据中心导出会统一创建导出任务，请在导出任务中跟踪下载');
 }
 
 function splitList(value: string) {

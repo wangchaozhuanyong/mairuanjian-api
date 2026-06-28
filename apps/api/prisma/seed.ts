@@ -119,6 +119,96 @@ const roleDefinitions = [
   ['审计', 'auditor', '查看操作日志和权限变更记录']
 ] as const;
 
+const defaultRolePermissionCodes = {
+  customer_service: [
+    'customer.view',
+    'customer.create',
+    'customer.update',
+    'customer.view_phone',
+    'source_platform.view',
+    'attachment.view',
+    'attachment.upload',
+    'attachment.download',
+    'apple.account.view',
+    'apple.balance.view',
+    'apple.order.view',
+    'apple.order.create',
+    'apple.order.update',
+    'apple.activation.view',
+    'apple.renewal_task.view',
+    'apple.renewal_task.update',
+    'apple.action_plan.view',
+    'apple.action_plan.update'
+  ],
+  delivery_staff: [
+    'customer.view',
+    'source_platform.view',
+    'attachment.view',
+    'attachment.upload',
+    'attachment.download',
+    'code.batch.import',
+    'code.inventory.view',
+    'code.order.view',
+    'code.order.create',
+    'code.order.deliver',
+    'code.delivery.view',
+    'code.after_sale.view',
+    'code.after_sale.manage'
+  ],
+  finance: [
+    'customer.view',
+    'source_platform.view',
+    'apple.account.view',
+    'apple.balance.view',
+    'apple.cost.view',
+    'apple.order.view',
+    'apple.activation.view',
+    'apple.report.view',
+    'code.inventory.view',
+    'code.order.view',
+    'code.delivery.view',
+    'code.cost.view',
+    'code.profit.view',
+    'code.report.view'
+  ],
+  operation: [
+    'source_platform.view',
+    'source_platform.manage',
+    'data.dictionary.manage',
+    'apple.service.manage',
+    'apple.official_price.manage',
+    'code.service.manage',
+    'code.delivery_template.manage'
+  ],
+  technician: [
+    'ops.overview.view',
+    'ops.api_status.view',
+    'ops.database_status.view',
+    'ops.redis_status.view',
+    'ops.queue_status.view',
+    'ops.cron_job.view',
+    'ops.platform_sync.view',
+    'ops.worker_status.view',
+    'ops.storage_status.view',
+    'ops.disk_status.view',
+    'ops.error_log.view',
+    'ops.error_log.create',
+    'ops.health_snapshot.create',
+    'ops.platform.test_connection',
+    'ops.platform.reauthorize',
+    'notification.telegram.view'
+  ],
+  auditor: [
+    'audit_log.view',
+    'security.login_log.view',
+    'security.abnormal_login.view',
+    'security.sensitive_access_log.view',
+    'security.sensitive_operation.view',
+    'data.export.view',
+    'notification.log.view'
+  ]
+} as const;
+
 const permissionDefinitions = [
   ['查看客户', 'customer.view', 'customer', 'view'],
   ['新增客户', 'customer.create', 'customer', 'create'],
@@ -193,8 +283,10 @@ const permissionDefinitions = [
   ['查看完整兑换码', 'code.inventory.view_full', 'code.inventory', 'view_full'],
   ['作废兑换码', 'code.inventory.void', 'code.inventory', 'void'],
   ['查看兑换码订单', 'code.order.view', 'code.order', 'view'],
+  ['手工导入兑换码订单', 'code.order.create', 'code.order', 'create'],
   ['兑换码发货', 'code.order.deliver', 'code.order', 'deliver'],
   ['查看发货记录', 'code.delivery.view', 'code.delivery', 'view'],
+  ['查看售后补发', 'code.after_sale.view', 'code.after_sale', 'view'],
   ['管理售后补发', 'code.after_sale.manage', 'code.after_sale', 'manage'],
   ['查看兑换码成本', 'code.cost.view', 'code.cost', 'view'],
   ['查看兑换码利润', 'code.profit.view', 'code.profit', 'view'],
@@ -765,6 +857,46 @@ async function main() {
       })
     )
   );
+
+  const permissionByCode = new Map(permissions.map((permission) => [permission.code, permission]));
+  const businessRoles = await prisma.role.findMany({
+    where: {
+      code: {
+        in: Object.keys(defaultRolePermissionCodes)
+      }
+    }
+  });
+  const roleByCode = new Map(businessRoles.map((role) => [role.code, role]));
+
+  for (const [roleCode, permissionCodes] of Object.entries(defaultRolePermissionCodes)) {
+    const role = roleByCode.get(roleCode);
+
+    if (!role) {
+      throw new Error(`Default role ${roleCode} was not seeded`);
+    }
+
+    for (const permissionCode of permissionCodes) {
+      const permission = permissionByCode.get(permissionCode);
+
+      if (!permission) {
+        throw new Error(`Default role permission ${permissionCode} does not exist`);
+      }
+
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: role.id,
+            permissionId: permission.id
+          }
+        },
+        update: {},
+        create: {
+          roleId: role.id,
+          permissionId: permission.id
+        }
+      });
+    }
+  }
 
   await seedNotificationDefaults();
   await seedSecurityDefaults();

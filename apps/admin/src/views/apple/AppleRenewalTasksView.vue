@@ -48,6 +48,7 @@
         :selected-count="selectedTasks.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        :show-primary="canUpdateRenewalTasks"
         show-overwrite-view
         :primary-loading="generating"
         primary-label="生成到期任务"
@@ -144,7 +145,12 @@
             <span>可以生成到期任务，或调整筛选条件后重新查看。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-              <AppButton variant="primary" :loading="generating" @click="generateDueTasks">
+              <AppButton
+                v-if="canUpdateRenewalTasks"
+                variant="primary"
+                :loading="generating"
+                @click="generateDueTasks"
+              >
                 生成到期任务
               </AppButton>
             </div>
@@ -252,6 +258,7 @@
             <div class="table-action-group table-action-group--wrap">
               <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
               <AppButton
+                v-if="canUpdateRenewalTasks"
                 size="small"
                 variant="success"
                 :disabled="isFinalStatus(row.status)"
@@ -260,6 +267,7 @@
                 完成
               </AppButton>
               <AppButton
+                v-if="canUpdateRenewalTasks"
                 size="small"
                 variant="soft"
                 :disabled="isFinalStatus(row.status)"
@@ -325,6 +333,7 @@
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(task)">详情</AppButton>
             <AppButton
+              v-if="canUpdateRenewalTasks"
               size="small"
               variant="success"
               :disabled="isFinalStatus(task.status)"
@@ -333,6 +342,7 @@
               完成
             </AppButton>
             <AppButton
+              v-if="canUpdateRenewalTasks"
               size="small"
               variant="soft"
               :disabled="isFinalStatus(task.status)"
@@ -348,7 +358,12 @@
           <span>可以生成到期任务，或调整筛选条件后重新查看。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-            <AppButton variant="primary" :loading="generating" @click="generateDueTasks">
+            <AppButton
+              v-if="canUpdateRenewalTasks"
+              variant="primary"
+              :loading="generating"
+              @click="generateDueTasks"
+            >
               生成到期任务
             </AppButton>
           </div>
@@ -369,6 +384,7 @@
       confirm-text="保存处理"
       :confirm-loading="evidenceUploading"
       size="640px"
+      :show-confirm="canUpdateRenewalTasks"
       @confirm="saveTask"
     >
       <div class="drawer-detail-grid">
@@ -452,7 +468,7 @@
               <template #label>
                 <FieldHelpLabel
                   label="客户决定"
-                  purpose="记录客户是否续费、取消或还没回复，后续任务会按它流转。"
+                  purpose="记录客户是否续费、取消或还没回复，之后任务会按它流转。"
                   example="客户确认续费选续费；明确不续选取消；没回复选待确认。"
                 />
               </template>
@@ -500,7 +516,7 @@
             <template #label>
               <FieldHelpLabel
                 label="处理凭证"
-                purpose="上传或查看处理证明，方便后续审核任务是否真的完成。"
+                purpose="上传或查看处理证明，方便之后审核任务是否真的完成。"
                 example="可以上传聊天截图、付款截图、取消订阅截图。"
               />
             </template>
@@ -515,6 +531,7 @@
                   </div>
                 </div>
                 <AppButton
+                  v-if="canDownloadAttachments"
                   variant="ghost"
                   :disabled="evidenceUploading"
                   @click="downloadEvidenceAttachment"
@@ -523,6 +540,7 @@
                 </AppButton>
               </div>
               <input
+                v-if="canUploadAttachments"
                 ref="evidenceFileInputRef"
                 type="file"
                 :disabled="evidenceUploading"
@@ -538,6 +556,7 @@
         <div class="drawer-section__title">快捷处理</div>
         <div class="drawer-inline-actions drawer-inline-actions--inside">
           <AppButton
+            v-if="canUpdateRenewalTasks"
             variant="success"
             :loading="evidenceUploading"
             :disabled="!selectedTask || isFinalStatus(selectedTask.status)"
@@ -546,6 +565,7 @@
             标记完成
           </AppButton>
           <AppButton
+            v-if="canUpdateRenewalTasks"
             variant="soft"
             :disabled="evidenceUploading || !selectedTask || isFinalStatus(selectedTask.status)"
             @click="postponeSelectedTask"
@@ -553,6 +573,7 @@
             延期1天
           </AppButton>
           <AppButton
+            v-if="canUpdateRenewalTasks"
             variant="danger"
             :disabled="evidenceUploading || !selectedTask || isFinalStatus(selectedTask.status)"
             @click="cancelSelectedTask"
@@ -586,10 +607,14 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import type { RenewalTask, TableDensity, UserTableView } from '@/types/system';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
 const tasks = ref<RenewalTask[]>([]);
 const total = ref(0);
 const loading = ref(false);
@@ -628,10 +653,10 @@ const renewalTaskViews: RenewalTaskViewOption[] = [
   {
     key: 'all',
     label: '全部',
-    switchHint: '完整队列',
+    switchHint: '完整列表',
     taskType: '',
-    panelTitle: '续费任务队列',
-    panelDescription: '把客户确认、收款、取消订阅、充值和自动续费任务集中在一个队列里处理。',
+    panelTitle: '续费任务列表',
+    panelDescription: '把客户确认、收款、取消订阅、充值和自动续费任务集中在一个列表里处理。',
     description: '集中处理到期联系、客户确认、收款、取消订阅、充值续费和自动续费任务。',
     badge: '全部',
     tone: 'blue'
@@ -793,6 +818,9 @@ const urgentCount = computed(() => tasks.value.filter((task) => task.priority ==
 const highPriorityCount = computed(
   () => tasks.value.filter((task) => task.priority === 'high').length
 );
+const canUpdateRenewalTasks = computed(() => hasRenewalTaskPermission('apple.renewal_task.update'));
+const canUploadAttachments = computed(() => hasRenewalTaskPermission('attachment.upload'));
+const canDownloadAttachments = computed(() => hasRenewalTaskPermission('attachment.download'));
 const renewalSummaryItems = computed<Array<{ label: string; value: string; tone: ChipTone }>>(
   () => [
     { label: '当前视图', value: pageCopy.value.badge, tone: pageCopy.value.tone },
@@ -1027,7 +1055,43 @@ function selectQuickDate(value: string) {
 }
 
 function exportList() {
-  ElMessage.info('续费任务导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedTasks.value.length ? selectedTasks.value : tasks.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的续费任务');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-renewal-tasks',
+    [
+      { header: '任务标题', value: (row) => row.title },
+      { header: '任务类型', value: (row) => getTaskTypeLabel(row.taskType) },
+      { header: '客户', value: (row) => row.customer.name },
+      { header: '微信', value: (row) => row.customer.wechat ?? '' },
+      { header: '订单号', value: (row) => row.order.orderNo },
+      { header: '业务', value: (row) => row.service.name },
+      { header: 'Apple ID', value: (row) => row.appleAccount?.appleIdMasked ?? '' },
+      { header: '当前套餐', value: (row) => row.currentPlan ?? '' },
+      { header: '目标套餐', value: (row) => row.targetPlan ?? '' },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '优先级', value: (row) => getPriorityLabel(row.priority) },
+      { header: '客户决定', value: (row) => getCustomerDecisionLabel(row.customerDecision) },
+      { header: '当前余额', value: (row) => row.currentBalance },
+      { header: '预计扣款', value: (row) => row.expectedChargeAmount },
+      { header: '建议充值', value: (row) => row.suggestedTopupAmount },
+      { header: '预计扣款时间', value: (row) => formatDate(row.expectedChargeTime) },
+      { header: '取消截止时间', value: (row) => formatDate(row.cancelDeadline) },
+      { header: '提醒时间', value: (row) => formatDate(row.remindAt) },
+      { header: '截止时间', value: (row) => formatDate(row.dueAt) },
+      { header: '负责人', value: (row) => row.assignedTo?.displayName ?? '' },
+      { header: '备注', value: (row) => row.note ?? '' },
+      { header: '完成时间', value: (row) => formatDate(row.completedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条续费任务`);
 }
 
 function handleBatchAction(action: string) {
@@ -1200,6 +1264,11 @@ function isColumnVisible(column: string) {
 }
 
 async function generateDueTasks() {
+  if (!canUpdateRenewalTasks.value) {
+    ElMessage.warning('当前账号没有生成续费任务权限');
+    return;
+  }
+
   generating.value = true;
   try {
     const result = await appleRenewalTasksApi.generateDueTasks({ daysAhead: 3 });
@@ -1226,6 +1295,11 @@ async function openDetail(task: RenewalTask) {
 
 async function saveTask() {
   if (!selectedTask.value) return;
+  if (!canUpdateRenewalTasks.value) {
+    ElMessage.warning('当前账号没有保存续费任务权限');
+    return;
+  }
+
   try {
     const evidenceAttachmentId = await ensureEvidenceAttachmentId();
     selectedTask.value = await appleRenewalTasksApi.update(selectedTask.value.id, {
@@ -1245,12 +1319,22 @@ async function saveTask() {
 }
 
 async function completeTask(task: RenewalTask) {
+  if (!canUpdateRenewalTasks.value) {
+    ElMessage.warning('当前账号没有完成续费任务权限');
+    return;
+  }
+
   await openDetail(task);
   await completeSelectedTask();
 }
 
 async function completeSelectedTask() {
   if (!selectedTask.value) return;
+  if (!canUpdateRenewalTasks.value) {
+    ElMessage.warning('当前账号没有完成续费任务权限');
+    return;
+  }
+
   try {
     const { value } = await ElMessageBox.prompt('请输入处理结果', '标记完成', {
       inputType: 'textarea',
@@ -1275,12 +1359,22 @@ async function completeSelectedTask() {
 }
 
 async function postponeTask(task: RenewalTask) {
+  if (!canUpdateRenewalTasks.value) {
+    ElMessage.warning('当前账号没有延期续费任务权限');
+    return;
+  }
+
   selectedTask.value = task;
   await postponeSelectedTask();
 }
 
 async function postponeSelectedTask() {
   if (!selectedTask.value) return;
+  if (!canUpdateRenewalTasks.value) {
+    ElMessage.warning('当前账号没有延期续费任务权限');
+    return;
+  }
+
   const dueAt = addDaysIso(selectedTask.value.dueAt ?? new Date().toISOString(), 1);
   try {
     selectedTask.value = await appleRenewalTasksApi.postpone(selectedTask.value.id, {
@@ -1298,6 +1392,11 @@ async function postponeSelectedTask() {
 
 async function cancelSelectedTask() {
   if (!selectedTask.value) return;
+  if (!canUpdateRenewalTasks.value) {
+    ElMessage.warning('当前账号没有取消续费任务权限');
+    return;
+  }
+
   try {
     await ElMessageBox.confirm('取消后该任务不会再作为待办展示，确认取消吗？', '取消续费任务', {
       type: 'warning',
@@ -1317,6 +1416,10 @@ async function cancelSelectedTask() {
   }
 }
 
+function hasRenewalTaskPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
 function resetForm(task: RenewalTask) {
   form.status = task.status;
   form.priority = task.priority;
@@ -1331,6 +1434,11 @@ function resetForm(task: RenewalTask) {
 }
 
 function selectEvidenceFile(event: Event) {
+  if (!canUploadAttachments.value) {
+    ElMessage.warning('当前账号没有上传凭证权限');
+    return;
+  }
+
   const input = event.target as HTMLInputElement;
   evidenceFile.value = input.files?.[0] ?? null;
 }
@@ -1338,6 +1446,10 @@ function selectEvidenceFile(event: Event) {
 async function ensureEvidenceAttachmentId() {
   if (!selectedTask.value || !evidenceFile.value) {
     return form.evidenceAttachmentId || undefined;
+  }
+
+  if (!canUploadAttachments.value) {
+    throw new Error('当前账号没有上传凭证权限');
   }
 
   evidenceUploading.value = true;
@@ -1361,6 +1473,11 @@ async function ensureEvidenceAttachmentId() {
 }
 
 async function downloadEvidenceAttachment() {
+  if (!canDownloadAttachments.value) {
+    ElMessage.warning('当前账号没有下载凭证权限');
+    return;
+  }
+
   if (!selectedTask.value?.evidenceAttachment) {
     return;
   }

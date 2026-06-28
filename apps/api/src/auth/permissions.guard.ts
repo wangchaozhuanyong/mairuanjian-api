@@ -8,7 +8,19 @@ interface RequestWithUser {
 }
 
 const LEGACY_PERMISSION_ALIASES: Record<string, string[]> = {
-  'code.delivery_template.manage': ['message_template.manage']
+  'code.order.view': ['code.order.create', 'code.order.deliver'],
+  'code.order.create': ['code.order.deliver'],
+  'code.after_sale.view': ['code.after_sale.manage'],
+  'code.delivery_template.manage': ['message_template.manage'],
+  'source_platform.view': [
+    'customer.view',
+    'customer.create',
+    'apple.order.view',
+    'apple.order.create',
+    'code.order.view',
+    'code.order.create',
+    'code.order.deliver'
+  ]
 };
 
 @Injectable()

@@ -39,7 +39,7 @@
       loading
       state-compact
       loading-title="正在加载 Apple ID 详情"
-      loading-description="正在读取余额、成本、订单、开通记录和续费任务。"
+      loading-description="正在读取账号资料和你有权限查看的关联业务。"
     />
 
     <template v-else-if="account">
@@ -55,12 +55,19 @@
             <StatusChip tone="purple"
               >来源渠道 {{ account.sourceChannel?.name ?? '未设置' }}</StatusChip
             >
-            <StatusChip :tone="account.isManuallyLocked ? 'red' : 'purple'">
+            <StatusChip
+              v-if="canViewAppleActivations"
+              :tone="account.isManuallyLocked ? 'red' : 'purple'"
+            >
               关联业务 {{ activationTotal }}
             </StatusChip>
-            <StatusChip tone="cyan">充值 {{ topupTotal }}</StatusChip>
-            <StatusChip tone="neutral">消费 {{ consumptionTotal }}</StatusChip>
-            <StatusChip :tone="openWorkTotal ? 'orange' : 'green'"
+            <StatusChip v-if="canViewAppleBalanceRecords" tone="cyan"
+              >充值 {{ topupTotal }}</StatusChip
+            >
+            <StatusChip v-if="canViewAppleBalanceRecords" tone="neutral"
+              >消费 {{ consumptionTotal }}</StatusChip
+            >
+            <StatusChip v-if="canViewOpenWork" :tone="openWorkTotal ? 'orange' : 'green'"
               >待办 {{ openWorkTotal }}</StatusChip
             >
           </div>
@@ -179,7 +186,11 @@
         </div>
 
         <el-tabs v-model="activeTab" class="system-tabs account-detail-tabs">
-          <el-tab-pane :label="`充值记录 ${topupTotal}`" name="topups">
+          <el-tab-pane
+            v-if="canViewAppleBalanceRecords"
+            :label="`充值记录 ${topupTotal}`"
+            name="topups"
+          >
             <el-table class="desktop-data-table" :data="topups" row-key="id">
               <el-table-column prop="faceValue" label="面值" width="100" />
               <el-table-column label="本次均价" width="110">
@@ -255,7 +266,11 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane :label="`消费记录 ${consumptionTotal}`" name="consumptions">
+          <el-tab-pane
+            v-if="canViewAppleBalanceRecords"
+            :label="`消费记录 ${consumptionTotal}`"
+            name="consumptions"
+          >
             <el-table class="desktop-data-table" :data="consumptions" row-key="id">
               <el-table-column prop="amount" label="消费金额" width="110" />
               <el-table-column prop="costAmount" label="扣减成本" width="110" />
@@ -332,7 +347,11 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane :label="`余额修正 ${adjustmentTotal}`" name="adjustments">
+          <el-tab-pane
+            v-if="canViewAppleBalanceRecords"
+            :label="`余额修正 ${adjustmentTotal}`"
+            name="adjustments"
+          >
             <el-table class="desktop-data-table" :data="adjustments" row-key="id">
               <el-table-column label="余额变化" min-width="170">
                 <template #default="{ row }">
@@ -470,7 +489,7 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane :label="`订单 ${orderTotal}`" name="orders">
+          <el-tab-pane v-if="canViewAppleOrders" :label="`订单 ${orderTotal}`" name="orders">
             <el-table class="desktop-data-table" :data="orders" row-key="id">
               <el-table-column label="订单" min-width="170">
                 <template #default="{ row }">
@@ -543,7 +562,11 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane :label="`开通记录 ${activationTotal}`" name="activations">
+          <el-tab-pane
+            v-if="canViewAppleActivations"
+            :label="`开通记录 ${activationTotal}`"
+            name="activations"
+          >
             <el-table class="desktop-data-table" :data="activations" row-key="id">
               <el-table-column label="客户/业务" min-width="190">
                 <template #default="{ row }">
@@ -633,7 +656,11 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane :label="`续费任务 ${renewalTaskTotal}`" name="renewalTasks">
+          <el-tab-pane
+            v-if="canViewRenewalTasks"
+            :label="`续费任务 ${renewalTaskTotal}`"
+            name="renewalTasks"
+          >
             <el-table class="desktop-data-table" :data="renewalTasks" row-key="id">
               <el-table-column label="任务" min-width="220">
                 <template #default="{ row }">
@@ -715,7 +742,11 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane :label="`操作计划 ${actionPlanTotal}`" name="actionPlans">
+          <el-tab-pane
+            v-if="canViewActionPlans"
+            :label="`操作计划 ${actionPlanTotal}`"
+            name="actionPlans"
+          >
             <el-table class="desktop-data-table" :data="actionPlans" row-key="id">
               <el-table-column label="计划日期" min-width="140">
                 <template #default="{ row }">{{ formatDate(row.planDate, true) }}</template>
@@ -812,6 +843,7 @@ import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type {
   AppleAccount,
   AppleAccountStatusCheck,
@@ -820,16 +852,28 @@ import type {
   AppleBalanceConsumption,
   AppleBalanceTopup,
   AppleOrder,
+  PageResult,
   RenewalTask,
   ServiceActivation
 } from '@/types/system';
 import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 type ChipTone = 'green' | 'orange' | 'red' | 'neutral' | 'blue' | 'purple';
+type AccountDetailTabName =
+  | 'topups'
+  | 'consumptions'
+  | 'adjustments'
+  | 'statusChecks'
+  | 'orders'
+  | 'activations'
+  | 'renewalTasks'
+  | 'actionPlans';
 
 const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
 const DETAIL_REALTIME_SCOPES = [
   'apple-accounts',
   'apple-orders',
@@ -837,11 +881,12 @@ const DETAIL_REALTIME_SCOPES = [
   'apple-renewal-tasks',
   'apple-action-plans'
 ];
+const RELATED_PAGE_SIZE = 8;
 const account = ref<AppleAccount | null>(null);
 const accountLoading = ref(false);
 const relatedLoading = ref(false);
 const loadError = ref('');
-const activeTab = ref('topups');
+const activeTab = ref<AccountDetailTabName>('statusChecks');
 const topups = ref<AppleBalanceTopup[]>([]);
 const consumptions = ref<AppleBalanceConsumption[]>([]);
 const adjustments = ref<AppleBalanceAdjustment[]>([]);
@@ -860,7 +905,40 @@ const renewalTaskTotal = ref(0);
 const actionPlanTotal = ref(0);
 
 const accountId = computed(() => normalizeRouteId(route.query.id));
+const canViewAppleBalanceRecords = computed(() => hasAccountDetailPermission('apple.balance.view'));
+const canViewAppleOrders = computed(() => hasAccountDetailPermission('apple.order.view'));
+const canViewAppleActivations = computed(() => hasAccountDetailPermission('apple.activation.view'));
+const canViewRenewalTasks = computed(() => hasAccountDetailPermission('apple.renewal_task.view'));
+const canViewActionPlans = computed(() => hasAccountDetailPermission('apple.action_plan.view'));
+const canViewOpenWork = computed(() => canViewRenewalTasks.value || canViewActionPlans.value);
 const openWorkTotal = computed(() => renewalTaskTotal.value + actionPlanTotal.value);
+const visibleAccountDetailTabs = computed<AccountDetailTabName[]>(() => {
+  const tabs: AccountDetailTabName[] = [];
+
+  if (canViewAppleBalanceRecords.value) {
+    tabs.push('topups', 'consumptions', 'adjustments');
+  }
+
+  tabs.push('statusChecks');
+
+  if (canViewAppleOrders.value) {
+    tabs.push('orders');
+  }
+
+  if (canViewAppleActivations.value) {
+    tabs.push('activations');
+  }
+
+  if (canViewRenewalTasks.value) {
+    tabs.push('renewalTasks');
+  }
+
+  if (canViewActionPlans.value) {
+    tabs.push('actionPlans');
+  }
+
+  return tabs;
+});
 
 const accountStatusOptions: Record<
   AppleAccount['status'],
@@ -992,6 +1070,10 @@ watch(
   }
 );
 
+watch(visibleAccountDetailTabs, syncActiveAccountDetailTab, {
+  immediate: true
+});
+
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(DETAIL_REALTIME_SCOPES, () => {
   void loadDetail({ silent: true, dedupeMs: 0 });
 });
@@ -1025,6 +1107,7 @@ function resetRelatedData() {
   activationTotal.value = 0;
   renewalTaskTotal.value = 0;
   actionPlanTotal.value = 0;
+  syncActiveAccountDetailTab();
 }
 
 async function loadDetail(options: { silent?: boolean; dedupeMs?: number } = {}) {
@@ -1069,22 +1152,53 @@ function getAccountDetailErrorMessage(error: unknown) {
 }
 
 async function loadRelatedData(id: string, options: { silent?: boolean; dedupeMs?: number } = {}) {
+  const canLoadBalanceRecords = canViewAppleBalanceRecords.value;
+  const canLoadOrders = canViewAppleOrders.value;
+  const canLoadActivations = canViewAppleActivations.value;
+  const canLoadRenewalTasks = canViewRenewalTasks.value;
+  const canLoadActionPlans = canViewActionPlans.value;
+
   if (!options.silent) {
     relatedLoading.value = true;
   }
   try {
     const result = await refreshSmartQuery({
-      key: createSmartQueryKey('apple-account-related', { id }),
+      key: createSmartQueryKey('apple-account-related', {
+        id,
+        canLoadActionPlans,
+        canLoadActivations,
+        canLoadBalanceRecords,
+        canLoadOrders,
+        canLoadRenewalTasks
+      }),
       fetcher: () =>
         Promise.all([
-          appleAccountsApi.listTopups(id, { page: 1, pageSize: 8 }),
-          appleAccountsApi.listConsumptions(id, { page: 1, pageSize: 8 }),
-          appleAccountsApi.listBalanceAdjustments(id, { page: 1, pageSize: 8 }),
-          appleAccountsApi.listStatusChecks(id, { page: 1, pageSize: 8 }),
-          appleOrdersApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
-          appleActivationsApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
-          appleRenewalTasksApi.list({ page: 1, pageSize: 8, appleAccountId: id }),
-          appleActionPlansApi.list({ page: 1, pageSize: 8, appleAccountId: id })
+          canLoadBalanceRecords
+            ? appleAccountsApi.listTopups(id, { page: 1, pageSize: RELATED_PAGE_SIZE })
+            : Promise.resolve(emptyPageResult<AppleBalanceTopup>()),
+          canLoadBalanceRecords
+            ? appleAccountsApi.listConsumptions(id, { page: 1, pageSize: RELATED_PAGE_SIZE })
+            : Promise.resolve(emptyPageResult<AppleBalanceConsumption>()),
+          canLoadBalanceRecords
+            ? appleAccountsApi.listBalanceAdjustments(id, { page: 1, pageSize: RELATED_PAGE_SIZE })
+            : Promise.resolve(emptyPageResult<AppleBalanceAdjustment>()),
+          appleAccountsApi.listStatusChecks(id, { page: 1, pageSize: RELATED_PAGE_SIZE }),
+          canLoadOrders
+            ? appleOrdersApi.list({ page: 1, pageSize: RELATED_PAGE_SIZE, appleAccountId: id })
+            : Promise.resolve(emptyPageResult<AppleOrder>()),
+          canLoadActivations
+            ? appleActivationsApi.list({ page: 1, pageSize: RELATED_PAGE_SIZE, appleAccountId: id })
+            : Promise.resolve(emptyPageResult<ServiceActivation>()),
+          canLoadRenewalTasks
+            ? appleRenewalTasksApi.list({
+                page: 1,
+                pageSize: RELATED_PAGE_SIZE,
+                appleAccountId: id
+              })
+            : Promise.resolve(emptyPageResult<RenewalTask>()),
+          canLoadActionPlans
+            ? appleActionPlansApi.list({ page: 1, pageSize: RELATED_PAGE_SIZE, appleAccountId: id })
+            : Promise.resolve(emptyPageResult<AppleActionPlan>())
         ]),
       dedupeMs: options.dedupeMs ?? 1_200
     });
@@ -1115,10 +1229,30 @@ async function loadRelatedData(id: string, options: { silent?: boolean; dedupeMs
     activationTotal.value = activationData.total;
     renewalTaskTotal.value = renewalTaskData.total;
     actionPlanTotal.value = actionPlanData.total;
+    syncActiveAccountDetailTab();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载关联业务数据失败');
   } finally {
     relatedLoading.value = false;
+  }
+}
+
+function hasAccountDetailPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
+function emptyPageResult<TItem>(): PageResult<TItem> {
+  return {
+    items: [],
+    page: 1,
+    pageSize: RELATED_PAGE_SIZE,
+    total: 0
+  };
+}
+
+function syncActiveAccountDetailTab() {
+  if (!visibleAccountDetailTabs.value.includes(activeTab.value)) {
+    activeTab.value = visibleAccountDetailTabs.value[0] ?? 'statusChecks';
   }
 }
 

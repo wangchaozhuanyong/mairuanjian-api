@@ -9,7 +9,14 @@
       <AppButton @click="() => loadInitialData({ force: true, dedupeMs: 0 })">
         刷新基础数据
       </AppButton>
-      <AppButton variant="primary" :loading="saving" @click="submitOrder">提交订单</AppButton>
+      <AppButton
+        v-if="canCreateAppleOrder"
+        variant="primary"
+        :loading="saving"
+        @click="submitOrder"
+      >
+        提交订单
+      </AppButton>
     </template>
 
     <AppCard
@@ -21,8 +28,8 @@
       <el-alert
         v-if="customerNoticeVisible"
         class="order-entry-form-alert"
-        title="请选择已有客户，或手动输入新客户资料后再提交订单。"
         type="warning"
+        :title="customerNoticeTitle"
         :closable="false"
         show-icon
       />
@@ -62,10 +69,10 @@
                       filterable
                       remote
                       reserve-keyword
-                      :disabled="Boolean(newCustomerDraft)"
+                      :disabled="Boolean(newCustomerDraft) || !canViewCustomers"
                       :loading="customerSearching"
                       :remote-method="searchCustomers"
-                      placeholder="搜索客户名称、微信、手机号尾号"
+                      :placeholder="customerSelectPlaceholder"
                       @change="handleCustomerChange"
                       @visible-change="handleCustomerSelectVisibleChange"
                     >
@@ -86,6 +93,7 @@
                             customerSearching ? '正在搜索客户...' : '未找到客户，可手动输入资料。'
                           }}</span>
                           <AppButton
+                            v-if="canCreateCustomer"
                             size="small"
                             variant="soft"
                             @click.stop="openNewCustomerDialog"
@@ -96,6 +104,7 @@
                       </template>
                     </el-select>
                     <AppButton
+                      v-if="canCreateCustomer"
                       class="order-entry-customer-picker__create"
                       size="small"
                       variant="soft"
@@ -239,7 +248,7 @@
                             {{
                               loading
                                 ? '正在加载业务...'
-                                : '没有可选套餐，请确认当前国家已经采集并确认套餐价格。'
+                                : '没有可选套餐，请确认当前国家已经维护并确认套餐价格。'
                             }}
                           </span>
                           <AppButton
@@ -254,7 +263,7 @@
                       </template>
                     </el-select>
                     <div class="order-entry-service-price-pill">
-                      <span>采集价</span>
+                      <span>参考价</span>
                       <strong>{{ selectedServicePriceDisplay }}</strong>
                     </div>
                   </div>
@@ -493,7 +502,7 @@
                   <template #label>
                     <FieldHelpLabel
                       label="到期时间"
-                      purpose="记录服务什么时候结束，后续续费任务和到期提醒会看这个时间。"
+                      purpose="记录服务什么时候结束，之后的续费任务和到期提醒会看这个时间。"
                       example="系统按含开通当天计算：5 月 8 日开通 1 个月，默认填 6 月 7 日。特殊订单可以手动改。"
                     />
                   </template>
@@ -563,7 +572,14 @@
 
         <div class="v3-entry-form__actions">
           <AppButton :disabled="saving" @click="resetOrderForm">重置录入</AppButton>
-          <AppButton variant="primary" :loading="saving" @click="submitOrder"> 提交订单 </AppButton>
+          <AppButton
+            v-if="canCreateAppleOrder"
+            variant="primary"
+            :loading="saving"
+            @click="submitOrder"
+          >
+            提交订单
+          </AppButton>
         </div>
       </el-form>
     </AppCard>
@@ -602,9 +618,15 @@
             class="toolbar-search"
             placeholder="搜索 Apple ID、地区、币种、备注"
             clearable
+            :disabled="!canCreateAppleOrder"
             @keyup.enter="loadAvailableAccounts({ autoSelect: true })"
           />
-          <AppButton @click="() => loadAvailableAccounts({ autoSelect: true })">重新匹配</AppButton>
+          <AppButton
+            v-if="canCreateAppleOrder"
+            @click="() => loadAvailableAccounts({ autoSelect: true })"
+          >
+            重新匹配
+          </AppButton>
         </div>
 
         <el-table
@@ -619,7 +641,11 @@
               <strong>暂无匹配结果</strong>
               <span>请先选择业务，系统会按官方消耗金额自动匹配。</span>
               <div class="apple-core-empty-state__actions">
-                <AppButton variant="soft" @click="loadAvailableAccounts({ autoSelect: true })">
+                <AppButton
+                  v-if="canCreateAppleOrder"
+                  variant="soft"
+                  @click="loadAvailableAccounts({ autoSelect: true })"
+                >
                   重新匹配
                 </AppButton>
               </div>
@@ -731,7 +757,11 @@
             <strong>暂无匹配结果</strong>
             <span>请先选择业务，系统会按官方消耗金额自动匹配。</span>
             <div class="apple-core-empty-state__actions">
-              <AppButton variant="soft" @click="loadAvailableAccounts({ autoSelect: true })">
+              <AppButton
+                v-if="canCreateAppleOrder"
+                variant="soft"
+                @click="loadAvailableAccounts({ autoSelect: true })"
+              >
                 重新匹配
               </AppButton>
             </div>
@@ -806,7 +836,9 @@
       />
       <template #footer>
         <AppButton @click="newCustomerDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" @click="saveNewCustomerDraft">加入订单</AppButton>
+        <AppButton v-if="canCreateCustomer" variant="primary" @click="saveNewCustomerDraft">
+          加入订单
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -837,6 +869,7 @@ import {
   CUSTOMER_TAG_DICTIONARY_GROUP
 } from '@/config/quickSettings';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type { CustomerProfileFormModel } from '@/types/customerProfileForm';
 import type {
   AppleAccountOwnershipType,
@@ -862,6 +895,7 @@ import {
   formatAppleAccountRegionOptionLabel,
   mergeAppleAccountRegionOptions
 } from '@/utils/appleAccountRegion';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 import {
   loadSmartAppleServices,
@@ -877,6 +911,7 @@ const ORDER_ENTRY_REALTIME_SCOPES = [
   'apple-services',
   ORDER_ENTRY_BASE_SCOPE
 ];
+const authStore = useAuthStore();
 const loading = ref(false);
 const saving = ref(false);
 const matchingLoading = ref(false);
@@ -984,6 +1019,28 @@ const selectedCustomer = computed(
   () => customers.value.find((customer) => customer.id === form.customerId) ?? null
 );
 const hasOrderCustomer = computed(() => Boolean(form.customerId || newCustomerDraft.value));
+const canCreateAppleOrder = computed(() => hasOrderEntryPermission('apple.order.create'));
+const canViewCustomers = computed(() => hasOrderEntryPermission('customer.view'));
+const canCreateCustomer = computed(() => hasOrderEntryPermission('customer.create'));
+const canViewSourcePlatforms = computed(() => hasOrderEntryPermission('source_platform.view'));
+const canManageAppleServices = computed(() => hasOrderEntryPermission('apple.service.manage'));
+const canManageDictionaries = computed(() => hasOrderEntryPermission('data.dictionary.manage'));
+const customerSelectPlaceholder = computed(() =>
+  canViewCustomers.value ? '搜索客户名称、微信、手机号尾号' : '当前账号不能搜索已有客户'
+);
+const customerNoticeTitle = computed(() => {
+  if (!canViewCustomers.value && !canCreateCustomer.value) {
+    return '当前账号没有客户查看或新增权限，暂时不能提交订单。';
+  }
+
+  if (!canViewCustomers.value) {
+    return '请手动输入新客户资料后再提交订单。';
+  }
+
+  return canCreateCustomer.value
+    ? '请选择已有客户，或手动输入新客户资料后再提交订单。'
+    : '请选择已有客户后再提交订单。';
+});
 const appleRegionOptions = computed(() =>
   mergeAppleAccountRegionOptions(appleRegionDictionaries.value)
 );
@@ -1018,17 +1075,21 @@ const activeServiceCategoryValues = computed(
         .map((category) => getServiceCategoryLabel(category.value || category.label))
     )
 );
-const serviceCategoryOptions = computed(() => [
-  ...new Set(
-    regionMatchedServicePrices.value
-      .map((price) => getServiceCategoryLabel(price.category || price.service.category))
-      .filter((category) => activeServiceCategoryValues.value.has(category))
-  )
-]);
+const serviceCategoryOptions = computed(() => {
+  const configuredCategories = activeServiceCategoryValues.value;
+  return [
+    ...new Set(
+      regionMatchedServicePrices.value
+        .map((price) => getServiceCategoryLabel(price.category || price.service.category))
+        .filter((category) => !configuredCategories.size || configuredCategories.has(category))
+    )
+  ];
+});
 const filteredServicePrices = computed(() =>
   regionMatchedServicePrices.value.filter(
     (price) =>
-      activeServiceCategoryValues.value.has(getServiceCategoryLabel(price.category)) &&
+      (!activeServiceCategoryValues.value.size ||
+        activeServiceCategoryValues.value.has(getServiceCategoryLabel(price.category))) &&
       getServiceCategoryLabel(price.category) === form.serviceCategory
   )
 );
@@ -1295,6 +1356,15 @@ function applyAppleServiceCategoryResult(data: PageResult<DataDictionary>) {
   appleServiceCategoryDictionaries.value = data.items;
 }
 
+function emptyPageResult<TItem>(pageSize: number): PageResult<TItem> {
+  return {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize
+  };
+}
+
 function getServiceCategoryLabel(category?: string | null) {
   const normalized = category?.trim();
   if (!normalized || normalized === 'default') {
@@ -1448,22 +1518,36 @@ async function loadOrderEntryBaseData(
   options: { dedupeMs?: number; force?: boolean; signal?: AbortSignal } = {}
 ) {
   return Promise.all([
-    loadSmartCustomers(
-      { page: 1, pageSize: 100, status: 'active' },
-      { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
-    ),
-    loadSmartSourcePlatforms(
-      { page: 1, pageSize: 100, status: 'active' },
-      { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
-    ),
-    loadSmartAppleServices(
-      { page: 1, pageSize: 100, status: 'enabled' },
-      { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
-    ),
+    canViewCustomers.value
+      ? loadSmartCustomers(
+          { page: 1, pageSize: 100, status: 'active' },
+          { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
+        )
+      : Promise.resolve(emptyPageResult<Customer>(100)),
+    canViewSourcePlatforms.value
+      ? loadSmartSourcePlatforms(
+          { page: 1, pageSize: 100, status: 'active' },
+          { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
+        )
+      : Promise.resolve(emptyPageResult<SourcePlatform>(100)),
+    canManageAppleServices.value
+      ? loadSmartAppleServices(
+          { page: 1, pageSize: 100, status: 'enabled' },
+          { force: options.force ?? true, dedupeMs: options.dedupeMs, signal: options.signal }
+        )
+      : Promise.resolve(emptyPageResult<AppleService>(100)),
     appleServicesApi.listOrderOptions({ signal: options.signal }),
-    dataCenterApi.listDictionaries(buildCustomerTagParams(), { signal: options.signal }),
-    dataCenterApi.listDictionaries(buildAppleRegionParams(), { signal: options.signal }),
-    dataCenterApi.listDictionaries(buildAppleServiceCategoryParams(), { signal: options.signal })
+    canManageDictionaries.value
+      ? dataCenterApi.listDictionaries(buildCustomerTagParams(), { signal: options.signal })
+      : Promise.resolve(emptyPageResult<DataDictionary>(200)),
+    canManageDictionaries.value
+      ? dataCenterApi.listDictionaries(buildAppleRegionParams(), { signal: options.signal })
+      : Promise.resolve(emptyPageResult<DataDictionary>(200)),
+    canManageDictionaries.value
+      ? dataCenterApi.listDictionaries(buildAppleServiceCategoryParams(), {
+          signal: options.signal
+        })
+      : Promise.resolve(emptyPageResult<DataDictionary>(200))
   ]);
 }
 
@@ -1482,11 +1566,25 @@ function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryB
     selectedCustomer.value ? [selectedCustomer.value] : []
   );
   sourcePlatforms.value = platformData.items;
-  services.value = serviceData.items;
+  services.value = mergeAppleServiceItems(
+    serviceData.items,
+    servicePriceData.items.map((price) => price.service)
+  );
   servicePrices.value = servicePriceData.items;
   applyCustomerTagResult(customerTagData);
   applyAppleRegionResult(appleRegionData);
   applyAppleServiceCategoryResult(appleServiceCategoryData);
+}
+
+function mergeAppleServiceItems(items: AppleService[], pinnedItems: AppleService[] = []) {
+  const serviceMap = new Map<string, AppleService>();
+  for (const service of pinnedItems) {
+    serviceMap.set(service.id, service);
+  }
+  for (const service of items) {
+    serviceMap.set(service.id, service);
+  }
+  return Array.from(serviceMap.values());
 }
 
 function mergeCustomerItems(items: Customer[], pinnedItems: Customer[] = []) {
@@ -1501,6 +1599,12 @@ function mergeCustomerItems(items: Customer[], pinnedItems: Customer[] = []) {
 }
 
 async function searchCustomers(keyword: string) {
+  if (!canViewCustomers.value) {
+    customerSearching.value = false;
+    customers.value = selectedCustomer.value ? [selectedCustomer.value] : [];
+    return;
+  }
+
   const requestId = ++customerSearchRequestId;
   customerSearchKeyword.value = keyword;
   customerSearching.value = true;
@@ -1534,7 +1638,7 @@ async function searchCustomers(keyword: string) {
 }
 
 function handleCustomerSelectVisibleChange(visible: boolean) {
-  if (visible) {
+  if (visible && canViewCustomers.value) {
     void searchCustomers(customerSearchKeyword.value);
   }
 }
@@ -1721,6 +1825,11 @@ async function handleServicePriceChange() {
 }
 
 function openNewCustomerDialog() {
+  if (!canCreateCustomer.value) {
+    ElMessage.warning('当前账号没有新增客户权限');
+    return;
+  }
+
   if (newCustomerDraft.value) {
     fillNewCustomerFormFromPayload(newCustomerDraft.value);
   } else {
@@ -1742,6 +1851,11 @@ function fillNewCustomerFormFromPayload(payload: SaveCustomerPayload) {
 }
 
 async function saveNewCustomerDraft() {
+  if (!canCreateCustomer.value) {
+    ElMessage.warning('当前账号没有新增客户权限');
+    return;
+  }
+
   const valid = await newCustomerFormRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -1766,6 +1880,11 @@ function clearNewCustomerDraft() {
 }
 
 async function loadAvailableAccounts(options: { autoSelect?: boolean } = {}) {
+  if (!canCreateAppleOrder.value) {
+    ElMessage.warning('当前账号没有订单录入权限');
+    return;
+  }
+
   if (!form.serviceId) {
     return;
   }
@@ -1818,6 +1937,11 @@ function getAvailabilityTone(value: AvailableAppleAccount['availability']) {
 }
 
 async function submitOrder() {
+  if (!canCreateAppleOrder.value) {
+    ElMessage.warning('当前账号没有订单录入权限');
+    return;
+  }
+
   if (!hasOrderCustomer.value) {
     customerNoticeVisible.value = true;
     return;
@@ -1872,6 +1996,10 @@ async function resolveOrderCustomerId() {
     throw new Error('请先选择客户或新增客户资料');
   }
 
+  if (!canCreateCustomer.value) {
+    throw new Error('当前账号没有新增客户权限，不能使用手动输入客户资料提交订单');
+  }
+
   const customerPayload = newCustomerDraft.value;
   await ensureCustomerTagsRegistered(customerPayload.tags ?? []);
   const createdCustomer = await customersApi.create(customerPayload);
@@ -1883,6 +2011,10 @@ async function resolveOrderCustomerId() {
 }
 
 async function ensureCustomerTagsRegistered(tags: string[]) {
+  if (!canManageDictionaries.value) {
+    return;
+  }
+
   const existingLabels = new Set(customerTagDictionaries.value.map((tag) => tag.label.trim()));
   const missingTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].filter(
     (tag) => !existingLabels.has(tag)
@@ -1937,6 +2069,10 @@ function resetOrderForm() {
   newCustomerDraft.value = null;
   customerNoticeVisible.value = false;
   resetCustomerProfileForm(newCustomerForm);
+}
+
+function hasOrderEntryPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
 }
 
 const stopRealtimeRefresh = onRealtimeQueryInvalidated(ORDER_ENTRY_REALTIME_SCOPES, () => {

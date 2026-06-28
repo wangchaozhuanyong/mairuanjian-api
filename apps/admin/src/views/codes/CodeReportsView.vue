@@ -471,6 +471,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const ReportTable = defineComponent({
@@ -631,7 +632,7 @@ const reportRiskTitle = computed(() =>
 const reportRiskDescription = computed(() =>
   reportRiskCount.value > 0
     ? '建议先核对兑换码成本、平台手续费、退款金额和补发记录，再决定是否进入售后复盘。'
-    : '可继续切换业务或平台维度，观察库存周转、退款和售后补发是否集中。'
+    : '可继续切换业务或平台维度，观察发货码数、退款和售后补发是否集中。'
 );
 const filterChips = computed(() => {
   if (quickDate.value !== 'custom' || (!query.dateFrom && !query.dateTo)) {
@@ -811,7 +812,64 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('兑换码报表导出会进入数据中心导出任务，后续统一接入');
+  if (activeTab.value === 'recent') {
+    const rows = report.value.recentOrders;
+
+    if (!rows.length) {
+      ElMessage.warning('暂无可导出的最近订单数据');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'code-profit-report-recent',
+      [
+        { header: '订单号', value: (row) => row.externalOrderNo },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '业务', value: (row) => row.serviceName ?? '' },
+        { header: '平台', value: (row) => row.platformName },
+        { header: '销售额', value: (row) => row.paidAmount },
+        { header: '手续费', value: (row) => row.platformFee },
+        { header: '成本', value: (row) => row.costAmount },
+        { header: '退款', value: (row) => row.refundAmount },
+        { header: '净利润', value: (row) => row.netProfitAmount },
+        { header: '码数', value: (row) => row.codeCount },
+        { header: '售后数', value: (row) => row.afterSaleCount },
+        { header: '发货状态', value: (row) => getDeliveryStatusLabel(row.deliveryStatus) },
+        { header: '发货时间', value: (row) => formatDate(row.deliveredAt) }
+      ],
+      rows
+    );
+
+    ElMessage.success(`已导出 ${count} 条最近订单报表`);
+    return;
+  }
+
+  const rows = activeGroupRows.value;
+
+  if (!rows.length) {
+    ElMessage.warning(`暂无可导出的${activeTabLabel.value}数据`);
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    `code-profit-report-${activeTab.value}`,
+    [
+      { header: activeTabLabel.value, value: (row) => row.label },
+      { header: '订单数', value: (row) => row.orderCount },
+      { header: '码数', value: (row) => row.codeCount },
+      { header: '售后数', value: (row) => row.afterSaleCount },
+      { header: '销售额', value: (row) => row.paidAmount },
+      { header: '手续费', value: (row) => row.platformFee },
+      { header: '成本', value: (row) => row.costAmount },
+      { header: '退款', value: (row) => row.refundAmount },
+      { header: '净利润', value: (row) => row.netProfitAmount },
+      { header: '毛利率%', value: (row) => row.grossMarginRate },
+      { header: '单均利润', value: (row) => row.averageOrderProfit }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条${activeTabLabel.value}报表`);
 }
 
 async function loadTableViews(applyDefault = false) {

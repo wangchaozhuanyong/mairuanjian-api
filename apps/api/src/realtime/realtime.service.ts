@@ -12,11 +12,32 @@ import type {
 const HEARTBEAT_INTERVAL_MS = 25_000;
 
 const modulePermissionHints: Record<RealtimeEventModule, string[]> = {
-  apple: ['apple.account.view', 'apple.renewal_task.view', 'apple.order.view'],
+  apple: [
+    'apple.account.view',
+    'apple.account.create',
+    'apple.account.import',
+    'apple.account.update',
+    'apple.balance.view',
+    'apple.balance.topup',
+    'apple.balance.adjust',
+    'apple.renewal_task.view',
+    'apple.renewal_task.update',
+    'apple.action_plan.view',
+    'apple.action_plan.update',
+    'apple.order.view',
+    'apple.order.create',
+    'apple.activation.view',
+    'apple.report.view',
+    'apple.service.manage'
+  ],
   code: [
     'code.inventory.view',
     'code.order.view',
+    'code.order.create',
+    'code.order.deliver',
     'code.delivery.view',
+    'code.after_sale.view',
+    'code.after_sale.manage',
     'code.service.manage',
     'code.delivery_template.manage',
     'message_template.manage'

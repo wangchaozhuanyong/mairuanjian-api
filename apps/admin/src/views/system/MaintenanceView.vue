@@ -439,7 +439,7 @@
                   modeForm.enabled ? '维护模式开启后，普通用户将被限制访问。' : '系统当前正常运行。'
                 }}
               </p>
-              <p>修改维护模式会写入审计日志，后续可接入前台拦截和发布窗口。</p>
+              <p>修改维护模式会限制普通用户访问，并写入审计日志。</p>
             </div>
           </div>
         </el-tab-pane>
@@ -1410,6 +1410,7 @@ import {
   isMaintenanceAnnouncementLevel,
   isMaintenanceVersionStatus
 } from '@/utils/systemQuickOptions';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 
 type LoadOptions = { background?: boolean; force?: boolean };
 
@@ -1669,7 +1670,7 @@ const activeTabMeta = computed(() => {
     },
     menu: {
       title: '菜单配置',
-      description: '维护菜单配置 JSON，后续可接入可视化菜单管理。',
+      description: '维护菜单配置 JSON，用于控制后台菜单展示和入口顺序。',
       badge: '菜单',
       tone: 'neutral'
     },
@@ -3121,7 +3122,125 @@ function isAppVersionStatus(value: unknown): value is AppVersionStatus {
 }
 
 function showExportMessage() {
-  ElMessage.info('系统配置导出会走数据中心导出任务，后续统一接入');
+  if (activeTab.value === 'announcements') {
+    if (!announcements.value.length) {
+      ElMessage.warning('暂无可导出的系统公告');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'system-announcements',
+      [
+        { header: '公告标题', value: (row) => row.title },
+        { header: '公告内容', value: (row) => row.content },
+        { header: '级别', value: (row) => getLevelLabel(row.level) },
+        { header: '启用', value: (row) => (row.enabled ? '是' : '否') },
+        { header: '开始时间', value: (row) => formatDate(row.startAt) },
+        { header: '结束时间', value: (row) => formatDate(row.endAt) },
+        {
+          header: '更新人',
+          value: (row) => row.updatedBy?.displayName ?? row.updatedBy?.username ?? ''
+        },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      announcements.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条系统公告`);
+    return;
+  }
+
+  if (activeTab.value === 'flags') {
+    if (!featureFlags.value.length) {
+      ElMessage.warning('暂无可导出的功能开关');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'system-feature-flags',
+      [
+        { header: '开关键', value: (row) => row.key },
+        { header: '名称', value: (row) => row.name },
+        { header: '启用', value: (row) => (row.enabled ? '是' : '否') },
+        { header: '配置', value: (row) => formatJson(row.config ?? {}) },
+        { header: '备注', value: (row) => row.remark ?? '' },
+        {
+          header: '更新人',
+          value: (row) => row.updatedBy?.displayName ?? row.updatedBy?.username ?? ''
+        },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      featureFlags.value
+    );
+
+    ElMessage.success(`已导出 ${count} 个功能开关`);
+    return;
+  }
+
+  if (activeTab.value === 'versions' || activeTab.value === 'changelog') {
+    const rows = activeTab.value === 'versions' ? appVersions.value : changelogs.value;
+
+    if (!rows.length) {
+      ElMessage.warning(
+        activeTab.value === 'versions' ? '暂无可导出的版本信息' : '暂无可导出的更新日志'
+      );
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      activeTab.value === 'versions' ? 'system-versions' : 'system-changelog',
+      [
+        { header: '版本', value: (row) => row.version },
+        { header: '标题', value: (row) => row.title },
+        { header: '状态', value: (row) => getVersionStatusLabel(row.status) },
+        { header: '影响模块', value: (row) => row.impactModules.join('、') },
+        { header: '更新内容', value: (row) => row.releaseNotes },
+        { header: '发布时间', value: (row) => formatDate(row.releasedAt) },
+        {
+          header: '创建人',
+          value: (row) => row.createdBy?.displayName ?? row.createdBy?.username ?? ''
+        },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+      ],
+      rows
+    );
+
+    ElMessage.success(
+      `已导出 ${count} 条${activeTab.value === 'versions' ? '版本信息' : '更新日志'}`
+    );
+    return;
+  }
+
+  if (activeTab.value === 'parameters') {
+    if (!systemParameters.value.length) {
+      ElMessage.warning('暂无可导出的系统参数');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'system-parameters',
+      [
+        { header: '参数键', value: (row) => row.key },
+        { header: '分组', value: (row) => row.group },
+        { header: '参数值', value: (row) => formatJson(row.value) },
+        { header: '备注', value: (row) => row.remark ?? '' },
+        {
+          header: '更新人',
+          value: (row) => row.updatedBy?.displayName ?? row.updatedBy?.username ?? ''
+        },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      systemParameters.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条系统参数`);
+    return;
+  }
+
+  ElMessage.warning('当前页签没有可导出的列表');
 }
 
 function formatJson(value: unknown) {

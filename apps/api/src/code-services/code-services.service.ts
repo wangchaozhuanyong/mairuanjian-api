@@ -89,6 +89,26 @@ export class CodeServicesService {
     );
   }
 
+  async listOperationOptions() {
+    return this.listCache.getOrSet(
+      'code-services:operation-options',
+      CODE_SERVICE_LIST_CACHE_TTL_MS,
+      async () => {
+        const items = await this.prisma.codeService.findMany({
+          where: {
+            deletedAt: null,
+            status: 'enabled'
+          },
+          orderBy: [{ name: 'asc' }, { faceValue: 'asc' }, { createdAt: 'desc' }]
+        });
+
+        return {
+          items: items.map((service) => this.toResponse(service))
+        };
+      }
+    );
+  }
+
   private async listUncached(query: ListCodeServicesQuery) {
     const pagination = getPagination(query);
     const keyword = query.keyword?.trim();

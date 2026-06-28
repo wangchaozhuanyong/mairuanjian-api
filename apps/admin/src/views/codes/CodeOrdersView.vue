@@ -8,7 +8,7 @@
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
-          title="兑换码发货队列"
+          title="兑换码发货列表"
           :help="[
             '这里处理买家下单后的发货。先匹配业务，再锁住兑换码，最后生成内容并确认发货。',
             '系统会尽量防止重复发货和库存误消耗，失败的订单可以在这里重试或转人工。'
@@ -39,6 +39,7 @@
         :selected-count="selectedOrders.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        :show-primary="canCreateCodeOrder"
         primary-label="手工导入订单"
         placeholder="搜索订单号、买家、商品、SKU、业务"
         @search="handleSearch"
@@ -69,6 +70,15 @@
         </template>
       </TableToolbar>
 
+      <el-alert
+        v-if="codeOrderImportNoticeVisible"
+        class="code-operation-notice"
+        type="warning"
+        :title="codeOrderImportNoticeTitle"
+        :closable="false"
+        show-icon
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -81,10 +91,12 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无兑换码订单</strong>
-            <span>可以手工导入订单，或清空筛选后重新查看发货队列。</span>
+            <span>{{ codeOrdersEmptyStateText }}</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-              <AppButton variant="primary" @click="openCreate">手工导入订单</AppButton>
+              <AppButton v-if="canCreateCodeOrder" variant="primary" @click="openCreate">
+                手工导入订单
+              </AppButton>
             </div>
           </div>
         </template>
@@ -193,9 +205,14 @@
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
-              <AppButton variant="soft" @click="matchCode(row)">匹配锁码</AppButton>
-              <AppButton variant="ghost" @click="openGenerate(row)">生成发货</AppButton>
+              <AppButton v-if="canDeliverCodeOrders" variant="soft" @click="matchCode(row)">
+                匹配锁码
+              </AppButton>
+              <AppButton v-if="canDeliverCodeOrders" variant="ghost" @click="openGenerate(row)">
+                生成发货
+              </AppButton>
               <AppButton
+                v-if="canDeliverCodeOrders"
                 variant="success"
                 :disabled="row.deliveryStatus === 'delivered'"
                 @click="openDeliver(row)"
@@ -251,11 +268,24 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(order)">详情</AppButton>
-            <AppButton size="small" variant="soft" @click="matchCode(order)">匹配锁码</AppButton>
-            <AppButton size="small" variant="ghost" @click="openGenerate(order)">
+            <AppButton
+              v-if="canDeliverCodeOrders"
+              size="small"
+              variant="soft"
+              @click="matchCode(order)"
+            >
+              匹配锁码
+            </AppButton>
+            <AppButton
+              v-if="canDeliverCodeOrders"
+              size="small"
+              variant="ghost"
+              @click="openGenerate(order)"
+            >
               生成发货
             </AppButton>
             <AppButton
+              v-if="canDeliverCodeOrders"
               size="small"
               variant="success"
               :disabled="order.deliveryStatus === 'delivered'"
@@ -270,10 +300,12 @@
       <div v-else class="mobile-record-list">
         <div class="apple-core-empty-state">
           <strong>暂无兑换码订单</strong>
-          <span>可以手工导入订单，或清空筛选后重新查看发货队列。</span>
+          <span>{{ codeOrdersEmptyStateText }}</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-            <AppButton variant="primary" @click="openCreate">手工导入订单</AppButton>
+            <AppButton v-if="canCreateCodeOrder" variant="primary" @click="openCreate">
+              手工导入订单
+            </AppButton>
           </div>
         </div>
       </div>
@@ -439,7 +471,9 @@
       </el-form>
       <template #footer>
         <AppButton @click="dialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="saving" @click="saveOrder">保存</AppButton>
+        <AppButton v-if="canCreateCodeOrder" variant="primary" :loading="saving" @click="saveOrder">
+          保存
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -560,7 +594,7 @@
           <template #label>
             <FieldHelpLabel
               label="生成原因"
-              purpose="说明为什么要生成或查看发货内容，便于审计和售后追踪。"
+              purpose="说明为什么要生成或查看发货内容，便于售后追踪。"
               example="可以填手工复制发货给客户、客户要求重发、售后核对。"
             />
           </template>
@@ -584,10 +618,16 @@
       </el-form>
       <template #footer>
         <AppButton @click="generateDialogVisible = false">关闭</AppButton>
-        <AppButton variant="primary" :loading="generating" @click="generateDelivery">
+        <AppButton
+          v-if="canDeliverCodeOrders"
+          variant="primary"
+          :loading="generating"
+          @click="generateDelivery"
+        >
           生成
         </AppButton>
         <AppButton
+          v-if="canDeliverCodeOrders"
           variant="success"
           :disabled="!generateForm.content"
           :loading="delivering"
@@ -607,7 +647,7 @@
         <StatusChip tone="orange">防重复</StatusChip>
         <div>
           <strong>确认后会把锁定兑换码标记为已发货</strong>
-          <p>系统会写入发货日志；同一订单不能重复发货，提交前请核对发货内容。</p>
+          <p>系统会保存发货记录；同一订单不能重复发货，提交前请核对发货内容。</p>
         </div>
       </div>
       <el-form ref="deliverFormRef" :model="deliverForm" :rules="deliverRules" label-position="top">
@@ -615,7 +655,7 @@
           <template #label>
             <FieldHelpLabel
               label="订单"
-              purpose="当前准备确认发货的订单，确认后会写入发货日志并防重复发货。"
+              purpose="当前准备确认发货的订单，确认后会保存发货记录并防重复发货。"
               example="提交前核对是不是客户刚才要发的那一单。"
             />
           </template>
@@ -625,8 +665,8 @@
           <template #label>
             <FieldHelpLabel
               label="发货方式"
-              purpose="记录这次实际通过什么方式发给客户，便于后续售后追踪。"
-              example="人工复制给客户选手工发货；平台电子凭证接口发出选电子凭证。"
+              purpose="记录这次实际通过什么方式发给客户，便于之后售后追踪。"
+              example="人工复制给客户选手工发货；通过电子凭证渠道发出选电子凭证。"
             />
           </template>
           <el-select v-model="deliverForm.deliveryMethod" class="full-input">
@@ -642,7 +682,7 @@
           <template #label>
             <FieldHelpLabel
               label="发货内容快照"
-              purpose="保存这次实际发给客户的内容，后续售后和审计会查看它。"
+              purpose="保存这次实际发给客户的内容，之后售后会查看它。"
               example="可以先生成内容再确认，也可以粘贴你实际发给客户的消息。"
             />
           </template>
@@ -656,7 +696,12 @@
       </el-form>
       <template #footer>
         <AppButton @click="deliverDialogVisible = false">取消</AppButton>
-        <AppButton variant="success" :loading="delivering" @click="confirmDelivery">
+        <AppButton
+          v-if="canDeliverCodeOrders"
+          variant="success"
+          :loading="delivering"
+          @click="confirmDelivery"
+        >
           确认发货
         </AppButton>
       </template>
@@ -667,8 +712,9 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { codeOrdersApi, dataCenterApi, userTableViewsApi } from '@/api/system';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
+import { codeOrdersApi, codeServicesApi, dataCenterApi, userTableViewsApi } from '@/api/system';
 import type { CodeOrderQuery, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
@@ -682,6 +728,7 @@ import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { CODE_DELIVERY_METHOD_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type {
   CodeDeliveryLog,
   CodePlatformOrder,
@@ -696,8 +743,10 @@ import {
   buildCodeDeliveryMethodOptions,
   getCodeDeliveryMethodLabel as getConfiguredCodeDeliveryMethodLabel
 } from '@/utils/codeDeliveryMethods';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
-import { loadSmartCodeServices, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
+import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
 const tableKey = 'code_orders';
 const deliveryStatusOptions = [
@@ -717,6 +766,8 @@ const orderColumnOptions = [
 ];
 const batchActions = [{ label: '批量导出', value: 'export' }];
 
+const route = useRoute();
+const authStore = useAuthStore();
 const loading = ref(false);
 const saving = ref(false);
 const generating = ref(false);
@@ -806,6 +857,38 @@ const failedCount = computed(
 const deliveredCount = computed(
   () => orders.value.filter((order) => order.deliveryStatus === 'delivered').length
 );
+const canCreateManualCodeOrder = computed(
+  () => hasCodeOrderPermission('code.order.create') || hasCodeOrderPermission('code.order.deliver')
+);
+const canDeliverCodeOrders = computed(() => hasCodeOrderPermission('code.order.deliver'));
+const canViewSourcePlatforms = computed(() => hasCodeOrderPermission('source_platform.view'));
+const canViewCodeServices = computed(() => hasCodeOrderPermission('code.order.view'));
+const canManageDictionaries = computed(() => hasCodeOrderPermission('data.dictionary.manage'));
+const canViewDeliveryLogs = computed(() => hasCodeOrderPermission('code.delivery.view'));
+const canCreateCodeOrder = computed(
+  () => canCreateManualCodeOrder.value && canViewSourcePlatforms.value
+);
+const codeOrderImportNoticeVisible = computed(() => !canCreateCodeOrder.value);
+const codeOrderImportNoticeTitle = computed(() => {
+  if (!canCreateManualCodeOrder.value && !canViewSourcePlatforms.value) {
+    return '当前账号只能查看兑换码订单，不能手工导入；还缺少手工导入权限和来源平台查看权限。';
+  }
+
+  if (!canCreateManualCodeOrder.value) {
+    return '当前账号只有查看权限，不能手工导入订单。';
+  }
+
+  if (!canViewSourcePlatforms.value) {
+    return '当前账号不能查看来源平台，暂时不能手工导入兑换码订单。';
+  }
+
+  return '';
+});
+const codeOrdersEmptyStateText = computed(() =>
+  canCreateCodeOrder.value
+    ? '可以手工导入订单，或清空筛选后重新查看发货列表。'
+    : '当前筛选范围暂无订单；如需手工导入或发货，请先开通对应业务权限。'
+);
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -877,22 +960,21 @@ async function loadDependencies(options: { background?: boolean; force?: boolean
       key,
       fetcher: async ({ signal }) => {
         const [platformData, serviceData] = await Promise.all([
-          loadSmartSourcePlatforms(
-            {
-              page: 1,
-              pageSize: 100,
-              status: 'active'
-            },
-            { ...options, signal }
-          ),
-          loadSmartCodeServices(
-            {
-              page: 1,
-              pageSize: 100,
-              status: 'enabled'
-            },
-            { ...options, signal }
-          )
+          canViewSourcePlatforms.value
+            ? loadSmartSourcePlatforms(
+                {
+                  page: 1,
+                  pageSize: 100,
+                  status: 'active'
+                },
+                { ...options, signal }
+              )
+            : Promise.resolve(emptyPageResult<SourcePlatform>(100)),
+          canViewCodeServices.value
+            ? codeServicesApi
+                .listOrderOptions({ signal })
+                .then((data) => pageResultFromItems(data.items, 100))
+            : Promise.resolve(emptyPageResult<CodeService>(100))
         ]);
 
         return {
@@ -923,11 +1005,34 @@ function buildDeliveryMethodParams(): DataDictionaryQuery {
   };
 }
 
+function emptyPageResult<TItem>(pageSize: number): PageResult<TItem> {
+  return {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize
+  };
+}
+
+function pageResultFromItems<TItem>(items: TItem[], pageSize: number): PageResult<TItem> {
+  return {
+    items,
+    total: items.length,
+    page: 1,
+    pageSize
+  };
+}
+
 function applyDeliveryMethodResult(data: PageResult<DataDictionary>) {
   deliveryMethodDictionaries.value = data.items;
 }
 
 async function loadDeliveryMethods(options: { background?: boolean; force?: boolean } = {}) {
+  if (!canManageDictionaries.value) {
+    deliveryMethodDictionaries.value = [];
+    return;
+  }
+
   const params = buildDeliveryMethodParams();
   const key = createSmartQueryKey('code-order-delivery-methods', params);
   activeDeliveryMethodsQueryKey.value = key;
@@ -1043,7 +1148,58 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('兑换码订单导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedOrders.value.length ? selectedOrders.value : orders.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的兑换码订单');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'code-orders',
+    [
+      { header: '订单号', value: (row) => row.externalOrderNo },
+      { header: '平台', value: (row) => row.platform.name },
+      { header: '买家', value: (row) => row.buyerNameMasked ?? row.buyerId ?? '' },
+      { header: '商品', value: (row) => row.itemTitle ?? row.itemId },
+      { header: 'SKU', value: (row) => row.skuName ?? row.skuId },
+      { header: '匹配业务', value: (row) => row.service?.name ?? '' },
+      { header: '面值', value: (row) => row.faceValue ?? '' },
+      { header: '数量', value: (row) => row.quantity },
+      { header: '实收', value: (row) => row.paidAmount },
+      { header: '手续费', value: (row) => row.platformFee },
+      { header: '成本', value: (row) => row.costAmount },
+      { header: '利润', value: (row) => row.profitAmount },
+      { header: '订单状态', value: (row) => row.orderStatus },
+      { header: '发货状态', value: (row) => getDeliveryStatusLabel(row.deliveryStatus) },
+      { header: '退款状态', value: (row) => getRefundStatusLabel(row.refundStatus) },
+      { header: '锁定码数', value: (row) => row.lockedCodeCount },
+      { header: '已发码数', value: (row) => row.deliveredCodeCount },
+      {
+        header: '锁定码尾号',
+        value: (row) => row.lockedCodes.map((code) => code.codeTail).join('、')
+      },
+      {
+        header: '已发码尾号',
+        value: (row) => row.deliveredCodes.map((code) => code.codeTail).join('、')
+      },
+      { header: '支付时间', value: (row) => formatDate(row.paidAt) },
+      { header: '发货时间', value: (row) => formatDate(row.deliveredAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条兑换码订单`);
+}
+
+function getRefundStatusLabel(status: CodePlatformOrder['refundStatus']) {
+  const labels: Record<CodePlatformOrder['refundStatus'], string> = {
+    none: '无退款',
+    refunding: '退款中',
+    refunded: '已退款'
+  };
+  return labels[status];
 }
 
 function handleBatchAction(action: string) {
@@ -1153,6 +1309,11 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 }
 
 function openCreate() {
+  if (!canCreateCodeOrder.value) {
+    ElMessage.warning('当前账号没有手工导入订单权限，或缺少来源平台查看权限');
+    return;
+  }
+
   form.platformId = platforms.value[0]?.id ?? '';
   form.externalOrderNo = '';
   form.buyerId = '';
@@ -1171,11 +1332,20 @@ function openCreate() {
 
 async function openDetail(order: CodePlatformOrder) {
   selectedOrder.value = order;
-  await loadDeliveryLogs(order.id);
+  if (canViewDeliveryLogs.value) {
+    await loadDeliveryLogs(order.id);
+  } else {
+    deliveryLogs.value = [];
+  }
   detailVisible.value = true;
 }
 
 async function loadDeliveryLogs(orderId: string) {
+  if (!canViewDeliveryLogs.value) {
+    deliveryLogs.value = [];
+    return;
+  }
+
   try {
     const data = await codeOrdersApi.listOrderDeliveryLogs(orderId);
     deliveryLogs.value = data.items;
@@ -1186,6 +1356,11 @@ async function loadDeliveryLogs(orderId: string) {
 }
 
 async function saveOrder() {
+  if (!canCreateCodeOrder.value) {
+    ElMessage.warning('当前账号没有手工导入订单权限，或缺少来源平台查看权限');
+    return;
+  }
+
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -1219,6 +1394,11 @@ async function saveOrder() {
 }
 
 async function matchCode(order: CodePlatformOrder) {
+  if (!canDeliverCodeOrders.value) {
+    ElMessage.warning('当前账号没有匹配锁码权限');
+    return;
+  }
+
   try {
     await codeOrdersApi.matchCode(order.id);
     ElMessage.success('已匹配并锁定兑换码');
@@ -1229,6 +1409,11 @@ async function matchCode(order: CodePlatformOrder) {
 }
 
 function openGenerate(order: CodePlatformOrder) {
+  if (!canDeliverCodeOrders.value) {
+    ElMessage.warning('当前账号没有生成发货内容权限');
+    return;
+  }
+
   selectedOrder.value = order;
   generatedOrderId.value = order.id;
   generateForm.reason = '';
@@ -1237,6 +1422,11 @@ function openGenerate(order: CodePlatformOrder) {
 }
 
 function openDeliver(order: CodePlatformOrder) {
+  if (!canDeliverCodeOrders.value) {
+    ElMessage.warning('当前账号没有确认发货权限');
+    return;
+  }
+
   selectedOrder.value = order;
   deliverForm.deliveryMethod = getDefaultDeliveryMethod();
   deliverForm.deliveryContent =
@@ -1245,6 +1435,11 @@ function openDeliver(order: CodePlatformOrder) {
 }
 
 async function generateDelivery() {
+  if (!canDeliverCodeOrders.value) {
+    ElMessage.warning('当前账号没有生成发货内容权限');
+    return;
+  }
+
   const valid = await generateFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedOrder.value) {
     return;
@@ -1258,7 +1453,7 @@ async function generateDelivery() {
     generatedOrderId.value = selectedOrder.value.id;
     generateForm.content = data.deliveryContent;
     deliverForm.deliveryContent = data.deliveryContent;
-    ElMessage.success('发货内容已生成并写入审计日志');
+    ElMessage.success('发货内容已生成，查看记录已保存');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '生成发货内容失败');
   } finally {
@@ -1267,6 +1462,11 @@ async function generateDelivery() {
 }
 
 async function confirmDeliveryFromGenerated() {
+  if (!canDeliverCodeOrders.value) {
+    ElMessage.warning('当前账号没有确认发货权限');
+    return;
+  }
+
   if (!selectedOrder.value || !generateForm.content) {
     return;
   }
@@ -1277,6 +1477,11 @@ async function confirmDeliveryFromGenerated() {
 }
 
 async function confirmDelivery() {
+  if (!canDeliverCodeOrders.value) {
+    ElMessage.warning('当前账号没有确认发货权限');
+    return;
+  }
+
   const valid = deliverDialogVisible.value
     ? await deliverFormRef.value?.validate().catch(() => false)
     : Boolean(deliverForm.deliveryContent.trim());
@@ -1305,7 +1510,7 @@ async function confirmDelivery() {
       deliveryMethod: deliverForm.deliveryMethod,
       deliveryContent: deliverForm.deliveryContent
     });
-    ElMessage.success('已确认发货并写入发货日志');
+    ElMessage.success('已确认发货并保存发货记录');
     selectedOrder.value = data;
     deliverDialogVisible.value = false;
     generateDialogVisible.value = false;
@@ -1317,13 +1522,50 @@ async function confirmDelivery() {
   }
 }
 
+function hasCodeOrderPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
+function readRouteQueryString(value: unknown) {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  return typeof normalized === 'string' ? normalized : undefined;
+}
+
+function hasRouteOrderFilters() {
+  return ['keyword', 'platformId', 'deliveryStatus'].some((key) => route.query[key] !== undefined);
+}
+
+function isDeliveryStatusFilter(value?: string): value is CodePlatformOrder['deliveryStatus'] {
+  return deliveryStatusOptions.some((option) => option.value === value);
+}
+
+function applyRouteOrderFilters() {
+  if (!hasRouteOrderFilters()) {
+    return false;
+  }
+
+  const deliveryStatus = readRouteQueryString(route.query.deliveryStatus);
+
+  query.page = 1;
+  query.keyword = readRouteQueryString(route.query.keyword) ?? '';
+  query.platformId = readRouteQueryString(route.query.platformId) ?? '';
+  query.deliveryStatus = isDeliveryStatusFilter(deliveryStatus) ? deliveryStatus : '';
+  savedViewId.value = '';
+  return true;
+}
+
 async function initializePage() {
   try {
+    const routeFiltersApplied = applyRouteOrderFilters();
+
     await Promise.all([
       loadDependencies({ force: false }),
       loadDeliveryMethods({ force: false }),
-      loadTableViews(true)
+      loadTableViews(!routeFiltersApplied)
     ]);
+    if (routeFiltersApplied) {
+      applyRouteOrderFilters();
+    }
     await loadOrders({ force: false });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单失败');
@@ -1331,6 +1573,15 @@ async function initializePage() {
 }
 
 onMounted(initializePage);
+
+watch(
+  () => route.query,
+  () => {
+    if (applyRouteOrderFilters()) {
+      void loadOrders({ force: true });
+    }
+  }
+);
 
 usePageRefresh(
   (options) =>
@@ -1367,6 +1618,10 @@ onBeforeUnmount(stopRealtimeRefresh);
   max-width: min(620px, 100%);
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.code-operation-notice {
+  margin: 12px 0 14px;
 }
 
 @media (max-width: 840px) {

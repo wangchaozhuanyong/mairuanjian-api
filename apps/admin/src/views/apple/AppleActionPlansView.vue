@@ -33,7 +33,7 @@
           help="这里按订单开通记录显示临近到期客户，充值只更新 Apple ID 余额，提交后会写入续费工作台。"
         />
         <div class="inline-actions">
-          <StatusChip tone="blue" dot>默认 3 天内</StatusChip>
+          <StatusChip tone="blue" dot>默认 3 天内含已到期</StatusChip>
         </div>
       </div>
 
@@ -218,10 +218,16 @@
             <div class="muted-block">{{ row.renewalTask?.title || row.renewalNote || '-' }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column
+          v-if="canTopupAppleBalance || canUpdateActionPlans"
+          label="操作"
+          width="210"
+          fixed="right"
+        >
           <template #default="{ row }">
             <div class="table-action-group table-action-group--wrap">
               <AppButton
+                v-if="canTopupAppleBalance"
                 size="small"
                 variant="soft"
                 :disabled="!row.appleAccount"
@@ -229,7 +235,12 @@
               >
                 充值
               </AppButton>
-              <AppButton size="small" variant="primary" @click="openSubmitDialog(row)">
+              <AppButton
+                v-if="canUpdateActionPlans"
+                size="small"
+                variant="primary"
+                @click="openSubmitDialog(row)"
+              >
                 提交续费工作台
               </AppButton>
             </div>
@@ -270,6 +281,7 @@
           </div>
           <div class="mobile-record-card__actions">
             <AppButton
+              v-if="canTopupAppleBalance"
               size="small"
               variant="soft"
               :disabled="!row.appleAccount"
@@ -277,7 +289,12 @@
             >
               充值
             </AppButton>
-            <AppButton size="small" variant="primary" @click="openSubmitDialog(row)">
+            <AppButton
+              v-if="canUpdateActionPlans"
+              size="small"
+              variant="primary"
+              @click="openSubmitDialog(row)"
+            >
               提交续费工作台
             </AppButton>
           </div>
@@ -322,7 +339,14 @@
       </el-form>
       <template #footer>
         <AppButton @click="topupDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="savingTopup" @click="saveTopup">保存充值</AppButton>
+        <AppButton
+          v-if="canTopupAppleBalance"
+          variant="primary"
+          :loading="savingTopup"
+          @click="saveTopup"
+        >
+          保存充值
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -390,6 +414,7 @@
               v-model="submitForm.targetServicePriceId"
               filterable
               :loading="servicePricesLoading"
+              :disabled="!canLoadTargetServicePrices && !targetServiceOptions.length"
               placeholder="选择续费业务"
             >
               <el-option
@@ -398,6 +423,9 @@
                 :label="formatServicePriceOption(item)"
                 :value="item.id"
               />
+              <template #empty>
+                <span class="select-empty-text">{{ serviceOptionEmptyText }}</span>
+              </template>
             </el-select>
           </el-form-item>
           <div class="drawer-detail-grid">
@@ -423,7 +451,12 @@
       </el-form>
       <template #footer>
         <AppButton @click="submitDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="submitting" @click="submitToRenewalWorkbench">
+        <AppButton
+          v-if="canUpdateActionPlans"
+          variant="primary"
+          :loading="submitting"
+          @click="submitToRenewalWorkbench"
+        >
           提交
         </AppButton>
       </template>
@@ -447,14 +480,16 @@ import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type {
   AppleAccount,
   AppleAccountOwnershipType,
   AppleExpiringCustomer,
-  AppleServiceRegionPrice,
   PageResult,
   TableDensity
 } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 type ChipTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
@@ -466,6 +501,13 @@ interface SubmitForm {
   targetServicePriceId: string;
   note: string;
 }
+
+type ActionPlanServicePriceOption = Pick<
+  NonNullable<AppleExpiringCustomer['servicePrice']>,
+  'id' | 'serviceId' | 'serviceName' | 'category' | 'region' | 'currency' | 'appleBalancePrice'
+> & {
+  service?: Pick<AppleExpiringCustomer['service'], 'id' | 'name' | 'category' | 'currency'>;
+};
 
 const customers = ref<AppleExpiringCustomer[]>([]);
 const total = ref(0);
@@ -481,7 +523,7 @@ const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | nul
 const activeQueryKey = ref('');
 const expiresPreset = ref('3');
 const expireDateRange = ref<[string, string] | []>([]);
-const servicePrices = ref<AppleServiceRegionPrice[]>([]);
+const servicePrices = ref<ActionPlanServicePriceOption[]>([]);
 const topupDialogVisible = ref(false);
 const submitDialogVisible = ref(false);
 const topupFormRef = ref<FormInstance>();
@@ -493,7 +535,7 @@ const query = reactive<AppleExpiringCustomerQuery>({
   page: 1,
   pageSize: 20,
   keyword: '',
-  status: 'active',
+  status: '',
   expiresInDays: '3',
   ownershipType: '',
   appleAccountStatus: '',
@@ -533,7 +575,7 @@ const submitRules: FormRules = {
   targetServicePriceId: [
     {
       validator: (_rule, value: string, callback) => {
-        if (submitForm.decision === 'renew' && !value) {
+        if (submitForm.decision === 'renew' && !value && !selectedRow.value?.service?.id) {
           callback(new Error('请选择续费业务'));
           return;
         }
@@ -552,11 +594,11 @@ const activationStatusOptions = [
 ];
 
 const expiresPresetOptions = [
-  { label: '今天到期', value: '0' },
-  { label: '1天内', value: '1' },
-  { label: '3天内', value: '3' },
-  { label: '7天内', value: '7' },
-  { label: '15天内', value: '15' },
+  { label: '已到期/今天', value: '0' },
+  { label: '已到期/1天内', value: '1' },
+  { label: '已到期/3天内', value: '3' },
+  { label: '已到期/7天内', value: '7' },
+  { label: '已到期/15天内', value: '15' },
   { label: '自定义', value: 'custom' }
 ];
 
@@ -585,6 +627,7 @@ const columnOptions = [
 
 const batchActions = [{ label: '批量导出', value: 'export' }];
 
+const authStore = useAuthStore();
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -608,6 +651,18 @@ const soldCount = computed(
 );
 const consignedCount = computed(
   () => customers.value.filter((item) => item.appleAccountOwnershipType === 'consigned').length
+);
+const canTopupAppleBalance = computed(() => hasActionPlanPermission('apple.balance.topup'));
+const canUpdateActionPlans = computed(() => hasActionPlanPermission('apple.action_plan.update'));
+const canManageAppleServices = computed(() => hasActionPlanPermission('apple.service.manage'));
+const canCreateAppleOrder = computed(() => hasActionPlanPermission('apple.order.create'));
+const canLoadTargetServicePrices = computed(
+  () => canManageAppleServices.value || canCreateAppleOrder.value || canUpdateActionPlans.value
+);
+const serviceOptionEmptyText = computed(() =>
+  canLoadTargetServicePrices.value
+    ? '暂无可选续费业务，请先确认业务套餐已启用。'
+    : '当前账号不能读取业务套餐，将按当前开通业务提交续费。'
 );
 
 const filterChips = computed(() => {
@@ -686,7 +741,9 @@ const estimatedBalanceAfterTopup = computed(() => {
 
 onMounted(() => {
   loadCustomers();
-  loadServicePrices();
+  if (canLoadTargetServicePrices.value) {
+    loadServicePrices();
+  }
   stopRealtimeListener = onRealtimeQueryInvalidated(
     ['apple-action-plans', 'apple-renewal-tasks', 'apple-accounts'],
     () => loadCustomers({ background: true, force: true })
@@ -766,19 +823,36 @@ function applyCustomerResult(result: PageResult<AppleExpiringCustomer>) {
 }
 
 async function loadServicePrices() {
+  if (!canLoadTargetServicePrices.value) {
+    servicePrices.value = [];
+    return;
+  }
+
   servicePricesLoading.value = true;
   try {
-    const result = await appleServicesApi.listRegionPrices({
-      page: 1,
-      pageSize: 500,
-      status: 'active'
-    });
+    const result = await loadActionPlanServicePrices();
     servicePrices.value = result.items;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载业务选项失败');
   } finally {
     servicePricesLoading.value = false;
   }
+}
+
+function loadActionPlanServicePrices() {
+  if (canManageAppleServices.value) {
+    return appleServicesApi.listRegionPrices({
+      page: 1,
+      pageSize: 500,
+      status: 'active'
+    });
+  }
+
+  if (canCreateAppleOrder.value) {
+    return appleServicesApi.listOrderOptions();
+  }
+
+  return appleServicesApi.listActionPlanOptions();
 }
 
 async function handleSearch() {
@@ -814,7 +888,7 @@ function handleSelectionChange(rows: AppleExpiringCustomer[]) {
 async function clearFiltersAndSearch() {
   query.page = 1;
   query.keyword = '';
-  query.status = 'active';
+  query.status = '';
   query.ownershipType = '';
   query.appleAccountStatus = '';
   query.renewalSubmitted = '';
@@ -842,10 +916,63 @@ function handleBatchAction(action: string) {
 }
 
 function exportList() {
-  ElMessage.info('到期客户导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedRows.value.length ? selectedRows.value : customers.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的到期客户数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-expiring-customers',
+    [
+      { header: '客户', value: (row) => row.customer.name },
+      {
+        header: '手机号',
+        value: (row) => row.customer.phoneMasked ?? row.customer.phoneTail ?? ''
+      },
+      { header: '微信', value: (row) => row.customer.wechat ?? '' },
+      { header: '订单号', value: (row) => row.orderNo },
+      { header: '平台订单号', value: (row) => row.externalOrderNo ?? '' },
+      { header: '来源平台', value: (row) => row.sourcePlatform?.name ?? '' },
+      { header: '业务', value: (row) => row.service.name },
+      { header: '当前套餐', value: (row) => row.currentPlan ?? '' },
+      { header: '目标套餐', value: (row) => row.targetPlan ?? '' },
+      { header: 'Apple ID', value: (row) => row.appleAccount?.appleIdMasked ?? '' },
+      {
+        header: 'ID 类型',
+        value: (row) =>
+          getOwnershipLabel(row.appleAccount?.ownershipType ?? row.appleAccountOwnershipType)
+      },
+      {
+        header: 'ID 状态',
+        value: (row) => getAccountStatusLabel(row.appleAccount?.status ?? null)
+      },
+      { header: '开通状态', value: (row) => getActivationStatusLabel(row.status) },
+      { header: '到期时间', value: (row) => formatDate(row.expireTime) },
+      { header: '距到期', value: (row) => formatExpireDelta(row.daysUntilExpire) },
+      { header: '当前余额', value: (row) => row.appleAccount?.currentBalance ?? '' },
+      { header: '上次实收', value: (row) => `${row.lastPaidAmount} ${row.lastPaidCurrency}` },
+      { header: '上次实收人民币', value: (row) => row.lastPaidAmountRmb },
+      { header: '预计扣款', value: (row) => row.consumedValue },
+      {
+        header: '续费任务',
+        value: (row) => (row.renewalSubmitted ? (row.renewalTask?.title ?? '已提交') : '未提交')
+      },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt, true) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条到期客户数据`);
 }
 
 function openTopupDialog(row: AppleExpiringCustomer) {
+  if (!canTopupAppleBalance.value) {
+    ElMessage.warning('当前账号没有充值权限');
+    return;
+  }
+
   if (!row.appleAccount) {
     ElMessage.warning('这条开通记录没有绑定 Apple ID');
     return;
@@ -860,6 +987,11 @@ function openTopupDialog(row: AppleExpiringCustomer) {
 }
 
 async function saveTopup() {
+  if (!canTopupAppleBalance.value) {
+    ElMessage.warning('当前账号没有充值权限');
+    return;
+  }
+
   const valid = await topupFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedRow.value?.appleAccount) {
     return;
@@ -884,13 +1016,19 @@ async function saveTopup() {
 }
 
 async function openSubmitDialog(row: AppleExpiringCustomer) {
+  if (!canUpdateActionPlans.value) {
+    ElMessage.warning('当前账号没有提交续费任务权限');
+    return;
+  }
+
   selectedRow.value = row;
   submitForm.decision = 'renew';
   submitForm.note = '';
 
-  if (!servicePrices.value.length) {
+  if (!servicePrices.value.length && canLoadTargetServicePrices.value) {
     await loadServicePrices();
   }
+  ensureRowServicePriceOption(row);
 
   submitForm.targetRegion =
     row.servicePrice?.region || row.serviceRegion || row.appleAccount?.region || '';
@@ -921,6 +1059,11 @@ function syncTargetServicePrice() {
 }
 
 async function submitToRenewalWorkbench() {
+  if (!canUpdateActionPlans.value) {
+    ElMessage.warning('当前账号没有提交续费任务权限');
+    return;
+  }
+
   const valid = await submitFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedRow.value) {
     return;
@@ -950,7 +1093,10 @@ async function submitToRenewalWorkbench() {
       decision: submitForm.decision,
       targetRegion: submitForm.decision === 'renew' ? submitForm.targetRegion || null : null,
       targetCategory: submitForm.decision === 'renew' ? submitForm.targetCategory || null : null,
-      targetServiceId: submitForm.decision === 'renew' ? targetPrice?.serviceId || null : null,
+      targetServiceId:
+        submitForm.decision === 'renew'
+          ? targetPrice?.serviceId || selectedRow.value.service.id || null
+          : null,
       targetServicePriceId:
         submitForm.decision === 'renew' ? submitForm.targetServicePriceId : null,
       note: submitForm.note || null
@@ -965,6 +1111,10 @@ async function submitToRenewalWorkbench() {
   }
 }
 
+function hasActionPlanPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
 function findFirstTargetServicePrice(row: AppleExpiringCustomer) {
   return servicePrices.value.find(
     (item) =>
@@ -972,6 +1122,39 @@ function findFirstTargetServicePrice(row: AppleExpiringCustomer) {
       item.category === row.service.category &&
       item.serviceId === row.service.id
   );
+}
+
+function ensureRowServicePriceOption(row: AppleExpiringCustomer) {
+  const price = buildRowServicePriceOption(row);
+  if (!price || servicePrices.value.some((item) => item.id === price.id)) {
+    return;
+  }
+
+  servicePrices.value = [price, ...servicePrices.value];
+}
+
+function buildRowServicePriceOption(
+  row: AppleExpiringCustomer
+): ActionPlanServicePriceOption | null {
+  if (!row.servicePrice) {
+    return null;
+  }
+
+  return {
+    id: row.servicePrice.id,
+    serviceId: row.servicePrice.serviceId,
+    serviceName: row.servicePrice.serviceName || row.service.name,
+    category: row.servicePrice.category || row.service.category,
+    region: row.servicePrice.region,
+    currency: row.servicePrice.currency || row.service.currency,
+    appleBalancePrice: row.servicePrice.appleBalancePrice || row.consumedValue,
+    service: {
+      id: row.service.id,
+      name: row.service.name,
+      category: row.service.category,
+      currency: row.service.currency
+    }
+  };
 }
 
 function isColumnVisible(column: string) {
@@ -986,8 +1169,8 @@ function getSuggestedTopupForRow(row: AppleExpiringCustomer) {
   return Math.max(0, expected - readAmount(row.appleAccount.currentBalance));
 }
 
-function formatServicePriceOption(price: AppleServiceRegionPrice) {
-  return `${price.serviceName || price.service.name} / ${price.region} / ${price.appleBalancePrice} ${
+function formatServicePriceOption(price: ActionPlanServicePriceOption) {
+  return `${price.serviceName || price.service?.name || '业务'} / ${price.region} / ${price.appleBalancePrice} ${
     price.currency
   }`;
 }
@@ -1000,6 +1183,10 @@ function getOwnershipLabel(value?: AppleAccountOwnershipType | null) {
 
 function getAccountStatusLabel(value?: AppleAccount['status'] | null) {
   return accountStatusOptions.find((item) => item.value === value)?.label ?? '未知';
+}
+
+function getActivationStatusLabel(value?: AppleExpiringCustomer['status']) {
+  return activationStatusOptions.find((item) => item.value === value)?.label ?? value ?? '未知';
 }
 
 function getAccountStatusTone(value?: AppleAccount['status'] | null): ChipTone {

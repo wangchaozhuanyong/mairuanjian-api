@@ -39,6 +39,7 @@
         :selected-count="selectedCodes.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        :show-primary="canImportCodes"
         primary-label="批量导入兑换码"
         placeholder="搜索尾号、批次、业务、备注"
         @search="handleSearch"
@@ -69,6 +70,15 @@
         </template>
       </TableToolbar>
 
+      <el-alert
+        v-if="inventoryImportNoticeVisible"
+        class="code-operation-notice"
+        type="warning"
+        :title="inventoryImportNoticeTitle"
+        :closable="false"
+        show-icon
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -81,10 +91,12 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无兑换码库存</strong>
-            <span>可以批量导入兑换码，或清空筛选后重新查看库存池。</span>
+            <span>{{ inventoryEmptyStateText }}</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-              <AppButton variant="primary" @click="openImport">批量导入兑换码</AppButton>
+              <AppButton v-if="canImportCodes" variant="primary" @click="openImport">
+                批量导入兑换码
+              </AppButton>
             </div>
           </div>
         </template>
@@ -261,10 +273,12 @@
       <div v-else class="mobile-record-list">
         <div class="apple-core-empty-state">
           <strong>暂无兑换码库存</strong>
-          <span>可以批量导入兑换码，或清空筛选后重新查看库存池。</span>
+          <span>{{ inventoryEmptyStateText }}</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-            <AppButton variant="primary" @click="openImport">批量导入兑换码</AppButton>
+            <AppButton v-if="canImportCodes" variant="primary" @click="openImport">
+              批量导入兑换码
+            </AppButton>
           </div>
         </div>
       </div>
@@ -288,7 +302,7 @@
             <template #label>
               <FieldHelpLabel
                 label="兑换码业务"
-                purpose="告诉系统这一批码属于哪种业务和面值，后续订单会按它匹配库存。"
+                purpose="告诉系统这一批码属于哪种业务和面值，之后订单会按它匹配库存。"
                 example="导入 20 USD 礼品卡，就选择对应的 20 USD 兑换码业务。"
               />
             </template>
@@ -416,7 +430,12 @@
 
       <template #footer>
         <AppButton @click="importDialogVisible = false">关闭</AppButton>
-        <AppButton variant="primary" :loading="importing" @click="submitImport">
+        <AppButton
+          v-if="canImportCodes"
+          variant="primary"
+          :loading="importing"
+          @click="submitImport"
+        >
           开始导入
         </AppButton>
       </template>
@@ -453,7 +472,7 @@
         <StatusChip tone="orange">敏感</StatusChip>
         <div>
           <strong>完整兑换码属于敏感信息</strong>
-          <p>查看前必须填写原因，系统会写入敏感字段访问审计日志。</p>
+          <p>查看前必须填写原因，系统会保存敏感查看记录。</p>
         </div>
       </div>
       <el-form
@@ -477,7 +496,7 @@
           <template #label>
             <FieldHelpLabel
               label="查看原因"
-              purpose="说明为什么要查看完整兑换码，系统会写入敏感查看审计日志。"
+              purpose="说明为什么要查看完整兑换码，系统会保存敏感查看记录。"
               example="可以填售后核对、人工发货给客户、客户反馈无法兑换。"
             />
           </template>
@@ -501,7 +520,9 @@
       </el-form>
       <template #footer>
         <AppButton @click="revealDialogVisible = false">关闭</AppButton>
-        <AppButton variant="soft" :loading="revealing" @click="revealCode">查看完整码</AppButton>
+        <AppButton v-if="canRevealCode" variant="soft" :loading="revealing" @click="revealCode">
+          查看完整码
+        </AppButton>
       </template>
     </el-dialog>
   </PageScaffold>
@@ -511,7 +532,7 @@
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { redeemCodesApi, userTableViewsApi } from '@/api/system';
+import { codeServicesApi, redeemCodesApi, userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
@@ -536,7 +557,8 @@ import {
   refreshSmartQueryResource
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
-import { loadSmartCodeServices } from '@/utils/smartSystemQueries';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 
 const tableKey = 'code_inventory';
 const inventoryStatusOptions = [
@@ -584,6 +606,7 @@ const activatedOnce = ref(false);
 const importResult = ref<RedeemCodeImportResult | null>(null);
 const importFormRef = ref<FormInstance>();
 const revealFormRef = ref<FormInstance>();
+const servicesLoaded = ref(false);
 
 type CodeInventoryPage = Awaited<ReturnType<typeof redeemCodesApi.listInventory>>;
 type CodeInventoryListParams = Parameters<typeof redeemCodesApi.listInventory>[0];
@@ -631,10 +654,29 @@ const deliveredCount = computed(
 const failedInventoryCount = computed(
   () => inventory.value.filter((item) => item.status === 'delivery_failed').length
 );
-const canRevealCode = computed(
+const canRevealCode = computed(() => hasCodeInventoryPermission('code.inventory.view_full'));
+const canImportCodeInventory = computed(() => hasCodeInventoryPermission('code.batch.import'));
+const canImportCodes = computed(() => canImportCodeInventory.value && services.value.length > 0);
+const inventoryImportNoticeVisible = computed(
   () =>
-    authStore.user?.roles.includes('admin') ||
-    authStore.user?.permissions.includes('code.inventory.view_full')
+    !canImportCodeInventory.value ||
+    (canImportCodeInventory.value && servicesLoaded.value && services.value.length === 0)
+);
+const inventoryImportNoticeTitle = computed(() => {
+  if (!hasCodeInventoryPermission('code.batch.import')) {
+    return '当前账号没有批量导入兑换码权限，只能查看库存。';
+  }
+
+  if (servicesLoaded.value && services.value.length === 0) {
+    return '目前没有启用的兑换码业务；先维护兑换码业务和面值后，再导入库存。';
+  }
+
+  return '';
+});
+const inventoryEmptyStateText = computed(() =>
+  canImportCodes.value
+    ? '可以批量导入兑换码，或清空筛选后重新查看库存池。'
+    : '当前筛选范围暂无库存；如需导入兑换码，请先开通导入权限并维护可用的兑换码业务。'
 );
 const revealRecordLabel = computed(() => {
   if (!selectedRevealCode.value) {
@@ -694,8 +736,20 @@ function isColumnVisible(column: string) {
 }
 
 async function loadServices() {
-  const data = await loadSmartCodeServices({ page: 1, pageSize: 100, status: 'enabled' });
-  services.value = data.items;
+  servicesLoaded.value = false;
+
+  if (!canImportCodeInventory.value) {
+    services.value = [];
+    servicesLoaded.value = true;
+    return;
+  }
+
+  try {
+    const data = await codeServicesApi.listInventoryOptions();
+    services.value = data.items;
+  } finally {
+    servicesLoaded.value = true;
+  }
 }
 
 async function loadInventory(options: { background?: boolean; force?: boolean } = {}) {
@@ -796,7 +850,35 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('兑换码库存导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedCodes.value.length ? selectedCodes.value : inventory.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的兑换码库存');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'redeem-code-inventory',
+    [
+      { header: '兑换码尾号', value: (row) => row.codeTail },
+      { header: '业务', value: (row) => row.service.name },
+      { header: '批次', value: (row) => row.batch.batchNo },
+      { header: '面值', value: (row) => row.faceValue },
+      { header: '成本', value: (row) => row.cost },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '已保存完整码', value: (row) => (row.hasCode ? '是' : '否') },
+      { header: '锁定订单', value: (row) => row.lockedOrderId ?? '' },
+      { header: '发货订单', value: (row) => row.deliveredOrderId ?? '' },
+      { header: '发货平台', value: (row) => row.deliveredPlatform?.name ?? '' },
+      { header: '发货时间', value: (row) => formatDate(row.deliveredAt) },
+      { header: '过期时间', value: (row) => formatDate(row.expireAt) },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条兑换码库存`);
 }
 
 function handleBatchAction(action: string) {
@@ -914,6 +996,11 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 }
 
 function openImport() {
+  if (!canImportCodes.value) {
+    ElMessage.warning(inventoryImportNoticeTitle.value || '暂时不能导入兑换码');
+    return;
+  }
+
   importForm.serviceId = services.value[0]?.id ?? '';
   importForm.batchNo = '';
   importForm.defaultCost = '';
@@ -930,6 +1017,11 @@ function openDetail(code: RedeemCodeInventoryItem) {
 }
 
 function openRevealDialog(code: RedeemCodeInventoryItem) {
+  if (!canRevealCode.value) {
+    ElMessage.warning('当前账号没有查看完整兑换码权限');
+    return;
+  }
+
   selectedRevealCode.value = code;
   revealForm.reason = '';
   revealForm.code = '';
@@ -943,6 +1035,11 @@ function resetRevealDialog() {
 }
 
 async function submitImport() {
+  if (!canImportCodes.value) {
+    ElMessage.warning(inventoryImportNoticeTitle.value || '暂时不能导入兑换码');
+    return;
+  }
+
   const valid = await importFormRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -979,7 +1076,16 @@ async function submitImport() {
   }
 }
 
+function hasCodeInventoryPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
 async function revealCode() {
+  if (!canRevealCode.value) {
+    ElMessage.warning('当前账号没有查看完整兑换码权限');
+    return;
+  }
+
   const valid = await revealFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedRevealCode.value) {
     return;
@@ -991,7 +1097,7 @@ async function revealCode() {
       reason: revealForm.reason
     });
     revealForm.code = data.redeemCode;
-    ElMessage.success('完整兑换码已显示并写入审计日志');
+    ElMessage.success('完整兑换码已显示，查看记录已保存');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '查看完整兑换码失败');
   } finally {
@@ -1077,6 +1183,10 @@ onBeforeUnmount(stopRealtimeRefresh);
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: min(620px, 100%);
+}
+
+.code-operation-notice {
+  margin: 12px 0 14px;
 }
 
 @media (max-width: 840px) {

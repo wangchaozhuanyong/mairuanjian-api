@@ -939,7 +939,7 @@
               filterable
               allow-create
               default-first-option
-              placeholder="从官方采集价格选择，或输入金额"
+              placeholder="从官方参考价格选择，或输入金额"
               @change="handleOfficialBasePriceSelect"
             >
               <el-option
@@ -1339,6 +1339,7 @@ import {
   notifyRealtimeScopesInvalidated,
   onRealtimeQueryInvalidated
 } from '@/realtime/realtimeQueryEvents';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import type {
   AppleService,
   AppleBalancePriceRuleType,
@@ -2557,7 +2558,46 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('Apple ID 业务设置导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedServices.value.length ? selectedServices.value : services.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的 Apple ID 业务');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-services',
+    [
+      { header: '国家', value: (row) => getServiceCountryLabel(row) },
+      { header: '业务', value: (row) => row.name },
+      { header: '分类', value: (row) => getCategoryLabel(row.category) },
+      { header: '币种', value: (row) => row.currency },
+      { header: '官网价', value: (row) => row.officialBasePrice },
+      { header: 'Apple余额价', value: (row) => row.officialCostValue },
+      { header: '余额价规则', value: (row) => getBalanceRuleLabel(row) },
+      {
+        header: '周期',
+        value: (row) => getPeriodLabel(row.defaultPeriodType, row.defaultPeriodValue)
+      },
+      { header: '锁定规则', value: (row) => getLockRuleLabel(row.lockRule) },
+      {
+        header: '允许地区',
+        value: (row) =>
+          getServiceAllowedRegions(row)
+            .map((region) => formatServiceRegionLabel(region))
+            .join('、')
+      },
+      { header: '自动匹配', value: (row) => (row.autoMatchAppleId ? '是' : '否') },
+      { header: '最低余额', value: (row) => row.minBalanceRequired ?? '' },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 个 Apple ID 业务`);
 }
 
 function normalizeServiceRecord(service: AppleService): AppleService {
@@ -3527,7 +3567,7 @@ async function removeOfficialSource(source: AppleOfficialPriceSource) {
         '该来源关联的采集记录、待确认变化和来源生成的当前价格会一起清理',
         '同供应商、同地区、同币种的默认来源不会自动恢复'
       ],
-      riskNotes: '这是数据库记录彻底删除；需要重新使用时请手动新增来源。',
+      riskNotes: '这条来源会被彻底删除；需要重新使用时请手动新增来源。',
       irreversible: true,
       risk: 'strong',
       confirmButtonText: '确认删除来源'
@@ -3560,7 +3600,7 @@ async function removeOfficialReview(review: ApplePriceChangeReview) {
         `官方最新：${getOfficialReviewNewSummary(review)}`,
         '删除后不会再出现在历史待确认变化列表'
       ],
-      riskNotes: '这是数据库记录彻底删除，不会同步价格，也不能从列表直接恢复。',
+      riskNotes: '这条记录会被彻底删除，不会同步价格，也不能从列表直接恢复。',
       irreversible: true,
       risk: 'strong',
       confirmButtonText: '确认删除记录'
@@ -3591,7 +3631,7 @@ async function removeOfficialBatchItem(item: AppleOfficialPriceCheckBatchItem) {
         `产出：快照 ${item.snapshotCount} / 待确认 ${item.reviewCount}`,
         '删除后会从当前批次结果列表移除'
       ],
-      riskNotes: '这是采集批次明细表记录彻底删除，批次统计会重新计算。',
+      riskNotes: '这条批次结果会被彻底删除，批次统计会重新计算。',
       irreversible: true,
       risk: 'strong',
       confirmButtonText: '确认删除结果'
@@ -3624,7 +3664,7 @@ async function removeOfficialRegionPrice(price: AppleServiceRegionPrice) {
         '删除后订单录入不会再使用这条当前价格',
         '同业务、同国家、同币种的旧价格不会被自动同步恢复'
       ],
-      riskNotes: '这是数据库记录彻底删除；需要重新使用时请重新确认官方价格或编辑业务设置。',
+      riskNotes: '这条价格会被彻底删除；需要重新使用时请重新确认官方价格或编辑业务设置。',
       irreversible: true,
       risk: 'strong',
       confirmButtonText: '确认删除价格'
@@ -3658,7 +3698,7 @@ async function removeOfficialSnapshot(snapshot: AppleOfficialPriceSnapshot) {
         '关联的待确认变化会一起删除'
       ],
       riskNotes:
-        '这是数据库记录彻底删除；已确认到当前价格表的记录不会被自动删除，请在当前价格表单独删除。',
+        '这条采集记录会被彻底删除；已确认到当前价格表的记录不会被自动删除，请在当前价格表单独删除。',
       irreversible: true,
       risk: 'strong',
       confirmButtonText: '确认删除采集记录'

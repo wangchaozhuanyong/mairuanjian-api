@@ -3,9 +3,11 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { TimedMemoryCache } from '../common/cache/timed-memory-cache';
 import { PrismaService } from '../common/prisma/prisma.service';
+import type { CreateRoleDto } from './dto/create-role.dto';
 import type { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
 
 const ROLE_CACHE_TTL_MS = 120_000;
+const ROLE_CODE_PATTERN = /^[a-z][a-z0-9_:-]{1,99}$/;
 
 @Injectable()
 export class RolesService implements OnModuleInit {
@@ -58,6 +60,60 @@ export class RolesService implements OnModuleInit {
         orderBy: [{ module: 'asc' }, { action: 'asc' }, { code: 'asc' }]
       })
     );
+  }
+
+  async createRole(dto: CreateRoleDto, operator?: AuthenticatedUser) {
+    const name = this.normalizeRequiredText(dto.name, 'Role name', 100);
+    const code = this.normalizeRoleCode(dto.code);
+    const description = this.normalizeOptionalText(dto.description, 500);
+
+    const existingRole = await this.prisma.role.findUnique({
+      where: {
+        code
+      }
+    });
+
+    if (existingRole) {
+      throw new BadRequestException('Role code already exists');
+    }
+
+    const role = await this.prisma.role.create({
+      data: {
+        name,
+        code,
+        description
+      },
+      include: {
+        rolePermissions: {
+          include: {
+            permission: true
+          }
+        },
+        _count: {
+          select: {
+            userRoles: true
+          }
+        }
+      }
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'system',
+      action: 'role.create',
+      objectType: 'role',
+      objectId: role.id,
+      afterData: {
+        name,
+        code,
+        description
+      },
+      remark: `Created role ${code}`
+    });
+
+    this.cache.clear();
+
+    return role;
   }
 
   async updateRolePermissions(
@@ -141,5 +197,55 @@ export class RolesService implements OnModuleInit {
         }
       }
     });
+  }
+
+  private normalizeRequiredText(value: unknown, fieldName: string, maxLength: number) {
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`${fieldName} is required`);
+    }
+
+    const normalized = value.trim();
+    if (!normalized) {
+      throw new BadRequestException(`${fieldName} is required`);
+    }
+
+    if (normalized.length > maxLength) {
+      throw new BadRequestException(`${fieldName} must be at most ${maxLength} characters`);
+    }
+
+    return normalized;
+  }
+
+  private normalizeRoleCode(value: unknown) {
+    const code = this.normalizeRequiredText(value, 'Role code', 100);
+
+    if (!ROLE_CODE_PATTERN.test(code)) {
+      throw new BadRequestException(
+        'Role code must start with a lowercase letter and contain lowercase letters, numbers, underscores, colons or hyphens'
+      );
+    }
+
+    return code;
+  }
+
+  private normalizeOptionalText(value: unknown, maxLength: number) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    if (typeof value !== 'string') {
+      throw new BadRequestException('Description must be a string');
+    }
+
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    if (normalized.length > maxLength) {
+      throw new BadRequestException(`Description must be at most ${maxLength} characters`);
+    }
+
+    return normalized;
   }
 }

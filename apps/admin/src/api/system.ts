@@ -182,6 +182,12 @@ function markMutatedSmartQueriesStale(url?: string) {
     scopes.add('code-service-mappings');
   }
 
+  if (path.startsWith('/codes/services')) {
+    scopes.add('code-services');
+    scopes.add('code-service-options');
+    scopes.add('code-order-dependencies');
+  }
+
   if (path.startsWith('/customers')) {
     scopes.add('customers');
     scopes.add('dashboard-overview');
@@ -969,6 +975,12 @@ export interface SaveUserPayload {
   roleIds: string[];
 }
 
+export interface CreateRolePayload {
+  name: string;
+  code: string;
+  description?: string | null;
+}
+
 export interface SaveCustomerPayload {
   name: string;
   phone?: string | null;
@@ -1712,6 +1724,9 @@ export const rolesApi = {
   listRoles() {
     return request<Role[]>(http.get('/roles'));
   },
+  create(payload: CreateRolePayload) {
+    return request<Role>(http.post('/roles', payload));
+  },
   listPermissions() {
     return request<Permission[]>(http.get('/permissions'));
   },
@@ -2444,6 +2459,11 @@ export const appleServicesApi = {
       http.get('/apple/services/order-options', { signal: options.signal })
     ).then((result) => ({ items: normalizeArray(result.items) }));
   },
+  listActionPlanOptions(options: ApiRequestOptions = {}) {
+    return request<{ items: AppleServiceRegionPrice[] }>(
+      http.get('/apple/services/action-plan-options', { signal: options.signal })
+    ).then((result) => ({ items: normalizeArray(result.items) }));
+  },
   listRegionPrices(params: AppleServiceRegionPriceQuery, options: ApiRequestOptions = {}) {
     return request<PageResult<AppleServiceRegionPrice>>(
       http.get('/apple/services/region-prices', { params, signal: options.signal })
@@ -2595,6 +2615,16 @@ export const codeServicesApi = {
       http.get('/codes/services', { params, signal: options.signal })
     );
   },
+  listOrderOptions(options: ApiRequestOptions = {}) {
+    return request<{ items: CodeService[] }>(
+      http.get('/codes/services/order-options', { signal: options.signal })
+    );
+  },
+  listInventoryOptions(options: ApiRequestOptions = {}) {
+    return request<{ items: CodeService[] }>(
+      http.get('/codes/services/inventory-options', { signal: options.signal })
+    );
+  },
   get(id: string) {
     return request<CodeService>(http.get(`/codes/services/${id}`));
   },
@@ -2647,6 +2677,14 @@ export const codeOrdersApi = {
   list(params: CodeOrderQuery, options: ApiRequestOptions = {}) {
     return request<PageResult<CodePlatformOrder>>(
       http.get('/codes/orders', { params, signal: options.signal })
+    );
+  },
+  listAfterSaleOptions(
+    params: Pick<CodeOrderQuery, 'page' | 'pageSize' | 'keyword'>,
+    options: ApiRequestOptions = {}
+  ) {
+    return request<PageResult<CodePlatformOrder>>(
+      http.get('/codes/orders/after-sale-options', { params, signal: options.signal })
     );
   },
   get(id: string) {
@@ -2883,9 +2921,9 @@ export const appleAutomationTasksApi = {
       http.post(`/apple/automation-tasks/${id}/web-check-gateway-attempt`, payload)
     );
   },
-  runPlaceholder(id: string) {
+  runManualReview(id: string) {
     return request<AppleAutomationTask>(
-      http.post(`/apple/automation-tasks/${id}/run-placeholder`)
+      http.post(`/apple/automation-tasks/${id}/run-manual-review`)
     ).then(normalizeAutomationTask);
   },
   cancel(id: string) {

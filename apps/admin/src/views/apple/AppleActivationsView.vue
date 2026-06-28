@@ -375,6 +375,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { PageResult, ServiceActivation, TableDensity, UserTableView } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const loading = ref(false);
@@ -724,7 +725,44 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('Apple ID 开通记录导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedActivations.value.length ? selectedActivations.value : activations.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的开通记录');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-activations',
+    [
+      { header: '订单号', value: (row) => row.order.orderNo },
+      { header: '客户', value: (row) => row.customer.name },
+      { header: '微信', value: (row) => row.customer.wechat ?? '' },
+      { header: '业务', value: (row) => row.service.name },
+      { header: 'Apple ID', value: (row) => row.appleAccount?.appleIdMasked ?? '' },
+      { header: '当前套餐', value: (row) => row.currentPlan ?? '' },
+      { header: '目标套餐', value: (row) => row.targetPlan ?? '' },
+      { header: '开始时间', value: (row) => formatDate(row.startTime) },
+      { header: '到期时间', value: (row) => formatDate(row.expireTime) },
+      {
+        header: '距到期',
+        value: (row) =>
+          row.daysUntilExpire === null || row.daysUntilExpire === undefined
+            ? ''
+            : getExpireText(row.daysUntilExpire)
+      },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '自动续费', value: (row) => getAutoRenewStatusLabel(row.autoRenewStatus) },
+      { header: '续费决定', value: (row) => getRenewalDecisionLabel(row.renewalDecision) },
+      { header: '实收人民币', value: (row) => row.paidAmountRmb },
+      { header: '成本人民币', value: (row) => row.costRmb },
+      { header: '利润', value: (row) => row.profitAmount },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条开通记录`);
 }
 
 function handleBatchAction(action: string) {

@@ -40,6 +40,9 @@ describe('AppleActionPlansService', () => {
   });
 
   it('lists expiring customers from service activations', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-07T12:00:00.000Z'));
+
     const expireTime = new Date('2026-07-10T00:00:00.000Z');
     const createdAt = new Date('2026-07-01T00:00:00.000Z');
     const activation = {
@@ -149,41 +152,104 @@ describe('AppleActionPlansService', () => {
       renewalTasksService as never
     );
 
-    const result = await serviceWithPrisma.listExpiringCustomers({
+    try {
+      const result = await serviceWithPrisma.listExpiringCustomers({
+        page: '1',
+        pageSize: '20',
+        expiresInDays: '3',
+        keyword: 'test-wx',
+        ownershipType: 'consigned',
+        sortBy: 'expireTime',
+        sortOrder: 'asc'
+      });
+
+      expect(prisma.serviceActivation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: {
+              in: ['active', 'expired']
+            },
+            expireTime: {
+              not: null,
+              lt: new Date('2026-07-11T00:00:00.000Z')
+            }
+          }),
+          take: 20,
+          orderBy: [{ expireTime: 'asc' }, { createdAt: 'desc' }]
+        })
+      );
+      expect(prisma.serviceActivation.count).toHaveBeenCalled();
+      expect(result.total).toBe(1);
+      expect(result.items[0]).toMatchObject({
+        customer: {
+          name: '测试客户',
+          phoneMasked: '138****8000',
+          wechat: 'test-wx'
+        },
+        serviceAccount: 'customer-site-account',
+        currentPackageSummary: 'Claude Pro 1年 / US / 200 USD',
+        appleAccountOwnershipType: 'consigned',
+        lastPaidAmount: '1099',
+        lastPaidCurrency: 'CNY',
+        renewalSubmitted: true,
+        renewalTask: {
+          taskType: 'topup_apple_balance',
+          suggestedTopupAmount: '188'
+        },
+        daysUntilExpire: 3
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps an explicit activation status filter when listing expiring customers', async () => {
+    const prisma = {
+      serviceActivation: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0)
+      }
+    };
+    const serviceWithPrisma = new AppleActionPlansService(
+      prisma as never,
+      {} as never,
+      renewalTasksService as never
+    );
+
+    await serviceWithPrisma.listExpiringCustomers({
       page: '1',
       pageSize: '20',
-      expiresInDays: '3',
-      keyword: 'test-wx',
-      ownershipType: 'consigned',
-      sortBy: 'expireTime',
-      sortOrder: 'asc'
+      status: 'active'
     });
 
     expect(prisma.serviceActivation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        take: 20,
-        orderBy: [{ expireTime: 'asc' }, { createdAt: 'desc' }]
+        where: expect.objectContaining({
+          status: 'active'
+        })
       })
     );
-    expect(prisma.serviceActivation.count).toHaveBeenCalled();
-    expect(result.total).toBe(1);
-    expect(result.items[0]).toMatchObject({
-      customer: {
-        name: '测试客户',
-        phoneMasked: '138****8000',
-        wechat: 'test-wx'
-      },
-      serviceAccount: 'customer-site-account',
-      currentPackageSummary: 'Claude Pro 1年 / US / 200 USD',
-      appleAccountOwnershipType: 'consigned',
-      lastPaidAmount: '1099',
-      lastPaidCurrency: 'CNY',
-      renewalSubmitted: true,
-      renewalTask: {
-        taskType: 'topup_apple_balance',
-        suggestedTopupAmount: '188'
-      }
-    });
+  });
+
+  it('keeps expired and same-day activations in the one-day expiring filter', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-07T23:30:00.000Z'));
+
+    try {
+      const range = (
+        service as unknown as {
+          buildExpiringDateRange(query: { expiresInDays?: string }): Record<string, unknown>;
+        }
+      ).buildExpiringDateRange({ expiresInDays: '1' });
+
+      expect(range).toEqual({
+        not: null,
+        lt: new Date('2026-07-09T00:00:00.000Z')
+      });
+      expect(range).not.toHaveProperty('gte');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   function activation(

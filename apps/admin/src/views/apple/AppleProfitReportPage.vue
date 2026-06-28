@@ -391,6 +391,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { buildHelpText } from '@/utils/helpText';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
@@ -451,17 +452,11 @@ const reportColumnHelpText = {
     '这里显示脱敏后的 Apple ID；没有绑定 Apple ID 的订单会归到“未绑定 Apple ID”。'
   ],
   orderCount: ['当前分组内的订单数量。', '统计口径跟页面顶部筛选条件一致。'],
-  paidAmount: [
-    '客户实收金额折合人民币后的合计。',
-    '接口读取订单里的 paidAmountRmb 字段后按分组相加。'
-  ],
-  platformFee: [
-    '平台手续费折合人民币后的合计。',
-    '接口读取订单里的 platformFeeRmb 字段后按分组相加。'
-  ],
+  paidAmount: ['客户实收金额折合人民币后的合计。', '按订单里的人民币实收金额分组相加。'],
+  platformFee: ['平台手续费折合人民币后的合计。', '按订单里的人民币手续费分组相加。'],
   refundLoss: [
     '退款、补发、售后等额外损耗折合人民币后的合计。',
-    '接口读取订单里的 refundLossRmb 字段后按分组相加。'
+    '按订单里的人民币损耗金额分组相加。'
   ],
   appleCostRmb: [
     '这里的成本指 Apple 余额消耗成本。',
@@ -730,7 +725,60 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('Apple ID 报表导出会进入数据中心导出任务，后续统一接入');
+  if (activeTab.value === 'recent') {
+    const rows = report.value.recentOrders;
+
+    if (!rows.length) {
+      ElMessage.warning('暂无可导出的最近订单数据');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'apple-profit-report-recent',
+      [
+        { header: '订单号', value: (row) => row.orderNo },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '业务', value: (row) => row.serviceName ?? '' },
+        { header: '来源平台', value: (row) => row.sourcePlatformName ?? '' },
+        { header: 'Apple ID', value: (row) => row.appleAccountMasked ?? '' },
+        { header: '销售额', value: (row) => row.paidAmount },
+        { header: '手续费', value: (row) => row.platformFee },
+        { header: '退款损耗', value: (row) => row.refundLoss },
+        { header: 'Apple 成本', value: (row) => row.appleCostRmb },
+        { header: '利润', value: (row) => row.profitAmount },
+        { header: '状态', value: (row) => getOrderStatusLabel(row.status) }
+      ],
+      rows
+    );
+
+    ElMessage.success(`已导出 ${count} 条最近订单报表`);
+    return;
+  }
+
+  const rows = activeGroupRows.value;
+
+  if (!rows.length) {
+    ElMessage.warning(`暂无可导出的${activeTabLabel.value}数据`);
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    `apple-profit-report-${activeTab.value}`,
+    [
+      { header: activeTabLabel.value, value: (row) => row.label },
+      { header: '订单数', value: (row) => row.orderCount },
+      { header: '销售额', value: (row) => row.paidAmount },
+      { header: '手续费', value: (row) => row.platformFee },
+      { header: '退款损耗', value: (row) => row.refundLoss },
+      { header: 'Apple 成本', value: (row) => row.appleCostRmb },
+      { header: '利润', value: (row) => row.profitAmount },
+      { header: '毛利率%', value: (row) => row.grossMarginRate },
+      { header: '单均利润', value: (row) => row.averageOrderProfit }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条${activeTabLabel.value}报表`);
 }
 
 async function loadTableViews(applyDefault = false) {

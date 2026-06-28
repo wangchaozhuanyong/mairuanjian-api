@@ -34,6 +34,7 @@
         :selected-count="selectedCustomers.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        :show-primary="canCreateCustomer"
         primary-label="新增客户"
         placeholder="搜索客户、微信、手机号尾号"
         @search="handleSearch"
@@ -79,7 +80,9 @@
             <span>可以新增客户，或清空筛选后重新查看客户列表。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-              <AppButton variant="primary" @click="openCreate">新增客户</AppButton>
+              <AppButton v-if="canCreateCustomer" variant="primary" @click="openCreate">
+                新增客户
+              </AppButton>
             </div>
           </div>
         </template>
@@ -166,7 +169,7 @@
           <template #header>
             <span class="help-label">
               状态
-              <FeatureHelp text="启用表示正常使用；停用表示这个客户暂时不参与后续业务处理。" />
+              <FeatureHelp text="启用表示正常使用；停用表示这个客户暂时不参与之后的业务处理。" />
             </span>
           </template>
           <template #default="{ row }">
@@ -186,8 +189,20 @@
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
-              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
-              <AppButton size="small" variant="danger" @click="removeCustomer(row)">
+              <AppButton
+                v-if="canUpdateCustomer"
+                size="small"
+                variant="ghost"
+                @click="openEdit(row)"
+              >
+                编辑
+              </AppButton>
+              <AppButton
+                v-if="canDeleteCustomer"
+                size="small"
+                variant="danger"
+                @click="removeCustomer(row)"
+              >
                 删除
               </AppButton>
             </div>
@@ -236,8 +251,20 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(customer)">详情</AppButton>
-            <AppButton size="small" variant="ghost" @click="openEdit(customer)">编辑</AppButton>
-            <AppButton size="small" variant="danger" @click="removeCustomer(customer)">
+            <AppButton
+              v-if="canUpdateCustomer"
+              size="small"
+              variant="ghost"
+              @click="openEdit(customer)"
+            >
+              编辑
+            </AppButton>
+            <AppButton
+              v-if="canDeleteCustomer"
+              size="small"
+              variant="danger"
+              @click="removeCustomer(customer)"
+            >
               删除
             </AppButton>
             <AppButton
@@ -258,7 +285,9 @@
           <span>可以新增客户，或清空筛选后重新查看客户列表。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-            <AppButton variant="primary" @click="openCreate">新增客户</AppButton>
+            <AppButton v-if="canCreateCustomer" variant="primary" @click="openCreate">
+              新增客户
+            </AppButton>
           </div>
         </div>
       </div>
@@ -287,7 +316,14 @@
       />
       <template #footer>
         <AppButton @click="dialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="saving" @click="saveCustomer">保存</AppButton>
+        <AppButton
+          v-if="editingCustomer ? canUpdateCustomer : canCreateCustomer"
+          variant="primary"
+          :loading="saving"
+          @click="saveCustomer"
+        >
+          保存
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -300,7 +336,7 @@
         <div class="apple-core-alert apple-core-alert--orange">
           <StatusChip tone="orange">敏感</StatusChip>
           <div>
-            <strong>查看完整手机号会写入敏感访问日志和审计日志</strong>
+            <strong>查看完整手机号会保存敏感查看记录</strong>
             <p>请填写明确业务原因，避免无授权查看客户敏感联系方式。</p>
           </div>
         </div>
@@ -318,7 +354,7 @@
           <template #label>
             <FieldHelpLabel
               label="查看原因"
-              purpose="说明为什么要查看完整手机号，系统会写入敏感访问日志。"
+              purpose="说明为什么要查看完整手机号，系统会保存本次查看记录。"
               example="可以填售后联系、订单核对、客户回访。"
             />
           </template>
@@ -342,7 +378,12 @@
       </el-form>
       <template #footer>
         <AppButton @click="phoneDialogVisible = false">关闭</AppButton>
-        <AppButton variant="danger" :loading="revealingPhone" @click="revealPhone">
+        <AppButton
+          v-if="canRevealPhone"
+          variant="danger"
+          :loading="revealingPhone"
+          @click="revealPhone"
+        >
           查看完整手机号
         </AppButton>
       </template>
@@ -387,6 +428,8 @@ import {
   fillCustomerProfileForm,
   resetCustomerProfileForm
 } from '@/utils/customerProfileForm';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 const tableKey = 'customers';
@@ -462,11 +505,12 @@ const tagOptions = computed(() => [
   ])
 ]);
 
-const canRevealPhone = computed(
-  () =>
-    authStore.user?.roles.includes('admin') ||
-    authStore.user?.permissions.includes('customer.view_phone')
-);
+const canRevealPhone = computed(() => hasCustomerPermission('customer.view_phone'));
+const canCreateCustomer = computed(() => hasCustomerPermission('customer.create'));
+const canUpdateCustomer = computed(() => hasCustomerPermission('customer.update'));
+const canDeleteCustomer = computed(() => hasCustomerPermission('customer.delete'));
+const canViewSourcePlatforms = computed(() => hasCustomerPermission('source_platform.view'));
+const canManageDictionaries = computed(() => hasCustomerPermission('data.dictionary.manage'));
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
 );
@@ -526,6 +570,11 @@ function applyCustomerTagResult(data: PageResult<DataDictionary>) {
 }
 
 async function loadSourcePlatforms(options: { background?: boolean; force?: boolean } = {}) {
+  if (!canViewSourcePlatforms.value) {
+    sourcePlatforms.value = [];
+    return;
+  }
+
   const params = buildSourcePlatformParams();
   const key = createSmartQueryKey('source-platforms', params);
 
@@ -549,6 +598,11 @@ async function loadSourcePlatforms(options: { background?: boolean; force?: bool
 }
 
 async function loadCustomerTags(options: { background?: boolean; force?: boolean } = {}) {
+  if (!canManageDictionaries.value) {
+    customerTagDictionaries.value = [];
+    return;
+  }
+
   const params = buildCustomerTagParams();
   const key = createSmartQueryKey('customer-tags', params);
 
@@ -656,7 +710,30 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('客户导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedCustomers.value.length ? selectedCustomers.value : customers.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的客户数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'customers',
+    [
+      { header: '客户', value: (row) => row.name },
+      { header: '状态', value: (row) => (row.status === 'active' ? '启用' : '停用') },
+      { header: '手机号', value: (row) => row.maskedPhone ?? row.phoneTail ?? '' },
+      { header: '微信', value: (row) => row.wechat ?? '' },
+      { header: '来源平台', value: (row) => row.sourcePlatform?.name ?? '' },
+      { header: '标签', value: (row) => row.tags.join('、') },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条客户数据`);
 }
 
 function handleBatchAction(action: string) {
@@ -776,12 +853,22 @@ function resetForm() {
 }
 
 function openCreate() {
+  if (!canCreateCustomer.value) {
+    ElMessage.warning('当前账号没有新增客户权限');
+    return;
+  }
+
   editingCustomer.value = null;
   resetForm();
   dialogVisible.value = true;
 }
 
 function openEdit(customer: Customer) {
+  if (!canUpdateCustomer.value) {
+    ElMessage.warning('当前账号没有编辑客户权限');
+    return;
+  }
+
   editingCustomer.value = customer;
   fillCustomerProfileForm(form, customer);
   dialogVisible.value = true;
@@ -789,7 +876,7 @@ function openEdit(customer: Customer) {
 
 function openDetail(customer: Customer) {
   router.push({
-    path: '/system/customers/detail',
+    path: '/customers/detail',
     query: {
       id: customer.id
     }
@@ -797,6 +884,11 @@ function openDetail(customer: Customer) {
 }
 
 function openPhoneDialog(customer: Customer) {
+  if (!canRevealPhone.value) {
+    ElMessage.warning('当前账号没有查看完整手机号权限');
+    return;
+  }
+
   selectedCustomer.value = customer;
   phoneForm.reason = '';
   phoneForm.phone = '';
@@ -804,6 +896,14 @@ function openPhoneDialog(customer: Customer) {
 }
 
 async function saveCustomer() {
+  const canSave = editingCustomer.value ? canUpdateCustomer.value : canCreateCustomer.value;
+  if (!canSave) {
+    ElMessage.warning(
+      editingCustomer.value ? '当前账号没有编辑客户权限' : '当前账号没有新增客户权限'
+    );
+    return;
+  }
+
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -831,6 +931,11 @@ async function saveCustomer() {
 }
 
 async function removeCustomer(customer: Customer) {
+  if (!canDeleteCustomer.value) {
+    ElMessage.warning('当前账号没有删除客户权限');
+    return;
+  }
+
   try {
     await ElMessageBox.confirm(
       `确认删除客户「${customer.name}」吗？删除后客户不会再出现在客户列表和新建订单下拉里，历史订单记录保留原关联。`,
@@ -856,6 +961,10 @@ async function removeCustomer(customer: Customer) {
 }
 
 async function ensureCustomerTagsRegistered(tags: string[]) {
+  if (!canManageDictionaries.value) {
+    return;
+  }
+
   const existingLabels = new Set(customerTagDictionaries.value.map((tag) => tag.label.trim()));
   const missingTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].filter(
     (tag) => !existingLabels.has(tag)
@@ -880,7 +989,16 @@ async function ensureCustomerTagsRegistered(tags: string[]) {
   );
 }
 
+function hasCustomerPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
 async function revealPhone() {
+  if (!canRevealPhone.value) {
+    ElMessage.warning('当前账号没有查看完整手机号权限');
+    return;
+  }
+
   const valid = await phoneFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedCustomer.value) {
     return;
@@ -892,7 +1010,7 @@ async function revealPhone() {
       reason: phoneForm.reason
     });
     phoneForm.phone = data.phone;
-    ElMessage.success('完整手机号已显示，审计日志已记录');
+    ElMessage.success('完整手机号已显示，查看记录已保存');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '查看完整手机号失败');
   } finally {

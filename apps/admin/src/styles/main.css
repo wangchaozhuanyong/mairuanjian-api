@@ -312,6 +312,29 @@ h1 {
   overflow: hidden;
 }
 
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 100;
+  transform: translateY(-160%);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--v3-text);
+  box-shadow: var(--shadow-float);
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform 0.18s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+
 .route-progress {
   position: fixed;
   z-index: 90;
@@ -1094,6 +1117,8 @@ h1 {
   border-radius: 14px;
   background: var(--v3-surface-2);
   color: var(--v3-text);
+  cursor: pointer;
+  font: inherit;
   text-align: left;
   transition:
     border-color 0.18s var(--v3-ease),
@@ -4695,8 +4720,22 @@ h1 {
   gap: 12px;
 }
 
-.account-drawer-form .el-form-item {
+.account-drawer-form .el-form-item,
+.drawer-form .el-form-item {
   margin-bottom: 0;
+}
+
+.drawer-form {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.form-help-text {
+  margin: 6px 0 0;
+  color: var(--v3-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .drawer-detail-grid {

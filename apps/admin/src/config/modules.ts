@@ -19,7 +19,7 @@ export interface AppModuleItem {
   group: string;
   phase: string;
   status: ModuleStatus;
-  permission?: string;
+  permission?: string | string[];
   description: string;
   help?: string[];
   metrics?: Array<{
@@ -40,6 +40,7 @@ export interface MenuSection {
   icon: MenuSectionIcon;
   items: AppModuleItem[];
   defaultOpen?: boolean;
+  adminOnly?: boolean;
 }
 
 const modulePermissionByKey: Record<string, string> = {
@@ -54,7 +55,7 @@ const modulePermissionByKey: Record<string, string> = {
   'apple-source-channels': 'apple.account.update',
   'apple-settings': 'apple.service.manage',
   'apple-orders': 'apple.order.view',
-  'order-entry': 'apple.order.view',
+  'order-entry': 'apple.order.create',
   'apple-activations': 'apple.activation.view',
   'balance-reconciliation': 'apple.balance.view',
   'finance-center': 'apple.report.view',
@@ -63,12 +64,12 @@ const modulePermissionByKey: Record<string, string> = {
   'code-inventory': 'code.inventory.view',
   'code-settings': 'code.service.manage',
   'code-orders': 'code.order.view',
-  'delivery-exceptions': 'code.delivery.view',
-  'after-sales': 'code.after_sale.manage',
+  'delivery-exceptions': 'code.order.view',
+  'after-sales': 'code.after_sale.view',
   'code-reports': 'code.report.view',
   'delivery-templates': 'code.delivery_template.manage',
   customers: 'customer.view',
-  'source-platforms': 'source_platform.view',
+  'source-platforms': 'source_platform.manage',
   attachments: 'attachment.view',
   notifications: 'notification.view',
   security: 'security.overview.view',
@@ -89,7 +90,7 @@ const modulePermissionByKey: Record<string, string> = {
   changelog: 'maintenance.version.view',
   'system-parameters': 'maintenance.system_parameter.manage',
   'audit-log': 'audit_log.view',
-  'platform-status': 'ops.api_status.view',
+  'platform-status': 'ops.platform_sync.view',
   'platform-interface-logs': 'audit_log.view',
   'automation-logs': 'audit_log.view'
 };
@@ -103,12 +104,7 @@ const workspaceModules: AppModuleItem[] = [
     group: '工作台',
     phase: 'Design',
     status: 'ready',
-    description: '展示今日关键指标、任务、风险、平台状态和常用入口。',
-    metrics: [
-      { label: '今日订单', value: '126', hint: '较昨日增加 19 单', tone: 'green' },
-      { label: '待处理任务', value: '42', hint: '紧急 7 · 待充值 9', tone: 'orange' },
-      { label: '自动发货成功率', value: '98.7%', hint: '失败转人工 3 单', tone: 'blue' }
-    ],
+    description: '展示今日订单、续费待办、兑换码库存、发货状态和常用入口。',
     features: ['全局指标卡片', '今日关键任务', '风险提醒', '快速入口']
   },
   {
@@ -184,7 +180,7 @@ const workspaceModules: AppModuleItem[] = [
     group: '工作台',
     phase: 'Phase 16',
     status: 'ready',
-    description: '上线前检查接口联调、权限、安全、发货兜底、数据备份和生产配置等质量项。',
+    description: '上线前检查发货渠道、权限、安全、人工处理、数据备份和生产配置等质量项。',
     features: ['上线阻塞项', '验收负责人', '检查证据', '状态保存', '发布前风险判断'],
     primaryAction: '保存清单',
     tableColumns: ['检查项', '优先级', '状态', '负责人', '证据', '备注']
@@ -279,7 +275,7 @@ const appleModules: AppModuleItem[] = [
     phase: 'Phase 4',
     status: 'ready',
     description: '按客户、来源平台、业务和自动匹配结果录入开通订单。',
-    features: ['分步表单', '自动匹配', '成本预估', '提交前校验', '草稿保存'],
+    features: ['分步表单', '自动匹配', '成本预估', '提交前校验', '生成开通记录'],
     primaryAction: '提交订单',
     tableColumns: ['客户', '业务', '推荐账号', '实收', '预计利润', '校验']
   },
@@ -306,7 +302,7 @@ const appleModules: AppModuleItem[] = [
     status: 'ready',
     description:
       '系统里记的余额和你实际查到的不一样时，在这里修正。每次修正都会留下记录，方便以后对账。',
-    features: ['余额差异列表', '成本影响预览', '修正原因', '通知财务', '审计日志'],
+    features: ['余额差异列表', '成本影响预览', '修正原因', '修正记录', '流水核对'],
     primaryAction: '处理差异',
     tableColumns: ['Apple ID', '系统余额', '查询余额', '差异', '影响', '状态']
   },
@@ -318,8 +314,8 @@ const appleModules: AppModuleItem[] = [
     group: 'Apple ID 业务',
     phase: 'Phase 4',
     status: 'ready',
-    description: '独立统计 Apple ID 销售额、余额成本、利润、手续费和异常成本。',
-    features: ['销售对账', '成本对账', '利润对账', '余额修正', '导出报表'],
+    description: '按日期核对 Apple ID 订单销售额、余额消耗成本、手续费、退款损耗和利润。',
+    features: ['按日期对账', '销售额汇总', '余额消耗成本', '利润核对', '导出报表'],
     primaryAction: '导出财务报表',
     tableColumns: ['日期', '订单数', '销售额', '余额成本', '手续费', '利润']
   },
@@ -330,7 +326,7 @@ const appleModules: AppModuleItem[] = [
     mark: 'AT',
     group: 'Apple ID 业务',
     phase: 'Phase 8',
-    status: 'design-ready',
+    status: 'ready',
     description: '按操作场景批量查询 ID 状态、余额和官方价格套餐，失败或高风险任务转人工处理。',
     features: ['批量查状态', '批量查余额', '价格套餐巡检', '人工处理', '执行记录'],
     primaryAction: '开始自动化操作',
@@ -344,10 +340,10 @@ const appleModules: AppModuleItem[] = [
     group: 'Apple ID 业务',
     phase: 'Phase 4',
     status: 'ready',
-    description: '查看 Apple ID 销售、成本、利润、到期分布和异常账号报表。',
-    features: ['利润排行', '到期分布', '异常账号', '余额成本分布', '导出'],
+    description: '按业务、来源平台、Apple ID 和最近订单统计销售额、成本、利润和毛利率。',
+    features: ['按业务统计', '按来源平台统计', '按 Apple ID 统计', '最近订单', '导出报表'],
     primaryAction: '导出 Apple ID 报表',
-    tableColumns: ['业务', '订单数', '销售额', '成本', '利润', '毛利率']
+    tableColumns: ['维度', '订单数', '销售额', '手续费', '成本', '利润', '毛利率']
   }
 ];
 
@@ -362,7 +358,7 @@ const codeModules: AppModuleItem[] = [
     status: 'ready',
     description:
       '这里放所有还没卖、已锁定或已发出的兑换码。平时只看尾号，完整码需要权限和原因才能查看。',
-    features: ['批量导入', '重复检测', '库存状态', '锁定超时', '敏感查看日志'],
+    features: ['批量导入', '导入校验', '库存状态', '成本面值', '受控查看完整码'],
     primaryAction: '批量导入兑换码',
     tableColumns: ['兑换码尾号', '面值', '成本', '批次', '状态', '绑定订单']
   },
@@ -413,10 +409,10 @@ const codeModules: AppModuleItem[] = [
     mark: 'DE',
     group: '兑换码自动发货',
     phase: 'Phase 7',
-    status: 'design-ready',
-    description: '集中处理缺货、接口失败、锁定超时和退款后异常订单。',
-    features: ['异常分类', '转人工', '重试发货', '释放锁定', '通知发货员'],
-    primaryAction: '批量转人工',
+    status: 'ready',
+    description: '集中查看缺货、发货失败、转人工和待确认发货订单，并跳转到订单页处理。',
+    features: ['异常分类', '失败原因', '按平台筛选', '进入订单处理', '导出异常'],
+    primaryAction: '进入发货处理',
     tableColumns: ['异常类型', '订单号', '平台', '面值', '原因', '状态']
   },
   {
@@ -428,7 +424,7 @@ const codeModules: AppModuleItem[] = [
     phase: 'Phase 6',
     status: 'ready',
     description: '处理兑换码售后补发，关联原订单、原码、新码和损耗成本。',
-    features: ['售后单', '补发流程', '损耗成本', '凭证上传', '处理记录'],
+    features: ['售后单', '补发流程', '损耗成本', '补发内容记录', '完成确认'],
     primaryAction: '新增售后单',
     tableColumns: ['售后单', '原订单', '面值', '损耗', '负责人', '状态']
   },
@@ -440,10 +436,10 @@ const codeModules: AppModuleItem[] = [
     group: '兑换码自动发货',
     phase: 'Phase 6',
     status: 'ready',
-    description: '独立统计兑换码销售、成本、退款、利润和平台成功率。',
-    features: ['平台利润', '库存周转', '售后损耗', '自动发货成功率', '导出'],
+    description: '独立统计兑换码销售额、发货码数、成本、退款、售后补发和净利润。',
+    features: ['按日期统计', '按业务统计', '按平台统计', '最近订单', '导出报表'],
     primaryAction: '导出兑换码报表',
-    tableColumns: ['平台', '订单数', '销售额', '成本', '退款', '利润']
+    tableColumns: ['维度', '订单数', '码数', '销售额', '成本', '退款', '净利润']
   }
 ];
 
@@ -451,7 +447,7 @@ const systemModules: AppModuleItem[] = [
   {
     key: 'customers',
     title: '客户管理',
-    route: '/system/customers',
+    route: '/customers',
     mark: 'CU',
     group: '客户与来源',
     phase: 'Phase 2',
@@ -852,15 +848,15 @@ export const hiddenModules: AppModuleItem[] = [
   },
   {
     key: 'maintenance-mode',
-    title: '系统维护模式页',
+    title: '系统维护中',
     route: '/system/maintenance-mode',
     mark: 'MM',
-    group: '系统管理',
+    group: '服务状态',
     phase: 'Phase 13',
-    status: 'planned',
-    description: '系统维护期间展示维护范围、预计恢复时间和公告。',
-    features: ['维护公告', '恢复时间', '影响范围', '值班联系人'],
-    tableColumns: ['维护窗口', '范围', '开始', '结束', '状态']
+    status: 'ready',
+    description: '系统维护期间展示当前影响范围、恢复提示和可返回入口。',
+    features: ['维护提示', '恢复说明', '业务数据保护', '返回首页'],
+    tableColumns: ['维护窗口', '影响范围', '开始时间', '预计恢复', '状态']
   }
 ];
 
@@ -895,7 +891,25 @@ export function getModuleDisplayHelp(item: AppModuleItem) {
 }
 
 export function getModulePermission(item: AppModuleItem) {
-  return item.permission ?? modulePermissionByKey[item.key];
+  return item.permission ?? getModuleRequiredPermissions(item.key);
+}
+
+export function getModuleRequiredPermissions(key: string) {
+  const multiPermissionByKey: Record<string, string[]> = {
+    'balance-reconciliation': ['apple.account.view', 'apple.balance.view'],
+    'ops-monitor': [
+      'ops.overview.view',
+      'ops.queue_status.view',
+      'ops.cron_job.view',
+      'ops.platform_sync.view',
+      'ops.worker_status.view',
+      'ops.storage_status.view',
+      'ops.disk_status.view',
+      'ops.error_log.view'
+    ]
+  };
+
+  return multiPermissionByKey[key] ?? modulePermissionByKey[key];
 }
 
 export function getModuleSearchText(item: AppModuleItem) {
@@ -921,12 +935,12 @@ export const menuSections: MenuSection[] = [
     defaultOpen: true,
     items: selectModules(
       [...workspaceModules, ...systemModules],
-      ['dashboard', 'renewal', 'action-plans', 'work-orders', 'launch-audit']
+      ['dashboard', 'renewal', 'action-plans']
     )
   },
   {
     key: 'common',
-    title: '客户与来源',
+    title: '客户与订单',
     icon: 'common',
     items: selectModules(
       [...systemModules, ...appleModules],
@@ -940,10 +954,8 @@ export const menuSections: MenuSection[] = [
     items: selectModules(appleModules, [
       'order-entry',
       'apple-list',
-      'apple-settings',
       'balance-reconciliation',
       'finance-center',
-      'apple-automation',
       'apple-reports'
     ])
   },
@@ -952,8 +964,6 @@ export const menuSections: MenuSection[] = [
     title: '兑换码业务',
     icon: 'codes',
     items: selectModules(codeModules, [
-      'code-settings',
-      'delivery-templates',
       'code-inventory',
       'code-orders',
       'delivery-exceptions',
@@ -963,16 +973,17 @@ export const menuSections: MenuSection[] = [
   },
   {
     key: 'security',
-    title: '安全与风控',
+    title: '员工与权限',
     icon: 'security',
-    items: selectModules(systemModules, ['security', 'risk-control', 'users', 'roles'])
+    adminOnly: true,
+    items: selectModules(systemModules, ['users', 'roles', 'security'])
   },
   {
     key: 'data-audit',
     title: '数据与记录',
     icon: 'data',
+    adminOnly: true,
     items: selectModules(systemModules, [
-      'data-center',
       'data-imports',
       'data-exports',
       'recycle-bin',
@@ -981,28 +992,28 @@ export const menuSections: MenuSection[] = [
     ])
   },
   {
-    key: 'ops-platform',
-    title: '平台连接',
-    icon: 'ops',
-    items: selectModules(systemModules, [
-      'ops-monitor',
-      'platform-status',
-      'platform-interface-logs'
-    ])
+    key: 'system-config',
+    title: '业务设置',
+    icon: 'system',
+    adminOnly: true,
+    items: selectModules(
+      [...appleModules, ...codeModules, ...systemModules],
+      [
+        'apple-settings',
+        'code-settings',
+        'delivery-templates',
+        'source-platforms',
+        'notifications',
+        'maintenance'
+      ]
+    )
   },
   {
-    key: 'system-config',
-    title: '系统配置',
-    icon: 'system',
-    items: selectModules(systemModules, [
-      'maintenance',
-      'source-platforms',
-      'notifications',
-      'feature-flags',
-      'versions',
-      'changelog',
-      'system-parameters'
-    ])
+    key: 'ops-system',
+    title: '运维/系统',
+    icon: 'ops',
+    adminOnly: true,
+    items: selectModules(systemModules, ['ops-monitor', 'platform-status'])
   }
 ];
 
@@ -1022,10 +1033,10 @@ export function getModuleByKey(key: string) {
 
 export function getStatusText(status: ModuleStatus) {
   const statusMap: Record<ModuleStatus, string> = {
-    ready: '已接入',
-    'design-ready': '设计完成',
-    planned: '规划中',
-    later: '后期增强'
+    ready: '可用',
+    'design-ready': '未开放',
+    planned: '未开放',
+    later: '未开放'
   };
 
   return statusMap[status];

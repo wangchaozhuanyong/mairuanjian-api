@@ -66,16 +66,33 @@ function trimTrailingSlash(value) {
   return String(value).replace(/\/$/, '');
 }
 
+function normalizeBaseUrl(value, originBaseUrl) {
+  const rawValue = String(value || DEFAULT_API_BASE_URL);
+
+  if (/^https?:\/\//i.test(rawValue)) {
+    return trimTrailingSlash(rawValue);
+  }
+
+  if (rawValue.startsWith('/')) {
+    return trimTrailingSlash(new URL(rawValue, `${trimTrailingSlash(originBaseUrl)}/`).toString());
+  }
+
+  return trimTrailingSlash(rawValue);
+}
+
 function resolveUrl(baseUrl, target) {
   return `${trimTrailingSlash(baseUrl)}/${String(target).replace(/^\/+/, '')}`;
 }
 
 function getConfig() {
   const env = loadEnv();
+  const adminBaseUrl = trimTrailingSlash(env.ADMIN_BASE_URL ?? DEFAULT_ADMIN_BASE_URL);
+
   return {
-    adminBaseUrl: trimTrailingSlash(env.ADMIN_BASE_URL ?? DEFAULT_ADMIN_BASE_URL),
-    apiBaseUrl: trimTrailingSlash(
-      env.API_BASE_URL ?? env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL
+    adminBaseUrl,
+    apiBaseUrl: normalizeBaseUrl(
+      env.API_BASE_URL ?? env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
+      adminBaseUrl
     ),
     username:
       env.LOADING_ACCEPTANCE_USERNAME ?? env.NAV_ACCEPTANCE_USERNAME ?? env.SEED_ADMIN_USERNAME,

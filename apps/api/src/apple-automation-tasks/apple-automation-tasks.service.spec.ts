@@ -738,7 +738,7 @@ describe('AppleAutomationTasksService', () => {
       .mockResolvedValueOnce({ ...taskBase, status: 'running' })
       .mockResolvedValueOnce(successTask);
 
-    const result = await service.runPlaceholder(taskId, operator);
+    const result = await service.runManualReview(taskId, operator);
 
     expect(result.status).toBe('success');
     expect(result.manualRequired).toBe(false);
@@ -751,22 +751,22 @@ describe('AppleAutomationTasksService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           level: 'success',
-          message: '查询余额占位任务已使用系统当前余额快照完成'
+          message: '余额查询已按系统当前余额快照完成'
         })
       })
     );
   });
 
-  it('moves real worker tasks to manual verification during placeholder run', async () => {
+  it('moves manual-review tasks to manual verification when direct execution is unavailable', async () => {
     const manualTask = {
       ...taskBase,
       taskType: 'topup',
       status: 'waiting_manual_verify',
       manualRequired: true,
       errorCode: 'worker_not_configured',
-      errorMessage: '真实 Apple ID 自动化 Worker 尚未接入，需要人工验证',
+      errorMessage: '该任务类型当前需要人工验证',
       resultPayload: {
-        source: 'placeholder_worker',
+        source: 'manual_verification',
         taskType: 'topup'
       },
       finishedAt: now
@@ -776,7 +776,7 @@ describe('AppleAutomationTasksService', () => {
       .mockResolvedValueOnce({ ...taskBase, taskType: 'topup', status: 'running' })
       .mockResolvedValueOnce(manualTask);
 
-    const result = await service.runPlaceholder(taskId, operator);
+    const result = await service.runManualReview(taskId, operator);
 
     expect(result.status).toBe('waiting_manual_verify');
     expect(result.manualRequired).toBe(true);
@@ -785,7 +785,7 @@ describe('AppleAutomationTasksService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           level: 'warning',
-          message: '该任务类型需要真实自动化 Worker，当前已转人工验证'
+          message: '该任务类型当前已转人工验证'
         })
       })
     );

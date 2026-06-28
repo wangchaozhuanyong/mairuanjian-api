@@ -1162,6 +1162,7 @@ import {
   refreshSmartQuery
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import {
   buildNotificationChannelOptions,
   buildNotificationLevelOptions,
@@ -2517,7 +2518,124 @@ function isNotificationLogStatus(value: unknown): value is NotificationLog['stat
 }
 
 function showExportMessage() {
-  ElMessage.info('通知设置导出会走数据中心导出任务，后续统一接入');
+  if (activeTab.value === 'rules') {
+    if (!rules.value.length) {
+      ElMessage.warning('暂无可导出的通知规则');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'notification-rules',
+      [
+        { header: '规则名称', value: (row) => row.name },
+        { header: '事件编码', value: (row) => row.eventCode },
+        { header: '模块', value: (row) => getModuleLabel(row.module) },
+        { header: '级别', value: (row) => getLevelLabel(row.level) },
+        { header: '启用', value: (row) => (row.enabled ? '是' : '否') },
+        { header: '渠道', value: (row) => row.channels.map(getChannelLabel).join('、') },
+        { header: '触发条件', value: (row) => JSON.stringify(row.triggerCondition ?? {}) },
+        { header: '限流设置', value: (row) => JSON.stringify(row.rateLimit ?? {}) },
+        { header: '最后触发', value: (row) => formatDate(row.lastTriggeredAt) },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      rules.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条通知规则`);
+    return;
+  }
+
+  if (activeTab.value === 'templates') {
+    if (!templates.value.length) {
+      ElMessage.warning('暂无可导出的通知模板');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'notification-templates',
+      [
+        { header: '模板名称', value: (row) => row.name },
+        { header: '事件编码', value: (row) => row.eventCode },
+        { header: '规则', value: (row) => row.rule?.name ?? '' },
+        { header: '渠道', value: (row) => getChannelLabel(row.channel) },
+        { header: '标题', value: (row) => row.title },
+        { header: '内容', value: (row) => row.content },
+        {
+          header: '变量',
+          value: (row) => row.variables.map((item) => JSON.stringify(item)).join('、')
+        },
+        { header: '启用', value: (row) => (row.enabled ? '是' : '否') },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      templates.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条通知模板`);
+    return;
+  }
+
+  if (activeTab.value === 'telegram') {
+    if (!telegramConfigs.value.length) {
+      ElMessage.warning('暂无可导出的 Telegram 配置');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'telegram-notification-configs',
+      [
+        { header: '通知名称', value: (row) => row.notificationName },
+        { header: '启用', value: (row) => (row.enabled ? '是' : '否') },
+        { header: '已配置 Bot Token', value: (row) => (row.hasBotToken ? '是' : '否') },
+        { header: 'Token 尾号', value: (row) => row.botTokenTail ?? '' },
+        { header: 'Chat ID', value: (row) => row.chatId },
+        { header: '通知级别', value: (row) => getLevelLabel(row.notificationLevel) },
+        { header: '静默开始', value: (row) => row.silentStartTime ?? '' },
+        { header: '静默结束', value: (row) => row.silentEndTime ?? '' },
+        { header: '重试次数', value: (row) => row.retryCount },
+        { header: '测试状态', value: (row) => getTelegramTestLabel(row.lastTestStatus) },
+        { header: '测试时间', value: (row) => formatDate(row.lastTestAt) },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      telegramConfigs.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条 Telegram 配置`);
+    return;
+  }
+
+  if (activeTab.value === 'logs') {
+    if (!logs.value.length) {
+      ElMessage.warning('暂无可导出的通知日志');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'notification-logs',
+      [
+        { header: '事件编码', value: (row) => row.eventCode },
+        { header: '模块', value: (row) => getModuleLabel(row.module) },
+        { header: '渠道', value: (row) => getChannelLabel(row.channel) },
+        { header: '接收方', value: (row) => row.recipient ?? '' },
+        { header: '标题', value: (row) => row.title },
+        { header: '内容摘要', value: (row) => row.contentDigest },
+        { header: '状态', value: (row) => getLogStatusLabel(row.status) },
+        { header: '错误', value: (row) => row.errorMessage ?? '' },
+        { header: '重试次数', value: (row) => row.retryCount },
+        { header: '触发时间', value: (row) => formatDate(row.triggeredAt) },
+        { header: '发送时间', value: (row) => formatDate(row.sentAt) },
+        { header: '阅读时间', value: (row) => formatDate(row.readAt) }
+      ],
+      logs.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条通知日志`);
+    return;
+  }
+
+  ElMessage.warning('当前页签没有可导出的列表');
 }
 
 function formatDate(value?: string | null) {

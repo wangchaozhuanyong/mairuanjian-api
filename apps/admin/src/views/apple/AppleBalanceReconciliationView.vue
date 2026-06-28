@@ -343,6 +343,7 @@
           </div>
 
           <button
+            v-if="canAdjustAppleBalance"
             type="button"
             class="account-action-primary"
             @click="openAdjustDialog(selectedAccount)"
@@ -513,6 +514,7 @@
 
         <section class="account-detail-quick-actions" aria-label="账号详情快捷操作">
           <button
+            v-if="canAdjustAppleBalance"
             type="button"
             class="account-action-card"
             @click="openAdjustDialog(selectedAccount)"
@@ -545,17 +547,18 @@
     <AppDrawer
       v-model="adjustDialogVisible"
       :title="`修正余额 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      description="确认实际余额、成本处理方式和修正原因，保存后会写入审计记录。"
+      description="确认实际余额、成本处理方式和修正原因，保存后会留下操作记录。"
       eyebrow="余额修正"
       size="620px"
       confirm-text="保存修正"
       :confirm-loading="saving"
+      :show-confirm="canAdjustAppleBalance"
       @confirm="saveAdjustment"
     >
       <div class="apple-core-alert apple-core-alert--orange">
-        <StatusChip tone="orange">审计</StatusChip>
+        <StatusChip tone="orange">记录</StatusChip>
         <div>
-          <strong>余额修正会写入审计日志</strong>
+          <strong>余额修正会留下操作记录</strong>
           <p>
             该操作会更新 Apple ID
             当前余额、人民币总成本和移动平均成本，请只在人工或自动查询确认后使用。
@@ -600,7 +603,7 @@
             <template #label>
               <FieldHelpLabel
                 label="成本修正方式"
-                purpose="决定余额修正时是否同步修正人民币成本，影响后续利润计算。"
+                purpose="决定余额修正时是否同步修正人民币成本，影响之后的利润计算。"
                 example="只是余额展示错了选按当前平均成本修正；成本也核过了选手动输入新成本。"
               />
             </template>
@@ -625,7 +628,7 @@
           <template #label>
             <FieldHelpLabel
               label="修正原因"
-              purpose="说明为什么要改余额或成本，系统会记录到对账日志。"
+              purpose="说明为什么要改余额或成本，系统会保存到对账记录。"
               example="可以写自动查询余额与系统不一致、人工核对发现差异。"
             />
           </template>
@@ -769,6 +772,7 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type {
   AppleAccount,
   AppleBalanceAdjustment,
@@ -776,9 +780,12 @@ import type {
   UserTableView
 } from '@/types/system';
 import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 const router = useRouter();
+const authStore = useAuthStore();
 const tableKey = 'apple_balance_reconciliation';
 const ACCOUNT_SCOPE = 'apple-accounts';
 const accountColumnOptions = [
@@ -893,6 +900,7 @@ const reconcilableCount = computed(
     accounts.value.filter((account) => account.status === 'normal' && !account.isManuallyLocked)
       .length
 );
+const canAdjustAppleBalance = computed(() => hasBalancePermission('apple.balance.adjust'));
 const averageCostPreview = computed(() => {
   const balance = Number(totalBalance.value);
   const cost = Number(totalCost.value);
@@ -1107,7 +1115,36 @@ function isColumnVisible(column: string) {
 }
 
 function exportList() {
-  ElMessage.info('Apple ID 余额对账导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedAccounts.value.length ? selectedAccounts.value : accounts.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的余额对账数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-balance-reconciliation',
+    [
+      { header: 'Apple ID', value: (row) => row.appleIdMasked },
+      {
+        header: '地区/币种',
+        value: (row) => formatAccountRegionCurrency(row.region, row.currency)
+      },
+      { header: '系统余额', value: (row) => row.currentBalance },
+      { header: '人民币总成本', value: (row) => getAccountTotalCostAmount(row) },
+      { header: '平均成本', value: (row) => row.averageCost },
+      { header: 'ID 类型', value: (row) => getOwnershipTypeLabel(row.ownershipType) },
+      { header: '来源', value: (row) => getAccountSourceText(row) },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '手动锁定', value: (row) => (row.isManuallyLocked ? '是' : '否') },
+      { header: '锁定原因', value: (row) => row.manualLockReason ?? '' },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条余额对账数据`);
 }
 
 function handleBatchAction(action: string) {
@@ -1220,6 +1257,11 @@ function openReconciliationActions(account: AppleAccount) {
 }
 
 function openAdjustDialog(account?: AppleAccount) {
+  if (!canAdjustAppleBalance.value) {
+    ElMessage.warning('当前账号没有余额修正权限');
+    return;
+  }
+
   if (account) {
     selectedAccount.value = account;
   }
@@ -1237,6 +1279,11 @@ function openAdjustDialog(account?: AppleAccount) {
 }
 
 async function saveAdjustment() {
+  if (!canAdjustAppleBalance.value) {
+    ElMessage.warning('当前账号没有余额修正权限');
+    return;
+  }
+
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid || !selectedAccount.value) return;
 
@@ -1272,6 +1319,10 @@ async function saveAdjustment() {
   } finally {
     saving.value = false;
   }
+}
+
+function hasBalancePermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
 }
 
 async function openAdjustmentRecords(account?: AppleAccount) {

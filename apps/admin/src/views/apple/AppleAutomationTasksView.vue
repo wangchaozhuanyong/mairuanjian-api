@@ -155,7 +155,7 @@
               <div class="automation-action-card__head">
                 <div>
                   <strong>批量查 ID 余额</strong>
-                  <span>第一期先返回系统当前余额快照；真实官网读取接入后会显示官网来源。</span>
+                  <span>当前按系统已保存余额生成结果；支持官方读取后会显示来源。</span>
                 </div>
                 <StatusChip tone="green">余额</StatusChip>
               </div>
@@ -265,8 +265,7 @@
             <div>
               <strong>其他自动化动作</strong>
               <span
-                >这些动作需要真实 Worker
-                或人工兜底，先创建清楚的待处理任务，不假装已经自动完成。</span
+                >这些动作需要后台自动执行能力或人工处理；创建后会进入待处理，不会标记为已完成。</span
               >
             </div>
             <div class="inline-actions">
@@ -606,7 +605,7 @@
                     variant="success"
                     :disabled="!canRun(row)"
                     :loading="actionLoadingId === row.id"
-                    @click="runPlaceholder(row)"
+                    @click="runManualReview(row)"
                   >
                     执行
                   </AppButton>
@@ -674,7 +673,7 @@
             variant="success"
             :disabled="!selectedTask || !canRun(selectedTask)"
             :loading="Boolean(selectedTask && actionLoadingId === selectedTask.id)"
-            @click="selectedTask && runPlaceholder(selectedTask)"
+            @click="selectedTask && runManualReview(selectedTask)"
           >
             执行任务
           </AppButton>
@@ -712,7 +711,7 @@
       </div>
 
       <div class="drawer-section">
-        <div class="drawer-section__title">任务日志</div>
+        <div class="drawer-section__title">处理记录</div>
         <el-table class="desktop-data-table" :data="selectedTask?.logs ?? []" row-key="id">
           <el-table-column label="级别" width="90">
             <template #default="{ row }">
@@ -721,7 +720,7 @@
               </StatusChip>
             </template>
           </el-table-column>
-          <el-table-column label="日志" min-width="260">
+          <el-table-column label="记录" min-width="260">
             <template #default="{ row }">
               {{ row.message }}
               <div v-if="row.screenshotAttachment" class="muted-block">
@@ -739,9 +738,9 @@
         v-if="selectedTaskTechnicalRows.length || selectedTask?.resultPayload"
         class="drawer-section"
       >
-        <div class="drawer-section__title">技术信息</div>
+        <div class="drawer-section__title">排查信息</div>
         <el-collapse class="technical-info-collapse">
-          <el-collapse-item title="展开查看内部排查信息" name="technical">
+          <el-collapse-item title="展开查看处理详情" name="technical">
             <el-descriptions
               v-if="selectedTaskTechnicalRows.length"
               class="detail-descriptions"
@@ -757,7 +756,7 @@
               </el-descriptions-item>
             </el-descriptions>
             <div v-if="selectedTask?.resultPayload" class="technical-json-block">
-              <div class="drawer-section__description">原始结果数据</div>
+              <div class="drawer-section__description">结果详情</div>
               <pre class="json-preview">{{ formatJson(selectedTask.resultPayload) }}</pre>
             </div>
           </el-collapse-item>
@@ -830,7 +829,7 @@
           </el-select>
         </el-form-item>
         <el-alert
-          title="该动作需要真实自动化 Worker 或人工兜底；创建后会进入人工处理/执行记录，不会伪装成已自动完成。"
+          title="该动作需要后台自动执行能力或人工处理；创建后会进入处理记录，不会标记为已完成。"
           type="warning"
           :closable="false"
           show-icon
@@ -880,6 +879,7 @@ import type {
   PageResult
 } from '@/types/system';
 import { appleAccountRegionOptions, formatAppleRegionLabel } from '@/utils/appleAccountRegion';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { buildTechnicalFieldRows } from '@/utils/internalTechnicalFields';
 import {
   createSmartQueryKey,
@@ -1681,9 +1681,9 @@ async function refreshDetail() {
   }
 }
 
-async function runPlaceholder(task: AppleAutomationTask) {
+async function runManualReview(task: AppleAutomationTask) {
   await runTaskAction(task.id, async () => {
-    selectedTask.value = await appleAutomationTasksApi.runPlaceholder(task.id);
+    selectedTask.value = await appleAutomationTasksApi.runManualReview(task.id);
     ElMessage.success('任务已执行');
   });
 }
@@ -1736,7 +1736,7 @@ async function markManual(task: AppleAutomationTask) {
 async function writeSuccessResult() {
   if (!selectedTask.value) return;
   try {
-    const { value } = await ElMessageBox.prompt('请输入结果 JSON', '回写成功结果', {
+    const { value } = await ElMessageBox.prompt('请输入结果内容', '回写成功结果', {
       inputType: 'textarea',
       inputValue: '{ "resultStatus": "normal" }',
       confirmButtonText: '回写成功',
@@ -1808,13 +1808,46 @@ function parseJsonPayload(value: string) {
   try {
     return JSON.parse(trimmed) as Record<string, unknown>;
   } catch {
-    ElMessage.error('JSON 格式不正确');
+    ElMessage.error('结果内容格式不正确');
     return false;
   }
 }
 
 function exportList() {
-  ElMessage.info('Apple ID 自动化任务导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedHistoryTasks.value.length ? selectedHistoryTasks.value : tasks.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的自动化任务');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-automation-tasks',
+    [
+      { header: '任务', value: (row) => getTaskTypeLabel(row.taskType) },
+      { header: 'Apple ID', value: (row) => row.appleAccount.appleIdMasked },
+      { header: '地区', value: (row) => formatAccountRegion(row.appleAccount.region) },
+      { header: '当前余额', value: (row) => row.appleAccount.currentBalance },
+      { header: '客户', value: (row) => row.customer?.name ?? '' },
+      { header: '业务', value: (row) => row.service?.name ?? '' },
+      { header: '优先级', value: (row) => getPriorityLabel(row.priority) },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '重试次数', value: (row) => row.retryCount },
+      { header: '需要人工', value: (row) => (row.manualRequired ? '是' : '否') },
+      { header: '异常说明', value: (row) => row.errorMessage ?? '' },
+      {
+        header: '创建人',
+        value: (row) => row.createdBy?.displayName ?? row.createdBy?.username ?? ''
+      },
+      { header: '开始时间', value: (row) => formatDate(row.startedAt) },
+      { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条自动化任务`);
 }
 
 function mapSortOrder(order?: 'ascending' | 'descending' | null) {
@@ -1851,6 +1884,10 @@ function getStatusLabel(value: AutomationTaskStatus) {
   return statusOptions.find((item) => item.value === value)?.label ?? value;
 }
 
+function getPriorityLabel(value: AutomationTaskPriority) {
+  return priorityOptions.find((item) => item.value === value)?.label ?? value;
+}
+
 function getBatchTitle(value: string) {
   if (value === 'status_check') return '批量状态查询结果';
   if (value === 'balance_check') return '批量余额查询结果';
@@ -1876,13 +1913,13 @@ function getCapabilityTone(capability?: AppleAutomationWorkbenchCapability | nul
 function getStatusCheckAbilityLabel() {
   const capability = workbenchStatus.value?.statusCheck;
   if (!capability) return '读取中';
-  if (!capability.enabled) return 'Worker 未开启';
+  if (!capability.enabled) return '自动执行未开启';
   if (!capability.gatewayConfigured) return '缺少节点';
   return '可真查';
 }
 
 function getCapabilityModeLabel(value?: string) {
-  if (value === 'apple_web_worker') return '官网 Worker';
+  if (value === 'apple_web_worker') return '官方读取任务';
   if (value === 'system_snapshot') return '系统快照';
   if (value === 'official_price_sources') return '来源巡检';
   return '读取中';

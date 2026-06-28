@@ -9,6 +9,7 @@
       <StatusChip :tone="selectedRole ? 'green' : 'neutral'" dot>
         {{ selectedRole ? `当前角色：${selectedRole.name}` : '未选择角色' }}
       </StatusChip>
+      <AppButton variant="soft" @click="openCreateRole">新增角色</AppButton>
       <AppButton
         variant="primary"
         :disabled="!selectedRole"
@@ -85,8 +86,9 @@
           <template #empty>
             <div class="apple-core-empty-state">
               <strong>暂无角色</strong>
-              <span>可以清空筛选后重新查看角色，或在后续版本接入角色新增入口。</span>
+              <span>可以新增角色，或清空筛选后重新查看。</span>
               <div class="apple-core-empty-state__actions">
+                <AppButton variant="primary" @click="openCreateRole">新增角色</AppButton>
                 <AppButton variant="soft" @click="clearRoleFilters">清空筛选</AppButton>
               </div>
             </div>
@@ -244,6 +246,46 @@
         </template>
       </section>
     </section>
+
+    <AppDrawer
+      v-model="createRoleDrawerVisible"
+      title="新增角色"
+      description="创建业务角色后，可立即在右侧勾选权限并保存。"
+      confirm-text="创建角色"
+      :confirm-loading="creatingRole"
+      :confirm-disabled="createRoleConfirmDisabled"
+      @confirm="submitCreateRole"
+    >
+      <el-form label-position="top" class="drawer-form" @submit.prevent>
+        <el-form-item label="角色名称" required>
+          <el-input
+            v-model.trim="createRoleForm.name"
+            maxlength="100"
+            show-word-limit
+            placeholder="例如 售后主管"
+          />
+        </el-form-item>
+        <el-form-item label="角色编码" required>
+          <el-input
+            v-model.trim="createRoleForm.code"
+            maxlength="100"
+            show-word-limit
+            placeholder="例如 after_sale_manager"
+          />
+          <p class="form-help-text">小写字母开头，可使用小写字母、数字、下划线、冒号或短横线。</p>
+        </el-form-item>
+        <el-form-item label="角色描述">
+          <el-input
+            v-model="createRoleForm.description"
+            type="textarea"
+            :rows="4"
+            maxlength="500"
+            show-word-limit
+            placeholder="说明这个角色负责哪些客户、订单或系统管理工作"
+          />
+        </el-form-item>
+      </el-form>
+    </AppDrawer>
   </PageScaffold>
 </template>
 
@@ -252,6 +294,7 @@ import type { ElTree } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { rolesApi, userTableViewsApi } from '@/api/system';
+import AppDrawer from '@/components/ui/AppDrawer.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -259,6 +302,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { Permission, Role, TableDensity, UserTableView } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 interface PermissionTreeNode {
@@ -267,7 +311,14 @@ interface PermissionTreeNode {
   children?: PermissionTreeNode[];
 }
 
+interface CreateRoleForm {
+  name: string;
+  code: string;
+  description: string;
+}
+
 const tableKey = 'system_roles';
+const roleCodePattern = /^[a-z][a-z0-9_:-]{1,99}$/;
 const roleColumnOptions = [
   { label: '名称', value: 'name', required: true },
   { label: '编码', value: 'code' },
@@ -289,6 +340,13 @@ const savedViews = ref<UserTableView[]>([]);
 const savedViewId = ref('');
 const sortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const activeRolesQueryKey = ref('');
+const createRoleDrawerVisible = ref(false);
+const creatingRole = ref(false);
+const createRoleForm = ref<CreateRoleForm>({
+  name: '',
+  code: '',
+  description: ''
+});
 
 const permissionTree = computed<PermissionTreeNode[]>(() => {
   const modules = new Map<string, PermissionTreeNode>();
@@ -319,6 +377,9 @@ const permissionModuleCount = computed(
 const selectedPermissionCount = computed(() => selectedRole.value?.rolePermissions?.length ?? 0);
 const totalAssignedUsers = computed(() =>
   roles.value.reduce((sum, role) => sum + (role._count?.userRoles ?? 0), 0)
+);
+const createRoleConfirmDisabled = computed(
+  () => creatingRole.value || !createRoleForm.value.name.trim() || !createRoleForm.value.code.trim()
 );
 
 const filteredRoles = computed(() => {
@@ -442,7 +503,95 @@ function clearRoleFilters() {
 }
 
 function exportRoles() {
-  ElMessage.info('角色权限导出会进入数据中心导出任务，后续统一接入');
+  const rows = filteredRoles.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的角色权限数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'system-roles',
+    [
+      { header: '角色名称', value: (row) => row.name },
+      { header: '角色编码', value: (row) => row.code },
+      { header: '描述', value: (row) => row.description ?? '' },
+      { header: '用户数量', value: (row) => row._count?.userRoles ?? 0 },
+      { header: '权限数量', value: (row) => row.rolePermissions?.length ?? 0 },
+      {
+        header: '权限',
+        value: (row) =>
+          row.rolePermissions
+            ?.map((item) => item.permission.name || item.permission.code)
+            .join('、') ?? ''
+      }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条角色权限数据`);
+}
+
+function openCreateRole() {
+  createRoleForm.value = {
+    name: '',
+    code: '',
+    description: ''
+  };
+  createRoleDrawerVisible.value = true;
+}
+
+function validateCreateRoleForm() {
+  const name = createRoleForm.value.name.trim();
+  const code = createRoleForm.value.code.trim();
+  const description = createRoleForm.value.description.trim();
+
+  if (!name) {
+    ElMessage.warning('请输入角色名称');
+    return null;
+  }
+
+  if (!code) {
+    ElMessage.warning('请输入角色编码');
+    return null;
+  }
+
+  if (!roleCodePattern.test(code)) {
+    ElMessage.warning('角色编码需以小写字母开头，只能包含小写字母、数字、下划线、冒号或短横线');
+    return null;
+  }
+
+  if (description.length > 500) {
+    ElMessage.warning('角色描述不能超过 500 个字符');
+    return null;
+  }
+
+  return {
+    name,
+    code,
+    description: description || null
+  };
+}
+
+async function submitCreateRole() {
+  const payload = validateCreateRoleForm();
+  if (!payload) {
+    return;
+  }
+
+  creatingRole.value = true;
+  try {
+    const createdRole = await rolesApi.create(payload);
+    ElMessage.success('角色已创建');
+    roleKeyword.value = '';
+    await loadData({ force: true });
+    selectRole(roles.value.find((role) => role.id === createdRole.id) ?? createdRole);
+    createRoleDrawerVisible.value = false;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '创建角色失败');
+  } finally {
+    creatingRole.value = false;
+  }
 }
 
 async function loadTableViews(applyDefault = false) {

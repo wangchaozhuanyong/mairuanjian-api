@@ -46,6 +46,20 @@ export class CodeOrdersController {
     });
   }
 
+  @Get('after-sale-options')
+  @RequirePermissions('code.after_sale.manage')
+  listAfterSaleOptions(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('keyword') keyword?: string
+  ) {
+    return this.codeOrdersService.listAfterSaleOrderOptions({
+      page,
+      pageSize,
+      keyword
+    });
+  }
+
   @Get(':id')
   @RequirePermissions('code.order.view')
   get(@Param('id') id: string) {
@@ -53,7 +67,7 @@ export class CodeOrdersController {
   }
 
   @Post('manual')
-  @RequirePermissions('code.order.deliver')
+  @RequirePermissions('code.order.create')
   async createManual(
     @Body() dto: CreateManualCodeOrderDto,
     @CurrentUser() operator?: AuthenticatedUser

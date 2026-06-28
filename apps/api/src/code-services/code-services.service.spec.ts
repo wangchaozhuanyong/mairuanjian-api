@@ -112,6 +112,50 @@ describe('CodeServicesService platform mappings', () => {
     expect(count).toHaveBeenCalled();
   });
 
+  it('lists enabled code services for order and inventory option pickers', async () => {
+    const codeService = {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: '充值卡100',
+      faceValue: new Prisma.Decimal('100'),
+      defaultPrice: new Prisma.Decimal('108'),
+      defaultCost: new Prisma.Decimal('95'),
+      deliveryMode: 'semi_auto',
+      exactFaceValueOnly: true,
+      allowCombination: false,
+      status: 'enabled',
+      remark: null,
+      createdAt: new Date('2026-06-18T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-18T01:00:00.000Z')
+    };
+    const findMany = jest.fn().mockResolvedValue([codeService]);
+    const { service } = createService({
+      codeService: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: codeService.id, faceValue: codeService.faceValue }),
+        findMany
+      }
+    } as unknown as Partial<PrismaService>);
+
+    const result = await service.listOperationOptions();
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        id: codeService.id,
+        name: codeService.name,
+        faceValue: '100',
+        status: 'enabled'
+      })
+    ]);
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        deletedAt: null,
+        status: 'enabled'
+      },
+      orderBy: [{ name: 'asc' }, { faceValue: 'asc' }, { createdAt: 'desc' }]
+    });
+  });
+
   it('creates a code platform mapping and writes audit log', async () => {
     const { service, prisma, auditLogsService } = createService();
 

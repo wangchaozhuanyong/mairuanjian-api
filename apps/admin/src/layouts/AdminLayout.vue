@@ -1,5 +1,7 @@
 <template>
   <div class="app-shell">
+    <a class="skip-link" href="#workspace-main">跳到主要内容</a>
+
     <div
       class="route-progress"
       :class="{ active: isRoutePending || isDataRefreshing }"
@@ -134,7 +136,7 @@
             <el-input
               v-model="globalKeyword"
               class="global-search"
-              placeholder="搜索客户微信、ID、订单号、兑换码尾号、任务备注"
+              placeholder="搜索页面 / 功能"
               clearable
             />
           </template>
@@ -142,35 +144,38 @@
             <div class="global-search-panel__head">
               <span class="global-search-panel__mark">GS</span>
               <div>
-                <strong>全局搜索</strong>
-                <p>按权限范围检索客户、订单、Apple ID、兑换码和任务备注。</p>
+                <strong>功能搜索</strong>
+                <p>只显示当前账号可以进入的页面。</p>
               </div>
             </div>
 
             <div v-if="globalKeywordTrimmed" class="global-search-query">
-              <span>当前关键词</span>
+              <span>搜索词</span>
               <strong>{{ globalKeywordTrimmed }}</strong>
             </div>
 
             <div class="global-search-scope-list">
-              <section
-                v-for="scope in globalSearchScopes"
-                :key="scope.title"
+              <button
+                v-for="item in globalSearchResults"
+                :key="item.route"
                 class="global-search-scope"
+                type="button"
+                @mousedown.prevent
+                @click="openGlobalSearchResult(item)"
               >
-                <span class="global-search-scope__icon">{{ scope.mark }}</span>
+                <span class="global-search-scope__icon">{{ item.mark }}</span>
                 <span>
-                  <strong>{{ scope.title }}</strong>
-                  <small>{{ scope.description }}</small>
+                  <strong>{{ getMenuItemTitle(item) }}</strong>
+                  <small>{{ getGlobalSearchItemSubtitle(item) }}</small>
                 </span>
-              </section>
+              </button>
             </div>
 
             <p v-if="!globalKeywordTrimmed" class="global-search-panel__hint">
-              输入关键词后，结果会按模块和权限范围归类展示。
+              输入页面名、业务名或操作名可以快速打开功能页。
             </p>
-            <p v-else class="global-search-panel__hint">
-              当前没有展开详细结果，后续可在对应模块内继续筛选。
+            <p v-else-if="!globalSearchResults.length" class="global-search-panel__hint">
+              没有找到当前账号可进入的页面。
             </p>
           </div>
         </el-popover>
@@ -178,6 +183,7 @@
         <div class="topbar-actions">
           <PageActionsPortal />
           <AppButton
+            v-if="canRefreshCurrentPage"
             class="topbar-action topbar-action--refresh"
             icon-only
             title="刷新"
@@ -191,6 +197,7 @@
             </el-icon>
           </AppButton>
           <el-badge
+            v-if="canViewNotifications"
             :value="formatNotificationCount(notificationBadgeTotal)"
             :hidden="notificationBadgeTotal === 0"
             class="notification-badge"
@@ -208,6 +215,7 @@
             </AppButton>
           </el-badge>
           <AppButton
+            v-if="canCreateAppleOrder"
             class="topbar-action topbar-action--primary"
             variant="primary"
             @click="goToOrderEntry"
@@ -224,7 +232,9 @@
             </AppButton>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="security">安全中心</el-dropdown-item>
+                <el-dropdown-item v-if="canOpenSecurityCenter" command="security">
+                  安全中心
+                </el-dropdown-item>
                 <el-dropdown-item command="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -233,22 +243,22 @@
       </header>
 
       <div
-        v-if="workspaceTabs.length"
+        v-if="visibleWorkspaceTabs.length"
         class="workspace-tabs"
         :class="{
-          'workspace-tabs--two-rows': workspaceTabs.length > WORKSPACE_TABS_PER_ROW
+          'workspace-tabs--two-rows': visibleWorkspaceTabs.length > WORKSPACE_TABS_PER_ROW
         }"
       >
         <div
           class="workspace-tabs__list"
           :class="{
-            'workspace-tabs__list--two-rows': workspaceTabs.length > WORKSPACE_TABS_PER_ROW
+            'workspace-tabs__list--two-rows': visibleWorkspaceTabs.length > WORKSPACE_TABS_PER_ROW
           }"
           role="tablist"
           aria-label="已打开页面"
         >
           <div
-            v-for="tab in workspaceTabs"
+            v-for="tab in visibleWorkspaceTabs"
             :key="tab.fullPath"
             class="workspace-tab"
             :class="{
@@ -296,7 +306,7 @@
             class="workspace-tabs__action workspace-tabs__action--others"
             size="small"
             title="只保留当前页签"
-            :disabled="workspaceTabs.length <= 1 || !activeWorkspaceTab"
+            :disabled="visibleWorkspaceTabs.length <= 1 || !activeWorkspaceTab"
             @click="closeOtherWorkspaceTabs"
           >
             <el-icon class="workspace-tabs__action-icon">
@@ -319,7 +329,7 @@
         </div>
       </div>
 
-      <main ref="workspaceRef" class="workspace">
+      <main id="workspace-main" ref="workspaceRef" class="workspace" tabindex="-1">
         <RouterView v-slot="{ Component: ViewComponent, route: viewRoute }">
           <Suspense :timeout="220">
             <template #default>
@@ -341,7 +351,7 @@
       v-model="notificationDrawerVisible"
       title="通知中心"
       confirm-text="进入通知中心"
-      show-confirm
+      :show-confirm="canOpenNotificationCenter"
       @confirm="goToNotifications"
     >
       <div class="notification-drawer">
@@ -416,6 +426,7 @@ import {
   type AppModuleItem,
   type MenuSection,
   type MenuSectionIcon,
+  getModuleDisplayGroup,
   getModuleDisplayTitle,
   getModulePermission,
   getModuleSearchText,
@@ -447,6 +458,11 @@ import {
   type SmartQueryActivitySnapshot
 } from '@/utils/smartQuery';
 import { normalizeHelpText } from '@/utils/helpText';
+import {
+  canAccessManagementSections,
+  hasUserPermission,
+  hasUserRoutePermission
+} from '@/utils/permissions';
 
 const NAV_OPEN_STORAGE_KEY = 'apple_business_sidebar_open_keys';
 const WORKSPACE_TABS_STORAGE_KEY = 'apple_business_workspace_tabs';
@@ -489,6 +505,7 @@ const SOURCE_OPTIONS_ROUTES = new Set([
   '/system/source-platforms/notification-options',
   '/system/source-platforms/system-options'
 ]);
+const SYSTEM_STATE_WORKSPACE_ROUTES = new Set(['/403', '/404', '/system/maintenance-mode']);
 
 interface WorkspaceTab {
   fullPath: string;
@@ -506,6 +523,23 @@ const globalKeyword = ref('');
 const notificationDrawerVisible = ref(false);
 const workspaceRef = ref<HTMLElement | null>(null);
 const activePath = computed(() => route.path);
+const isAdminUser = computed(() => Boolean(authStore.user?.roles.includes('admin')));
+const canUseManagementSections = computed(() => canAccessManagementSections(authStore.user));
+const canCreateAppleOrder = computed(() => canAccessPermission('apple.order.create'));
+const canViewNotifications = computed(() => canAccessPermission('notification.view'));
+const canOpenNotificationCenter = computed(() => isAdminUser.value && canViewNotifications.value);
+const canOpenSecurityCenter = computed(
+  () => isAdminUser.value && canAccessPermission('security.overview.view')
+);
+const visibleSections = computed(() =>
+  menuSections
+    .filter((section) => !section.adminOnly || canUseManagementSections.value)
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(canAccessMenuItem)
+    }))
+    .filter((section) => section.items.length)
+);
 const openMenuKeys = ref(readStoredOpenMenuKeys());
 const workspaceCacheVersion = ref(0);
 const navigationNotificationBadges = ref<Record<string, NavigationNotificationBadge>>({});
@@ -523,23 +557,6 @@ let realtimeFallbackTimer: number | undefined;
 let workspaceScrollRestoreTimer: number | undefined;
 let unsubscribeSmartQueryActivity: (() => void) | undefined;
 const workspaceScrollPositions = new Map<string, number>();
-const globalSearchScopes = [
-  {
-    mark: 'CU',
-    title: '客户资料',
-    description: '微信、手机号、来源平台'
-  },
-  {
-    mark: 'ID',
-    title: 'Apple ID 业务',
-    description: '账号、订单、续费任务'
-  },
-  {
-    mark: 'CD',
-    title: '兑换码业务',
-    description: '库存、发货、售后补发'
-  }
-];
 const sectionIconMap = {
   workspace: House,
   common: UserFilled,
@@ -562,6 +579,16 @@ const hasRouteHelp = computed(() => routeHelp.value.length > 0);
 const isPageRefreshBusy = computed(
   () => pageRefresh.refreshing.value || pageRefresh.backgroundRefreshing.value
 );
+const canRefreshCurrentPage = computed(() => {
+  if (!authStore.isAuthenticated || route.meta.public) {
+    return false;
+  }
+
+  return (
+    Boolean(pageRefresh.active.value) ||
+    getRealtimeFallbackScopesForModule(routeModuleKey.value).length > 0
+  );
+});
 const isDataRefreshing = computed(
   () => isPageRefreshBusy.value || smartQueryActivity.value.pendingCount > 0
 );
@@ -596,6 +623,26 @@ const dataStatusTitle = computed(() => {
 });
 const activeWorkspaceTabPath = computed(() => route.fullPath);
 const globalKeywordTrimmed = computed(() => globalKeyword.value.trim());
+const globalSearchableItems = computed(() =>
+  visibleSections.value.flatMap((section) =>
+    section.items.map((item) => ({
+      ...item,
+      group: getModuleDisplayGroup(item),
+      title: getModuleDisplayTitle(item)
+    }))
+  )
+);
+const globalSearchResults = computed(() => {
+  const keyword = globalKeywordTrimmed.value.toLowerCase();
+
+  if (!keyword) {
+    return globalSearchableItems.value.slice(0, 6);
+  }
+
+  return globalSearchableItems.value
+    .filter((item) => getModuleSearchText(item).toLowerCase().includes(keyword))
+    .slice(0, 8);
+});
 const sessionStatusText = computed(() => {
   if (authStore.userRefreshing) {
     return '验证登录中';
@@ -612,8 +659,9 @@ const sessionStatusText = computed(() => {
   return '在线';
 });
 const workspaceTabs = ref<WorkspaceTab[]>(readStoredWorkspaceTabs());
+const visibleWorkspaceTabs = computed(() => workspaceTabs.value.filter(canAccessWorkspaceTab));
 const activeWorkspaceTab = computed(() =>
-  workspaceTabs.value.find((tab) => tab.fullPath === activeWorkspaceTabPath.value)
+  visibleWorkspaceTabs.value.find((tab) => tab.fullPath === activeWorkspaceTabPath.value)
 );
 const navigationNotificationBadgeList = computed(() =>
   Object.values(navigationNotificationBadges.value).sort((left, right) => {
@@ -655,15 +703,6 @@ const notificationItems = computed(() =>
     tone: getNotificationItemTone(item)
   }))
 );
-const visibleSections = computed(() =>
-  menuSections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter(canAccessMenuItem)
-    }))
-    .filter((section) => section.items.length)
-);
-
 const filteredSections = computed(() => {
   const keyword = menuKeyword.value.trim().toLowerCase();
 
@@ -885,12 +924,20 @@ function getCurrentWorkspaceTitle() {
 }
 
 function addCurrentWorkspaceTab() {
-  if (route.meta.public || route.path === '/login') {
+  if (
+    route.meta.public ||
+    route.path === '/login' ||
+    SYSTEM_STATE_WORKSPACE_ROUTES.has(route.path)
+  ) {
     return;
   }
 
   const fullPath = route.fullPath;
   const title = getCurrentWorkspaceTitle();
+  if (!canAccessWorkspaceTab({ fullPath, title })) {
+    return;
+  }
+
   const existingIndex = workspaceTabs.value.findIndex((tab) => tab.fullPath === fullPath);
 
   if (existingIndex >= 0) {
@@ -983,13 +1030,40 @@ function filterMenuItems(items: AppModuleItem[], keyword: string) {
 
 function canAccessMenuItem(item: AppModuleItem) {
   const permission = getModulePermission(item);
-  if (!permission) {
-    return true;
+  if (Array.isArray(permission)) {
+    return permission.every((itemPermission) => canAccessPermission(itemPermission));
   }
 
-  return Boolean(
-    authStore.user?.roles.includes('admin') || authStore.user?.permissions.includes(permission)
-  );
+  return canAccessPermission(permission);
+}
+
+function canAccessPermission(permission: string | undefined) {
+  return hasUserPermission(authStore.user, permission);
+}
+
+function canAccessRoutePermission(permission: unknown): boolean {
+  return hasUserRoutePermission(authStore.user, permission);
+}
+
+function canAccessWorkspaceTab(tab: WorkspaceTab) {
+  const targetRoute = router.resolve(tab.fullPath);
+
+  if (targetRoute.meta.public || targetRoute.path === '/login') {
+    return false;
+  }
+
+  if (SYSTEM_STATE_WORKSPACE_ROUTES.has(targetRoute.path)) {
+    return false;
+  }
+
+  if (
+    targetRoute.matched.some((record) => Boolean(record.meta.adminOnly)) &&
+    !canUseManagementSections.value
+  ) {
+    return false;
+  }
+
+  return canAccessRoutePermission(targetRoute.meta.permission);
 }
 
 function getMenuItemTitle(item: AppModuleItem) {
@@ -1017,6 +1091,16 @@ function getMenuItemBadgeTitle(item: AppModuleItem) {
   }
 
   return `${getMenuItemTitle(item)}，${badge.count} 条待处理：${badge.description}`;
+}
+
+function getGlobalSearchItemSubtitle(item: AppModuleItem) {
+  return `${getModuleDisplayGroup(item)} · ${item.description}`;
+}
+
+async function openGlobalSearchResult(item: AppModuleItem) {
+  globalKeyword.value = '';
+  prefetchWorkspaceRoute(item.route);
+  await router.push(item.route);
 }
 
 function handleMenuItemClick(item: AppModuleItem) {
@@ -1085,8 +1169,9 @@ function prefetchMenuSection(section: MenuSection) {
 
 function getSectionRoutes(sectionKey: string | undefined) {
   return (
-    menuSections.find((section) => section.key === sectionKey)?.items.map((item) => item.route) ??
-    []
+    visibleSections.value
+      .find((section) => section.key === sectionKey)
+      ?.items.map((item) => item.route) ?? []
   );
 }
 
@@ -1197,7 +1282,7 @@ function getNotificationItemTone(
 }
 
 async function loadNavigationNotificationBadges(options: { silent?: boolean } = {}) {
-  if (!authStore.isAuthenticated) {
+  if (!authStore.isAuthenticated || !canViewNotifications.value) {
     navigationNotificationBadges.value = {};
     return;
   }
@@ -1296,11 +1381,11 @@ function stopRealtimeFallbackPolling() {
 }
 
 function isMenuSectionKey(key: unknown) {
-  return typeof key === 'string' && menuSections.some((section) => section.key === key);
+  return typeof key === 'string' && visibleSections.value.some((section) => section.key === key);
 }
 
 function getActiveSectionKey() {
-  return menuSections.find((section) => section.items.some(isItemActive))?.key;
+  return visibleSections.value.find((section) => section.items.some(isItemActive))?.key;
 }
 
 function isItemActive(item: AppModuleItem) {
@@ -1344,6 +1429,10 @@ async function showRefresh() {
     return;
   }
 
+  if (!canRefreshCurrentPage.value) {
+    return;
+  }
+
   if (isPageRefreshBusy.value) {
     return;
   }
@@ -1370,7 +1459,7 @@ async function showRefresh() {
       return;
     }
 
-    ElMessage.info('当前页面暂无可刷新的数据');
+    return;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '刷新当前页面失败');
   }
@@ -1418,10 +1507,20 @@ function applyWorkspaceScroll(fullPath: string) {
 }
 
 async function goToOrderEntry() {
+  if (!canCreateAppleOrder.value) {
+    ElMessage.warning('当前账号没有新建订单权限');
+    return;
+  }
+
   await router.push('/apple/order-entry');
 }
 
 async function goToNotifications() {
+  if (!canOpenNotificationCenter.value) {
+    ElMessage.warning('当前账号没有进入通知中心权限');
+    return;
+  }
+
   notificationDrawerVisible.value = false;
   await router.push('/system/notifications');
 }
@@ -1434,6 +1533,11 @@ async function handleCommand(command: string) {
   }
 
   if (command === 'security') {
+    if (!canOpenSecurityCenter.value) {
+      ElMessage.warning('当前账号没有进入安全中心权限');
+      return;
+    }
+
     await router.push('/system/security');
   }
 }

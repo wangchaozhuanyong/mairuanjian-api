@@ -307,6 +307,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { ManagedUser, PageResult, Role, TableDensity, UserTableView } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'system_users';
@@ -502,7 +503,28 @@ function clearFilters() {
 }
 
 function exportList() {
-  ElMessage.info('用户列表导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedUsers.value.length ? selectedUsers.value : users.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的用户数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'system-users',
+    [
+      { header: '账号', value: (row) => row.username },
+      { header: '姓名', value: (row) => row.displayName },
+      { header: '角色', value: (row) => row.roles.map((role) => role.name).join('、') },
+      { header: '状态', value: (row) => (row.status === 'active' ? '启用' : '停用') },
+      { header: '最后登录', value: (row) => formatDate(row.lastLoginAt) },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条用户数据`);
 }
 
 function handleBatchAction(action: string) {

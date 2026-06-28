@@ -803,7 +803,7 @@ export class AppleAutomationTasksService {
     this.workbenchStatusCache = null;
   }
 
-  async runPlaceholder(id: string, operator?: AuthenticatedUser) {
+  async runManualReview(id: string, operator?: AuthenticatedUser) {
     const task = await this.findTaskOrThrow(id, false);
 
     if (!['pending', 'queued', 'failed', 'need_review'].includes(task.status)) {
@@ -828,7 +828,7 @@ export class AppleAutomationTasksService {
       data: {
         taskId: task.id,
         level: 'info',
-        message: '占位 Worker 开始执行任务',
+        message: '系统执行开始处理任务',
         payload: this.toAuditJson({
           taskType: task.taskType,
           operatorId: operator?.id ?? null
@@ -910,7 +910,7 @@ export class AppleAutomationTasksService {
     await this.auditLogsService.create({
       userId: operator?.id,
       module: 'apple_automation_task',
-      action: 'apple_automation_task.run_placeholder',
+      action: 'apple_automation_task.run_manual_review',
       objectType: 'automation_task',
       objectId: task.id,
       afterData: this.toAuditJson({
@@ -919,7 +919,7 @@ export class AppleAutomationTasksService {
         status: updated.status,
         manualRequired: updated.manualRequired
       }),
-      remark: `Ran placeholder automation task ${task.id}`
+      remark: `Handled automation task ${task.id}`
     });
 
     await this.refreshBatchStats(task.batchId);
@@ -1354,7 +1354,7 @@ export class AppleAutomationTasksService {
         manualRequired: false,
         errorCode: null,
         errorMessage: null,
-        message: '查询余额占位任务已使用系统当前余额快照完成',
+        message: '余额查询已按系统当前余额快照完成',
         payload: this.toAuditJson({
           balanceSnapshot: account.currentBalance.toString(),
           currency: account.currency,
@@ -1370,7 +1370,7 @@ export class AppleAutomationTasksService {
           checkType: 'automation',
           resultStatus: account.status,
           balanceSnapshot: account.currentBalance,
-          remark: '自动化状态检测占位任务使用系统当前状态快照',
+          remark: '自动化状态检测使用系统当前状态快照',
           operatorId: operator?.id
         }
       });
@@ -1380,7 +1380,7 @@ export class AppleAutomationTasksService {
         manualRequired: false,
         errorCode: null,
         errorMessage: null,
-        message: '检测状态占位任务已使用系统当前状态快照完成',
+        message: '状态检测已按系统当前状态快照完成',
         payload: this.toAuditJson({
           resultStatus: account.status,
           balanceSnapshot: account.currentBalance.toString(),
@@ -1393,10 +1393,10 @@ export class AppleAutomationTasksService {
       status: 'waiting_manual_verify' as const,
       manualRequired: true,
       errorCode: 'worker_not_configured',
-      errorMessage: '真实 Apple ID 自动化 Worker 尚未接入，需要人工验证',
-      message: '该任务类型需要真实自动化 Worker，当前已转人工验证',
+      errorMessage: '该任务类型当前需要人工验证',
+      message: '该任务类型当前已转人工验证',
       payload: this.toAuditJson({
-        source: 'placeholder_worker',
+        source: 'manual_verification',
         taskType
       })
     };

@@ -14,7 +14,7 @@ export class CodeAfterSalesController {
   ) {}
 
   @Get()
-  @RequirePermissions('code.after_sale.manage')
+  @RequirePermissions('code.after_sale.view')
   list(
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
@@ -36,7 +36,7 @@ export class CodeAfterSalesController {
   }
 
   @Get(':id')
-  @RequirePermissions('code.after_sale.manage')
+  @RequirePermissions('code.after_sale.view')
   get(@Param('id') id: string) {
     return this.codeAfterSalesService.get(id);
   }

@@ -166,6 +166,7 @@ const ACTION_PLAN_SORT_FIELDS: Record<
 };
 const ACTION_PLAN_LIST_CACHE_TTL_MS = 120_000;
 const EXPIRING_CUSTOMER_LIST_CACHE_TTL_MS = 60_000;
+const MILLISECONDS_PER_DAY = 86_400_000;
 
 const EXPIRING_UNFINISHED_RENEWAL_STATUSES: RenewalTaskStatus[] = [
   'pending',
@@ -566,7 +567,9 @@ export class AppleActionPlansService {
         const expireTime = this.buildExpiringDateRange(query);
 
         const where: Prisma.ServiceActivationWhereInput = {
-          status: status ?? 'active',
+          status: status ?? {
+            in: ['active', 'expired']
+          },
           customerId: query.customerId || undefined,
           appleAccountId: query.appleAccountId || undefined,
           serviceId: query.serviceId || undefined,
@@ -1300,13 +1303,11 @@ export class AppleActionPlansService {
     }
 
     const daysAhead = this.parseExpiresInDays(query.expiresInDays);
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
+    const end = this.startOfUtcDay(new Date());
     end.setDate(end.getDate() + daysAhead + 1);
 
     return {
-      gte: start,
+      not: null,
       lt: end
     };
   }
@@ -1621,7 +1622,9 @@ export class AppleActionPlansService {
       return Number.POSITIVE_INFINITY;
     }
 
-    return Math.ceil((date.getTime() - now.getTime()) / 86_400_000);
+    const targetDay = this.startOfUtcDay(date);
+    const currentDay = this.startOfUtcDay(now);
+    return Math.round((targetDay.getTime() - currentDay.getTime()) / MILLISECONDS_PER_DAY);
   }
 
   private safeDateBefore(date: Date | null, days: number, fallback: Date) {

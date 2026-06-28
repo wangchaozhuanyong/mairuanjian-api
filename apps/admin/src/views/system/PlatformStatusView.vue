@@ -353,7 +353,7 @@
           <StatusChip tone="orange">敏感</StatusChip>
           <div>
             <strong>敏感字段只支持重新填写，不会回显历史明文</strong>
-            <p>真实平台接口接入前，保存配置只代表凭据已托管。</p>
+            <p>保存配置代表凭据已托管，连接状态以平台测试结果为准。</p>
           </div>
         </div>
         <div v-if="authorizationConfig" class="auth-summary">
@@ -368,7 +368,7 @@
           <template #label>
             <FieldHelpLabel
               label="授权方式"
-              purpose="说明这个平台接口使用哪种授权模式，后续真实对接会按它处理 Token。"
+              purpose="说明这个平台接口使用哪种授权模式，系统会按所选方式保存和校验 Token。"
               example="开放平台 OAuth 选 OAuth；手工托管 Token 选手工 Token。"
             />
           </template>
@@ -570,6 +570,7 @@ import type {
   UserTableView
 } from '@/types/system';
 import { PLATFORM_AUTH_MODE_DICTIONARY_GROUP } from '@/config/quickSettings';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { buildPlatformAuthModeOptions } from '@/utils/systemQuickOptions';
 
@@ -972,7 +973,32 @@ function getSortableValue(item: PlatformInterfaceStatus, prop: string): string |
 }
 
 function showExportMessage() {
-  ElMessage.info('平台接口状态导出会走数据中心导出任务，后续统一接入');
+  if (!platforms.value.length) {
+    ElMessage.warning('暂无可导出的平台接口状态');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'platform-interface-status',
+    [
+      { header: '平台', value: (row) => row.displayName },
+      { header: '平台编码', value: (row) => row.platform },
+      { header: '接口状态', value: (row) => getHealthLabel(row.status) },
+      { header: '授权状态', value: (row) => getAuthorizationLabel(row.authorizationStatus) },
+      { header: 'Token 到期', value: (row) => formatDate(row.tokenExpiresAt) },
+      { header: '最后同步', value: (row) => formatDate(row.lastSyncAt) },
+      { header: '请求数', value: (row) => row.requestCount },
+      { header: '失败请求数', value: (row) => row.failedRequestCount },
+      { header: '错误率', value: (row) => formatErrorRate(row.errorRate) },
+      { header: '失败原因', value: (row) => row.lastFailureReason ?? '' },
+      { header: '可重新授权', value: (row) => (row.canReauthorize ? '是' : '否') },
+      { header: '可测试连接', value: (row) => (row.canTestConnection ? '是' : '否') },
+      { header: '说明', value: (row) => row.message }
+    ],
+    platforms.value
+  );
+
+  ElMessage.success(`已导出 ${count} 条平台接口状态`);
 }
 
 async function testPlatform(row: PlatformInterfaceStatus) {

@@ -40,7 +40,13 @@
           >
             刷新数据
           </AppButton>
-          <AppButton variant="primary" @click="goTo('/workspace/renewal')">进入工作台</AppButton>
+          <AppButton
+            v-if="canViewRenewalTasks"
+            variant="primary"
+            @click="goTo('/workspace/renewal')"
+          >
+            进入工作台
+          </AppButton>
         </template>
 
         <div class="app-table-wrap dashboard-task-table-wrap">
@@ -165,7 +171,7 @@
         </div>
       </AppCard>
 
-      <AppCard title="平台订单状态" subtitle="订单同步与发货监控。" tag="首版策略" tag-tone="green">
+      <AppCard title="平台订单状态" subtitle="订单和发货处理进度。" tag="发货处理" tag-tone="green">
         <div class="dashboard-timeline-list">
           <div v-for="item in workflowStatus" :key="item.title" class="dashboard-workflow-item">
             <div class="dashboard-workflow-item__content">
@@ -181,12 +187,37 @@
 
       <AppCard title="快速入口" subtitle="常用操作一键到达。" tag="常用操作" tag-tone="cyan">
         <div class="dashboard-quick-grid">
-          <AppButton variant="default" @click="goTo('/apple/accounts')">Apple ID</AppButton>
-          <AppButton variant="primary" @click="goTo('/apple/order-entry')">录订单</AppButton>
-          <AppButton variant="default" @click="goTo('/codes/inventory')">导入兑换码</AppButton>
-          <AppButton variant="default" @click="goTo('/workspace/renewal')">续费工作台</AppButton>
+          <AppButton v-if="canViewAppleAccounts" variant="default" @click="goTo('/apple/accounts')">
+            Apple ID
+          </AppButton>
+          <AppButton
+            v-if="canCreateAppleOrder"
+            variant="primary"
+            @click="goTo('/apple/order-entry')"
+          >
+            录订单
+          </AppButton>
+          <AppButton
+            v-if="canImportCodeInventory"
+            variant="default"
+            @click="goTo('/codes/inventory')"
+          >
+            导入兑换码
+          </AppButton>
+          <AppButton
+            v-if="canViewRenewalTasks"
+            variant="default"
+            @click="goTo('/workspace/renewal')"
+          >
+            续费工作台
+          </AppButton>
           <AppButton variant="default" @click="previewDrawerVisible = true">闭环状态</AppButton>
-          <AppButton variant="default" @click="goTo('/system/platform-status')">接口状态</AppButton>
+          <AppButton
+            v-if="canViewDeliveryExceptions"
+            variant="default"
+            @click="goTo('/codes/delivery-exceptions')"
+            >发货异常</AppButton
+          >
         </div>
       </AppCard>
     </div>
@@ -195,10 +226,9 @@
       <div class="apple-core-alert apple-core-alert--green">
         <StatusChip tone="green">运营优先</StatusChip>
         <div>
-          <strong>当前首版策略为半自动可运营优先</strong>
+          <strong>当前按重要业务优先处理</strong>
           <p>
-            首页保留真实业务接口读取，Apple ID
-            续费、兑换码发货和平台状态会优先进入人工可处理闭环；高风险自动化任务进入人工验证兜底。
+            首页汇总订单、续费、库存和发货状态；高风险操作会先让员工确认，避免误扣费、误发货或资料改错。
           </p>
         </div>
       </div>
@@ -208,19 +238,19 @@
         <div class="mini-list">
           <div class="mini-row">
             <span>Apple ID 代充业务</span>
-            <StatusChip tone="green">主流程已接入</StatusChip>
+            <StatusChip tone="green">可用</StatusChip>
           </div>
           <div class="mini-row">
             <span>兑换码自动发货</span>
-            <StatusChip tone="green">半自动已接入</StatusChip>
+            <StatusChip tone="green">可用</StatusChip>
           </div>
           <div class="mini-row">
             <span>高风险自动化</span>
             <StatusChip tone="orange">人工验证</StatusChip>
           </div>
           <div class="mini-row">
-            <span>权限、审计和敏感查看</span>
-            <StatusChip tone="green">已接入</StatusChip>
+            <span>敏感信息查看</span>
+            <StatusChip tone="green">受控查看</StatusChip>
           </div>
         </div>
       </div>
@@ -244,9 +274,24 @@ import AppDrawer from '@/components/ui/AppDrawer.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
-import { allModules, getStatusText, getStatusType, type ModuleStatus } from '@/config/modules';
+import {
+  getModulePermission,
+  getStatusText,
+  getStatusType,
+  menuSections,
+  type AppModuleItem,
+  type ModuleStatus
+} from '@/config/modules';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
-import type { AppleAccount, AppleOrder, CodePlatformOrder, RenewalTask } from '@/types/system';
+import { useAuthStore } from '@/stores/auth';
+import type {
+  AppleAccount,
+  AppleOrder,
+  CodePlatformOrder,
+  PageResult,
+  RenewalTask
+} from '@/types/system';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
 type StatusTone = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'cyan' | 'neutral';
@@ -275,9 +320,15 @@ interface DashboardNotice {
 const DASHBOARD_REQUEST_COUNT = 7;
 const LOW_STOCK_THRESHOLD = 20;
 const DASHBOARD_REALTIME_SCOPES = ['dashboard-overview'];
-const INTERNAL_MODULE_KEYS = new Set(['data-dictionaries', 'ops-monitor', 'automation-logs']);
+const INTERNAL_MODULE_KEYS = new Set([
+  'data-dictionaries',
+  'ops-monitor',
+  'automation-logs',
+  'maintenance-mode'
+]);
 
 const router = useRouter();
+const authStore = useAuthStore();
 const previewDrawerVisible = ref(false);
 const dashboardLoading = ref(false);
 const dashboardLoadFailed = ref(false);
@@ -300,13 +351,27 @@ const lockedCodeTotal = ref(0);
 const failedCodeTotal = ref(0);
 
 const moduleRows = computed(() =>
-  allModules.filter((item) => item.group !== '异常页面' && !INTERNAL_MODULE_KEYS.has(item.key))
+  menuSections
+    .filter((section) => !section.adminOnly)
+    .flatMap((section) => section.items)
+    .filter(
+      (item) =>
+        !INTERNAL_MODULE_KEYS.has(item.key) &&
+        item.status === 'ready' &&
+        canAccessDashboardModule(item)
+    )
 );
+const canViewAppleAccounts = computed(() => hasPermission('apple.account.view'));
+const canViewAppleOrders = computed(() => hasPermission('apple.order.view'));
+const canCreateAppleOrder = computed(() => hasPermission('apple.order.create'));
+const canViewCodeOrders = computed(() => hasPermission('code.order.view'));
+const canViewCodeInventory = computed(() => hasPermission('code.inventory.view'));
+const canImportCodes = computed(() => hasPermission('code.batch.import'));
+const canImportCodeInventory = computed(() => canViewCodeInventory.value && canImportCodes.value);
+const canViewRenewalTasks = computed(() => hasPermission('apple.renewal_task.view'));
+const canViewDeliveryExceptions = computed(() => hasPermission('code.order.view'));
 const readyCount = computed(
   () => moduleRows.value.filter((item) => item.status === 'ready').length
-);
-const notReadyCount = computed(
-  () => moduleRows.value.filter((item) => item.status !== 'ready').length
 );
 const readyRate = computed(() =>
   moduleRows.value.length ? Math.round((readyCount.value / moduleRows.value.length) * 100) : 0
@@ -360,89 +425,175 @@ const appleAverageCost = computed(() =>
   appleBalanceTotal.value > 0 ? appleBalanceCostTotal.value / appleBalanceTotal.value : 0
 );
 const inventoryLowStock = computed(
-  () => inventoryDataReady.value && availableCodeTotal.value <= LOW_STOCK_THRESHOLD
+  () =>
+    canViewCodeInventory.value &&
+    inventoryDataReady.value &&
+    availableCodeTotal.value <= LOW_STOCK_THRESHOLD
 );
 const dashboardOverviewRate = computed(() =>
   dashboardLoadedPanels.value
     ? Math.round((dashboardLoadedPanels.value / DASHBOARD_REQUEST_COUNT) * 100)
     : readyRate.value
 );
-const dashboardMetrics = computed(() => [
-  {
-    label: '今日订单',
-    value: todayOrderCount.value,
-    hint: `Apple ${todayAppleOrderCount.value} 单 · 兑换码 ${todayCodeOrderCount.value} 单`,
-    tag: dashboardLoading.value ? '更新中' : '实时',
-    tagTone: 'green' as const,
-    sparkline: '3,30 20,22 38,26 58,12 78,18 97,8'
-  },
-  {
-    label: '待处理任务',
-    value: openRenewalTaskCount.value,
-    hint: `紧急 ${urgentRenewalCount.value} · 待充值 ${topupRenewalCount.value}`,
-    tag: urgentRenewalCount.value ? `紧急 ${urgentRenewalCount.value}` : '续费',
-    tagTone: urgentRenewalCount.value ? ('red' as const) : ('orange' as const)
-  },
-  {
-    label: 'Apple ID总余额',
-    value: appleBalanceTotal.value ? formatNumber(appleBalanceTotal.value) : '-',
-    hint: appleBalanceTotal.value
-      ? `平均成本 ¥${formatDecimal(appleAverageCost.value)} / 1美元`
-      : '暂无余额样本',
-    tag: appleAccountDataReady.value ? '多币种' : '读取中',
-    tagTone: 'blue' as const
-  },
-  {
-    label: '自动发货成功率',
-    value:
-      codeOrderDataReady.value && codeOrders.value.length
-        ? formatPercent(deliverySuccessRate.value)
-        : '-',
-    hint:
-      codeOrderDataReady.value && codeOrders.value.length
-        ? `失败 ${failedDeliveryCount.value} 单 · 人工 ${manualDeliveryCount.value} 单`
-        : '暂无发货订单样本',
-    tag: failedDeliveryCount.value ? '需处理' : codeOrders.value.length ? '稳定' : '暂无订单',
-    tagTone: failedDeliveryCount.value ? ('red' as const) : ('green' as const)
+const dashboardMetrics = computed(() => {
+  const metrics = [];
+
+  if (canViewAppleOrders.value || canViewCodeOrders.value) {
+    const orderParts = [];
+
+    if (canViewAppleOrders.value) {
+      orderParts.push(`ID ${todayAppleOrderCount.value} 单`);
+    }
+
+    if (canViewCodeOrders.value) {
+      orderParts.push(`兑换码 ${todayCodeOrderCount.value} 单`);
+    }
+
+    metrics.push({
+      label: '今日订单',
+      value: todayOrderCount.value,
+      hint: orderParts.join(' · ') || '暂无订单数据',
+      tag: dashboardLoading.value ? '更新中' : '实时',
+      tagTone: 'green' as const,
+      sparkline: '3,30 20,22 38,26 58,12 78,18 97,8'
+    });
   }
-]);
+
+  if (canViewRenewalTasks.value) {
+    metrics.push({
+      label: '待处理任务',
+      value: openRenewalTaskCount.value,
+      hint: `紧急 ${urgentRenewalCount.value} · 待充值 ${topupRenewalCount.value}`,
+      tag: urgentRenewalCount.value ? `紧急 ${urgentRenewalCount.value}` : '续费',
+      tagTone: urgentRenewalCount.value ? ('red' as const) : ('orange' as const)
+    });
+  }
+
+  if (canViewAppleAccounts.value) {
+    metrics.push({
+      label: 'ID总余额',
+      value: appleBalanceTotal.value ? formatNumber(appleBalanceTotal.value) : '-',
+      hint: appleBalanceTotal.value
+        ? `平均成本 ¥${formatDecimal(appleAverageCost.value)} / 1美元`
+        : '暂无余额数据',
+      tag: appleAccountDataReady.value ? '多币种' : '读取中',
+      tagTone: 'blue' as const
+    });
+  }
+
+  if (canViewCodeOrders.value) {
+    metrics.push({
+      label: '发货成功率',
+      value:
+        codeOrderDataReady.value && codeOrders.value.length
+          ? formatPercent(deliverySuccessRate.value)
+          : '-',
+      hint:
+        codeOrderDataReady.value && codeOrders.value.length
+          ? `失败 ${failedDeliveryCount.value} 单 · 人工 ${manualDeliveryCount.value} 单`
+          : '暂无发货订单',
+      tag: failedDeliveryCount.value ? '需处理' : codeOrders.value.length ? '稳定' : '暂无订单',
+      tagTone: failedDeliveryCount.value ? ('red' as const) : ('green' as const)
+    });
+  }
+
+  if (!metrics.length) {
+    metrics.push({
+      label: '可用功能',
+      value: readyCount.value,
+      hint: '根据当前账号权限展示可用入口',
+      tag: '权限内',
+      tagTone: 'blue' as const
+    });
+  }
+
+  return metrics;
+});
 const dashboardSummaryText = computed(() => {
   if (dashboardLoadFailed.value) {
-    return `业务数据暂时未返回，当前使用 ${readyCount.value} 个已接入模块、${notReadyCount.value} 个待完善模块兜底。`;
+    return `业务数据暂时未返回，当前先展示 ${readyCount.value} 个常用功能入口。`;
   }
 
   if (!dashboardDataReady.value) {
-    return '正在汇总 Apple ID、续费、库存和发货状态。';
+    return '正在汇总你有权限查看的订单、续费、库存和发货状态。';
   }
 
-  return `已汇总 Apple ID ${appleAccountTotal.value} 个、Apple订单 ${appleOrderTotal.value} 单、续费任务 ${renewalTaskTotal.value} 条。`;
-});
-const dashboardReadinessBars = computed(() => [
-  {
-    label: 'Apple余额',
-    value: appleBalanceTotal.value ? formatNumber(appleBalanceTotal.value) : '-',
-    percent: getBusinessBarPercent(appleBalanceTotal.value),
-    tone: 'blue'
-  },
-  {
-    label: '续费任务',
-    value: `${renewalTaskTotal.value || openRenewalTaskCount.value} 条`,
-    percent: getBusinessBarPercent(renewalTaskTotal.value || openRenewalTaskCount.value),
-    tone: 'orange'
-  },
-  {
-    label: '可售库存',
-    value: inventoryDataReady.value ? `${availableCodeTotal.value} 个` : '-',
-    percent: getBusinessBarPercent(availableCodeTotal.value),
-    tone: inventoryLowStock.value ? 'red' : 'green'
-  },
-  {
-    label: '平台订单',
-    value: `${codeOrderTotal.value || codeOrders.value.length} 单`,
-    percent: getBusinessBarPercent(codeOrderTotal.value || codeOrders.value.length),
-    tone: 'purple'
+  const parts = [];
+
+  if (canViewAppleAccounts.value) {
+    parts.push(`ID ${appleAccountTotal.value} 个`);
   }
-]);
+
+  if (canViewAppleOrders.value) {
+    parts.push(`ID订单 ${appleOrderTotal.value} 单`);
+  }
+
+  if (canViewRenewalTasks.value) {
+    parts.push(`续费任务 ${renewalTaskTotal.value} 条`);
+  }
+
+  if (canViewCodeOrders.value) {
+    parts.push(`兑换码订单 ${codeOrderTotal.value} 单`);
+  }
+
+  if (canViewCodeInventory.value) {
+    parts.push(`可售库存 ${availableCodeTotal.value} 个`);
+  }
+
+  return parts.length
+    ? `已汇总${parts.join('、')}。`
+    : `当前账号可使用 ${readyCount.value} 个功能入口。`;
+});
+const dashboardReadinessBars = computed(() => {
+  const bars = [];
+
+  if (canViewAppleAccounts.value) {
+    bars.push({
+      label: 'ID余额',
+      value: appleBalanceTotal.value ? formatNumber(appleBalanceTotal.value) : '-',
+      percent: getBusinessBarPercent(appleBalanceTotal.value),
+      tone: 'blue'
+    });
+  }
+
+  if (canViewRenewalTasks.value) {
+    bars.push({
+      label: '续费任务',
+      value: `${renewalTaskTotal.value || openRenewalTaskCount.value} 条`,
+      percent: getBusinessBarPercent(renewalTaskTotal.value || openRenewalTaskCount.value),
+      tone: 'orange'
+    });
+  }
+
+  if (canViewCodeInventory.value) {
+    bars.push({
+      label: '可售库存',
+      value: inventoryDataReady.value ? `${availableCodeTotal.value} 个` : '-',
+      percent: getBusinessBarPercent(availableCodeTotal.value),
+      tone: inventoryLowStock.value ? 'red' : 'green'
+    });
+  }
+
+  if (canViewCodeOrders.value) {
+    bars.push({
+      label: '平台订单',
+      value: `${codeOrderTotal.value || codeOrders.value.length} 单`,
+      percent: getBusinessBarPercent(codeOrderTotal.value || codeOrders.value.length),
+      tone: 'purple'
+    });
+  }
+
+  if (!bars.length) {
+    bars.push({
+      label: '可用功能',
+      value: `${readyCount.value} 个`,
+      percent: getBusinessBarPercent(readyCount.value),
+      tone: 'blue'
+    });
+  }
+
+  return bars;
+});
 const dashboardTasks = computed<DashboardTaskRow[]>(() => {
   const renewalRows = renewalTasks.value
     .filter((task) => !isFinalRenewalStatus(task.status))
@@ -493,19 +644,9 @@ const dashboardTasks = computed<DashboardTaskRow[]>(() => {
       description: item.description,
       group: item.group,
       route: item.route,
-      impact:
-        item.status === 'ready'
-          ? '可直接进入验收'
-          : item.status === 'planned'
-            ? '后续按阶段接入'
-            : '需要继续完善页面体验',
-      priority: item.status === 'ready' ? '中' : item.status === 'planned' ? '低' : '高',
-      priorityTone:
-        item.status === 'ready'
-          ? ('blue' as const)
-          : item.status === 'planned'
-            ? ('neutral' as const)
-            : ('orange' as const),
+      impact: '可直接使用',
+      priority: '中',
+      priorityTone: 'blue' as const,
       statusText: getStatusText(item.status),
       statusTone: getModuleStatusTone(item.status)
     }));
@@ -517,48 +658,69 @@ const workflowStatus = computed<
     description: string;
     type: 'success' | 'warning' | 'info';
   }>
->(() => [
-  {
-    title: 'Apple ID 续费队列',
-    status: renewalDataReady.value ? (openRenewalTaskCount.value ? '待处理' : '正常') : '读取中',
-    description: renewalDataReady.value
-      ? `待处理 ${openRenewalTaskCount.value} 条，紧急 ${urgentRenewalCount.value} 条。`
-      : '正在读取续费任务队列。',
-    type: !renewalDataReady.value ? 'info' : openRenewalTaskCount.value ? 'warning' : 'success'
-  },
-  {
-    title: '兑换码订单发货',
-    status: codeOrderDataReady.value ? (failedDeliveryCount.value ? '需处理' : '正常') : '读取中',
-    description: codeOrderDataReady.value
-      ? `最近订单 ${codeOrders.value.length} 单，失败 ${failedDeliveryCount.value} 单，待发货 ${pendingDeliveryCount.value} 单。`
-      : '正在读取兑换码发货状态。',
-    type: !codeOrderDataReady.value ? 'info' : failedDeliveryCount.value ? 'warning' : 'success'
-  },
-  {
-    title: '兑换码库存预警',
-    status: inventoryDataReady.value ? (inventoryLowStock.value ? '低库存' : '充足') : '读取中',
-    description: inventoryDataReady.value
-      ? `可售 ${availableCodeTotal.value} 个，锁定 ${lockedCodeTotal.value} 个，异常 ${failedCodeTotal.value} 个。`
-      : '正在读取兑换码库存。',
-    type: !inventoryDataReady.value ? 'info' : inventoryLowStock.value ? 'warning' : 'success'
-  },
-  {
-    title: 'Apple ID 自动化任务',
-    status: '人工验证兜底',
-    description: '自动充值、取消订阅、资料变更等高风险任务会进入人工验证队列。',
-    type: 'warning'
-  },
-  {
-    title: '发布手工门禁',
-    status: '需人工确认',
-    description: 'Telegram 真实测试、生产环境证据记录和 Git 基线确认必须真实完成后才能放行。',
-    type: 'info'
+>(() => {
+  const rows: Array<{
+    title: string;
+    status: string;
+    description: string;
+    type: 'success' | 'warning' | 'info';
+  }> = [];
+
+  if (canViewRenewalTasks.value) {
+    rows.push({
+      title: 'ID 续费待办',
+      status: renewalDataReady.value ? (openRenewalTaskCount.value ? '待处理' : '正常') : '读取中',
+      description: renewalDataReady.value
+        ? `待处理 ${openRenewalTaskCount.value} 条，紧急 ${urgentRenewalCount.value} 条。`
+        : '正在读取续费待办。',
+      type: !renewalDataReady.value ? 'info' : openRenewalTaskCount.value ? 'warning' : 'success'
+    });
   }
-]);
+
+  if (canViewCodeOrders.value) {
+    rows.push({
+      title: '兑换码订单发货',
+      status: codeOrderDataReady.value ? (failedDeliveryCount.value ? '需处理' : '正常') : '读取中',
+      description: codeOrderDataReady.value
+        ? `最近订单 ${codeOrders.value.length} 单，失败 ${failedDeliveryCount.value} 单，待发货 ${pendingDeliveryCount.value} 单。`
+        : '正在读取兑换码发货状态。',
+      type: !codeOrderDataReady.value ? 'info' : failedDeliveryCount.value ? 'warning' : 'success'
+    });
+  }
+
+  if (canViewCodeInventory.value) {
+    rows.push({
+      title: '兑换码库存预警',
+      status: inventoryDataReady.value ? (inventoryLowStock.value ? '低库存' : '充足') : '读取中',
+      description: inventoryDataReady.value
+        ? `可售 ${availableCodeTotal.value} 个，锁定 ${lockedCodeTotal.value} 个，异常 ${failedCodeTotal.value} 个。`
+        : '正在读取兑换码库存。',
+      type: !inventoryDataReady.value ? 'info' : inventoryLowStock.value ? 'warning' : 'success'
+    });
+  }
+
+  if (canViewAppleAccounts.value || canViewRenewalTasks.value) {
+    rows.push({
+      title: 'ID 安全操作',
+      status: '人工确认',
+      description: '充值、取消订阅、资料变更等高风险操作需要员工确认后处理。',
+      type: 'warning'
+    });
+  }
+
+  rows.push({
+    title: '客户资料保护',
+    status: '受控查看',
+    description: '手机号、完整兑换码和账号资料只在必要业务核对时查看。',
+    type: 'info'
+  });
+
+  return rows;
+});
 const attentionStatus = computed<DashboardNotice[]>(() => {
   const notices: DashboardNotice[] = [];
 
-  if (renewalDataReady.value && urgentRenewalCount.value) {
+  if (canViewRenewalTasks.value && renewalDataReady.value && urgentRenewalCount.value) {
     notices.push({
       title: `${urgentRenewalCount.value} 条紧急续费任务`,
       description: '优先处理不续费取消、待充值和等待扣费确认，避免误扣费或服务中断。',
@@ -566,15 +728,15 @@ const attentionStatus = computed<DashboardNotice[]>(() => {
     });
   }
 
-  if (codeOrderDataReady.value && failedDeliveryCount.value) {
+  if (canViewCodeOrders.value && codeOrderDataReady.value && failedDeliveryCount.value) {
     notices.push({
       title: `${failedDeliveryCount.value} 单自动发货失败`,
-      description: '失败订单已进入人工兜底，建议先核对平台订单和兑换码锁定状态。',
+      description: '失败订单需要人工补发，建议先核对平台订单和兑换码锁定状态。',
       type: 'warning'
     });
   }
 
-  if (inventoryLowStock.value) {
+  if (canViewCodeInventory.value && inventoryLowStock.value) {
     notices.push({
       title: '兑换码库存低于阈值',
       description: `当前可售 ${availableCodeTotal.value} 个，低于预警线 ${LOW_STOCK_THRESHOLD}。`,
@@ -585,28 +747,34 @@ const attentionStatus = computed<DashboardNotice[]>(() => {
   if (dashboardLoadFailed.value) {
     notices.push({
       title: '首页业务数据暂时未返回',
-      description: '当前页面已使用模块状态兜底展示，刷新后会重新拉取订单、库存和续费数据。',
+      description: '当前页面先展示可用功能入口，刷新后会重新拉取订单、库存和续费数据。',
       type: 'warning'
     });
   }
 
-  const baselineNotices: DashboardNotice[] = [
-    {
-      title: 'Apple ID 自动化需人工复核',
-      description: '取消订阅、余额充值和资料变更出现高风险或执行失败时，进入人工验证队列。',
+  const baselineNotices: DashboardNotice[] = [];
+
+  if (canViewAppleAccounts.value || canViewRenewalTasks.value) {
+    baselineNotices.push({
+      title: '高风险操作需人工复核',
+      description: '取消订阅、余额充值和资料变更出现高风险或执行失败时，需要员工确认处理。',
       type: 'warning'
-    },
-    {
-      title: '平台接口状态需要持续观察',
-      description: 'Telegram、文件存储和自动化服务状态仍按接口状态页统一巡检。',
+    });
+  }
+
+  if (canViewCodeOrders.value || canViewCodeInventory.value) {
+    baselineNotices.push({
+      title: '发货渠道状态需要持续观察',
+      description: '发货、通知和附件上传需要保持可用，异常时按页面提示处理。',
       type: 'info'
-    },
-    {
-      title: '关键队列无紧急阻塞',
-      description: '未发现紧急续费、低库存或发货失败时，可以继续按日常订单节奏处理。',
-      type: 'info'
-    }
-  ];
+    });
+  }
+
+  baselineNotices.push({
+    title: '关键待办无紧急阻塞',
+    description: '未发现紧急续费、低库存或发货失败时，可以继续按日常订单节奏处理。',
+    type: 'info'
+  });
 
   for (const notice of baselineNotices) {
     if (notices.length >= 3) {
@@ -633,6 +801,19 @@ onBeforeUnmount(() => {
 
 async function goTo(route: string) {
   await router.push(route);
+}
+
+function hasPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
+function canAccessDashboardModule(item: AppModuleItem) {
+  const permission = getModulePermission(item);
+  if (Array.isArray(permission)) {
+    return permission.every((itemPermission) => hasPermission(itemPermission));
+  }
+
+  return !permission || hasPermission(permission);
 }
 
 async function loadDashboardOverview(
@@ -712,25 +893,42 @@ function applyDashboardOverview(results: Awaited<ReturnType<typeof loadDashboard
 
 async function loadDashboardOverviewData(signal?: AbortSignal) {
   const results = await Promise.allSettled([
-    appleAccountsApi.list(
-      { page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' },
-      { signal }
-    ),
-    appleOrdersApi.list(
-      { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
-      { signal }
-    ),
-    appleRenewalTasksApi.list(
-      { page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' },
-      { signal }
-    ),
-    codeOrdersApi.list(
-      { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
-      { signal }
-    ),
-    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }, { signal }),
-    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }, { signal }),
-    redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'delivery_failed' }, { signal })
+    canViewAppleAccounts.value
+      ? appleAccountsApi.list(
+          { page: 1, pageSize: 100, sortBy: 'updatedAt', sortOrder: 'desc' },
+          { signal }
+        )
+      : Promise.resolve(emptyPageResult<AppleAccount>(100)),
+    canViewAppleOrders.value
+      ? appleOrdersApi.list(
+          { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+          { signal }
+        )
+      : Promise.resolve(emptyPageResult<AppleOrder>(20)),
+    canViewRenewalTasks.value
+      ? appleRenewalTasksApi.list(
+          { page: 1, pageSize: 20, sortBy: 'dueAt', sortOrder: 'asc' },
+          { signal }
+        )
+      : Promise.resolve(emptyPageResult<RenewalTask>(20)),
+    canViewCodeOrders.value
+      ? codeOrdersApi.list(
+          { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+          { signal }
+        )
+      : Promise.resolve(emptyPageResult<CodePlatformOrder>(20)),
+    canViewCodeInventory.value
+      ? redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'unsold' }, { signal })
+      : Promise.resolve(emptyPageResult(1)),
+    canViewCodeInventory.value
+      ? redeemCodesApi.listInventory({ page: 1, pageSize: 1, status: 'locked' }, { signal })
+      : Promise.resolve(emptyPageResult(1)),
+    canViewCodeInventory.value
+      ? redeemCodesApi.listInventory(
+          { page: 1, pageSize: 1, status: 'delivery_failed' },
+          { signal }
+        )
+      : Promise.resolve(emptyPageResult(1))
   ]);
 
   if (signal?.aborted) {
@@ -738,6 +936,15 @@ async function loadDashboardOverviewData(signal?: AbortSignal) {
   }
 
   return results;
+}
+
+function emptyPageResult<TItem>(pageSize: number): PageResult<TItem> {
+  return {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize
+  };
 }
 
 function getModuleStatusTone(status: ModuleStatus): StatusTone {
@@ -1022,7 +1229,7 @@ function getDeliveryImpactText(order: CodePlatformOrder) {
   }
 
   if (order.deliveryStatus === 'manual') {
-    return '已转人工发货队列';
+    return '已转人工发货';
   }
 
   return `待匹配 ${order.quantity} 个兑换码`;

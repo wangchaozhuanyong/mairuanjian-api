@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../auth/auth.decorators';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { RealtimeService } from '../realtime/realtime.service';
+import type { CreateRoleDto } from './dto/create-role.dto';
 import type { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
 import { RolesService } from './roles.service';
 
@@ -16,6 +17,20 @@ export class RolesController {
   @RequirePermissions('system.role_manage')
   listRoles() {
     return this.rolesService.listRoles();
+  }
+
+  @Post('roles')
+  @RequirePermissions('system.role_manage')
+  async createRole(@Body() dto: CreateRoleDto, @CurrentUser() operator?: AuthenticatedUser) {
+    const role = await this.rolesService.createRole(dto, operator);
+    this.realtimeService.publish({
+      type: 'system.role.created',
+      module: 'system',
+      entity: 'role',
+      action: 'created',
+      resourceId: role.id
+    });
+    return role;
   }
 
   @Get('permissions')

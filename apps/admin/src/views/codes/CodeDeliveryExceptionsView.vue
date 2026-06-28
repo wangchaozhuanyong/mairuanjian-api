@@ -7,10 +7,10 @@
   >
     <template #actions>
       <StatusChip :tone="totalExceptionCount > 0 ? 'orange' : 'green'" dot>
-        {{ totalExceptionCount > 0 ? `待关注 ${totalExceptionCount}` : '队列稳定' }}
+        {{ totalExceptionCount > 0 ? `待关注 ${totalExceptionCount}` : '发货稳定' }}
       </StatusChip>
       <AppButton :loading="loading || summaryLoading" @click="() => reloadAll()">刷新</AppButton>
-      <AppButton variant="primary" @click="goToCodeOrders">进入发货队列</AppButton>
+      <AppButton variant="primary" @click="() => goToCodeOrders()">进入发货处理</AppButton>
     </template>
 
     <div class="metric-grid metric-grid--four">
@@ -44,7 +44,7 @@
       <div class="panel-title-row">
         <PanelTitleHelp
           title="异常处理看板"
-          help="这里按真实兑换码订单状态汇总发货异常，比如失败、转人工、待锁码。它只是看板，不会另建一套异常订单。"
+          help="这里按兑换码订单状态汇总发货异常，比如失败、转人工、待锁码。处理时进入订单页完成发货动作。"
         />
         <div class="inline-actions">
           <StatusChip tone="red" dot>失败 {{ exceptionStats.failed }}</StatusChip>
@@ -100,14 +100,14 @@
         :filter-chips="filterChips"
         :show-date-shortcut="false"
         :show-save-view="false"
-        primary-label="进入发货队列"
+        primary-label="进入发货处理"
         placeholder="搜索订单号、买家、商品、SKU、业务"
         @search="handleSearch"
         @refresh="() => reloadAll()"
-        @primary="goToCodeOrders"
+        @primary="() => goToCodeOrders()"
         @clear-filters="clearFilters"
         @remove-filter="removeFilter"
-        @export="showExportMessage"
+        @export="exportList"
       >
         <template #filters>
           <el-select
@@ -141,7 +141,9 @@
             <span>当前筛选下没有失败、转人工或待确认发货订单。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-              <AppButton variant="primary" @click="goToCodeOrders">进入发货队列</AppButton>
+              <AppButton variant="primary" @click="() => goToCodeOrders()">
+                进入发货处理
+              </AppButton>
             </div>
           </div>
         </template>
@@ -216,7 +218,7 @@
           <template #default="{ row }">
             <div class="table-action-group">
               <AppButton size="small" variant="ghost" @click="openDetail(row)">查看</AppButton>
-              <AppButton size="small" variant="soft" @click="goToCodeOrders">处理</AppButton>
+              <AppButton size="small" variant="soft" @click="goToCodeOrders(row)">处理</AppButton>
             </div>
           </template>
         </el-table-column>
@@ -262,7 +264,7 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(order)">查看</AppButton>
-            <AppButton size="small" variant="soft" @click="goToCodeOrders">去处理</AppButton>
+            <AppButton size="small" variant="soft" @click="goToCodeOrders(order)">去处理</AppButton>
           </div>
         </article>
       </div>
@@ -273,7 +275,7 @@
           <span>当前筛选下没有需要展示的异常订单。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-            <AppButton variant="primary" @click="goToCodeOrders">进入发货队列</AppButton>
+            <AppButton variant="primary" @click="() => goToCodeOrders()"> 进入发货处理 </AppButton>
           </div>
         </div>
       </div>
@@ -289,9 +291,9 @@
     <AppDrawer
       v-model="detailVisible"
       :title="`发货异常 · ${selectedOrder?.externalOrderNo ?? ''}`"
-      description="这里只展示真实订单状态和处理建议；具体发货、转人工、重试仍在兑换码订单页完成。"
-      confirm-text="进入发货队列"
-      @confirm="goToCodeOrders"
+      description="这里展示订单状态和处理建议；具体发货、转人工、重试在兑换码订单页完成。"
+      confirm-text="进入发货处理"
+      @confirm="goToSelectedOrderProcessing"
     >
       <div v-if="selectedOrder" class="drawer-section">
         <div class="drawer-section__title">异常摘要</div>
@@ -369,7 +371,10 @@ import PaginationBar from '@/components/ui/PaginationBar.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type { CodePlatformOrder, PageResult, SourcePlatform, TableDensity } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
@@ -382,6 +387,7 @@ interface DeliveryExceptionSummary {
 }
 
 const router = useRouter();
+const authStore = useAuthStore();
 const exceptionStatuses: ExceptionStatus[] = ['failed', 'manual', 'pending'];
 const deliveryStatusOptions: Array<{ label: string; value: ExceptionStatus }> = [
   { label: '发货失败', value: 'failed' },
@@ -448,7 +454,7 @@ const exceptionLanes = computed(() => [
   {
     status: 'failed' as const,
     title: '发货失败',
-    description: '平台或发货日志失败，需要复核后重试或转人工。',
+    description: '平台发货失败，需要复核后重试或转人工。',
     tone: 'red' as const,
     total: exceptionStats.failed,
     orders: laneOrders.failed
@@ -487,7 +493,7 @@ const selectedAdvice = computed(() => {
     return {
       label: '失败复核',
       title: '先查看失败原因，再决定重试或转人工',
-      description: '请在兑换码订单页查看发货日志、平台接口状态和锁码情况，避免重复发送。',
+      description: '请在兑换码订单页查看发货记录、平台状态和锁码情况，避免重复发送。',
       tone: 'red' as ChipTone,
       alert: 'red'
     };
@@ -497,7 +503,7 @@ const selectedAdvice = computed(() => {
     return {
       label: '人工处理',
       title: '按人工发货流程复制话术并确认结果',
-      description: '处理前核对订单号、面值、锁码尾号和退款状态，处理后在订单页写入发货日志。',
+      description: '处理前核对订单号、面值、锁码尾号和退款状态，处理后在订单页保存发货记录。',
       tone: 'orange' as ChipTone,
       alert: 'orange'
     };
@@ -516,7 +522,7 @@ const selectedAdvice = computed(() => {
   return {
     label: '待确认',
     title: '已具备发货条件，等待订单页确认发货',
-    description: '发货确认会写入发货日志并改变订单状态，请在兑换码订单页完成。',
+    description: '发货确认会保存发货记录并改变订单状态，请在兑换码订单页完成。',
     tone: 'blue' as ChipTone,
     alert: 'blue'
   };
@@ -526,6 +532,10 @@ const drawerAdviceTitle = computed(() => selectedAdvice.value.title);
 const drawerAdviceDescription = computed(() => selectedAdvice.value.description);
 const drawerStatusTone = computed(() => selectedAdvice.value.tone);
 const drawerAlertTone = computed(() => selectedAdvice.value.alert);
+const canViewCodeOrders = computed(() => hasDeliveryExceptionPermission('code.order.view'));
+const canViewSourcePlatforms = computed(() =>
+  hasDeliveryExceptionPermission('source_platform.view')
+);
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
@@ -579,7 +589,7 @@ function getExceptionTone(order: CodePlatformOrder): ChipTone {
 
 function getExceptionReason(order: CodePlatformOrder) {
   if (order.deliveryStatus === 'failed') {
-    return '发货失败，需查看日志后重试或转人工';
+    return '发货失败，需查看记录后重试或转人工';
   }
 
   if (order.deliveryStatus === 'manual') {
@@ -610,6 +620,11 @@ function mapSortOrder(order?: SortOrder) {
 }
 
 async function loadPlatforms(options: { force?: boolean } = {}) {
+  if (!canViewSourcePlatforms.value) {
+    platforms.value = [];
+    return;
+  }
+
   const data = await loadSmartSourcePlatforms(
     {
       page: 1,
@@ -652,6 +667,22 @@ function applyOrderResult(data: PageResult<CodePlatformOrder>) {
 }
 
 async function loadSummary(options: { background?: boolean; force?: boolean } = {}) {
+  if (!canViewCodeOrders.value) {
+    applySummaryResult({
+      stats: {
+        failed: 0,
+        manual: 0,
+        pending: 0
+      },
+      lanes: {
+        failed: [],
+        manual: [],
+        pending: []
+      }
+    });
+    return;
+  }
+
   const params = buildExceptionBaseParams();
   const key = createSmartQueryKey('code-delivery-exceptions-summary', params);
   const cached = getSmartQueryData<DeliveryExceptionSummary>(key);
@@ -722,6 +753,11 @@ async function loadSummary(options: { background?: boolean; force?: boolean } = 
 }
 
 async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
+  if (!canViewCodeOrders.value) {
+    applyOrderResult(emptyPageResult<CodePlatformOrder>(query.pageSize));
+    return;
+  }
+
   const params = buildOrderParams();
   const key = createSmartQueryKey('code-delivery-exceptions', params);
   const cached = getSmartQueryData<PageResult<CodePlatformOrder>>(key);
@@ -799,12 +835,85 @@ function openDetail(order: CodePlatformOrder) {
   detailVisible.value = true;
 }
 
-function goToCodeOrders() {
-  void router.push('/codes/orders');
+function goToCodeOrders(order?: CodePlatformOrder) {
+  if (!canViewCodeOrders.value) {
+    ElMessage.warning('当前账号没有查看兑换码订单权限');
+    return;
+  }
+
+  const targetQuery: Record<string, string> = {};
+
+  if (order) {
+    targetQuery.keyword = order.externalOrderNo;
+    targetQuery.deliveryStatus = order.deliveryStatus;
+    if (order.platform?.id) {
+      targetQuery.platformId = order.platform.id;
+    }
+  } else {
+    if (query.keyword) {
+      targetQuery.keyword = query.keyword;
+    }
+    if (query.platformId) {
+      targetQuery.platformId = query.platformId;
+    }
+    if (query.deliveryStatus) {
+      targetQuery.deliveryStatus = query.deliveryStatus;
+    }
+  }
+
+  void router.push({
+    path: '/codes/orders',
+    query: targetQuery
+  });
 }
 
-function showExportMessage() {
-  ElMessage.info('发货异常导出会进入数据中心导出任务，后续统一接入');
+function goToSelectedOrderProcessing() {
+  goToCodeOrders(selectedOrder.value ?? undefined);
+}
+
+function emptyPageResult<TItem>(pageSize: number): PageResult<TItem> {
+  return {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize
+  };
+}
+
+function hasDeliveryExceptionPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
+}
+
+function exportList() {
+  if (!orders.value.length) {
+    ElMessage.warning('暂无可导出的发货异常数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'code-delivery-exceptions',
+    [
+      { header: '订单号', value: (row) => row.externalOrderNo },
+      { header: '平台', value: (row) => row.platform.name },
+      { header: '买家', value: (row) => row.buyerNameMasked ?? row.buyerId ?? '' },
+      { header: '商品', value: (row) => row.itemTitle ?? row.itemId },
+      { header: 'SKU', value: (row) => row.skuName ?? row.skuId },
+      { header: '匹配业务', value: (row) => row.service?.name ?? '' },
+      { header: '异常类型', value: (row) => getExceptionLabel(row) },
+      { header: '发货状态', value: (row) => getDeliveryStatusLabel(row.deliveryStatus) },
+      { header: '退款状态', value: (row) => getRefundLabel(row.refundStatus) },
+      { header: '实收', value: (row) => row.paidAmount },
+      { header: '成本', value: (row) => row.costAmount },
+      { header: '利润', value: (row) => row.profitAmount },
+      { header: '锁定码数', value: (row) => row.lockedCodeCount },
+      { header: '已发码数', value: (row) => row.deliveredCodeCount },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '发货时间', value: (row) => formatDate(row.deliveredAt) }
+    ],
+    orders.value
+  );
+
+  ElMessage.success(`已导出 ${count} 条发货异常数据`);
 }
 
 async function initializePage() {

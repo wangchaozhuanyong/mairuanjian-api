@@ -1949,7 +1949,7 @@
 
     <el-dialog
       v-model="systemOptionDialogVisible"
-      title="编辑系统与接口选项"
+      title="编辑系统选项"
       width="min(520px, calc(100vw - 24px))"
     >
       <el-form
@@ -1972,8 +1972,8 @@
           <template #label>
             <FieldHelpLabel
               label="显示名称"
-              purpose="员工在系统或接口设置下拉里看到的名字。"
-              example="可以把 manual_token 显示成手工 Token，也可以写托管 Token。"
+              purpose="员工在系统设置下拉里看到的名字。"
+              example="可以把 manual_token 显示成手工凭证，也可以写托管凭证。"
             />
           </template>
           <el-input v-model.trim="systemOptionForm.label" />
@@ -2083,7 +2083,7 @@
             <FieldHelpLabel
               label="备注"
               purpose="记录这种发货模式适合什么业务，方便员工选择。"
-              example="可以写平台接口稳定时用自动，需要人工确认时用半自动。"
+              example="可以写平台可自动处理时用自动，需要人工确认时用半自动。"
             />
           </template>
           <el-input v-model="deliveryModeForm.remark" type="textarea" :rows="3" />
@@ -2157,7 +2157,7 @@
             <FieldHelpLabel
               label="备注"
               purpose="记录这种发货方式的使用场景或注意事项。"
-              example="可以写只用于手工复制、需要人工确认、接口暂未接通。"
+              example="可以写只用于手工复制、需要人工确认、暂不自动发货。"
             />
           </template>
           <el-input v-model="methodForm.remark" type="textarea" :rows="3" />
@@ -2369,6 +2369,7 @@ import {
   invalidateSmartQueries,
   refreshSmartQueryResource
 } from '@/utils/smartQuery';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 
 const tableKey = 'source_platforms';
 const statusOptions = [
@@ -3499,7 +3500,7 @@ async function loadSystemOptionGroup(
       return data;
     },
     apply: (data) => applySystemOptionResult(groupKey, data),
-    errorMessage: '加载系统与接口选项失败',
+    errorMessage: '加载系统选项失败',
     isCurrentGroup
   });
 }
@@ -3820,7 +3821,32 @@ function removeFilter() {
 }
 
 function exportList() {
-  ElMessage.info('来源平台导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedPlatforms.value.length ? selectedPlatforms.value : platforms.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的来源平台');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'source-platforms',
+    [
+      { header: '平台名称', value: (row) => row.name },
+      { header: '费率', value: (row) => row.feeRate },
+      { header: '固定费用', value: (row) => row.feeFixed },
+      { header: '状态', value: (row) => getPlatformStatusLabel(row.status) },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条来源平台`);
+}
+
+function getPlatformStatusLabel(status: SourcePlatform['status']) {
+  return statusOptions.find((option) => option.value === status)?.label ?? status;
 }
 
 function handleBatchAction(action: string) {
@@ -4717,11 +4743,11 @@ async function saveSystemOption() {
       remark: systemOptionForm.remark.trim() || null
     });
 
-    ElMessage.success('系统与接口选项已保存');
+    ElMessage.success('系统选项已保存');
     systemOptionDialogVisible.value = false;
     await loadSystemOptionGroup(editingSystemOptionGroup.value, { force: true });
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '保存系统与接口选项失败');
+    ElMessage.error(error instanceof Error ? error.message : '保存系统选项失败');
   } finally {
     systemOptionSaving.value = false;
   }

@@ -6,7 +6,7 @@
     description="管理 Apple ID 基础资料、余额、平均成本、状态和手动锁定。敏感字段加密保存，列表默认脱敏。"
   >
     <template #actions>
-      <AppButton @click="openImport">批量导入</AppButton>
+      <AppButton v-if="canImportAppleAccounts" @click="openImport">批量导入</AppButton>
     </template>
 
     <section class="content-panel apple-compact-list-panel">
@@ -44,6 +44,7 @@
         :batch-actions="batchActions"
         :show-date-shortcut="false"
         :show-save-view="false"
+        :show-primary="canCreateAppleAccount"
         show-filter-chips
         primary-label="新增 Apple ID"
         placeholder="搜索 Apple ID、地区、币种、寄存/售出、备注"
@@ -125,7 +126,12 @@
           </el-select>
         </template>
         <template #actions>
-          <AppButton class="table-toolbar__op" variant="soft" @click="openImport">
+          <AppButton
+            v-if="canImportAppleAccounts"
+            class="table-toolbar__op"
+            variant="soft"
+            @click="openImport"
+          >
             批量导入
           </AppButton>
         </template>
@@ -147,7 +153,9 @@
             <span>可以新增账号、批量导入，或清空筛选后重新查看当前账号库。</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-              <AppButton variant="primary" @click="openCreate">新增 Apple ID</AppButton>
+              <AppButton v-if="canCreateAppleAccount" variant="primary" @click="openCreate">
+                新增 Apple ID
+              </AppButton>
             </div>
           </div>
         </template>
@@ -279,17 +287,43 @@
           <template #default="{ row }">
             <div class="account-row-actions">
               <AppButton size="small" variant="ghost" @click="openDetail(row)">详情</AppButton>
-              <AppButton size="small" variant="ghost" @click="openEdit(row)">编辑</AppButton>
-              <el-dropdown trigger="click" @command="handleAccountMoreCommand($event, row)">
+              <AppButton
+                v-if="canUpdateAppleAccount"
+                size="small"
+                variant="ghost"
+                @click="openEdit(row)"
+              >
+                编辑
+              </AppButton>
+              <el-dropdown
+                v-if="hasAccountMoreActions(row)"
+                trigger="click"
+                @command="handleAccountMoreCommand($event, row)"
+              >
                 <AppButton size="small" variant="soft">更多</AppButton>
                 <template #dropdown>
                   <el-dropdown-menu class="account-more-menu">
-                    <el-dropdown-item command="secret">敏感资料</el-dropdown-item>
-                    <el-dropdown-item command="status-check">检测</el-dropdown-item>
-                    <el-dropdown-item command="topup">充值</el-dropdown-item>
-                    <el-dropdown-item command="consumption">消费</el-dropdown-item>
-                    <el-dropdown-item command="records">流水</el-dropdown-item>
-                    <el-dropdown-item command="delete" divided class="account-more-menu__danger">
+                    <el-dropdown-item v-if="getAccountSecretOptions(row).length" command="secret">
+                      敏感资料
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="canUpdateAppleAccount" command="status-check">
+                      检测
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="canTopupAppleBalance" command="topup">
+                      充值
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="canAdjustAppleBalance" command="consumption">
+                      消费
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="canViewAppleBalanceRecords" command="records">
+                      流水
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="canDeleteAppleAccount"
+                      command="delete"
+                      divided
+                      class="account-more-menu__danger"
+                    >
                       删除 ID
                     </el-dropdown-item>
                   </el-dropdown-menu>
@@ -364,17 +398,43 @@
 
           <div class="mobile-record-card__actions">
             <AppButton size="small" variant="ghost" @click="openDetail(account)">详情</AppButton>
-            <AppButton size="small" variant="ghost" @click="openEdit(account)">编辑</AppButton>
-            <el-dropdown trigger="click" @command="handleAccountMoreCommand($event, account)">
+            <AppButton
+              v-if="canUpdateAppleAccount"
+              size="small"
+              variant="ghost"
+              @click="openEdit(account)"
+            >
+              编辑
+            </AppButton>
+            <el-dropdown
+              v-if="hasAccountMoreActions(account)"
+              trigger="click"
+              @command="handleAccountMoreCommand($event, account)"
+            >
               <AppButton size="small" variant="soft">更多</AppButton>
               <template #dropdown>
                 <el-dropdown-menu class="account-more-menu">
-                  <el-dropdown-item command="secret">敏感资料</el-dropdown-item>
-                  <el-dropdown-item command="status-check">检测</el-dropdown-item>
-                  <el-dropdown-item command="topup">充值</el-dropdown-item>
-                  <el-dropdown-item command="consumption">消费</el-dropdown-item>
-                  <el-dropdown-item command="records">流水</el-dropdown-item>
-                  <el-dropdown-item command="delete" divided class="account-more-menu__danger">
+                  <el-dropdown-item v-if="getAccountSecretOptions(account).length" command="secret">
+                    敏感资料
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canUpdateAppleAccount" command="status-check">
+                    检测
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canTopupAppleBalance" command="topup">
+                    充值
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canAdjustAppleBalance" command="consumption">
+                    消费
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="canViewAppleBalanceRecords" command="records">
+                    流水
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="canDeleteAppleAccount"
+                    command="delete"
+                    divided
+                    class="account-more-menu__danger"
+                  >
                     删除 ID
                   </el-dropdown-item>
                 </el-dropdown-menu>
@@ -390,8 +450,12 @@
           <span>可以新增账号、批量导入，或清空筛选后重新查看当前账号库。</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
-            <AppButton variant="soft" @click="openImport">批量导入</AppButton>
-            <AppButton variant="primary" @click="openCreate">新增 Apple ID</AppButton>
+            <AppButton v-if="canImportAppleAccounts" variant="soft" @click="openImport">
+              批量导入
+            </AppButton>
+            <AppButton v-if="canCreateAppleAccount" variant="primary" @click="openCreate">
+              新增 Apple ID
+            </AppButton>
           </div>
         </div>
       </div>
@@ -490,8 +554,16 @@
         </div>
 
         <div class="account-detail-actions">
-          <AppButton variant="soft" @click="openEdit(selectedAccount)">编辑账号</AppButton>
-          <AppButton variant="ghost" @click="openRecords(selectedAccount)">查看流水</AppButton>
+          <AppButton v-if="canUpdateAppleAccount" variant="soft" @click="openEdit(selectedAccount)">
+            编辑账号
+          </AppButton>
+          <AppButton
+            v-if="canViewAppleBalanceRecords"
+            variant="ghost"
+            @click="openRecords(selectedAccount)"
+          >
+            查看流水
+          </AppButton>
         </div>
       </div>
     </AppDrawer>
@@ -504,6 +576,7 @@
       size="720px"
       confirm-text="保存"
       :confirm-loading="saving"
+      :show-confirm="editingAccount ? canUpdateAppleAccount : canCreateAppleAccount"
       @confirm="saveAccount"
     >
       <AppleAccountDrawerSummary
@@ -531,7 +604,7 @@
           <StatusChip tone="blue">加密</StatusChip>
           <div>
             <strong>敏感字段会加密保存</strong>
-            <p>密码、密保、手机号、备用邮箱不会明文返回前端；编辑时留空表示不修改。</p>
+            <p>密码、密保、手机号、备用邮箱只在必要操作中使用；编辑时留空表示不修改。</p>
           </div>
         </div>
         <el-form-item v-if="!editingAccount" prop="appleId">
@@ -765,6 +838,7 @@
       size="820px"
       confirm-text="开始导入"
       :confirm-loading="importing"
+      :show-confirm="canImportAppleAccounts"
       @confirm="submitImport"
     >
       <el-form ref="importFormRef" :model="importForm" :rules="importRules" label-position="top">
@@ -803,7 +877,7 @@
             <FieldHelpLabel
               label="导入内容"
               purpose="批量粘贴 Apple ID 资料，系统会逐行校验并加密保存敏感字段。"
-              example="可带表头，字段顺序按占位提示填写；一行一个 Apple ID。"
+              example="可带表头，字段顺序按页面提示填写；一行一个 Apple ID。"
             />
           </template>
           <el-input
@@ -878,6 +952,7 @@
       size="620px"
       confirm-text="保存充值"
       :confirm-loading="savingBalanceRecord"
+      :show-confirm="canTopupAppleBalance"
       @confirm="saveTopup"
     >
       <AppleAccountDrawerSummary
@@ -968,6 +1043,7 @@
       size="620px"
       confirm-text="保存消费"
       :confirm-loading="savingBalanceRecord"
+      :show-confirm="canAdjustAppleBalance"
       @confirm="saveConsumption"
     >
       <AppleAccountDrawerSummary
@@ -1007,7 +1083,7 @@
             <template #label>
               <FieldHelpLabel
                 label="消费原因"
-                purpose="说明这次余额为什么被扣，方便后续对账。"
+                purpose="说明这次余额为什么被扣，方便之后对账。"
                 example="可以填手工开通、测试扣费、余额修正。"
               />
             </template>
@@ -1038,6 +1114,7 @@
       size="620px"
       confirm-text="保存检测"
       :confirm-loading="savingStatusCheck"
+      :show-confirm="canUpdateAppleAccount"
       @confirm="saveStatusCheck"
     >
       <AppleAccountDrawerSummary
@@ -1068,7 +1145,7 @@
               <template #label>
                 <FieldHelpLabel
                   label="检测结果"
-                  purpose="记录这次账号状态检查的结论，后续自动匹配会参考账号状态。"
+                  purpose="记录这次账号状态检查的结论，之后自动匹配会参考账号状态。"
                   example="能正常登录选正常；需要短信选需验证；密码不对选密码错误。"
                 />
               </template>
@@ -1272,12 +1349,13 @@
     <AppDrawer
       v-model="accountSecretDialogVisible"
       :title="`敏感资料 · ${selectedAccount?.appleIdMasked ?? ''}`"
-      description="完整资料只在必要核对时查看，查看会写入审计日志。"
+      description="完整资料只在必要核对时查看，查看会留下操作记录。"
       eyebrow="敏感资料"
       size="560px"
       confirm-text="查看完整资料"
       confirm-variant="danger"
       :confirm-loading="revealingAccountSecret"
+      :show-confirm="accountSecretOptions.length > 0"
       @closed="resetAccountSecretDialog"
       @confirm="revealAccountSecret"
     >
@@ -1296,10 +1374,10 @@
         :source-channel="selectedAccount.sourceChannel?.name"
       />
       <div class="apple-core-alert apple-core-alert--orange">
-        <StatusChip tone="orange">审计</StatusChip>
+        <StatusChip tone="orange">记录</StatusChip>
         <div>
-          <strong>敏感字段查看会写入审计日志</strong>
-          <p>完整资料只用于必要的业务核对，不会出现在列表、导出和操作日志明文中。</p>
+          <strong>敏感资料查看会留下操作记录</strong>
+          <p>完整资料只用于必要的业务核对，不会在列表、导出和普通记录中完整显示。</p>
         </div>
       </div>
       <div class="drawer-section drawer-section--flush">
@@ -1315,7 +1393,7 @@
             <template #label>
               <FieldHelpLabel
                 label="字段"
-                purpose="选择要查看哪一项敏感资料，每次查看都会单独写审计日志。"
+                purpose="选择要查看哪一项敏感资料，每次查看都会单独记录。"
                 example="只需要登录就选密码；需要安全验证再选密保或手机号。"
               />
             </template>
@@ -1336,7 +1414,7 @@
             <template #label>
               <FieldHelpLabel
                 label="查看原因"
-                purpose="说明为什么要查看完整敏感资料，系统会写入审计日志。"
+                purpose="说明为什么要查看完整敏感资料，系统会保存查看记录。"
                 example="可以填售后登录核对、客户资料变更、安全验证。"
               />
             </template>
@@ -1352,7 +1430,7 @@
               <FieldHelpLabel
                 :label="accountSecretFieldLabel"
                 purpose="展示解密后的敏感内容，仅供本次必要业务处理使用。"
-                example="复制或查看后按实际业务处理，不要粘贴到公开备注或日志里。"
+                example="复制或查看后按实际业务处理，不要粘贴到公开备注或记录里。"
               />
             </template>
             <el-input v-model="accountSecretForm.value" type="textarea" :rows="3" readonly />
@@ -1403,6 +1481,8 @@ import {
   getCurrencyForRegion,
   mergeAppleAccountRegionOptions
 } from '@/utils/appleAccountRegion';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import {
   createSmartQueryKey,
   invalidateSmartQueries,
@@ -1614,6 +1694,14 @@ const secretReadyCount = computed(
         account.hasRecoveryEmail
     ).length
 );
+const canCreateAppleAccount = computed(() => hasAppleAccountPermission('apple.account.create'));
+const canImportAppleAccounts = computed(() => hasAppleAccountPermission('apple.account.import'));
+const canUpdateAppleAccount = computed(() => hasAppleAccountPermission('apple.account.update'));
+const canDeleteAppleAccount = computed(() => hasAppleAccountPermission('apple.account.delete'));
+const canViewAppleBalanceRecords = computed(() => hasAppleAccountPermission('apple.balance.view'));
+const canTopupAppleBalance = computed(() => hasAppleAccountPermission('apple.balance.topup'));
+const canAdjustAppleBalance = computed(() => hasAppleAccountPermission('apple.balance.adjust'));
+const canManageDictionaries = computed(() => hasAppleAccountPermission('data.dictionary.manage'));
 const filterChips = computed(() => {
   const chips: Array<{ key: string; label: string; value: string }> = [];
   const lockedLabel = lockedOptions.find((item) => item.value === query.locked)?.label;
@@ -1943,6 +2031,11 @@ function buildAppleRegionParams(): DataDictionaryQuery {
 }
 
 async function loadAppleRegions() {
+  if (!canManageDictionaries.value) {
+    appleRegionDictionaries.value = [];
+    return;
+  }
+
   try {
     const data = await dataCenterApi.listDictionaries(buildAppleRegionParams());
     appleRegionDictionaries.value = data.items;
@@ -2015,7 +2108,42 @@ function handleSelectionChange(rows: AppleAccount[]) {
 }
 
 function exportList() {
-  ElMessage.info('Apple ID 列表导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedAccounts.value.length ? selectedAccounts.value : accounts.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的 Apple ID 数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'apple-accounts',
+    [
+      { header: 'Apple ID', value: (row) => row.appleIdMasked },
+      {
+        header: '地区/币种',
+        value: (row) => formatAccountRegionCurrency(row.region, row.currency)
+      },
+      { header: '余额', value: (row) => row.currentBalance },
+      { header: '人民币总成本', value: (row) => row.balanceCostAmount },
+      { header: '平均成本', value: (row) => formatAverageCost(row.averageCost) },
+      { header: 'ID 类型', value: (row) => getOwnershipLabel(row.ownershipType) },
+      { header: '售出成本/售价', value: (row) => formatAccountSaleCost(row) },
+      { header: '来源渠道', value: (row) => row.sourceChannel?.name ?? '' },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '手动锁定', value: (row) => (row.isManuallyLocked ? '是' : '否') },
+      { header: '锁定原因', value: (row) => row.manualLockReason ?? '' },
+      { header: '已保存密码', value: (row) => (row.hasPassword ? '是' : '否') },
+      { header: '已保存密保', value: (row) => (row.hasSecurityInfo ? '是' : '否') },
+      { header: '已保存手机号', value: (row) => (row.hasPhone ? '是' : '否') },
+      { header: '已保存备用邮箱', value: (row) => (row.hasRecoveryEmail ? '是' : '否') },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条 Apple ID 数据`);
 }
 
 function handleBatchAction(action: string) {
@@ -2090,6 +2218,11 @@ function handleAccountMoreCommand(command: unknown, account: AppleAccount) {
 }
 
 function openCreate() {
+  if (!canCreateAppleAccount.value) {
+    ElMessage.warning('当前账号没有新增 Apple ID 权限');
+    return;
+  }
+
   editingAccount.value = null;
   resetForm();
   closeAccountActionSurfaces();
@@ -2097,6 +2230,11 @@ function openCreate() {
 }
 
 function openImport() {
+  if (!canImportAppleAccounts.value) {
+    ElMessage.warning('当前账号没有批量导入 Apple ID 权限');
+    return;
+  }
+
   importForm.sourceChannelId = '';
   importForm.accountsText = '';
   importResult.value = null;
@@ -2104,6 +2242,11 @@ function openImport() {
 }
 
 function openEdit(account: AppleAccount) {
+  if (!canUpdateAppleAccount.value) {
+    ElMessage.warning('当前账号没有编辑 Apple ID 权限');
+    return;
+  }
+
   selectedAccount.value = account;
   editingAccount.value = account;
   form.appleId = '';
@@ -2153,9 +2296,11 @@ function resetAccountSecretDialog() {
 }
 
 function canRevealAccountSecret(permission: string) {
-  return (
-    authStore.user?.roles.includes('admin') || authStore.user?.permissions.includes(permission)
-  );
+  return hasAppleAccountPermission(permission);
+}
+
+function hasAppleAccountPermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
 }
 
 function getAccountSecretOptions(account: AppleAccount) {
@@ -2200,6 +2345,17 @@ function getAccountSecretOptions(account: AppleAccount) {
   return options.filter((item) => item.hasValue && canRevealAccountSecret(item.permission));
 }
 
+function hasAccountMoreActions(account: AppleAccount) {
+  return Boolean(
+    getAccountSecretOptions(account).length ||
+    canUpdateAppleAccount.value ||
+    canTopupAppleBalance.value ||
+    canAdjustAppleBalance.value ||
+    canViewAppleBalanceRecords.value ||
+    canDeleteAppleAccount.value
+  );
+}
+
 function closeAccountActionSurfaces() {
   detailDrawerVisible.value = false;
   dialogVisible.value = false;
@@ -2211,6 +2367,11 @@ function closeAccountActionSurfaces() {
 }
 
 function openTopup(account: AppleAccount) {
+  if (!canTopupAppleBalance.value) {
+    ElMessage.warning('当前账号没有充值权限');
+    return;
+  }
+
   selectedAccount.value = account;
   resetTopupForm();
   closeAccountActionSurfaces();
@@ -2218,6 +2379,11 @@ function openTopup(account: AppleAccount) {
 }
 
 function openConsumption(account: AppleAccount) {
+  if (!canAdjustAppleBalance.value) {
+    ElMessage.warning('当前账号没有余额消费权限');
+    return;
+  }
+
   selectedAccount.value = account;
   resetConsumptionForm();
   closeAccountActionSurfaces();
@@ -2225,6 +2391,11 @@ function openConsumption(account: AppleAccount) {
 }
 
 function openStatusCheck(account: AppleAccount) {
+  if (!canUpdateAppleAccount.value) {
+    ElMessage.warning('当前账号没有账号检测权限');
+    return;
+  }
+
   selectedAccount.value = account;
   resetStatusCheckForm(account);
   closeAccountActionSurfaces();
@@ -2247,6 +2418,11 @@ function openAccountSecret(account: AppleAccount) {
 }
 
 async function openRecords(account: AppleAccount) {
+  if (!canViewAppleBalanceRecords.value) {
+    ElMessage.warning('当前账号没有查看余额流水权限');
+    return;
+  }
+
   selectedAccount.value = account;
   closeAccountActionSurfaces();
   recordsDrawerVisible.value = true;
@@ -2277,6 +2453,10 @@ async function loadBalanceRecords() {
   if (!selectedAccount.value) {
     return;
   }
+  if (!canViewAppleBalanceRecords.value) {
+    ElMessage.warning('当前账号没有查看余额流水权限');
+    return;
+  }
 
   recordsLoading.value = true;
   try {
@@ -2294,6 +2474,11 @@ async function loadBalanceRecords() {
 }
 
 async function pasteGiftCardCode() {
+  if (!canTopupAppleBalance.value) {
+    ElMessage.warning('当前账号没有充值权限');
+    return;
+  }
+
   if (!navigator.clipboard?.readText) {
     ElMessage.warning('当前浏览器不支持一键读取剪贴板，请手动粘贴');
     return;
@@ -2315,6 +2500,14 @@ async function pasteGiftCardCode() {
 }
 
 async function saveAccount() {
+  const canSave = editingAccount.value ? canUpdateAppleAccount.value : canCreateAppleAccount.value;
+  if (!canSave) {
+    ElMessage.warning(
+      editingAccount.value ? '当前账号没有编辑 Apple ID 权限' : '当前账号没有新增 Apple ID 权限'
+    );
+    return;
+  }
+
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -2389,6 +2582,11 @@ function normalizeDialCode(value: string) {
 }
 
 async function submitImport() {
+  if (!canImportAppleAccounts.value) {
+    ElMessage.warning('当前账号没有批量导入 Apple ID 权限');
+    return;
+  }
+
   const valid = await importFormRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -2422,6 +2620,11 @@ async function submitImport() {
 }
 
 async function removeAccount(account: AppleAccount) {
+  if (!canDeleteAppleAccount.value) {
+    ElMessage.warning('当前账号没有删除 Apple ID 权限');
+    return;
+  }
+
   try {
     await ElMessageBox.confirm(
       `确认删除 ${account.appleIdMasked} 吗？删除后该 ID 不会再出现在账号列表，也不会被自动匹配订单。`,
@@ -2467,6 +2670,10 @@ async function normalizeSelectedAccountCostIfNeeded() {
     return;
   }
 
+  if (!canUpdateAppleAccount.value) {
+    throw new Error('当前账号旧成本口径需要先由有编辑权限的账号修正后再录入余额');
+  }
+
   const updatedAccount = await appleAccountsApi.update(account.id, {
     currentBalance: account.currentBalance,
     balanceCostAmount: getAccountTotalCostAmount(account)
@@ -2478,6 +2685,11 @@ async function normalizeSelectedAccountCostIfNeeded() {
 }
 
 async function saveTopup() {
+  if (!canTopupAppleBalance.value) {
+    ElMessage.warning('当前账号没有充值权限');
+    return;
+  }
+
   const valid = await topupFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedAccount.value) {
     return;
@@ -2500,7 +2712,9 @@ async function saveTopup() {
     ElMessage.success('充值已保存');
     topupDialogVisible.value = false;
     await refreshSelectedAccount();
-    await loadBalanceRecords();
+    if (canViewAppleBalanceRecords.value) {
+      await loadBalanceRecords();
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存充值失败');
   } finally {
@@ -2509,6 +2723,11 @@ async function saveTopup() {
 }
 
 async function saveConsumption() {
+  if (!canAdjustAppleBalance.value) {
+    ElMessage.warning('当前账号没有余额消费权限');
+    return;
+  }
+
   const valid = await consumptionFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedAccount.value) {
     return;
@@ -2530,7 +2749,9 @@ async function saveConsumption() {
     ElMessage.success('消费已保存');
     consumptionDialogVisible.value = false;
     await refreshSelectedAccount();
-    await loadBalanceRecords();
+    if (canViewAppleBalanceRecords.value) {
+      await loadBalanceRecords();
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存消费失败');
   } finally {
@@ -2539,6 +2760,11 @@ async function saveConsumption() {
 }
 
 async function saveStatusCheck() {
+  if (!canUpdateAppleAccount.value) {
+    ElMessage.warning('当前账号没有账号检测权限');
+    return;
+  }
+
   const valid = await statusCheckFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedAccount.value) {
     return;
@@ -2563,6 +2789,14 @@ async function saveStatusCheck() {
 }
 
 async function revealAccountSecret() {
+  const selectedOption = accountSecretOptions.value.find(
+    (item) => item.value === accountSecretForm.field
+  );
+  if (!selectedOption) {
+    ElMessage.warning('当前账号没有查看该敏感字段权限');
+    return;
+  }
+
   const valid = await accountSecretFormRef.value?.validate().catch(() => false);
   if (!valid || !selectedAccount.value) {
     return;
@@ -2575,7 +2809,7 @@ async function revealAccountSecret() {
       reason: accountSecretForm.reason
     });
     accountSecretForm.value = data.value;
-    ElMessage.success('完整资料已显示，审计日志已记录');
+    ElMessage.success('完整资料已显示，操作记录已保存');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '查看完整资料失败');
   } finally {
@@ -2618,7 +2852,9 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
       background: accounts.value.length > 0,
       force: true
     });
-    void loadAppleRegions();
+    if (canManageDictionaries.value) {
+      void loadAppleRegions();
+    }
   }
 );
 

@@ -294,7 +294,7 @@
               <FieldHelpLabel
                 label="发货方式"
                 purpose="决定订单匹配到兑换码后，系统是自动发货、半自动确认还是完全手工处理。"
-                example="平台接口稳定可选自动；需要人工复制内容选半自动；特殊商品选手工。"
+                example="平台可自动处理时选自动；需要人工复制内容选半自动；特殊商品选手工。"
               />
             </template>
             <el-select v-model="form.deliveryMode" class="full-input">
@@ -616,6 +616,7 @@ import {
   buildCodeServiceDeliveryModeOptions,
   getCodeServiceDeliveryModeLabel as getConfiguredCodeServiceDeliveryModeLabel
 } from '@/utils/codeServiceDeliveryModes';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartMessageTemplates, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
@@ -903,7 +904,32 @@ function removeFilter(key: string) {
 }
 
 function exportList() {
-  ElMessage.info('兑换码业务设置导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedServices.value.length ? selectedServices.value : services.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的兑换码业务设置');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'code-services',
+    [
+      { header: '业务名称', value: (row) => row.name },
+      { header: '面值', value: (row) => row.faceValue },
+      { header: '默认售价', value: (row) => row.defaultPrice },
+      { header: '默认成本', value: (row) => row.defaultCost },
+      { header: '发货模式', value: (row) => getDeliveryModeLabel(row.deliveryMode) },
+      { header: '只允许精确面值', value: (row) => (row.exactFaceValueOnly ? '是' : '否') },
+      { header: '允许组合发货', value: (row) => (row.allowCombination ? '是' : '否') },
+      { header: '状态', value: (row) => getStatusLabel(row.status) },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条兑换码业务设置`);
 }
 
 function handleBatchAction(action: string) {

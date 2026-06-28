@@ -176,10 +176,10 @@ export class AppleAutomationTasksController {
     return result;
   }
 
-  @Post(':id/run-placeholder')
+  @Post(':id/run-manual-review')
   @RequirePermissions('apple.automation_task.manage')
-  async runPlaceholder(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
-    const task = await this.automationTasksService.runPlaceholder(id, operator);
+  async runManualReview(@Param('id') id: string, @CurrentUser() operator?: AuthenticatedUser) {
+    const task = await this.automationTasksService.runManualReview(id, operator);
     this.publishAutomationTaskEvent('apple.automation_task.ran', 'ran', task.id, {
       appleAccountId: task.appleAccountId
     });

@@ -199,6 +199,63 @@ describe('CodeOrdersService', () => {
     expect(prisma.codePlatformOrder.count).toHaveBeenCalled();
   });
 
+  it('lists delivered code orders for after-sale option pickers', async () => {
+    const deliveredOrder = {
+      ...orderBase,
+      deliveryStatus: 'delivered',
+      deliveredAt: new Date('2026-06-18T01:00:00.000Z'),
+      deliveredCodes: [
+        {
+          id: 'delivered-code-id',
+          codeTail: '0001',
+          faceValue: new Prisma.Decimal('100'),
+          cost: new Prisma.Decimal('90'),
+          status: 'delivered'
+        }
+      ]
+    };
+    const findMany = jest.fn().mockResolvedValue([deliveredOrder]);
+    const count = jest.fn().mockResolvedValue(1);
+    const { service } = createService({
+      codePlatformOrder: {
+        findMany,
+        count
+      }
+    } as unknown as Partial<PrismaService>);
+
+    const result = await service.listAfterSaleOrderOptions({
+      page: '1',
+      pageSize: '20',
+      keyword: 'MANUAL'
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        id: deliveredOrder.id,
+        externalOrderNo: deliveredOrder.externalOrderNo,
+        deliveryStatus: 'delivered',
+        deliveredCodeCount: 1
+      })
+    );
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          deliveryStatus: 'delivered',
+          OR: expect.any(Array)
+        }),
+        orderBy: [{ deliveredAt: 'desc' }, { createdAt: 'desc' }]
+      })
+    );
+    expect(count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          deliveryStatus: 'delivered'
+        })
+      })
+    );
+  });
+
   it('locks unsold redeem code for a matched order and calculates profit', async () => {
     const orderAfterLock = {
       ...orderBase,

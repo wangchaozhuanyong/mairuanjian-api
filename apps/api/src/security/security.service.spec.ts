@@ -7,6 +7,7 @@ import { SecurityService } from './security.service';
 
 describe('SecurityService', () => {
   const now = new Date('2026-06-18T00:00:00.000Z');
+  const future = new Date('2099-06-25T00:00:00.000Z');
   const userId = '33333333-3333-4333-8333-333333333333';
   const mfaBase32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
   const authenticatedUser = {
@@ -72,7 +73,7 @@ describe('SecurityService', () => {
       ip: '127.0.0.1',
       userAgent: 'unit-test',
       lastActiveAt: now,
-      expiresAt: new Date('2026-06-25T00:00:00.000Z'),
+      expiresAt: future,
       revokedAt: null,
       createdAt: now,
       user: {
@@ -334,7 +335,7 @@ describe('SecurityService', () => {
     await service.createActiveSession({
       userId,
       accessToken: 'plain.jwt.token',
-      expiresAt: new Date('2026-06-25T00:00:00.000Z'),
+      expiresAt: future,
       ip: '127.0.0.1',
       userAgent: 'unit-test'
     });
@@ -358,7 +359,7 @@ describe('SecurityService', () => {
 
     (prisma.activeSession.findUnique as jest.Mock).mockResolvedValueOnce({
       revokedAt: now,
-      expiresAt: new Date('2026-06-25T00:00:00.000Z')
+      expiresAt: future
     });
 
     await expect(service.isAccessTokenActive('plain.jwt.token')).resolves.toBe(false);

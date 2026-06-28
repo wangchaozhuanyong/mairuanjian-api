@@ -45,7 +45,7 @@
             @remove-filter="removeOperationFilter"
             @save-view="saveOperationTableView"
             @apply-view="applyOperationSavedView"
-            @export="showExportMessage"
+            @export="exportOperationLogs"
           >
             <template #filters>
               <el-input
@@ -191,7 +191,7 @@
             @remove-filter="removeSensitiveFilter"
             @save-view="saveSensitiveTableView"
             @apply-view="applySensitiveSavedView"
-            @export="showExportMessage"
+            @export="exportSensitiveLogs"
           >
             <template #filters>
               <el-input
@@ -364,7 +364,7 @@
             @remove-filter="removeLoginFilter"
             @save-view="saveLoginTableView"
             @apply-view="applyLoginSavedView"
-            @export="showExportMessage"
+            @export="exportLoginLogs"
           >
             <template #filters>
               <el-select
@@ -521,7 +521,7 @@
             @remove-filter="removeExportFilter"
             @save-view="saveExportTableView"
             @apply-view="applyExportSavedView"
-            @export="showExportMessage"
+            @export="exportExportLogs"
           >
             <template #filters>
               <el-input
@@ -691,7 +691,7 @@
             @clear-filters="clearPermissionFilters"
             @save-view="savePermissionTableView"
             @apply-view="applyPermissionSavedView"
-            @export="showExportMessage"
+            @export="exportPermissionLogs"
           />
 
           <el-table
@@ -820,7 +820,7 @@
             @clear-filters="clearAutomationFilters"
             @save-view="saveAutomationTableView"
             @apply-view="applyAutomationSavedView"
-            @export="showExportMessage"
+            @export="exportAutomationLogs"
           />
 
           <el-table
@@ -952,7 +952,7 @@
             @remove-filter="removePlatformFilter"
             @save-view="savePlatformTableView"
             @apply-view="applyPlatformSavedView"
-            @export="showExportMessage"
+            @export="exportPlatformLogs"
           >
             <template #filters>
               <el-select
@@ -1144,6 +1144,7 @@ import type {
   TableDensity,
   UserTableView
 } from '@/types/system';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const route = useRoute();
@@ -2815,8 +2816,217 @@ function mapPlatformSortOrder(order?: 'ascending' | 'descending' | null) {
   return undefined;
 }
 
-function showExportMessage() {
-  ElMessage.info('导出日志会走数据中心导出任务，后续和保存视图一起增强');
+async function fetchAllAuditRows<TItem, TQuery extends { page: number; pageSize: number }>(
+  params: TQuery,
+  fetcher: (query: TQuery) => Promise<PageResult<TItem>>
+) {
+  const pageSize = 100;
+  const rows: TItem[] = [];
+  let page = 1;
+
+  while (true) {
+    const result = await fetcher({
+      ...params,
+      page,
+      pageSize
+    });
+    rows.push(...result.items);
+
+    if (rows.length >= result.total || result.items.length === 0) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return rows;
+}
+
+function getUserLabel(user?: { username: string; displayName: string } | null) {
+  return user?.displayName || user?.username || '';
+}
+
+function requireRowsForExport<TItem>(rows: TItem[], emptyMessage: string) {
+  if (!rows.length) {
+    ElMessage.warning(emptyMessage);
+    return false;
+  }
+
+  return true;
+}
+
+async function exportOperationLogs() {
+  try {
+    const rows = await fetchAllAuditRows(buildOperationParams(), auditLogsApi.operation);
+    if (!requireRowsForExport(rows, '暂无可导出的操作日志')) return;
+
+    const count = exportRowsToCsv(
+      'audit-operation-logs',
+      [
+        { header: '时间', value: (row) => formatDate(row.createdAt) },
+        { header: '用户', value: (row) => getUserLabel(row.user) },
+        { header: '模块', value: (row) => row.module },
+        { header: '动作', value: (row) => row.action },
+        { header: '对象类型', value: (row) => row.objectType ?? '' },
+        { header: '对象ID', value: (row) => row.objectId ?? '' },
+        { header: 'IP', value: (row) => row.ip ?? '' },
+        { header: '备注', value: (row) => row.remark ?? '' }
+      ],
+      rows
+    );
+    ElMessage.success(`已导出 ${count} 条操作日志`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出操作日志失败');
+  }
+}
+
+async function exportSensitiveLogs() {
+  try {
+    const rows = await fetchAllAuditRows(buildSensitiveParams(), auditLogsApi.sensitiveAccess);
+    if (!requireRowsForExport(rows, '暂无可导出的敏感查看日志')) return;
+
+    const count = exportRowsToCsv(
+      'audit-sensitive-access-logs',
+      [
+        { header: '时间', value: (row) => formatDate(row.createdAt) },
+        { header: '用户', value: (row) => getUserLabel(row.user) },
+        { header: '模块', value: (row) => row.module },
+        { header: '字段', value: (row) => row.fieldName },
+        { header: '对象类型', value: (row) => row.objectType },
+        { header: '对象ID', value: (row) => row.objectId ?? '' },
+        { header: '审批', value: (row) => (row.approved ? '已审批' : '未审批') },
+        { header: 'IP', value: (row) => row.ip ?? '' },
+        { header: '原因', value: (row) => row.accessReason ?? '' }
+      ],
+      rows
+    );
+    ElMessage.success(`已导出 ${count} 条敏感查看日志`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出敏感查看日志失败');
+  }
+}
+
+async function exportLoginLogs() {
+  try {
+    const rows = await fetchAllAuditRows(buildLoginParams(), auditLogsApi.login);
+    if (!requireRowsForExport(rows, '暂无可导出的登录日志')) return;
+
+    const count = exportRowsToCsv(
+      'audit-login-logs',
+      [
+        { header: '时间', value: (row) => formatDate(row.createdAt) },
+        { header: '账号', value: (row) => row.username },
+        { header: '状态', value: (row) => getLoginLabel(row.status) },
+        { header: '异常', value: (row) => (row.abnormal ? '是' : '否') },
+        { header: 'IP', value: (row) => row.ip ?? '' },
+        { header: '位置', value: (row) => row.location ?? '' },
+        { header: '失败原因', value: (row) => row.failureReason ?? '' }
+      ],
+      rows
+    );
+    ElMessage.success(`已导出 ${count} 条登录日志`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出登录日志失败');
+  }
+}
+
+async function exportExportLogs() {
+  try {
+    const rows = await fetchAllAuditRows(buildExportParams(), auditLogsApi.exports);
+    if (!requireRowsForExport(rows, '暂无可导出的导出日志')) return;
+
+    const count = exportRowsToCsv(
+      'audit-export-logs',
+      [
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '完成时间', value: (row) => formatDate(row.finishedAt) },
+        { header: '模块', value: (row) => row.module },
+        { header: '状态', value: (row) => getJobLabel(row.status) },
+        { header: '包含敏感字段', value: (row) => (row.containsSensitive ? '是' : '否') },
+        { header: '字段', value: (row) => row.fields.join(', ') },
+        { header: '文件', value: (row) => row.filePath ?? '' },
+        { header: '失败原因', value: (row) => row.errorMessage ?? '' }
+      ],
+      rows
+    );
+    ElMessage.success(`已导出 ${count} 条导出日志`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出日志失败');
+  }
+}
+
+async function exportPermissionLogs() {
+  try {
+    const rows = await fetchAllAuditRows(buildPermissionParams(), auditLogsApi.permissionChanges);
+    if (!requireRowsForExport(rows, '暂无可导出的权限变更日志')) return;
+
+    const count = exportRowsToCsv(
+      'audit-permission-change-logs',
+      [
+        { header: '时间', value: (row) => formatDate(row.createdAt) },
+        { header: '用户', value: (row) => getUserLabel(row.user) },
+        { header: '模块', value: (row) => row.module },
+        { header: '动作', value: (row) => row.action },
+        { header: '对象类型', value: (row) => row.objectType ?? '' },
+        { header: '对象ID', value: (row) => row.objectId ?? '' },
+        { header: '备注', value: (row) => row.remark ?? '' }
+      ],
+      rows
+    );
+    ElMessage.success(`已导出 ${count} 条权限变更日志`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出权限变更日志失败');
+  }
+}
+
+async function exportAutomationLogs() {
+  try {
+    const rows = await fetchAllAuditRows(buildAutomationParams(), auditLogsApi.automationTasks);
+    if (!requireRowsForExport(rows, '暂无可导出的自动化任务日志')) return;
+
+    const count = exportRowsToCsv(
+      'audit-automation-task-logs',
+      [
+        { header: '时间', value: (row) => formatDate(row.createdAt) },
+        { header: '任务类型', value: (row) => getAutomationTaskTypeLabel(row.task?.taskType) },
+        { header: '任务状态', value: (row) => row.task?.status ?? '' },
+        { header: '级别', value: (row) => row.level },
+        { header: '人工验证', value: (row) => (row.task?.manualRequired ? '需要' : '无需') },
+        { header: '消息', value: (row) => row.message },
+        { header: '错误码', value: (row) => row.task?.errorCode ?? '' },
+        { header: '错误说明', value: (row) => row.task?.errorMessage ?? '' }
+      ],
+      rows
+    );
+    ElMessage.success(`已导出 ${count} 条自动化任务日志`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出自动化任务日志失败');
+  }
+}
+
+async function exportPlatformLogs() {
+  try {
+    const rows = await fetchAllAuditRows(buildPlatformParams(), auditLogsApi.platformInterfaces);
+    if (!requireRowsForExport(rows, '暂无可导出的平台接口日志')) return;
+
+    const count = exportRowsToCsv(
+      'audit-platform-interface-logs',
+      [
+        { header: '时间', value: (row) => formatDate(row.finishedAt ?? row.createdAt) },
+        { header: '平台', value: (row) => getPlatformLabel(row.platform) },
+        { header: '接口', value: (row) => row.syncType },
+        { header: '状态', value: (row) => (row.status === 'success' ? '成功' : '失败') },
+        { header: '请求数', value: (row) => row.requestCount },
+        { header: '错误率', value: (row) => row.errorRate },
+        { header: '开始时间', value: (row) => formatDate(row.startedAt) },
+        { header: '失败原因', value: (row) => row.errorMessage ?? '' }
+      ],
+      rows
+    );
+    ElMessage.success(`已导出 ${count} 条平台接口日志`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出平台接口日志失败');
+  }
 }
 
 function getRouteTab(moduleKey: string) {

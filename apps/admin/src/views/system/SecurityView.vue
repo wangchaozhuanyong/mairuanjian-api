@@ -1321,6 +1321,7 @@ import {
   getSecurityIpScopeLabel,
   isSecurityIpScope
 } from '@/utils/systemQuickOptions';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 
 const route = useRoute();
 const activeTab = ref(getInitialTab());
@@ -2894,7 +2895,146 @@ function isApprovalStatus(value: unknown): value is SensitiveAccessApprovalStatu
 }
 
 function showExportMessage() {
-  ElMessage.info('安全中心导出会走数据中心导出任务，后续统一接入');
+  if (activeTab.value === 'loginLogs') {
+    if (!loginLogs.value.length) {
+      ElMessage.warning('暂无可导出的登录日志');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'security-login-logs',
+      [
+        { header: '账号', value: (row) => row.username },
+        { header: '用户', value: (row) => row.user?.displayName ?? '' },
+        { header: '结果', value: (row) => getLoginStatusLabel(row.status) },
+        { header: '异常', value: (row) => (row.abnormal ? '是' : '否') },
+        { header: '失败原因', value: (row) => row.failureReason ?? '' },
+        { header: 'IP', value: (row) => row.ip ?? '' },
+        { header: '位置', value: (row) => row.location ?? '' },
+        { header: 'User-Agent', value: (row) => row.userAgent ?? '' },
+        { header: '时间', value: (row) => formatDate(row.createdAt) }
+      ],
+      loginLogs.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条登录日志`);
+    return;
+  }
+
+  if (activeTab.value === 'sessions') {
+    if (!sessions.value.length) {
+      ElMessage.warning('暂无可导出的在线会话');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'security-active-sessions',
+      [
+        { header: '用户', value: (row) => row.user.displayName },
+        { header: '账号', value: (row) => row.user.username },
+        { header: 'IP', value: (row) => row.ip ?? '' },
+        { header: 'User-Agent', value: (row) => row.userAgent ?? '' },
+        { header: '最近活跃', value: (row) => formatDate(row.lastActiveAt) },
+        { header: '过期时间', value: (row) => formatDate(row.expiresAt) },
+        { header: '状态', value: (row) => (row.revokedAt ? '已下线' : '在线') },
+        { header: '下线时间', value: (row) => formatDate(row.revokedAt) },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) }
+      ],
+      sessions.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条在线会话`);
+    return;
+  }
+
+  if (activeTab.value === 'ip') {
+    if (!ipWhitelists.value.length) {
+      ElMessage.warning('暂无可导出的 IP 规则');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'security-ip-whitelist',
+      [
+        { header: 'IP/CIDR', value: (row) => row.ipOrCidr },
+        { header: '范围', value: (row) => getIpScopeLabel(row.scope) },
+        { header: '启用', value: (row) => (row.enabled ? '是' : '否') },
+        { header: '备注', value: (row) => row.remark ?? '' },
+        {
+          header: '创建人',
+          value: (row) => row.createdBy?.displayName ?? row.createdBy?.username ?? ''
+        },
+        { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      ipWhitelists.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条 IP 规则`);
+    return;
+  }
+
+  if (activeTab.value === 'approvals') {
+    if (!approvals.value.length) {
+      ElMessage.warning('暂无可导出的敏感字段审批');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'security-sensitive-approvals',
+      [
+        { header: '申请人', value: (row) => row.requester.displayName },
+        { header: '模块', value: (row) => row.module },
+        { header: '字段', value: (row) => row.fieldName },
+        { header: '对象类型', value: (row) => row.objectType },
+        { header: '对象ID', value: (row) => row.objectId ?? '' },
+        { header: '原因', value: (row) => row.reason },
+        { header: '状态', value: (row) => getApprovalStatusLabel(row.status) },
+        {
+          header: '审批人',
+          value: (row) => row.approver?.displayName ?? row.approver?.username ?? ''
+        },
+        { header: '审批说明', value: (row) => row.decisionNote ?? '' },
+        { header: '审批时间', value: (row) => formatDate(row.approvedAt) },
+        { header: '过期时间', value: (row) => formatDate(row.expiresAt) },
+        { header: '申请时间', value: (row) => formatDate(row.createdAt) },
+        { header: '更新时间', value: (row) => formatDate(row.updatedAt) }
+      ],
+      approvals.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条敏感字段审批`);
+    return;
+  }
+
+  if (activeTab.value === 'accessLogs') {
+    if (!accessLogs.value.length) {
+      ElMessage.warning('暂无可导出的敏感字段访问日志');
+      return;
+    }
+
+    const count = exportRowsToCsv(
+      'security-sensitive-access-logs',
+      [
+        { header: '用户', value: (row) => row.user?.displayName ?? row.user?.username ?? '' },
+        { header: '模块', value: (row) => row.module },
+        { header: '字段', value: (row) => row.fieldName },
+        { header: '对象类型', value: (row) => row.objectType },
+        { header: '对象ID', value: (row) => row.objectId ?? '' },
+        { header: '已审批', value: (row) => (row.approved ? '是' : '否') },
+        { header: '访问原因', value: (row) => row.accessReason ?? '' },
+        { header: 'IP', value: (row) => row.ip ?? '' },
+        { header: 'User-Agent', value: (row) => row.userAgent ?? '' },
+        { header: '时间', value: (row) => formatDate(row.createdAt) }
+      ],
+      accessLogs.value
+    );
+
+    ElMessage.success(`已导出 ${count} 条敏感字段访问日志`);
+    return;
+  }
+
+  ElMessage.warning('当前页签没有可导出的列表');
 }
 
 function getApprovalStatusLabel(status: string) {

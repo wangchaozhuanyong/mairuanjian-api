@@ -10,13 +10,14 @@ import {
   getModuleDisplayGroup,
   getModuleDisplayHelp,
   getModulePermission,
-  getModuleDisplayTitle
+  getModuleDisplayTitle,
+  menuSections
 } from '@/config/modules';
 import { buildHelpText } from '@/utils/helpText';
+import { canAccessManagementSections, hasUserRoutePermission } from '@/utils/permissions';
 
 const AdminLayout = () => import('@/layouts/AdminLayout.vue');
 const LoginView = () => import('@/views/auth/LoginView.vue');
-const ModulePlaceholderView = () => import('@/views/modules/ModulePlaceholderView.vue');
 const CustomerDetailView = () => import('@/views/common/CustomerDetailView.vue');
 const DashboardView = () => import('@/views/system/DashboardView.vue');
 const LaunchAuditView = () => import('@/views/system/LaunchAuditView.vue');
@@ -124,6 +125,19 @@ type NavigatorConnectionLike = {
 const prefetchedRouteLoaders = new Set<RouteComponentLoader>();
 const pendingRouteLoaderPromises = new Map<RouteComponentLoader, Promise<unknown>>();
 const routeComponentLoaders = new Map<string, RouteComponentLoader>();
+const CUSTOMER_VISIBLE_MODULE_KEYS = new Set(
+  menuSections
+    .filter((section) => !section.adminOnly)
+    .flatMap((section) => section.items.map((item) => item.key))
+);
+const CUSTOMER_ROUTABLE_MODULE_KEYS = new Set([
+  ...CUSTOMER_VISIBLE_MODULE_KEYS,
+  'apple-detail',
+  'renewal-cancel',
+  'renewal-topup',
+  'renewal-waiting-auto'
+]);
+const PUBLIC_SYSTEM_MODULE_KEYS = new Set(['forbidden', 'not-found', 'maintenance-mode']);
 let readyRoutePrefetchStarted = false;
 const SECURITY_CENTER_MODULE_KEYS = new Set([
   'login-logs',
@@ -147,47 +161,56 @@ const SOURCE_OPTIONS_SECTION_ROUTES = [
   {
     name: 'source-platforms-platforms',
     path: '/system/source-platforms/platforms',
-    title: '来源平台'
+    title: '来源平台',
+    permission: 'source_platform.manage'
   },
   {
     name: 'source-platforms-customer-tags',
     path: '/system/source-platforms/customer-tags',
-    title: '客户标签'
+    title: '客户标签',
+    permission: 'data.dictionary.manage'
   },
   {
     name: 'source-platforms-apple-service-categories',
     path: '/system/source-platforms/apple-service-categories',
-    title: 'Apple ID 业务分类'
+    title: 'Apple ID 业务分类',
+    permission: 'data.dictionary.manage'
   },
   {
     name: 'source-platforms-apple-regions',
     path: '/system/source-platforms/apple-regions',
-    title: 'Apple ID 地区/币种'
+    title: 'Apple ID 地区/币种',
+    permission: 'data.dictionary.manage'
   },
   {
     name: 'source-platforms-apple-service-options',
     path: '/system/source-platforms/apple-service-options',
-    title: 'Apple ID 业务选项'
+    title: 'Apple ID 业务选项',
+    permission: 'data.dictionary.manage'
   },
   {
     name: 'source-platforms-code-delivery-methods',
     path: '/system/source-platforms/code-delivery-methods',
-    title: '兑换码发货方式'
+    title: '兑换码发货方式',
+    permission: 'data.dictionary.manage'
   },
   {
     name: 'source-platforms-code-delivery-modes',
     path: '/system/source-platforms/code-delivery-modes',
-    title: '兑换码业务发货模式'
+    title: '兑换码业务发货模式',
+    permission: 'data.dictionary.manage'
   },
   {
     name: 'source-platforms-notification-options',
     path: '/system/source-platforms/notification-options',
-    title: '通知选项'
+    title: '通知选项',
+    permission: 'data.dictionary.manage'
   },
   {
     name: 'source-platforms-system-options',
     path: '/system/source-platforms/system-options',
-    title: '系统与平台选项'
+    title: '系统与平台选项',
+    permission: 'data.dictionary.manage'
   }
 ] as const;
 
@@ -200,7 +223,7 @@ for (const module of allModules) {
 }
 
 routeComponentLoaders.set('/login', LoginView as RouteComponentLoader);
-routeComponentLoaders.set('/system/customers/detail', CustomerDetailView as RouteComponentLoader);
+routeComponentLoaders.set('/customers/detail', CustomerDetailView as RouteComponentLoader);
 for (const sectionRoute of SOURCE_OPTIONS_SECTION_ROUTES) {
   routeComponentLoaders.set(sectionRoute.path, SourcePlatformsView as RouteComponentLoader);
 }
@@ -353,9 +376,10 @@ export function prefetchReadyRouteComponents(priorityRoutePaths: string[] = []) 
   scheduleRoutePrefetch(prefetchNextBatch, ROUTE_PREFETCH_INITIAL_DELAY_MS);
 }
 
-const moduleRoutes = allModules.map((module) => {
+const moduleRoutes = allModules.filter(isRoutableModule).map((module) => {
   const displayModule = getCanonicalDisplayModule(module);
   const legacyRenewalView = LEGACY_RENEWAL_VIEW_BY_MODULE_KEY[module.key];
+  const component = readyPageComponents[module.key as keyof typeof readyPageComponents];
   const meta = {
     title: getModuleDisplayTitle(displayModule),
     group: getModuleDisplayGroup(displayModule),
@@ -364,7 +388,8 @@ const moduleRoutes = allModules.map((module) => {
     help: getModuleDisplayHelp(displayModule),
     moduleKey: module.key,
     permission: getModulePermission(module),
-    status: module.status
+    status: module.status,
+    adminOnly: isModuleAdminOnly(module.key)
   };
 
   if (legacyRenewalView) {
@@ -393,11 +418,18 @@ const moduleRoutes = allModules.map((module) => {
   return {
     path: module.route.replace(/^\//, ''),
     name: module.key,
-    component:
-      readyPageComponents[module.key as keyof typeof readyPageComponents] ?? ModulePlaceholderView,
+    component,
     meta
   };
 });
+
+function isRoutableModule(module: (typeof allModules)[number]) {
+  return module.status === 'ready' || PUBLIC_SYSTEM_MODULE_KEYS.has(module.key);
+}
+
+function isModuleAdminOnly(moduleKey: string) {
+  return !PUBLIC_SYSTEM_MODULE_KEYS.has(moduleKey) && !CUSTOMER_ROUTABLE_MODULE_KEYS.has(moduleKey);
+}
 
 function getCanonicalDisplayModule(module: (typeof allModules)[number]) {
   if (SECURITY_CENTER_MODULE_KEYS.has(module.key)) {
@@ -436,8 +468,9 @@ const sourceOptionsSectionRoutes = SOURCE_OPTIONS_SECTION_ROUTES.map((sectionRou
       example: `例如进入${sectionRoute.title}时，只新增或停用这个板块真实会用到的下拉选项。`
     }),
     moduleKey: 'source-platforms',
-    permission: 'source_platform.view',
+    permission: sectionRoute.permission,
     status: 'ready',
+    adminOnly: true,
     sourceOptionSection: sectionRoute.name.replace('source-platforms-', '')
   }
 }));
@@ -524,12 +557,16 @@ function shouldRedirectToMaintenanceMode(
   return !userRoles.some((role) => allowedRoles.has(role));
 }
 
-function hasRoutePermission(user: CurrentUser | null, permission: unknown) {
-  if (typeof permission !== 'string' || !permission) {
-    return true;
-  }
+function hasRoutePermission(user: CurrentUser | null, permission: unknown): boolean {
+  return hasUserRoutePermission(user, permission);
+}
 
-  return Boolean(user?.roles.includes('admin') || user?.permissions.includes(permission));
+function canAccessAdminOnlyRoute(user: CurrentUser | null) {
+  return canAccessManagementSections(user);
+}
+
+function isAdminOnlyRoute(route: RouteLocationNormalized) {
+  return route.matched.some((record) => Boolean(record.meta.adminOnly));
 }
 
 function startRoutePending() {
@@ -578,13 +615,24 @@ export const router = createRouter({
           redirect: '/codes/delivery-templates'
         },
         {
+          path: 'system/customers',
+          redirect: '/customers'
+        },
+        {
+          path: 'system/customers/detail',
+          redirect: (to) => ({
+            path: '/customers/detail',
+            query: to.query
+          })
+        },
+        {
           path: 'system/work-orders',
-          redirect: '/workspace/work-orders'
+          redirect: '/404'
         },
         ...moduleRoutes,
         ...sourceOptionsSectionRoutes,
         {
-          path: 'system/customers/detail',
+          path: 'customers/detail',
           name: 'customer-detail',
           component: CustomerDetailView,
           meta: {
@@ -663,6 +711,11 @@ function refreshCurrentUserForRoute(targetRoute: RouteLocationNormalized) {
         return;
       }
 
+      if (isAdminOnlyRoute(currentRoute) && !canAccessAdminOnlyRoute(authStore.user)) {
+        void router.replace('/403');
+        return;
+      }
+
       const userRoles = authStore.user.roles ?? [];
       void refreshPublicMaintenanceMode(userRoles, currentRoute.path).then((mode) => {
         if (
@@ -715,6 +768,10 @@ router.beforeEach((to, from) => {
   }
 
   if (!hasRoutePermission(authStore.user, to.meta.permission)) {
+    return '/403';
+  }
+
+  if (isAdminOnlyRoute(to) && !canAccessAdminOnlyRoute(authStore.user)) {
     return '/403';
   }
 

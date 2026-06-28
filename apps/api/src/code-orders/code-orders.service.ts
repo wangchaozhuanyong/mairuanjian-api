@@ -41,6 +41,10 @@ interface ListCodeOrdersQuery extends PaginationQuery {
   sortOrder?: string;
 }
 
+interface ListCodeAfterSaleOrderOptionsQuery extends PaginationQuery {
+  keyword?: string;
+}
+
 interface ListCodeDeliveryLogsQuery extends PaginationQuery {
   keyword?: string;
   platformId?: string;
@@ -150,6 +154,17 @@ export class CodeOrdersService {
         };
       }
     );
+  }
+
+  async listAfterSaleOrderOptions(query: ListCodeAfterSaleOrderOptionsQuery) {
+    return this.list({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword,
+      deliveryStatus: 'delivered',
+      sortBy: 'deliveredAt',
+      sortOrder: 'desc'
+    });
   }
 
   async get(id: string) {

@@ -373,6 +373,7 @@ import {
   getAttachmentBusinessModuleLabel,
   getAttachmentPurposeLabel
 } from '@/utils/systemQuickOptions';
+import { exportRowsToCsv } from '@/utils/exportCsv';
 
 type LoadOptions = { background?: boolean; force?: boolean };
 
@@ -688,7 +689,37 @@ function handleSelectionChange(rows: Attachment[]) {
 }
 
 function exportList() {
-  ElMessage.info('附件导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedAttachments.value.length ? selectedAttachments.value : attachments.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的附件记录');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'attachments',
+    [
+      { header: '文件名', value: (row) => row.originalName },
+      { header: '文件类型', value: (row) => row.mimeType },
+      { header: '大小', value: (row) => row.sizeBytes },
+      {
+        header: '业务模块',
+        value: (row) => formatAttachmentBusinessModule(row.businessModule)
+      },
+      {
+        header: '用途',
+        value: (row) => formatAttachmentPurpose(row.purpose)
+      },
+      { header: '对象类型', value: (row) => row.objectType ?? '' },
+      { header: '对象ID', value: (row) => row.objectId ?? '' },
+      { header: '上传人', value: (row) => row.createdBy?.displayName ?? '' },
+      { header: '备注', value: (row) => row.remark ?? '' },
+      { header: '上传时间', value: (row) => formatDate(row.createdAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条附件记录`);
 }
 
 function handleBatchAction(action: string) {

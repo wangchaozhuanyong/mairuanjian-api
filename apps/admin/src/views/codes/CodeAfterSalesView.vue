@@ -8,7 +8,7 @@
     <section class="content-panel code-compact-list-panel">
       <div class="panel-title-row">
         <PanelTitleHelp
-          title="售后补发队列"
+          title="售后补发列表"
           help="这里处理兑换码发货后的售后。要核对原订单和原码，记录补发的新码、损耗成本、处理结果和责任原因。"
         />
         <div class="inline-actions">
@@ -32,6 +32,7 @@
         :selected-count="selectedAfterSales.length"
         :batch-actions="batchActions"
         :show-date-shortcut="false"
+        :show-primary="canCreateAfterSale"
         primary-label="新增售后单"
         placeholder="搜索订单号、原码尾号、新码尾号、原因"
         @search="handleSearch"
@@ -43,6 +44,15 @@
         @apply-view="applySavedView"
         @export="exportList"
         @batch-action="handleBatchAction"
+      />
+
+      <el-alert
+        v-if="afterSaleCreateNoticeVisible"
+        class="code-operation-notice"
+        type="warning"
+        :title="afterSaleCreateNoticeTitle"
+        :closable="false"
+        show-icon
       />
 
       <el-table
@@ -57,10 +67,12 @@
         <template #empty>
           <div class="apple-core-empty-state">
             <strong>暂无售后补发记录</strong>
-            <span>可以新增售后单，或清空筛选后重新查看售后队列。</span>
+            <span>{{ afterSalesEmptyStateText }}</span>
             <div class="apple-core-empty-state__actions">
               <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-              <AppButton variant="primary" @click="openCreate">新增售后单</AppButton>
+              <AppButton v-if="canCreateAfterSale" variant="primary" @click="openCreate">
+                新增售后单
+              </AppButton>
             </div>
           </div>
         </template>
@@ -125,6 +137,7 @@
             <div class="table-action-group table-action-group--wrap">
               <AppButton variant="ghost" @click="openDetail(row)">详情</AppButton>
               <AppButton
+                v-if="canManageAfterSales"
                 variant="soft"
                 :disabled="row.status !== 'pending' || Boolean(row.newCodeId)"
                 @click="openReissue(row)"
@@ -132,6 +145,7 @@
                 补发
               </AppButton>
               <AppButton
+                v-if="canManageAfterSales"
                 variant="success"
                 :disabled="row.status !== 'pending' || !row.newCodeId"
                 @click="completeAfterSale(row)"
@@ -189,6 +203,7 @@
           <div class="mobile-record-card__actions">
             <AppButton variant="ghost" @click="openDetail(afterSale)">详情</AppButton>
             <AppButton
+              v-if="canManageAfterSales"
               variant="soft"
               :disabled="afterSale.status !== 'pending' || Boolean(afterSale.newCodeId)"
               @click="openReissue(afterSale)"
@@ -196,6 +211,7 @@
               补发
             </AppButton>
             <AppButton
+              v-if="canManageAfterSales"
               variant="success"
               :disabled="afterSale.status !== 'pending' || !afterSale.newCodeId"
               @click="completeAfterSale(afterSale)"
@@ -209,10 +225,12 @@
       <div v-else class="mobile-record-list">
         <div class="apple-core-empty-state">
           <strong>暂无售后补发记录</strong>
-          <span>可以新增售后单，或清空筛选后重新查看售后队列。</span>
+          <span>{{ afterSalesEmptyStateText }}</span>
           <div class="apple-core-empty-state__actions">
             <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
-            <AppButton variant="primary" @click="openCreate">新增售后单</AppButton>
+            <AppButton v-if="canCreateAfterSale" variant="primary" @click="openCreate">
+              新增售后单
+            </AppButton>
           </div>
         </div>
       </div>
@@ -243,7 +261,8 @@
             v-model="createForm.orderId"
             class="full-input"
             filterable
-            placeholder="选择已发货订单"
+            :disabled="!deliveredOrders.length"
+            :placeholder="deliveredOrderSelectPlaceholder"
             @change="handleOrderChange"
           >
             <el-option
@@ -252,6 +271,11 @@
               :label="`${order.externalOrderNo} · ${order.platform.name}`"
               :value="order.id"
             />
+            <template #empty>
+              <div class="code-select-empty">
+                {{ deliveredOrderEmptyText }}
+              </div>
+            </template>
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -262,20 +286,31 @@
               example="客户发来尾号 1234，就选择尾号 1234 的原兑换码。"
             />
           </template>
-          <el-select v-model="createForm.originalCodeId" class="full-input" clearable>
+          <el-select
+            v-model="createForm.originalCodeId"
+            class="full-input"
+            clearable
+            :disabled="!selectedOrder?.deliveredCodes.length"
+            :placeholder="originalCodeSelectPlaceholder"
+          >
             <el-option
               v-for="code in selectedOrder?.deliveredCodes ?? []"
               :key="code.id"
               :label="`尾号 ${code.codeTail} · 面值 ${code.faceValue}`"
               :value="code.id"
             />
+            <template #empty>
+              <div class="code-select-empty">
+                {{ originalCodeEmptyText }}
+              </div>
+            </template>
           </el-select>
         </el-form-item>
         <el-form-item prop="reason">
           <template #label>
             <FieldHelpLabel
               label="售后原因"
-              purpose="说明为什么创建售后单，后续补发、退款和利润损耗会参考它。"
+              purpose="说明为什么创建售后单，之后补发、退款和利润损耗会参考它。"
               example="可以写客户反馈兑换失败、码已被使用、发错面值。"
             />
           </template>
@@ -289,7 +324,14 @@
       </el-form>
       <template #footer>
         <AppButton @click="createDialogVisible = false">取消</AppButton>
-        <AppButton variant="primary" :loading="saving" @click="saveAfterSale">保存</AppButton>
+        <AppButton
+          v-if="canCreateAfterSale"
+          variant="primary"
+          :loading="saving"
+          @click="saveAfterSale"
+        >
+          保存
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -321,7 +363,7 @@
             <FieldHelpLabel
               label="发货方式"
               purpose="记录本次补发实际通过什么方式发给客户。"
-              example="人工复制给客户选手工发货；平台电子凭证接口发出选电子凭证。"
+              example="人工复制给客户选手工发货；通过电子凭证渠道发出选电子凭证。"
             />
           </template>
           <el-select v-model="reissueForm.deliveryMethod" class="full-input">
@@ -352,7 +394,7 @@
           <template #label>
             <FieldHelpLabel
               label="本次补发内容"
-              purpose="系统本次生成的补发内容，确认后会记录到补发日志里。"
+              purpose="系统本次生成的补发内容，确认后会保存到补发记录里。"
               example="复制给客户前先核对新码面值、数量和订单号。"
             />
           </template>
@@ -361,7 +403,12 @@
       </el-form>
       <template #footer>
         <AppButton @click="reissueDialogVisible = false">关闭</AppButton>
-        <AppButton variant="soft" :loading="reissuing" @click="reissueAfterSale">
+        <AppButton
+          v-if="canManageAfterSales"
+          variant="soft"
+          :loading="reissuing"
+          @click="reissueAfterSale"
+        >
           确认补发
         </AppButton>
       </template>
@@ -421,6 +468,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import TableToolbar from '@/components/ui/TableToolbar.vue';
 import { CODE_DELIVERY_METHOD_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
+import { useAuthStore } from '@/stores/auth';
 import type {
   CodeAfterSale,
   CodeDeliveryLog,
@@ -431,6 +479,8 @@ import type {
   UserTableView
 } from '@/types/system';
 import { buildCodeDeliveryMethodOptions } from '@/utils/codeDeliveryMethods';
+import { exportRowsToCsv } from '@/utils/exportCsv';
+import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'code_after_sales';
@@ -450,6 +500,7 @@ const afterSaleColumnOptions = [
 ];
 const batchActions = [{ label: '批量导出', value: 'export' }];
 
+const authStore = useAuthStore();
 const loading = ref(false);
 const saving = ref(false);
 const reissuing = ref(false);
@@ -472,6 +523,7 @@ const total = ref(0);
 const createFormRef = ref<FormInstance>();
 const activeAfterSalesQueryKey = ref('');
 const activeDeliveryMethodsQueryKey = ref('');
+const deliveredOrdersLoaded = ref(false);
 
 const query = reactive({
   page: 1,
@@ -502,6 +554,40 @@ const pendingCount = computed(
 const reissuedCount = computed(() => afterSales.value.filter((item) => item.newCodeId).length);
 const completedCount = computed(
   () => afterSales.value.filter((item) => item.status === 'completed').length
+);
+const canManageAfterSales = computed(() => hasAfterSalePermission('code.after_sale.manage'));
+const canManageDictionaries = computed(() => hasAfterSalePermission('data.dictionary.manage'));
+const canCreateAfterSale = computed(() => canManageAfterSales.value);
+const afterSaleCreateNoticeVisible = computed(
+  () =>
+    !canCreateAfterSale.value ||
+    (canCreateAfterSale.value && deliveredOrdersLoaded.value && deliveredOrders.value.length === 0)
+);
+const afterSaleCreateNoticeTitle = computed(() => {
+  if (!canManageAfterSales.value) {
+    return '当前账号只有查看售后记录权限，不能新增、补发或完成售后单。';
+  }
+
+  if (deliveredOrdersLoaded.value && deliveredOrders.value.length === 0) {
+    return '目前没有可售后处理的已发货订单；先完成兑换码订单发货后，再新增售后补发。';
+  }
+
+  return '';
+});
+const afterSalesEmptyStateText = computed(() =>
+  canCreateAfterSale.value
+    ? '可以新增售后单，或清空筛选后重新查看售后列表。'
+    : '当前筛选范围暂无售后记录；如需新增或补发，请先开通售后管理权限。'
+);
+const deliveredOrderSelectPlaceholder = computed(() =>
+  deliveredOrders.value.length ? '选择已发货订单' : '暂无可售后订单'
+);
+const deliveredOrderEmptyText = computed(() => '暂无已发货订单可选');
+const originalCodeSelectPlaceholder = computed(() =>
+  selectedOrder.value ? '选择原兑换码' : '请先选择已发货订单'
+);
+const originalCodeEmptyText = computed(() =>
+  selectedOrder.value ? '该订单暂无已发货兑换码可选' : '请先选择已发货订单'
 );
 const tableSize = computed(() =>
   density.value === 'compact' ? 'small' : density.value === 'loose' ? 'large' : 'default'
@@ -596,12 +682,23 @@ async function loadAfterSales(options: { background?: boolean; force?: boolean }
 }
 
 async function loadDeliveredOrders() {
-  const data = await codeOrdersApi.list({
-    page: 1,
-    pageSize: 100,
-    deliveryStatus: 'delivered'
-  });
-  deliveredOrders.value = data.items;
+  deliveredOrdersLoaded.value = false;
+
+  if (!canManageAfterSales.value) {
+    deliveredOrders.value = [];
+    deliveredOrdersLoaded.value = true;
+    return;
+  }
+
+  try {
+    const data = await codeOrdersApi.listAfterSaleOptions({
+      page: 1,
+      pageSize: 100
+    });
+    deliveredOrders.value = data.items;
+  } finally {
+    deliveredOrdersLoaded.value = true;
+  }
 }
 
 function buildDeliveryMethodParams(): DataDictionaryQuery {
@@ -619,6 +716,11 @@ function applyDeliveryMethodResult(data: PageResult<DataDictionary>) {
 }
 
 async function loadDeliveryMethods(options: { background?: boolean; force?: boolean } = {}) {
+  if (!canManageDictionaries.value) {
+    deliveryMethodDictionaries.value = [];
+    return;
+  }
+
   const params = buildDeliveryMethodParams();
   const key = createSmartQueryKey('code-after-sale-delivery-methods', params);
   const cached = getSmartQueryData<PageResult<DataDictionary>>(key);
@@ -686,11 +788,38 @@ function clearFilters() {
 
 function removeFilter(key: string) {
   void key;
-  // 当前售后列表暂无额外筛选项，保留钩子便于后续扩展。
 }
 
 function exportList() {
-  ElMessage.info('售后补发导出会进入数据中心导出任务，后续统一接入');
+  const rows = selectedAfterSales.value.length ? selectedAfterSales.value : afterSales.value;
+
+  if (!rows.length) {
+    ElMessage.warning('暂无可导出的售后补发数据');
+    return;
+  }
+
+  const count = exportRowsToCsv(
+    'code-after-sales',
+    [
+      { header: '售后单', value: (row) => row.id.slice(0, 8) },
+      { header: '订单号', value: (row) => row.order.externalOrderNo },
+      { header: '平台', value: (row) => row.order.platform.name },
+      { header: '业务', value: (row) => row.order.service?.name ?? '' },
+      { header: '商品', value: (row) => row.order.itemTitle ?? '' },
+      { header: 'SKU', value: (row) => row.order.skuName ?? '' },
+      { header: '原码尾号', value: (row) => row.originalCode.codeTail },
+      { header: '新码尾号', value: (row) => row.newCode?.codeTail ?? '' },
+      { header: '补发成本', value: (row) => row.newCode?.cost ?? '0.00' },
+      { header: '原因', value: (row) => row.reason },
+      { header: '状态', value: (row) => getAfterSaleStatusLabel(row.status) },
+      { header: '处理人', value: (row) => row.handledBy?.displayName ?? '' },
+      { header: '创建时间', value: (row) => formatDate(row.createdAt) },
+      { header: '完成时间', value: (row) => formatDate(row.completedAt) }
+    ],
+    rows
+  );
+
+  ElMessage.success(`已导出 ${count} 条售后补发数据`);
 }
 
 function handleBatchAction(action: string) {
@@ -801,6 +930,11 @@ function mapSortOrder(order?: 'ascending' | 'descending' | null) {
 }
 
 function openCreate() {
+  if (!canCreateAfterSale.value) {
+    ElMessage.warning('当前账号没有新增售后单权限');
+    return;
+  }
+
   createForm.orderId = deliveredOrders.value[0]?.id ?? '';
   createForm.originalCodeId = '';
   createForm.reason = '';
@@ -815,6 +949,11 @@ function handleOrderChange() {
 }
 
 async function saveAfterSale() {
+  if (!canCreateAfterSale.value) {
+    ElMessage.warning('当前账号没有新增售后单权限');
+    return;
+  }
+
   const valid = await createFormRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -843,6 +982,11 @@ function openDetail(afterSale: CodeAfterSale) {
 }
 
 function openReissue(afterSale: CodeAfterSale) {
+  if (!canManageAfterSales.value) {
+    ElMessage.warning('当前账号没有售后补发权限');
+    return;
+  }
+
   selectedAfterSale.value = afterSale;
   generatedContent.value = '';
   reissueForm.deliveryMethod = getDefaultDeliveryMethod();
@@ -852,6 +996,10 @@ function openReissue(afterSale: CodeAfterSale) {
 
 async function reissueAfterSale() {
   if (!selectedAfterSale.value) {
+    return;
+  }
+  if (!canManageAfterSales.value) {
+    ElMessage.warning('当前账号没有售后补发权限');
     return;
   }
 
@@ -873,6 +1021,11 @@ async function reissueAfterSale() {
 }
 
 async function completeAfterSale(afterSale: CodeAfterSale) {
+  if (!canManageAfterSales.value) {
+    ElMessage.warning('当前账号没有完成售后单权限');
+    return;
+  }
+
   try {
     await ElMessageBox.confirm('确认该售后补发已经处理完成？', '完成售后', {
       confirmButtonText: '确认完成',
@@ -890,6 +1043,10 @@ async function completeAfterSale(afterSale: CodeAfterSale) {
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '完成售后单失败');
   }
+}
+
+function hasAfterSalePermission(permission: string) {
+  return hasUserPermission(authStore.user, permission);
 }
 
 async function initializePage() {
@@ -926,6 +1083,18 @@ onBeforeUnmount(stopRealtimeRefresh);
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: min(620px, 100%);
+}
+
+.code-operation-notice {
+  margin: 12px 0 14px;
+}
+
+.code-select-empty {
+  min-width: 240px;
+  padding: 10px 12px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 @media (max-width: 840px) {

@@ -37,6 +37,18 @@ export class CodeServicesController {
     });
   }
 
+  @Get('order-options')
+  @RequirePermissions('code.order.view')
+  listOrderOptions() {
+    return this.codeServicesService.listOperationOptions();
+  }
+
+  @Get('inventory-options')
+  @RequirePermissions('code.inventory.view')
+  listInventoryOptions() {
+    return this.codeServicesService.listOperationOptions();
+  }
+
   @Get(':id')
   @RequirePermissions('code.service.manage')
   get(@Param('id') id: string) {
