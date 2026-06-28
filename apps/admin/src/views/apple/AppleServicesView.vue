@@ -1268,7 +1268,12 @@
         </el-form-item>
         <div class="form-grid">
           <el-form-item required label="业务平台">
-            <el-select v-model="officialSourceForm.provider" class="full-input" filterable>
+            <el-select
+              v-model="officialSourceForm.provider"
+              class="full-input"
+              filterable
+              @change="handleOfficialSourceProviderChange"
+            >
               <el-option
                 v-for="option in officialProviderOptions"
                 :key="option.value"
@@ -1278,7 +1283,21 @@
             </el-select>
           </el-form-item>
           <el-form-item required label="地区">
-            <el-input v-model.trim="officialSourceForm.region" placeholder="US" />
+            <el-select
+              v-model="officialSourceForm.region"
+              class="full-input"
+              allow-create
+              default-first-option
+              filterable
+              @change="handleOfficialSourceRegionChange"
+            >
+              <el-option
+                v-for="region in officialSourceRegionOptions"
+                :key="region.value"
+                :label="region.label"
+                :value="region.region"
+              />
+            </el-select>
           </el-form-item>
         </div>
         <div class="form-grid">
@@ -1292,7 +1311,10 @@
           </el-form-item>
         </div>
         <el-form-item label="官方地址">
-          <el-input v-model.trim="officialSourceForm.sourceUrl" placeholder="https://..." />
+          <el-input
+            v-model.trim="officialSourceForm.sourceUrl"
+            :placeholder="officialSourceRecommendedUrl || 'https://...'"
+          />
         </el-form-item>
         <div class="form-grid">
           <el-form-item label="采集方式">
@@ -1419,7 +1441,11 @@ import {
   dataCenterApi,
   userTableViewsApi
 } from '@/api/system';
-import type { AppleOfficialPriceProviderCatalogRegion, DataDictionaryQuery } from '@/api/system';
+import type {
+  AppleOfficialPriceProviderCatalogProvider,
+  AppleOfficialPriceProviderCatalogRegion,
+  DataDictionaryQuery
+} from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
@@ -1517,6 +1543,12 @@ interface OfficialCollectedServiceOption {
   sourceLabel: string;
 }
 
+type OfficialProviderCatalogOption = Pick<
+  AppleOfficialPriceProviderCatalogProvider,
+  'label' | 'shortLabel' | 'value'
+> &
+  Partial<Pick<AppleOfficialPriceProviderCatalogProvider, 'regions' | 'sourceUrl'>>;
+
 interface BulkRemoveOfficialRecordsOptions<TRecord extends { id: string }> {
   rows: TRecord[];
   deleteKey: string;
@@ -1541,10 +1573,25 @@ const officialProviderOptions = [
   { label: 'Claude / Anthropic', value: 'claude' },
   { label: '自定义', value: 'custom' }
 ];
-const fallbackOfficialAutoProviderOptions = [
-  { label: 'ChatGPT / OpenAI', shortLabel: 'ChatGPT', value: 'chatgpt' },
-  { label: 'Gemini / Google', shortLabel: 'Gemini', value: 'gemini' },
-  { label: 'Claude / Anthropic', shortLabel: 'Claude', value: 'claude' }
+const fallbackOfficialAutoProviderOptions: OfficialProviderCatalogOption[] = [
+  {
+    label: 'ChatGPT / OpenAI',
+    shortLabel: 'ChatGPT',
+    sourceUrl: 'https://chatgpt.com/pricing/',
+    value: 'chatgpt'
+  },
+  {
+    label: 'Gemini / Google',
+    shortLabel: 'Gemini',
+    sourceUrl: 'https://one.google.com/intl/en_us/about/google-ai-plans/',
+    value: 'gemini'
+  },
+  {
+    label: 'Claude / Anthropic',
+    shortLabel: 'Claude',
+    sourceUrl: 'https://claude.com/pricing',
+    value: 'claude'
+  }
 ];
 const fallbackOfficialAutoRegionOptions: AppleOfficialPriceProviderCatalogRegion[] = [
   { label: '美国 USD', value: 'US:USD', region: 'US', currency: 'USD' },
@@ -1645,7 +1692,9 @@ const selectedOfficialBatchItems = ref<AppleOfficialPriceCheckBatchItem[]>([]);
 const officialPriceOptionReviews = ref<ApplePriceChangeReview[]>([]);
 const officialPriceOptionSnapshots = ref<AppleOfficialPriceSnapshot[]>([]);
 const officialPriceBatch = ref<AppleOfficialPriceCheckBatch | null>(null);
-const officialProviderCatalogProviders = ref(fallbackOfficialAutoProviderOptions);
+const officialProviderCatalogProviders = ref<OfficialProviderCatalogOption[]>(
+  fallbackOfficialAutoProviderOptions
+);
 const officialProviderCatalogRegions = ref(fallbackOfficialAutoRegionOptions);
 const officialSourceTotal = ref(0);
 const officialReviewTotal = ref(0);
@@ -1866,6 +1915,23 @@ const officialAutoProviderOptions = computed(() =>
   safeArray(officialProviderCatalogProviders.value)
 );
 const officialAutoRegionOptions = computed(() => safeArray(officialProviderCatalogRegions.value));
+const officialSourceProviderPreset = computed(() =>
+  getOfficialProviderCatalogOption(officialSourceForm.provider)
+);
+const officialSourceRegionOptions = computed(() =>
+  safeArray(officialSourceProviderPreset.value?.regions).length
+    ? safeArray(officialSourceProviderPreset.value?.regions)
+    : officialAutoRegionOptions.value
+);
+const officialSourceRecommendedRegion = computed(() =>
+  getOfficialSourceRegionPreset(officialSourceForm.provider, officialSourceForm.region)
+);
+const officialSourceRecommendedUrl = computed(
+  () =>
+    officialSourceRecommendedRegion.value?.sourceUrl ||
+    officialSourceProviderPreset.value?.sourceUrl ||
+    ''
+);
 const officialCountryOptions = computed(() => {
   const optionMap = new Map<string, { currency: string; label: string; value: string }>();
 
@@ -3445,7 +3511,9 @@ async function loadOfficialProviderCatalog() {
     officialProviderCatalogProviders.value = providers.length
       ? providers.map((provider) => ({
           label: provider.label,
+          regions: provider.regions,
           shortLabel: provider.shortLabel,
+          sourceUrl: provider.sourceUrl,
           value: provider.value
         }))
       : fallbackOfficialAutoProviderOptions;
@@ -3654,16 +3722,73 @@ function resetOfficialSourceForm() {
   officialSourceForm.region = 'US';
   officialSourceForm.currency = 'USD';
   officialSourceForm.sourceUrl = '';
-  officialSourceForm.collectMethod = 'manual';
+  officialSourceForm.collectMethod = 'webpage';
   officialSourceForm.checkIntervalHours = 24;
   officialSourceForm.status = 'enabled';
   officialSourceForm.remark = '';
+  applyOfficialSourcePreset({ forceName: true, forceUrl: true });
 }
 
 function openCreateOfficialSource() {
   editingOfficialSource.value = null;
   resetOfficialSourceForm();
   officialSourceDialogVisible.value = true;
+}
+
+function handleOfficialSourceProviderChange() {
+  applyOfficialSourcePreset({ forceName: true, forceUrl: true });
+}
+
+function handleOfficialSourceRegionChange() {
+  applyOfficialSourcePreset({ forceName: true, forceUrl: true });
+}
+
+function getOfficialProviderCatalogOption(provider?: string | null) {
+  return safeArray(officialProviderCatalogProviders.value).find((item) => item.value === provider);
+}
+
+function getOfficialSourceRegionPreset(provider?: string | null, region?: string | null) {
+  const normalizedRegion = normalizeOfficialReviewCode(region);
+  if (!normalizedRegion) return null;
+
+  return (
+    safeArray(getOfficialProviderCatalogOption(provider)?.regions).find(
+      (item) => normalizeOfficialReviewCode(item.region) === normalizedRegion
+    ) ??
+    safeArray(officialProviderCatalogRegions.value).find(
+      (item) => normalizeOfficialReviewCode(item.region) === normalizedRegion
+    ) ??
+    null
+  );
+}
+
+function applyOfficialSourcePreset(options: { forceName?: boolean; forceUrl?: boolean } = {}) {
+  if (editingOfficialSource.value) return;
+
+  const provider = officialSourceForm.provider;
+  const providerOption = getOfficialProviderCatalogOption(provider);
+  const regionPreset = getOfficialSourceRegionPreset(provider, officialSourceForm.region);
+  const normalizedRegion =
+    normalizeOfficialReviewCode(regionPreset?.region) ||
+    normalizeOfficialReviewCode(officialSourceForm.region) ||
+    'US';
+  const normalizedCurrency =
+    normalizeOfficialReviewCode(regionPreset?.currency) ||
+    normalizeOfficialReviewCode(officialSourceForm.currency) ||
+    'USD';
+  const sourceUrl = regionPreset?.sourceUrl || providerOption?.sourceUrl || '';
+
+  officialSourceForm.region = normalizedRegion;
+  officialSourceForm.currency = normalizedCurrency;
+  if (options.forceUrl || !officialSourceForm.sourceUrl.trim()) {
+    officialSourceForm.sourceUrl = sourceUrl;
+  }
+  if (options.forceName || !officialSourceForm.name.trim()) {
+    officialSourceForm.name = `${getProviderLabel(provider)} 官方价格 ${normalizedRegion}/${normalizedCurrency}`;
+  }
+  if (sourceUrl && officialSourceForm.collectMethod === 'manual') {
+    officialSourceForm.collectMethod = 'webpage';
+  }
 }
 
 function openEditOfficialSource(source: AppleOfficialPriceSource) {

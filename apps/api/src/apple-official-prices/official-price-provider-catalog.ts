@@ -107,7 +107,7 @@ export const OFFICIAL_PRICE_PROVIDER_PROFILES: Record<
 > = {
   chatgpt: {
     label: 'ChatGPT / OpenAI',
-    sourceUrl: 'https://chatgpt.com/pricing',
+    sourceUrl: 'https://chatgpt.com/pricing/',
     hosts: ['chatgpt.com', 'openai.com'],
     defaultRegions: COMMON_OFFICIAL_PRICE_REGIONS,
     plans: [
@@ -197,8 +197,8 @@ export const OFFICIAL_PRICE_PROVIDER_PROFILES: Record<
   },
   claude: {
     label: 'Claude / Anthropic',
-    sourceUrl: 'https://www.anthropic.com/pricing',
-    hosts: ['anthropic.com', 'claude.ai'],
+    sourceUrl: 'https://claude.com/pricing',
+    hosts: ['claude.com', 'anthropic.com', 'claude.ai'],
     defaultRegions: COMMON_OFFICIAL_PRICE_REGIONS,
     plans: [
       {

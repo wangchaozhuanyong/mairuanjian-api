@@ -904,21 +904,21 @@ const fallbackOfficialProviderOptions: AppleOfficialPriceProviderCatalogProvider
     label: 'ChatGPT / OpenAI',
     shortLabel: 'ChatGPT',
     value: 'chatgpt',
-    sourceUrl: 'https://openai.com/chatgpt/pricing/',
+    sourceUrl: 'https://chatgpt.com/pricing/',
     regions: fallbackOfficialRegionOptions
   },
   {
     label: 'Gemini / Google',
     shortLabel: 'Gemini',
     value: 'gemini',
-    sourceUrl: 'https://gemini.google/advanced/',
+    sourceUrl: 'https://one.google.com/intl/en_us/about/google-ai-plans/',
     regions: fallbackOfficialRegionOptions
   },
   {
     label: 'Claude / Anthropic',
     shortLabel: 'Claude',
     value: 'claude',
-    sourceUrl: 'https://www.anthropic.com/pricing',
+    sourceUrl: 'https://claude.com/pricing',
     regions: fallbackOfficialRegionOptions
   }
 ];

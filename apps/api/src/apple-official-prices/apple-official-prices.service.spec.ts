@@ -111,6 +111,50 @@ describe('AppleOfficialPricesService', () => {
       status: 'running',
       startedAt: now
     };
+    const checkBatch = {
+      id: '99999999-9999-4999-8999-999999999999',
+      scopeKey: 'chatgpt:manual:false:chatgpt:US:USD',
+      provider: 'chatgpt',
+      trigger: 'manual',
+      scanRemovedPlans: false,
+      status: 'queued',
+      totalCount: 1,
+      completedCount: 0,
+      successCount: 0,
+      failedCount: 0,
+      manualRequiredCount: 0,
+      snapshotCount: 0,
+      reviewCount: 0,
+      pendingReviewCount: 0,
+      message: '已创建 1 个官方价格采集任务',
+      errorMessage: null,
+      createdByUserId: userId,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      items: [
+        {
+          id: '99999999-9999-4999-8999-999999999991',
+          batchId: '99999999-9999-4999-8999-999999999999',
+          sourceId,
+          sourceName: currentSource.name,
+          provider: currentSource.provider,
+          region: currentSource.region,
+          currency: currentSource.currency,
+          status: 'queued',
+          taskId: null,
+          snapshotCount: 0,
+          reviewCount: 0,
+          message: null,
+          errorMessage: null,
+          startedAt: null,
+          finishedAt: null,
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    };
     const snapshot = {
       id: snapshotId,
       sourceId,
@@ -307,6 +351,10 @@ describe('AppleOfficialPricesService', () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 1 })
       },
       appleOfficialPriceCheckBatch: {
+        create: jest.fn().mockResolvedValue(checkBatch),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue(checkBatch),
         update: jest.fn().mockResolvedValue({
           id: '99999999-9999-4999-8999-999999999999',
           scopeKey: 'chatgpt:us',
@@ -754,6 +802,53 @@ describe('AppleOfficialPricesService', () => {
     );
   });
 
+  it('recreates explicitly selected provider sources even after the source was deleted', async () => {
+    const { service, prisma } = createService();
+    const sourceModel = prisma.appleOfficialPriceSource as unknown as {
+      create: jest.Mock;
+      findFirst: jest.Mock;
+    };
+    const systemParameterModel = prisma.systemParameter as unknown as {
+      findUnique: jest.Mock;
+      upsert: jest.Mock;
+    };
+    sourceModel.findFirst.mockResolvedValue(null);
+    systemParameterModel.findUnique.mockResolvedValue({
+      value: { keys: ['chatgpt:US:USD'] }
+    });
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation((() => 0) as never);
+
+    const result = await service.startProviderCheckBatch(
+      'chatgpt',
+      { regions: [{ region: 'US', currency: 'USD' }], trigger: 'manual' },
+      operator
+    );
+
+    expect(result.totalCount).toBe(1);
+    expect(sourceModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          provider: 'chatgpt',
+          priceSourceType: 'official_web',
+          region: 'US',
+          currency: 'USD',
+          sourceUrl: 'https://chatgpt.com/pricing/',
+          collectMethod: 'webpage',
+          status: 'enabled'
+        })
+      })
+    );
+    expect(systemParameterModel.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'apple_official_price_deleted_source_keys' },
+        update: expect.objectContaining({
+          value: expect.objectContaining({ keys: [] })
+        })
+      })
+    );
+    expect(setTimeoutSpy).toHaveBeenCalled();
+  });
+
   it('returns the provider catalog used by the automated collection UI', () => {
     const { service } = createService();
 
@@ -765,7 +860,10 @@ describe('AppleOfficialPricesService', () => {
       'claude'
     ]);
     expect(catalog.providers.find((provider) => provider.value === 'chatgpt')?.sourceUrl).toBe(
-      'https://chatgpt.com/pricing'
+      'https://chatgpt.com/pricing/'
+    );
+    expect(catalog.providers.find((provider) => provider.value === 'claude')?.sourceUrl).toBe(
+      'https://claude.com/pricing'
     );
     expect(catalog.regions).toEqual(
       expect.arrayContaining([

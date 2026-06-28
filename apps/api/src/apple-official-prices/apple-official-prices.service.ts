@@ -2063,7 +2063,7 @@ export class AppleOfficialPricesService {
         sourceUrl:
           item.sourceUrl === undefined ? null : (this.normalizeNullableUrl(item.sourceUrl) ?? null)
       }))
-    ).filter((region) => !isBlocked(region));
+    );
   }
 
   private dedupeProviderRegions(regions: OfficialPriceProviderRegion[]) {
