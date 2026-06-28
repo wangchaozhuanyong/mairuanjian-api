@@ -956,6 +956,7 @@ export const menuSections: MenuSection[] = [
       'apple-list',
       'balance-reconciliation',
       'finance-center',
+      'apple-automation',
       'apple-reports'
     ])
   },
