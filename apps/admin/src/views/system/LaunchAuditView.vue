@@ -138,7 +138,26 @@
         </div>
       </div>
 
+      <ListRequestError
+        v-if="launchAuditLoadError && filteredItems.length"
+        title="上线检查清单刷新失败"
+        :message="launchAuditLoadError"
+        @retry="() => loadChecklist({ force: true })"
+      />
+
       <el-table v-loading="loading" class="desktop-data-table" :data="filteredItems" row-key="id">
+        <template #empty>
+          <ListRequestError
+            v-if="launchAuditLoadError"
+            title="上线检查清单加载失败"
+            :message="launchAuditLoadError"
+            @retry="() => loadChecklist({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
+            <strong>暂无检查项</strong>
+            <span>调整筛选或刷新清单后查看上线门禁。</span>
+          </div>
+        </template>
         <el-table-column label="检查项" min-width="280">
           <template #default="{ row }">
             <strong>{{ row.title }}</strong>
@@ -286,6 +305,17 @@
           </div>
         </article>
       </div>
+      <div
+        v-else-if="!loading && launchAuditLoadError"
+        class="mobile-record-list"
+        aria-label="上线检查清单加载失败"
+      >
+        <ListRequestError
+          title="上线检查清单加载失败"
+          :message="launchAuditLoadError"
+          @retry="() => loadChecklist({ force: true })"
+        />
+      </div>
       <div v-else-if="!loading" class="mobile-record-list">
         <div class="apple-core-empty-state">
           <strong>暂无检查项</strong>
@@ -302,12 +332,14 @@ import { ElMessage } from 'element-plus';
 import { maintenanceApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { LaunchChecklistItem, LaunchChecklistStatus } from '@/types/system';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, invalidateSmartQueries, refreshSmartQuery } from '@/utils/smartQuery';
 
 const LAUNCH_AUDIT_SCOPE = 'launch-audit';
@@ -315,6 +347,7 @@ const loading = ref(false);
 const saving = ref(false);
 const dirty = ref(false);
 const items = ref<LaunchChecklistItem[]>([]);
+const launchAuditLoadError = ref('');
 const keyword = ref('');
 const statusFilter = ref('');
 const categoryFilter = ref('');
@@ -458,9 +491,11 @@ async function loadChecklist(
       dedupeMs: options.dedupeMs ?? 1_200
     });
     items.value = result.data.items;
+    launchAuditLoadError.value = '';
     dirty.value = false;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载上线检查清单失败');
+    launchAuditLoadError.value = getLoadErrorMessage(error, '加载上线检查清单失败');
+    ElMessage.error(launchAuditLoadError.value);
   } finally {
     loading.value = false;
   }

@@ -12,6 +12,9 @@ describe('AppleAutomationTasksService', () => {
   const batchId = '55555555-5555-4555-8555-555555555555';
   const appleAccountId = '22222222-2222-4222-8222-222222222222';
   const userId = '33333333-3333-4333-8333-333333333333';
+  const attachmentId = '66666666-6666-4666-8666-666666666666';
+  const giftCardRunId = '77777777-7777-4777-8777-777777777777';
+  const giftCardRowId = '88888888-8888-4888-8888-888888888888';
 
   const operator = {
     id: userId,
@@ -171,9 +174,24 @@ describe('AppleAutomationTasksService', () => {
       appleAccountStatusCheck: {
         create: jest.fn().mockResolvedValue({})
       },
+      attachment: {
+        findMany: jest.fn().mockResolvedValue([])
+      },
       systemParameter: {
         findUnique: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockResolvedValue({})
+        update: jest.fn().mockResolvedValue({}),
+        upsert: jest.fn().mockImplementation(({ create, update }) =>
+          Promise.resolve({
+            id: 'system-parameter-id',
+            key: create?.key ?? 'system-parameter-key',
+            value: create?.value ?? update?.value ?? {},
+            group: create?.group ?? update?.group ?? 'default',
+            remark: create?.remark ?? update?.remark ?? null,
+            updatedByUserId: create?.updatedByUserId ?? update?.updatedByUserId ?? null,
+            createdAt: now,
+            updatedAt: now
+          })
+        )
       }
     } as unknown as PrismaService;
 
@@ -183,7 +201,10 @@ describe('AppleAutomationTasksService', () => {
 
     const fieldEncryptionService = {
       encrypt: jest.fn().mockReturnValue('encrypted-input-payload'),
-      decrypt: jest.fn()
+      decrypt: jest.fn(),
+      hash: jest.fn((value: string | null | undefined) =>
+        value ? `hash-${value.trim().length}` : null
+      )
     } as unknown as FieldEncryptionService;
 
     return {
@@ -287,6 +308,568 @@ describe('AppleAutomationTasksService', () => {
     expect(JSON.stringify((auditLogsService.create as jest.Mock).mock.calls[0][0])).not.toContain(
       '123456'
     );
+  });
+
+  it('saves gift card query accounts with encrypted credentials and sanitized audit logs', async () => {
+    const { service, prisma, auditLogsService, fieldEncryptionService } = createService();
+
+    const result = await service.saveGiftCardQueryAccounts(
+      {
+        accounts: [
+          {
+            appleId: 'apple.user@example.com',
+            password: 'secret-pass',
+            status: 'ready',
+            remark: '主查询账号'
+          }
+        ]
+      },
+      operator
+    );
+
+    expect(result.maxAccounts).toBe(5);
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        appleIdMasked: 'ap********@example.com',
+        passwordSaved: true,
+        status: 'ready',
+        remark: '主查询账号'
+      })
+    ]);
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith('apple.user@example.com');
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith('secret-pass');
+    expect(fieldEncryptionService.hash).toHaveBeenCalledWith('apple.user@example.com');
+    expect(prisma.systemParameter.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'apple_gift_card_query_accounts' },
+        update: expect.objectContaining({
+          group: 'apple_gift_card_automation',
+          updatedByUserId: userId
+        }),
+        create: expect.objectContaining({
+          key: 'apple_gift_card_query_accounts',
+          group: 'apple_gift_card_automation',
+          updatedByUserId: userId
+        })
+      })
+    );
+    const upsertPayload = JSON.stringify(
+      (prisma.systemParameter.upsert as jest.Mock).mock.calls[0][0]
+    );
+    const auditPayload = JSON.stringify((auditLogsService.create as jest.Mock).mock.calls[0][0]);
+    expect(upsertPayload).not.toContain('secret-pass');
+    expect(upsertPayload).not.toContain('apple.user@example.com');
+    expect(auditPayload).not.toContain('secret-pass');
+    expect(auditPayload).not.toContain('apple.user@example.com');
+  });
+
+  it('rejects more than five gift card query accounts', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.saveGiftCardQueryAccounts({
+        accounts: Array.from({ length: 6 }, (_, index) => ({
+          appleId: `apple${index}@example.com`,
+          password: 'secret-pass'
+        }))
+      })
+    ).rejects.toThrow('accounts cannot exceed 5 items');
+    expect(prisma.systemParameter.upsert).not.toHaveBeenCalled();
+  });
+
+  it('lists gift card query accounts without exposing encrypted credentials', async () => {
+    const { service, prisma } = createService();
+    (prisma.systemParameter.findUnique as jest.Mock).mockResolvedValue({
+      id: 'gift-card-query-accounts',
+      key: 'apple_gift_card_query_accounts',
+      value: {
+        version: 1,
+        accounts: [
+          {
+            id: 'gift-card-account-1',
+            appleIdEncrypted: 'encrypted-apple-id',
+            appleIdHash: 'hash-22',
+            appleIdMasked: 'ap********@example.com',
+            passwordEncrypted: 'encrypted-password',
+            status: 'ready',
+            remark: '主查询账号',
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString()
+          }
+        ]
+      },
+      group: 'apple_gift_card_automation',
+      remark: 'Apple 礼品卡余额查询长期登录账号池',
+      updatedByUserId: null,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    const result = await service.listGiftCardQueryAccounts();
+
+    expect(result).toEqual({
+      maxAccounts: 5,
+      updatedAt: now.toISOString(),
+      items: [
+        {
+          id: 'gift-card-account-1',
+          appleIdMasked: 'ap********@example.com',
+          passwordSaved: true,
+          status: 'ready',
+          remark: '主查询账号',
+          updatedAt: now.toISOString()
+        }
+      ]
+    });
+    expect(JSON.stringify(result)).not.toContain('encrypted-password');
+    expect(JSON.stringify(result)).not.toContain('encrypted-apple-id');
+  });
+
+  it('creates a gift card balance check run from uploaded image attachments', async () => {
+    const { service, prisma, auditLogsService, fieldEncryptionService } = createService();
+    (fieldEncryptionService.decrypt as jest.Mock).mockImplementation((value: string | null) => {
+      if (value === 'encrypted-input-payload') return 'XABC123456789';
+      if (value === 'encrypted-apple-id') return 'apple.user@example.com';
+      if (value === 'encrypted-password') return 'secret-pass';
+      return null;
+    });
+    (prisma.systemParameter.findUnique as jest.Mock).mockImplementation(({ where }) => {
+      if (where.key === 'apple_gift_card_query_accounts') {
+        return Promise.resolve({
+          id: 'gift-card-query-accounts',
+          key: 'apple_gift_card_query_accounts',
+          value: {
+            version: 1,
+            accounts: [
+              {
+                id: 'gift-card-account-1',
+                appleIdEncrypted: 'encrypted-apple-id',
+                appleIdHash: 'hash-22',
+                appleIdMasked: 'ap********@example.com',
+                passwordEncrypted: 'encrypted-password',
+                status: 'ready',
+                remark: '主查询账号',
+                createdAt: now.toISOString(),
+                updatedAt: now.toISOString()
+              }
+            ]
+          },
+          group: 'apple_gift_card_automation',
+          remark: 'Apple 礼品卡余额查询长期登录账号池',
+          updatedByUserId: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      return Promise.resolve(null);
+    });
+    (prisma.attachment.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: attachmentId,
+        originalName: 'XABC123456789.jpg',
+        mimeType: 'image/jpeg',
+        storageKey: 'gift-card-photo.jpg'
+      }
+    ]);
+
+    const result = await service.createGiftCardBalanceCheck(
+      {
+        attachmentIds: [attachmentId]
+      },
+      operator
+    );
+
+    expect(result.accountCount).toBe(1);
+    expect(result.imageCount).toBe(1);
+    expect(result.status).toBe('manual_required');
+    expect(result.rows[0]).toEqual(
+      expect.objectContaining({
+        attachmentId,
+        fileName: '****6789.jpg',
+        extractedCode: '****6789',
+        assignedAppleId: 'ap********@example.com',
+        status: 'manual_required',
+        message: '礼品卡余额查询执行器未配置；已识别卡码和查询账号，请配置执行器后在本页重试'
+      })
+    );
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith('XABC123456789');
+    expect(prisma.systemParameter.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'apple_gift_card_balance_check_runs' },
+        update: expect.objectContaining({
+          group: 'apple_gift_card_automation',
+          updatedByUserId: userId
+        })
+      })
+    );
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_automation_task.gift_card_balance_check.create',
+        objectType: 'system_parameter'
+      })
+    );
+    expect(JSON.stringify((auditLogsService.create as jest.Mock).mock.calls[0][0])).not.toContain(
+      'encrypted-password'
+    );
+    expect(
+      JSON.stringify((prisma.systemParameter.upsert as jest.Mock).mock.calls[0][0])
+    ).not.toContain('XABC123456789');
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_automation_task.gift_card_balance_check.run_skipped'
+      })
+    );
+  });
+
+  it('runs the configured gift card balance query command and stores sanitized results', async () => {
+    const previousCommand = process.env.APPLE_GIFT_CARD_BALANCE_QUERY_COMMAND;
+    const previousArgs = process.env.APPLE_GIFT_CARD_BALANCE_QUERY_ARGS;
+    process.env.APPLE_GIFT_CARD_BALANCE_QUERY_COMMAND = process.execPath;
+    process.env.APPLE_GIFT_CARD_BALANCE_QUERY_ARGS = JSON.stringify([
+      '-e',
+      [
+        "let input = '';",
+        "process.stdin.on('data', (chunk) => { input += chunk; });",
+        "process.stdin.on('end', () => {",
+        'const data = JSON.parse(input);',
+        'const row = data.rows[0];',
+        'const account = data.accounts[0];',
+        'process.stdout.write(JSON.stringify({ rows: [{ rowId: row.id, status: "success", balance: "25.00", currency: "usd", message: `ok ${row.giftCardCode} ${account.appleId}` }] }));',
+        '});'
+      ].join('')
+    ]);
+    const { service, prisma, fieldEncryptionService } = createService();
+    (fieldEncryptionService.decrypt as jest.Mock).mockImplementation((value: string | null) => {
+      if (value === 'encrypted-input-payload') return 'XABC123456789';
+      if (value === 'encrypted-apple-id') return 'apple.user@example.com';
+      if (value === 'encrypted-password') return 'secret-pass';
+      return null;
+    });
+    (prisma.systemParameter.findUnique as jest.Mock).mockImplementation(({ where }) => {
+      if (where.key === 'apple_gift_card_query_accounts') {
+        return Promise.resolve({
+          id: 'gift-card-query-accounts',
+          key: 'apple_gift_card_query_accounts',
+          value: {
+            version: 1,
+            accounts: [
+              {
+                id: 'gift-card-account-1',
+                appleIdEncrypted: 'encrypted-apple-id',
+                appleIdHash: 'hash-22',
+                appleIdMasked: 'ap********@example.com',
+                passwordEncrypted: 'encrypted-password',
+                status: 'ready',
+                remark: '主查询账号',
+                createdAt: now.toISOString(),
+                updatedAt: now.toISOString()
+              }
+            ]
+          },
+          group: 'apple_gift_card_automation',
+          remark: 'Apple 礼品卡余额查询长期登录账号池',
+          updatedByUserId: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      return Promise.resolve(null);
+    });
+    (prisma.attachment.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: attachmentId,
+        originalName: 'XABC123456789.jpg',
+        mimeType: 'image/jpeg',
+        storageKey: 'gift-card-photo.jpg'
+      }
+    ]);
+
+    try {
+      const result = await service.createGiftCardBalanceCheck(
+        {
+          attachmentIds: [attachmentId]
+        },
+        operator
+      );
+
+      expect(result.status).toBe('completed');
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          extractedCode: '****6789',
+          status: 'success',
+          balance: '25.00',
+          currency: 'USD',
+          message: 'ok [已脱敏] [已脱敏]'
+        })
+      );
+      expect(JSON.stringify((prisma.systemParameter.upsert as jest.Mock).mock.calls)).not.toContain(
+        'XABC123456789'
+      );
+      expect(JSON.stringify((prisma.systemParameter.upsert as jest.Mock).mock.calls)).not.toContain(
+        'apple.user@example.com'
+      );
+    } finally {
+      restoreEnvValue('APPLE_GIFT_CARD_BALANCE_QUERY_COMMAND', previousCommand);
+      restoreEnvValue('APPLE_GIFT_CARD_BALANCE_QUERY_ARGS', previousArgs);
+    }
+  });
+
+  it('keeps gift card image rows pending when OCR is disabled and no code is found', async () => {
+    const previousOcrEnabled = process.env.APPLE_GIFT_CARD_OCR_ENABLED;
+    process.env.APPLE_GIFT_CARD_OCR_ENABLED = 'false';
+    const { service, prisma } = createService();
+    (prisma.systemParameter.findUnique as jest.Mock).mockImplementation(({ where }) => {
+      if (where.key === 'apple_gift_card_query_accounts') {
+        return Promise.resolve({
+          id: 'gift-card-query-accounts',
+          key: 'apple_gift_card_query_accounts',
+          value: {
+            version: 1,
+            accounts: [
+              {
+                id: 'gift-card-account-1',
+                appleIdEncrypted: 'encrypted-apple-id',
+                appleIdHash: 'hash-22',
+                appleIdMasked: 'ap********@example.com',
+                passwordEncrypted: 'encrypted-password',
+                status: 'ready',
+                remark: '主查询账号',
+                createdAt: now.toISOString(),
+                updatedAt: now.toISOString()
+              }
+            ]
+          },
+          group: 'apple_gift_card_automation',
+          remark: 'Apple 礼品卡余额查询长期登录账号池',
+          updatedByUserId: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      return Promise.resolve(null);
+    });
+    (prisma.attachment.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: attachmentId,
+        originalName: 'gift-card-photo.jpg',
+        mimeType: 'image/jpeg',
+        storageKey: 'gift-card-photo.jpg'
+      }
+    ]);
+
+    try {
+      const result = await service.createGiftCardBalanceCheck(
+        {
+          attachmentIds: [attachmentId]
+        },
+        operator
+      );
+
+      expect(result.status).toBe('manual_required');
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          fileName: 'gift-card-photo.jpg',
+          extractedCode: '待识别',
+          status: 'pending_ocr',
+          message: '图片已保存并分配查询账号，OCR 未启用，请在结果表补录礼品卡代码'
+        })
+      );
+    } finally {
+      restoreEnvValue('APPLE_GIFT_CARD_OCR_ENABLED', previousOcrEnabled);
+    }
+  });
+
+  it('tries gift card image OCR by default when no explicit OCR switch is set', async () => {
+    const previousOcrEnabled = process.env.APPLE_GIFT_CARD_OCR_ENABLED;
+    delete process.env.APPLE_GIFT_CARD_OCR_ENABLED;
+    const { service, prisma } = createService();
+    (prisma.systemParameter.findUnique as jest.Mock).mockImplementation(({ where }) => {
+      if (where.key === 'apple_gift_card_query_accounts') {
+        return Promise.resolve({
+          id: 'gift-card-query-accounts',
+          key: 'apple_gift_card_query_accounts',
+          value: {
+            version: 1,
+            accounts: [
+              {
+                id: 'gift-card-account-1',
+                appleIdEncrypted: 'encrypted-apple-id',
+                appleIdHash: 'hash-22',
+                appleIdMasked: 'ap********@example.com',
+                passwordEncrypted: 'encrypted-password',
+                status: 'ready',
+                remark: '主查询账号',
+                createdAt: now.toISOString(),
+                updatedAt: now.toISOString()
+              }
+            ]
+          },
+          group: 'apple_gift_card_automation',
+          remark: 'Apple 礼品卡余额查询长期登录账号池',
+          updatedByUserId: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      return Promise.resolve(null);
+    });
+    (prisma.attachment.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: attachmentId,
+        originalName: 'gift-card-photo.jpg',
+        mimeType: 'image/jpeg',
+        storageKey: 'missing-gift-card-photo.jpg'
+      }
+    ]);
+
+    try {
+      const result = await service.createGiftCardBalanceCheck(
+        {
+          attachmentIds: [attachmentId]
+        },
+        operator
+      );
+
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          status: 'pending_ocr',
+          message:
+            '图片已保存并分配查询账号，OCR 找不到图片文件，请检查附件存储或在结果表补录礼品卡代码'
+        })
+      );
+    } finally {
+      restoreEnvValue('APPLE_GIFT_CARD_OCR_ENABLED', previousOcrEnabled);
+    }
+  });
+
+  it('updates a gift card balance check row with an encrypted manually entered code', async () => {
+    const { service, prisma, auditLogsService, fieldEncryptionService } = createService();
+    (fieldEncryptionService.decrypt as jest.Mock).mockImplementation((value: string | null) => {
+      if (value === 'encrypted-input-payload') return 'XABC1234567890';
+      if (value === 'encrypted-apple-id') return 'apple.user@example.com';
+      if (value === 'encrypted-password') return 'secret-pass';
+      return null;
+    });
+    (prisma.systemParameter.findUnique as jest.Mock).mockImplementation(({ where }) => {
+      if (where.key === 'apple_gift_card_balance_check_runs') {
+        return Promise.resolve({
+          id: 'gift-card-balance-check-runs',
+          key: 'apple_gift_card_balance_check_runs',
+          value: {
+            version: 1,
+            runs: [
+              {
+                id: giftCardRunId,
+                status: 'manual_required',
+                accountCount: 1,
+                imageCount: 1,
+                rows: [
+                  {
+                    id: giftCardRowId,
+                    attachmentId,
+                    fileName: 'gift-card-photo.jpg',
+                    extractedCode: '待识别',
+                    giftCardCodeEncrypted: null,
+                    giftCardCodeHash: null,
+                    giftCardCodeTail: null,
+                    assignedAccountId: 'gift-card-account-1',
+                    assignedAppleIdMasked: 'ap********@example.com',
+                    status: 'pending_ocr',
+                    balance: '-',
+                    currency: '-',
+                    message: '图片已保存并分配查询账号，OCR 未启用，请在结果表补录礼品卡代码'
+                  }
+                ],
+                createdAt: now.toISOString(),
+                createdByUserId: userId
+              }
+            ]
+          },
+          group: 'apple_gift_card_automation',
+          remark: 'Apple 礼品卡余额查询批次记录',
+          updatedByUserId: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      if (where.key === 'apple_gift_card_query_accounts') {
+        return Promise.resolve({
+          id: 'gift-card-query-accounts',
+          key: 'apple_gift_card_query_accounts',
+          value: {
+            version: 1,
+            accounts: [
+              {
+                id: 'gift-card-account-1',
+                appleIdEncrypted: 'encrypted-apple-id',
+                appleIdHash: 'hash-22',
+                appleIdMasked: 'ap********@example.com',
+                passwordEncrypted: 'encrypted-password',
+                status: 'ready',
+                remark: '主查询账号',
+                createdAt: now.toISOString(),
+                updatedAt: now.toISOString()
+              }
+            ]
+          },
+          group: 'apple_gift_card_automation',
+          remark: 'Apple 礼品卡余额查询长期登录账号池',
+          updatedByUserId: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      return Promise.resolve(null);
+    });
+
+    const result = await service.updateGiftCardBalanceCheckRow(
+      giftCardRunId,
+      giftCardRowId,
+      {
+        extractedCode: 'xabc 1234 567890'
+      },
+      operator
+    );
+
+    expect(result.status).toBe('manual_required');
+    expect(result.rows[0]).toEqual(
+      expect.objectContaining({
+        extractedCode: '****7890',
+        status: 'manual_required',
+        message: '礼品卡余额查询执行器未配置；已识别卡码和查询账号，请配置执行器后在本页重试'
+      })
+    );
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith('XABC1234567890');
+    expect(fieldEncryptionService.hash).toHaveBeenCalledWith('XABC1234567890');
+    expect(
+      JSON.stringify((prisma.systemParameter.upsert as jest.Mock).mock.calls[0][0])
+    ).not.toContain('XABC1234567890');
+    expect(JSON.stringify((auditLogsService.create as jest.Mock).mock.calls)).not.toContain(
+      'XABC1234567890'
+    );
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_automation_task.gift_card_balance_check.row.update_code',
+        afterData: expect.objectContaining({
+          giftCardCodeTail: '7890'
+        })
+      })
+    );
+  });
+
+  it('rejects gift card balance checks when the query account pool is empty', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.createGiftCardBalanceCheck({ attachmentIds: [attachmentId] }, operator)
+    ).rejects.toThrow('Gift card query accounts are not configured');
+    expect(prisma.attachment.findMany).not.toHaveBeenCalled();
   });
 
   it('creates batch Apple web status check tasks with matching region gateway plan', async () => {
@@ -816,6 +1399,72 @@ describe('AppleAutomationTasksService', () => {
           manualRequired: false,
           errorCode: null,
           errorMessage: null
+        })
+      })
+    );
+  });
+
+  it('submits encrypted manual input and requeues the task without logging the code', async () => {
+    const { service, prisma, auditLogsService, fieldEncryptionService } = createService({
+      status: 'waiting_manual_verify',
+      manualRequired: true,
+      inputPayloadEncrypted: 'encrypted-existing-input',
+      errorCode: 'manual_required',
+      errorMessage: 'Apple 要求人工验证码'
+    });
+    (fieldEncryptionService.decrypt as jest.Mock).mockReturnValue(
+      JSON.stringify({
+        executionPlan: {
+          countryCode: 'US'
+        }
+      })
+    );
+    (prisma.automationTask.update as jest.Mock).mockResolvedValueOnce({
+      ...taskBase,
+      status: 'queued',
+      manualRequired: false,
+      inputPayloadEncrypted: 'encrypted-input-payload',
+      retryCount: 1,
+      errorCode: null,
+      errorMessage: null
+    });
+
+    const result = await service.submitManualInput(
+      taskId,
+      {
+        inputType: 'verification_code',
+        value: '123456',
+        note: 'Apple 要求验证码'
+      },
+      operator
+    );
+
+    expect(result.status).toBe('queued');
+    expect(fieldEncryptionService.encrypt).toHaveBeenCalledWith(expect.stringContaining('123456'));
+    expect(prisma.automationTask.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'queued',
+          retryCount: { increment: 1 },
+          inputPayloadEncrypted: 'encrypted-input-payload',
+          manualRequired: false,
+          errorCode: null,
+          errorMessage: null
+        })
+      })
+    );
+    expect(JSON.stringify((prisma.automationTaskLog.create as jest.Mock).mock.calls)).not.toContain(
+      '123456'
+    );
+    expect(JSON.stringify((auditLogsService.create as jest.Mock).mock.calls)).not.toContain(
+      '123456'
+    );
+    expect(auditLogsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'apple_automation_task.manual_input.submit',
+        afterData: expect.objectContaining({
+          inputType: 'verification_code',
+          valueLength: 6
         })
       })
     );

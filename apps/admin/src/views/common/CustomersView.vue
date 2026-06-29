@@ -65,6 +65,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="customersLoadError && customers.length"
+        title="客户列表刷新失败"
+        :message="customersLoadError"
+        @retry="() => loadCustomers({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -75,7 +82,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="customersLoadError"
+            title="客户列表加载失败"
+            :message="customersLoadError"
+            @retry="() => loadCustomers({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无客户</strong>
             <span>可以新增客户，或清空筛选后重新查看客户列表。</span>
             <div class="apple-core-empty-state__actions">
@@ -279,6 +292,14 @@
         </article>
       </div>
 
+      <div v-else-if="customersLoadError" class="mobile-record-list" aria-label="客户列表加载失败">
+        <ListRequestError
+          title="客户列表加载失败"
+          :message="customersLoadError"
+          @retry="() => loadCustomers({ force: true })"
+        />
+      </div>
+
       <div v-else class="mobile-record-list">
         <div class="apple-core-empty-state">
           <strong>暂无客户</strong>
@@ -402,6 +423,7 @@ import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -429,6 +451,7 @@ import {
   resetCustomerProfileForm
 } from '@/utils/customerProfileForm';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
@@ -458,6 +481,7 @@ const selectedCustomer = ref<Customer | null>(null);
 const formRef = ref<InstanceType<typeof CustomerProfileForm>>();
 const phoneFormRef = ref<FormInstance>();
 const customers = ref<Customer[]>([]);
+const customersLoadError = ref('');
 const sourcePlatforms = ref<SourcePlatform[]>([]);
 const customerTagDictionaries = ref<DataDictionary[]>([]);
 const selectedCustomers = ref<Customer[]>([]);
@@ -640,6 +664,7 @@ function buildCustomerParams(): CustomerQuery {
 function applyCustomerResult(data: PageResult<Customer>) {
   customers.value = data.items;
   total.value = data.total;
+  customersLoadError.value = '';
 }
 
 async function loadCustomers(options: { background?: boolean; force?: boolean } = {}) {
@@ -663,7 +688,8 @@ async function loadCustomers(options: { background?: boolean; force?: boolean } 
     });
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载客户失败');
+      customersLoadError.value = getLoadErrorMessage(error, '加载客户失败');
+      ElMessage.error(customersLoadError.value);
     }
   }
 }

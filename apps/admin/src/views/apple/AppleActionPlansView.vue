@@ -123,6 +123,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="customersLoadError && customers.length"
+        title="到期客户刷新失败"
+        :message="customersLoadError"
+        @retry="() => loadCustomers({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -134,7 +141,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="customersLoadError"
+            title="到期客户加载失败"
+            :message="customersLoadError"
+            @retry="() => loadCustomers({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无到期客户</strong>
             <span>可以切换到期时间或清空筛选后重新查看。</span>
             <div class="apple-core-empty-state__actions">
@@ -248,7 +261,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="mobile-record-list">
+      <div v-if="customers.length" class="mobile-record-list">
         <article v-for="row in customers" :key="row.id" class="mobile-record-card">
           <div class="mobile-record-card__head">
             <div class="mobile-record-card__title">
@@ -299,6 +312,25 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div v-else-if="customersLoadError" class="mobile-record-list" aria-label="到期客户加载失败">
+        <ListRequestError
+          title="到期客户加载失败"
+          :message="customersLoadError"
+          @retry="() => loadCustomers({ force: true })"
+        />
+      </div>
+
+      <div v-else class="mobile-record-list" aria-label="到期客户空状态">
+        <div class="apple-core-empty-state">
+          <strong>暂无到期客户</strong>
+          <span>可以切换到期时间或清空筛选后重新查看。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFiltersAndSearch">清空筛选</AppButton>
+            <AppButton variant="primary" @click="refreshCustomers">刷新</AppButton>
+          </div>
+        </div>
       </div>
 
       <PaginationBar
@@ -474,6 +506,7 @@ import {
   type AppleExpiringCustomerQuery
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -490,6 +523,7 @@ import type {
   TableDensity
 } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
@@ -511,6 +545,7 @@ type ActionPlanServicePriceOption = Pick<
 };
 
 const customers = ref<AppleExpiringCustomer[]>([]);
+const customersLoadError = ref('');
 const total = ref(0);
 const loading = ref(false);
 const servicePricesLoading = ref(false);
@@ -824,9 +859,11 @@ async function loadCustomers(options: { background?: boolean; force?: boolean } 
     }
 
     applyCustomerResult(result.data);
+    customersLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载到期客户失败');
+      customersLoadError.value = getLoadErrorMessage(error, '加载到期客户失败');
+      ElMessage.error(customersLoadError.value);
     }
   } finally {
     if (activeQueryKey.value === key) {

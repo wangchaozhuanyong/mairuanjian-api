@@ -327,10 +327,24 @@ const appleModules: AppModuleItem[] = [
     group: 'Apple ID 业务',
     phase: 'Phase 8',
     status: 'ready',
-    description: '按操作场景批量查询 ID 状态、余额和官方价格套餐，失败或高风险任务转人工处理。',
-    features: ['批量查状态', '批量查余额', '价格套餐巡检', '人工处理', '执行记录'],
+    description:
+      'Apple ID 自动化 Worker 打开后的操作入口：按场景查 ID 状态、余额、礼品卡余额和官方价格套餐，失败或高风险任务在本页转人工处理。',
+    features: [
+      'Apple ID 自动化 Worker',
+      'ID 自动化工作台',
+      'ID 状态检测',
+      'ID 余额查询',
+      '礼品卡余额查询',
+      '官方价格巡检',
+      '自动充值 / 续费',
+      '取消订阅',
+      '账号资料维护',
+      '人工处理',
+      '执行记录'
+    ],
     primaryAction: '开始自动化操作',
-    tableColumns: ['操作', 'Apple ID / 套餐', '状态', '来源', '结果', '处理建议']
+    secondaryAction: '上传礼品卡图片查询余额',
+    tableColumns: ['操作', 'Apple ID / 礼品卡 / 套餐', '状态', '来源', '结果', '处理建议']
   },
   {
     key: 'apple-reports',

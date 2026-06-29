@@ -57,6 +57,15 @@ const PlatformStatusView = () => import('@/views/system/PlatformStatusView.vue')
 const SystemStateView = () => import('@/views/system/SystemStateView.vue');
 
 export const isRoutePending = ref(false);
+export const ROUTE_LOAD_ERROR_ROUTE = '/system/page-load-error';
+
+export interface RouteLoadErrorState {
+  message: string;
+  occurredAt: number;
+  targetPath: string;
+}
+
+export const routeLoadError = ref<RouteLoadErrorState | null>(null);
 
 const readyPageComponents = {
   dashboard: DashboardView,
@@ -223,6 +232,7 @@ for (const module of allModules) {
 }
 
 routeComponentLoaders.set('/login', LoginView as RouteComponentLoader);
+routeComponentLoaders.set(ROUTE_LOAD_ERROR_ROUTE, SystemStateView as RouteComponentLoader);
 routeComponentLoaders.set('/customers/detail', CustomerDetailView as RouteComponentLoader);
 for (const sectionRoute of SOURCE_OPTIONS_SECTION_ROUTES) {
   routeComponentLoaders.set(sectionRoute.path, SourcePlatformsView as RouteComponentLoader);
@@ -275,9 +285,36 @@ export async function loadRouteComponent(routePath: string) {
   try {
     await loadRouteLoader(loader);
     return true;
-  } catch {
+  } catch (error) {
+    rememberRouteLoadError(error, routePath);
     return false;
   }
+}
+
+export function clearRouteLoadError() {
+  routeLoadError.value = null;
+}
+
+function rememberRouteLoadError(error: unknown, targetPath: string) {
+  routeLoadError.value = {
+    message: getRouteLoadErrorMessage(error),
+    occurredAt: Date.now(),
+    targetPath: targetPath || router.currentRoute.value.fullPath || '/dashboard'
+  };
+}
+
+function getRouteLoadErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+
+  if (
+    /chunk|dynamically imported module|importing a module script failed|failed to fetch/i.test(
+      message
+    )
+  ) {
+    return '页面资源加载失败，可能是网络中断或系统刚更新。请刷新页面后重试。';
+  }
+
+  return '页面加载时遇到异常，当前业务数据没有被修改。请刷新页面或返回首页。';
 }
 
 function getNavigatorConnection() {
@@ -629,6 +666,19 @@ export const router = createRouter({
           path: 'system/work-orders',
           redirect: '/404'
         },
+        {
+          path: ROUTE_LOAD_ERROR_ROUTE.replace(/^\//, ''),
+          name: 'route-error',
+          component: SystemStateView,
+          meta: {
+            title: '页面加载失败',
+            group: '异常页面',
+            phase: 'Design',
+            description: '页面资源或运行状态加载失败，提供刷新和返回入口。',
+            moduleKey: 'route-error',
+            status: 'ready'
+          }
+        },
         ...moduleRoutes,
         ...sourceOptionsSectionRoutes,
         {
@@ -664,13 +714,23 @@ const rawRouterReplace = router.replace.bind(router);
 
 router.push = (async (to) => {
   const target = router.resolve(to);
-  await loadRouteComponent(target.path);
+  const loaded = await loadRouteComponent(target.path);
+
+  if (!loaded && routeComponentLoaders.has(normalizeRoutePath(target.path))) {
+    return rawRouterPush(ROUTE_LOAD_ERROR_ROUTE);
+  }
+
   return rawRouterPush(to);
 }) as typeof router.push;
 
 router.replace = (async (to) => {
   const target = router.resolve(to);
-  await loadRouteComponent(target.path);
+  const loaded = await loadRouteComponent(target.path);
+
+  if (!loaded && routeComponentLoaders.has(normalizeRoutePath(target.path))) {
+    return rawRouterReplace(ROUTE_LOAD_ERROR_ROUTE);
+  }
+
   return rawRouterReplace(to);
 }) as typeof router.replace;
 
@@ -737,11 +797,19 @@ function refreshCurrentUserForRoute(targetRoute: RouteLocationNormalized) {
 }
 
 router.beforeEach((to, from) => {
+  if (to.path !== ROUTE_LOAD_ERROR_ROUTE) {
+    clearRouteLoadError();
+  }
+
   if (to.fullPath !== from.fullPath && !isRouteComponentReady(to.path)) {
     startRoutePending();
   }
 
   prefetchRouteComponent(to.path);
+
+  if (to.path === ROUTE_LOAD_ERROR_ROUTE) {
+    return true;
+  }
 
   const authStore = useAuthStore();
 
@@ -793,6 +861,14 @@ router.afterEach(() => {
   finishRoutePending();
 });
 
-router.onError(() => {
+router.onError((error, to) => {
   finishRoutePending();
+  rememberRouteLoadError(error, to?.fullPath ?? to?.path ?? router.currentRoute.value.fullPath);
+
+  if (
+    to?.path !== ROUTE_LOAD_ERROR_ROUTE &&
+    router.currentRoute.value.path !== ROUTE_LOAD_ERROR_ROUTE
+  ) {
+    void rawRouterReplace(ROUTE_LOAD_ERROR_ROUTE).catch(() => undefined);
+  }
 });

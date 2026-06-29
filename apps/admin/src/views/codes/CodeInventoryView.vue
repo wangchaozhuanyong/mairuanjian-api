@@ -79,6 +79,13 @@
         show-icon
       />
 
+      <ListRequestError
+        v-if="inventoryLoadError && inventory.length"
+        title="兑换码库存刷新失败"
+        :message="inventoryLoadError"
+        @retry="() => loadInventory({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -89,7 +96,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="inventoryLoadError"
+            title="兑换码库存加载失败"
+            :message="inventoryLoadError"
+            @retry="() => loadInventory({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无兑换码库存</strong>
             <span>{{ inventoryEmptyStateText }}</span>
             <div class="apple-core-empty-state__actions">
@@ -268,6 +281,18 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div
+        v-else-if="inventoryLoadError"
+        class="mobile-record-list"
+        aria-label="兑换码库存加载失败"
+      >
+        <ListRequestError
+          title="兑换码库存加载失败"
+          :message="inventoryLoadError"
+          @retry="() => loadInventory({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -537,6 +562,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -558,6 +584,7 @@ import {
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 
 const tableKey = 'code_inventory';
@@ -592,6 +619,7 @@ const detailVisible = ref(false);
 const revealDialogVisible = ref(false);
 const services = ref<CodeService[]>([]);
 const inventory = ref<RedeemCodeInventoryItem[]>([]);
+const inventoryLoadError = ref('');
 const selectedCode = ref<RedeemCodeInventoryItem | null>(null);
 const selectedRevealCode = ref<RedeemCodeInventoryItem | null>(null);
 const selectedCodes = ref<RedeemCodeInventoryItem[]>([]);
@@ -773,7 +801,8 @@ async function loadInventory(options: { background?: boolean; force?: boolean } 
     });
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载兑换码库存失败');
+      inventoryLoadError.value = getLoadErrorMessage(error, '加载兑换码库存失败');
+      ElMessage.error(inventoryLoadError.value);
     }
   }
 }
@@ -793,6 +822,7 @@ function buildInventoryListParams(): CodeInventoryListParams {
 function applyInventoryListResult(data: CodeInventoryPage) {
   inventory.value = data.items;
   total.value = data.total;
+  inventoryLoadError.value = '';
 }
 
 async function handleSearch() {

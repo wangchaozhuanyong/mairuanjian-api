@@ -4,6 +4,11 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
+import { execFile, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
 import type {
   AppleAccount,
   AutomationTask,
@@ -25,9 +30,21 @@ import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
 import type { BatchBalanceCheckDto } from './dto/batch-balance-check.dto';
 import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
 import type { BulkDeleteAutomationTasksDto } from './dto/bulk-delete-automation-tasks.dto';
+import type { CreateGiftCardBalanceCheckDto } from './dto/create-gift-card-balance-check.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
+import type {
+  GiftCardQueryAccountStatus,
+  SaveGiftCardQueryAccountsDto
+} from './dto/save-gift-card-query-accounts.dto';
+import type {
+  AutomationTaskManualInputType,
+  SubmitManualInputDto
+} from './dto/submit-manual-input.dto';
+import type { UpdateGiftCardBalanceCheckRowDto } from './dto/update-gift-card-balance-check-row.dto';
 import type { WebCheckGatewayAttemptDto } from './dto/web-check-gateway-attempt.dto';
+
+const execFileAsync = promisify(execFile);
 
 interface ListAutomationTasksQuery extends PaginationQuery {
   keyword?: string;
@@ -56,6 +73,14 @@ const AUTOMATION_TASK_SORT_FIELDS: Record<
   updatedAt: 'updatedAt'
 };
 const APPLE_WEB_GATEWAY_NODES_PARAMETER_KEY = 'apple_web_gateway_nodes';
+const GIFT_CARD_QUERY_ACCOUNTS_PARAMETER_KEY = 'apple_gift_card_query_accounts';
+const GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY = 'apple_gift_card_balance_check_runs';
+const GIFT_CARD_QUERY_ACCOUNTS_GROUP = 'apple_gift_card_automation';
+const GIFT_CARD_QUERY_ACCOUNT_LIMIT = 5;
+const GIFT_CARD_BALANCE_CHECK_ATTACHMENT_LIMIT = 50;
+const GIFT_CARD_BALANCE_CHECK_RUN_HISTORY_LIMIT = 20;
+const GIFT_CARD_OCR_DEFAULT_TIMEOUT_MS = 15_000;
+const GIFT_CARD_BALANCE_QUERY_DEFAULT_TIMEOUT_MS = 180_000;
 const WORKBENCH_STATUS_CACHE_TTL_MS = 10_000;
 
 interface AppleWebCheckRegionProfile {
@@ -92,6 +117,137 @@ interface AppleWebGatewayStoredNode extends AppleWebGatewayNodeCandidate {
   latencyMs: number | null;
   lastCheckedAt: string | null;
   failureReason: string | null;
+}
+
+interface GiftCardQueryAccountStored {
+  id: string;
+  appleIdEncrypted: string | null;
+  appleIdHash: string | null;
+  appleIdMasked: string;
+  passwordEncrypted: string | null;
+  status: GiftCardQueryAccountStatus;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GiftCardQueryAccountResponse {
+  id: string;
+  appleIdMasked: string;
+  passwordSaved: boolean;
+  status: GiftCardQueryAccountStatus;
+  remark: string | null;
+  updatedAt: string;
+}
+
+export interface GiftCardQueryAccountsResponse {
+  items: GiftCardQueryAccountResponse[];
+  maxAccounts: number;
+  updatedAt: string | null;
+}
+
+export type GiftCardBalanceCheckRowStatus =
+  | 'pending_ocr'
+  | 'waiting_worker'
+  | 'manual_required'
+  | 'success'
+  | 'failed';
+
+interface GiftCardBalanceCheckRowStored {
+  id: string;
+  attachmentId: string;
+  fileName: string;
+  extractedCode: string;
+  giftCardCodeEncrypted: string | null;
+  giftCardCodeHash: string | null;
+  giftCardCodeTail: string | null;
+  assignedAccountId: string | null;
+  assignedAppleIdMasked: string;
+  status: GiftCardBalanceCheckRowStatus;
+  balance: string;
+  currency: string;
+  message: string;
+}
+
+interface GiftCardCodeFields {
+  extractedCode: string;
+  giftCardCodeEncrypted: string | null;
+  giftCardCodeHash: string | null;
+  giftCardCodeTail: string | null;
+}
+
+interface GiftCardBalanceQueryAccountPayload {
+  id: string;
+  appleId: string;
+  password: string;
+}
+
+interface GiftCardBalanceQueryRowPayload {
+  id: string;
+  giftCardCode: string;
+  giftCardCodeTail: string | null;
+  assignedAccountId: string | null;
+  assignedAppleId: string;
+  fileName: string;
+}
+
+interface GiftCardBalanceQueryCommandPayload {
+  runId: string;
+  createdAt: string;
+  accounts: GiftCardBalanceQueryAccountPayload[];
+  rows: GiftCardBalanceQueryRowPayload[];
+}
+
+interface GiftCardBalanceQueryCommandResultRow {
+  rowId: string;
+  status: Extract<GiftCardBalanceCheckRowStatus, 'manual_required' | 'success' | 'failed'>;
+  balance: string;
+  currency: string;
+  message: string;
+}
+
+interface GiftCardBalanceCheckRunStored {
+  id: string;
+  status: 'waiting_worker' | 'manual_required' | 'completed';
+  accountCount: number;
+  imageCount: number;
+  rows: GiftCardBalanceCheckRowStored[];
+  createdAt: string;
+  createdByUserId: string | null;
+}
+
+export interface GiftCardBalanceCheckRowResponse {
+  id: string;
+  attachmentId: string;
+  fileName: string;
+  extractedCode: string;
+  assignedAppleId: string;
+  status: GiftCardBalanceCheckRowStatus;
+  balance: string;
+  currency: string;
+  message: string;
+}
+
+export interface GiftCardBalanceCheckRunResponse {
+  id: string;
+  status: GiftCardBalanceCheckRunStored['status'];
+  accountCount: number;
+  imageCount: number;
+  rows: GiftCardBalanceCheckRowResponse[];
+  createdAt: string;
+}
+
+type GiftCardOcrReadStatus =
+  | 'disabled'
+  | 'missing_file'
+  | 'unavailable'
+  | 'timeout'
+  | 'failed'
+  | 'completed';
+
+interface GiftCardOcrReadResult {
+  status: GiftCardOcrReadStatus;
+  text: string | null;
 }
 
 export interface AppleWebGatewayCandidateResponse extends AppleWebGatewayNodeCandidate {
@@ -266,6 +422,400 @@ export class AppleAutomationTasksService {
   async get(id: string) {
     const task = await this.findTaskOrThrow(id, true);
     return this.toResponse(task);
+  }
+
+  async listGiftCardQueryAccounts(): Promise<GiftCardQueryAccountsResponse> {
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: GIFT_CARD_QUERY_ACCOUNTS_PARAMETER_KEY }
+    });
+
+    return this.toGiftCardQueryAccountsResponse(parameter);
+  }
+
+  async saveGiftCardQueryAccounts(
+    dto: SaveGiftCardQueryAccountsDto,
+    operator?: AuthenticatedUser
+  ): Promise<GiftCardQueryAccountsResponse> {
+    const existing = await this.prisma.systemParameter.findUnique({
+      where: { key: GIFT_CARD_QUERY_ACCOUNTS_PARAMETER_KEY }
+    });
+    const existingAccounts = this.readStoredGiftCardQueryAccounts(existing?.value);
+    const existingByHash = new Map(
+      existingAccounts
+        .filter((account) => account.appleIdHash)
+        .map((account) => [account.appleIdHash, account])
+    );
+    const accounts = this.normalizeGiftCardQueryAccountInputs(dto?.accounts).map((item) => {
+      const appleIdHash = this.fieldEncryptionService.hash(item.appleId.toLowerCase());
+      if (!appleIdHash) {
+        throw new BadRequestException('accounts.appleId is required');
+      }
+      const existingAccount = existingByHash.get(appleIdHash);
+      const updatedAt = new Date().toISOString();
+      return {
+        id: existingAccount?.id ?? randomUUID(),
+        appleIdEncrypted: this.fieldEncryptionService.encrypt(item.appleId),
+        appleIdHash,
+        appleIdMasked: this.maskAppleId(item.appleId),
+        passwordEncrypted: this.fieldEncryptionService.encrypt(item.password),
+        status: item.status,
+        remark: item.remark,
+        createdAt: existingAccount?.createdAt ?? updatedAt,
+        updatedAt
+      } satisfies GiftCardQueryAccountStored;
+    });
+    const nextValue = this.toAuditJson({
+      version: 1,
+      accounts
+    });
+
+    const parameter = await this.prisma.systemParameter.upsert({
+      where: { key: GIFT_CARD_QUERY_ACCOUNTS_PARAMETER_KEY },
+      update: {
+        value: nextValue,
+        group: GIFT_CARD_QUERY_ACCOUNTS_GROUP,
+        remark: 'Apple 礼品卡余额查询长期登录账号池',
+        updatedByUserId: operator?.id
+      },
+      create: {
+        key: GIFT_CARD_QUERY_ACCOUNTS_PARAMETER_KEY,
+        value: nextValue,
+        group: GIFT_CARD_QUERY_ACCOUNTS_GROUP,
+        remark: 'Apple 礼品卡余额查询长期登录账号池',
+        updatedByUserId: operator?.id
+      }
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.gift_card_query_accounts.save',
+      objectType: 'system_parameter',
+      objectId: parameter.id,
+      beforeData: existing
+        ? this.toAuditJson({
+            count: existingAccounts.length,
+            accounts: existingAccounts.map((account) =>
+              this.toGiftCardQueryAccountAuditValue(account)
+            )
+          })
+        : undefined,
+      afterData: this.toAuditJson({
+        count: accounts.length,
+        accounts: accounts.map((account) => this.toGiftCardQueryAccountAuditValue(account))
+      }),
+      remark: `Saved ${accounts.length} Apple gift card query accounts`
+    });
+
+    return this.toGiftCardQueryAccountsResponse(parameter);
+  }
+
+  async createGiftCardBalanceCheck(
+    dto: CreateGiftCardBalanceCheckDto,
+    operator?: AuthenticatedUser
+  ): Promise<GiftCardBalanceCheckRunResponse> {
+    const attachmentIds = this.normalizeGiftCardBalanceCheckAttachmentIds(dto?.attachmentIds);
+    const accountsParameter = await this.prisma.systemParameter.findUnique({
+      where: { key: GIFT_CARD_QUERY_ACCOUNTS_PARAMETER_KEY }
+    });
+    const readyAccounts = this.readStoredGiftCardQueryAccounts(accountsParameter?.value).filter(
+      (account) => account.status === 'ready'
+    );
+
+    if (!readyAccounts.length) {
+      throw new BadRequestException('Gift card query accounts are not configured');
+    }
+
+    const attachments = await this.prisma.attachment.findMany({
+      where: { id: { in: attachmentIds } },
+      select: {
+        id: true,
+        originalName: true,
+        mimeType: true,
+        storageKey: true
+      }
+    });
+    const attachmentsById = new Map(attachments.map((attachment) => [attachment.id, attachment]));
+    const missingId = attachmentIds.find((id) => !attachmentsById.has(id));
+    if (missingId) {
+      throw new BadRequestException(`Attachment not found: ${missingId}`);
+    }
+
+    const invalidAttachment = attachments.find(
+      (attachment) => !attachment.mimeType.startsWith('image/')
+    );
+    if (invalidAttachment) {
+      throw new BadRequestException(
+        `Attachment is not an image: ${invalidAttachment.originalName}`
+      );
+    }
+
+    const createdAt = new Date().toISOString();
+    const rows = await Promise.all(
+      attachmentIds.map(async (attachmentId, index) => {
+        const attachment = attachmentsById.get(attachmentId)!;
+        const account = readyAccounts[index % readyAccounts.length];
+        const detection = await this.detectGiftCardCodeFromAttachment(attachment);
+        const codeFields = this.toGiftCardCodeFields(detection.code);
+        const hasCandidateCode = Boolean(codeFields.giftCardCodeEncrypted);
+        return {
+          id: randomUUID(),
+          attachmentId: attachment.id,
+          fileName: this.maskGiftCardCodeInText(attachment.originalName),
+          ...codeFields,
+          assignedAccountId: account.id,
+          assignedAppleIdMasked: account.appleIdMasked,
+          status: hasCandidateCode ? 'waiting_worker' : 'pending_ocr',
+          balance: '-',
+          currency: '-',
+          message: hasCandidateCode
+            ? `${detection.message}，等待执行礼品卡余额查询`
+            : detection.message
+        } satisfies GiftCardBalanceCheckRowStored;
+      })
+    );
+    const run = {
+      id: randomUUID(),
+      status: rows.some((row) => row.status === 'pending_ocr')
+        ? 'manual_required'
+        : 'waiting_worker',
+      accountCount: readyAccounts.length,
+      imageCount: rows.length,
+      rows,
+      createdAt,
+      createdByUserId: operator?.id ?? null
+    } satisfies GiftCardBalanceCheckRunStored;
+
+    const existingRunsParameter = await this.prisma.systemParameter.findUnique({
+      where: { key: GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY }
+    });
+    const existingRuns = this.readStoredGiftCardBalanceCheckRuns(existingRunsParameter?.value);
+    const nextRuns = [run, ...existingRuns].slice(0, GIFT_CARD_BALANCE_CHECK_RUN_HISTORY_LIMIT);
+    const parameter = await this.saveGiftCardBalanceCheckRuns(nextRuns, operator);
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.gift_card_balance_check.create',
+      objectType: 'system_parameter',
+      objectId: parameter.id,
+      afterData: this.toAuditJson({
+        id: run.id,
+        status: run.status,
+        accountCount: run.accountCount,
+        imageCount: run.imageCount,
+        attachmentIds,
+        createdAt: run.createdAt
+      }),
+      remark: `Created Apple gift card balance check run ${run.id}`
+    });
+
+    if (!run.rows.some((row) => row.status === 'pending_ocr')) {
+      return this.executeGiftCardBalanceCheckRun(run.id, operator, nextRuns);
+    }
+
+    return this.toGiftCardBalanceCheckRunResponse(run);
+  }
+
+  async updateGiftCardBalanceCheckRow(
+    runId: string,
+    rowId: string,
+    dto: UpdateGiftCardBalanceCheckRowDto,
+    operator?: AuthenticatedUser
+  ): Promise<GiftCardBalanceCheckRunResponse> {
+    const normalizedRunId = this.normalizeRequiredUuid(runId, 'runId');
+    const normalizedRowId = this.normalizeRequiredUuid(rowId, 'rowId');
+    const code = this.findGiftCardCodeCandidate(dto?.extractedCode);
+
+    if (!code) {
+      throw new BadRequestException('extractedCode is required');
+    }
+
+    const parameter = await this.prisma.systemParameter.findUnique({
+      where: { key: GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY }
+    });
+    const runs = this.readStoredGiftCardBalanceCheckRuns(parameter?.value);
+    const runIndex = runs.findIndex((run) => run.id === normalizedRunId);
+    if (runIndex < 0) {
+      throw new NotFoundException('Gift card balance check run not found');
+    }
+
+    const run = runs[runIndex];
+    const rowIndex = run.rows.findIndex((row) => row.id === normalizedRowId);
+    if (rowIndex < 0) {
+      throw new NotFoundException('Gift card balance check row not found');
+    }
+
+    const codeFields = this.toGiftCardCodeFields(code);
+    const updatedRow = {
+      ...run.rows[rowIndex],
+      ...codeFields,
+      status: 'waiting_worker',
+      message: '已人工补录礼品卡代码，等待执行礼品卡余额查询'
+    } satisfies GiftCardBalanceCheckRowStored;
+    const updatedRows = run.rows.map((row, index) => (index === rowIndex ? updatedRow : row));
+    const updatedRunStatus: GiftCardBalanceCheckRunStored['status'] = updatedRows.some(
+      (row) => row.status === 'pending_ocr'
+    )
+      ? 'manual_required'
+      : updatedRows.every((row) => row.status === 'success')
+        ? 'completed'
+        : 'waiting_worker';
+    const updatedRun = {
+      ...run,
+      rows: updatedRows,
+      status: updatedRunStatus
+    } satisfies GiftCardBalanceCheckRunStored;
+
+    const nextRuns = runs.map((item, index) => (index === runIndex ? updatedRun : item));
+    await this.saveGiftCardBalanceCheckRuns(nextRuns, operator);
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.gift_card_balance_check.row.update_code',
+      objectType: 'system_parameter',
+      objectId: GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY,
+      beforeData: {
+        runId: normalizedRunId,
+        rowId: normalizedRowId,
+        previousStatus: run.rows[rowIndex].status,
+        previousCodeTail: run.rows[rowIndex].giftCardCodeTail
+      },
+      afterData: {
+        runId: normalizedRunId,
+        rowId: normalizedRowId,
+        status: updatedRow.status,
+        giftCardCodeTail: updatedRow.giftCardCodeTail
+      }
+    });
+
+    if (!updatedRun.rows.some((row) => row.status === 'pending_ocr')) {
+      return this.executeGiftCardBalanceCheckRun(updatedRun.id, operator, nextRuns);
+    }
+
+    return this.toGiftCardBalanceCheckRunResponse(updatedRun);
+  }
+
+  async runGiftCardBalanceCheck(
+    runId: string,
+    operator?: AuthenticatedUser
+  ): Promise<GiftCardBalanceCheckRunResponse> {
+    const normalizedRunId = this.normalizeRequiredUuid(runId, 'runId');
+    return this.executeGiftCardBalanceCheckRun(normalizedRunId, operator);
+  }
+
+  private async executeGiftCardBalanceCheckRun(
+    runId: string,
+    operator?: AuthenticatedUser,
+    initialRuns?: GiftCardBalanceCheckRunStored[]
+  ): Promise<GiftCardBalanceCheckRunResponse> {
+    const runs =
+      initialRuns ??
+      this.readStoredGiftCardBalanceCheckRuns(
+        (
+          await this.prisma.systemParameter.findUnique({
+            where: { key: GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY }
+          })
+        )?.value
+      );
+    const runIndex = runs.findIndex((run) => run.id === runId);
+    if (runIndex < 0) {
+      throw new NotFoundException('Gift card balance check run not found');
+    }
+
+    const run = runs[runIndex];
+    if (run.rows.some((row) => row.status === 'pending_ocr')) {
+      throw new BadRequestException('Gift card code must be recognized or manually entered first');
+    }
+
+    const { rows: preparedRows, payload } = await this.prepareGiftCardBalanceQueryPayload(run);
+    const commandConfig = this.getGiftCardBalanceQueryCommandConfig();
+    let nextRows: GiftCardBalanceCheckRowStored[] = preparedRows;
+    let auditAction = 'apple_automation_task.gift_card_balance_check.run';
+
+    if (!commandConfig) {
+      auditAction = 'apple_automation_task.gift_card_balance_check.run_skipped';
+      nextRows = preparedRows.map((row) =>
+        row.status === 'waiting_worker'
+          ? {
+              ...row,
+              status: 'manual_required',
+              message: '礼品卡余额查询执行器未配置；已识别卡码和查询账号，请配置执行器后在本页重试'
+            }
+          : row
+      );
+    } else if (payload.rows.length) {
+      try {
+        const resultRows = await this.runGiftCardBalanceQueryCommand(commandConfig, payload);
+        const resultRowsById = new Map(resultRows.map((row) => [row.rowId, row]));
+        const sensitiveValues = this.getGiftCardBalanceQuerySensitiveValues(payload);
+        nextRows = preparedRows.map((row) => {
+          if (row.status !== 'waiting_worker') return row;
+          const resultRow = resultRowsById.get(row.id);
+          if (!resultRow) {
+            return {
+              ...row,
+              status: 'failed',
+              balance: '-',
+              currency: '-',
+              message: '礼品卡余额查询执行器未返回该图片结果'
+            } satisfies GiftCardBalanceCheckRowStored;
+          }
+
+          return {
+            ...row,
+            status: resultRow.status,
+            balance: resultRow.balance,
+            currency: resultRow.currency,
+            message: this.sanitizeGiftCardBalanceQueryMessage(resultRow.message, sensitiveValues)
+          } satisfies GiftCardBalanceCheckRowStored;
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message === 'timeout'
+            ? '礼品卡余额查询执行器超时'
+            : '礼品卡余额查询执行器运行失败';
+        nextRows = preparedRows.map((row) =>
+          row.status === 'waiting_worker'
+            ? {
+                ...row,
+                status: 'failed',
+                balance: '-',
+                currency: '-',
+                message
+              }
+            : row
+        );
+      }
+    }
+
+    const updatedRun = {
+      ...run,
+      rows: nextRows,
+      status: this.resolveGiftCardBalanceCheckRunStatus(nextRows)
+    } satisfies GiftCardBalanceCheckRunStored;
+    const nextRuns = runs.map((item, index) => (index === runIndex ? updatedRun : item));
+    await this.saveGiftCardBalanceCheckRuns(nextRuns, operator);
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: auditAction,
+      objectType: 'system_parameter',
+      objectId: GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY,
+      afterData: this.toAuditJson({
+        runId,
+        status: updatedRun.status,
+        imageCount: updatedRun.imageCount,
+        readyRows: payload.rows.length,
+        successRows: nextRows.filter((row) => row.status === 'success').length,
+        failedRows: nextRows.filter((row) => row.status === 'failed').length,
+        manualRows: nextRows.filter((row) => row.status === 'manual_required').length
+      })
+    });
+
+    return this.toGiftCardBalanceCheckRunResponse(updatedRun);
   }
 
   async bulkDelete(dto: BulkDeleteAutomationTasksDto, operator?: AuthenticatedUser) {
@@ -1039,6 +1589,74 @@ export class AppleAutomationTasksService {
     return this.toResponse(updated);
   }
 
+  async submitManualInput(id: string, dto: SubmitManualInputDto, operator?: AuthenticatedUser) {
+    const task = await this.findTaskOrThrow(id, false);
+    const value = this.normalizeRequiredString(dto.value, 'value');
+    const inputType = this.parseManualInputType(dto.inputType);
+    const note = this.normalizeNullableString(dto.note);
+    const submittedAt = new Date();
+    const currentPayload = this.decryptTaskInputPayload(task.inputPayloadEncrypted) ?? {};
+    const queueJobId = this.createQueueJobId(task.taskType);
+    const inputPayloadEncrypted = this.encryptPayload({
+      ...currentPayload,
+      manualInput: {
+        inputType,
+        value,
+        note,
+        submittedAt: submittedAt.toISOString(),
+        submittedByUserId: operator?.id ?? null
+      }
+    });
+
+    const updated = await this.prisma.automationTask.update({
+      where: { id: task.id },
+      data: {
+        status: 'queued',
+        queueJobId,
+        retryCount: { increment: 1 },
+        inputPayloadEncrypted,
+        manualRequired: false,
+        errorCode: null,
+        errorMessage: null,
+        startedAt: null,
+        finishedAt: null
+      },
+      include: this.getInclude(true)
+    });
+
+    const sanitizedPayload = {
+      inputType,
+      valueLength: value.length,
+      note,
+      queueJobId,
+      submittedAt: submittedAt.toISOString(),
+      operatorId: operator?.id ?? null
+    };
+
+    await this.prisma.automationTaskLog.create({
+      data: {
+        taskId: task.id,
+        level: 'info',
+        message: '已提交人工输入，任务重新进入队列',
+        payload: this.toAuditJson(sanitizedPayload)
+      }
+    });
+
+    await this.auditLogsService.create({
+      userId: operator?.id,
+      module: 'apple_automation_task',
+      action: 'apple_automation_task.manual_input.submit',
+      objectType: 'automation_task',
+      objectId: task.id,
+      afterData: this.toAuditJson(sanitizedPayload),
+      remark: `Submitted manual input for automation task ${task.id}`
+    });
+
+    await this.refreshBatchStats(task.batchId);
+    this.invalidateWorkbenchStatusCache();
+    return this.toResponse(updated);
+  }
+
   async writeResult(id: string, dto: AutomationTaskResultDto, operator?: AuthenticatedUser) {
     const task = await this.findTaskOrThrow(id, false);
     const status = this.parseWritableStatus(dto.status ?? 'success');
@@ -1676,6 +2294,94 @@ export class AppleAutomationTasksService {
     throw new BadRequestException('sortOrder is invalid');
   }
 
+  private normalizeGiftCardBalanceCheckAttachmentIds(value: unknown) {
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new BadRequestException('attachmentIds is required');
+    }
+
+    if (value.length > GIFT_CARD_BALANCE_CHECK_ATTACHMENT_LIMIT) {
+      throw new BadRequestException(
+        `attachmentIds cannot exceed ${GIFT_CARD_BALANCE_CHECK_ATTACHMENT_LIMIT} items`
+      );
+    }
+
+    return Array.from(
+      new Set(
+        value.map((item, index) => this.normalizeRequiredUuid(item, `attachmentIds[${index}]`))
+      )
+    );
+  }
+
+  private normalizeGiftCardQueryAccountInputs(value: unknown) {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('accounts is required');
+    }
+
+    if (value.length > GIFT_CARD_QUERY_ACCOUNT_LIMIT) {
+      throw new BadRequestException(
+        `accounts cannot exceed ${GIFT_CARD_QUERY_ACCOUNT_LIMIT} items`
+      );
+    }
+
+    const seenAppleIds = new Set<string>();
+    return value.map((item, index) => {
+      const data = this.toObject(item);
+      const appleId = this.normalizeRequiredString(data?.appleId, `accounts[${index}].appleId`);
+      const password = this.normalizeRequiredString(data?.password, `accounts[${index}].password`);
+      const appleIdKey = appleId.toLowerCase();
+
+      if (seenAppleIds.has(appleIdKey)) {
+        throw new BadRequestException(`accounts[${index}].appleId is duplicated`);
+      }
+      seenAppleIds.add(appleIdKey);
+
+      return {
+        appleId,
+        password,
+        status: this.parseGiftCardQueryAccountStatus(data?.status),
+        remark: this.normalizeGiftCardQueryAccountRemark(data?.remark, index)
+      };
+    });
+  }
+
+  private normalizeGiftCardQueryAccountRemark(value: unknown, index: number) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`accounts[${index}].remark must be a string`);
+    }
+
+    return this.normalizeNullableString(value);
+  }
+
+  private parseGiftCardQueryAccountStatus(value: unknown): GiftCardQueryAccountStatus {
+    if (value === undefined || value === null || value === '') {
+      return 'ready';
+    }
+    if (value === 'ready' || value === 'disabled') {
+      return value;
+    }
+
+    throw new BadRequestException('accounts.status is invalid');
+  }
+
+  private parseManualInputType(value: unknown): AutomationTaskManualInputType {
+    if (value === undefined || value === null || value === '') {
+      return 'verification_code';
+    }
+    if (
+      value === 'verification_code' ||
+      value === 'captcha' ||
+      value === 'device_confirmation' ||
+      value === 'note'
+    ) {
+      return value;
+    }
+
+    throw new BadRequestException('inputType is invalid');
+  }
+
   private normalizeRequiredString(value: unknown, field: string) {
     if (typeof value !== 'string' || !value.trim()) {
       throw new BadRequestException(`${field} is required`);
@@ -2103,6 +2809,578 @@ export class AppleAutomationTasksService {
     }
 
     return null;
+  }
+
+  private toGiftCardQueryAccountsResponse(
+    parameter:
+      | {
+          value: Prisma.JsonValue;
+          updatedAt: Date;
+        }
+      | null
+      | undefined
+  ): GiftCardQueryAccountsResponse {
+    const accounts = this.readStoredGiftCardQueryAccounts(parameter?.value);
+    return {
+      items: accounts.map((account) => ({
+        id: account.id,
+        appleIdMasked: account.appleIdMasked,
+        passwordSaved: Boolean(account.passwordEncrypted),
+        status: account.status,
+        remark: account.remark,
+        updatedAt: account.updatedAt
+      })),
+      maxAccounts: GIFT_CARD_QUERY_ACCOUNT_LIMIT,
+      updatedAt: parameter?.updatedAt.toISOString() ?? null
+    };
+  }
+
+  private toGiftCardBalanceCheckRunResponse(
+    run: GiftCardBalanceCheckRunStored
+  ): GiftCardBalanceCheckRunResponse {
+    return {
+      id: run.id,
+      status: run.status,
+      accountCount: run.accountCount,
+      imageCount: run.imageCount,
+      createdAt: run.createdAt,
+      rows: run.rows.map((row) => ({
+        id: row.id,
+        attachmentId: row.attachmentId,
+        fileName: row.fileName,
+        extractedCode: row.extractedCode,
+        assignedAppleId: row.assignedAppleIdMasked,
+        status: row.status,
+        balance: row.balance,
+        currency: row.currency,
+        message: row.message
+      }))
+    };
+  }
+
+  private async saveGiftCardBalanceCheckRuns(
+    runs: GiftCardBalanceCheckRunStored[],
+    operator?: AuthenticatedUser
+  ) {
+    return this.prisma.systemParameter.upsert({
+      where: { key: GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY },
+      update: {
+        value: this.toAuditJson({ version: 1, runs }),
+        group: GIFT_CARD_QUERY_ACCOUNTS_GROUP,
+        remark: 'Apple 礼品卡余额查询批次记录',
+        updatedByUserId: operator?.id
+      },
+      create: {
+        key: GIFT_CARD_BALANCE_CHECK_RUNS_PARAMETER_KEY,
+        value: this.toAuditJson({ version: 1, runs }),
+        group: GIFT_CARD_QUERY_ACCOUNTS_GROUP,
+        remark: 'Apple 礼品卡余额查询批次记录',
+        updatedByUserId: operator?.id
+      }
+    });
+  }
+
+  private async prepareGiftCardBalanceQueryPayload(run: GiftCardBalanceCheckRunStored) {
+    const accountsParameter = await this.prisma.systemParameter.findUnique({
+      where: { key: GIFT_CARD_QUERY_ACCOUNTS_PARAMETER_KEY }
+    });
+    const accountsById = new Map(
+      this.readStoredGiftCardQueryAccounts(accountsParameter?.value)
+        .filter((account) => account.status === 'ready')
+        .map((account) => [account.id, account])
+    );
+    const queryAccounts: GiftCardBalanceQueryAccountPayload[] = [];
+    const queryRows: GiftCardBalanceQueryRowPayload[] = [];
+    const queryAccountsById = new Map<string, GiftCardBalanceQueryAccountPayload>();
+
+    const rows: GiftCardBalanceCheckRowStored[] = run.rows.map((row) => {
+      if (!row.giftCardCodeEncrypted) {
+        return {
+          ...row,
+          status: 'manual_required',
+          message: '该图片缺少礼品卡代码，请先补录'
+        } satisfies GiftCardBalanceCheckRowStored;
+      }
+
+      const giftCardCode = this.fieldEncryptionService.decrypt(row.giftCardCodeEncrypted);
+      if (!giftCardCode) {
+        return {
+          ...row,
+          status: 'manual_required',
+          message: '礼品卡代码解密失败，请重新补录'
+        } satisfies GiftCardBalanceCheckRowStored;
+      }
+
+      const account = row.assignedAccountId ? accountsById.get(row.assignedAccountId) : null;
+      if (!account?.appleIdEncrypted || !account.passwordEncrypted) {
+        return {
+          ...row,
+          status: 'manual_required',
+          message: '该行没有可用的礼品卡查询账号，请先保存查询账号池'
+        } satisfies GiftCardBalanceCheckRowStored;
+      }
+
+      const appleId = this.fieldEncryptionService.decrypt(account.appleIdEncrypted);
+      const password = this.fieldEncryptionService.decrypt(account.passwordEncrypted);
+      if (!appleId || !password) {
+        return {
+          ...row,
+          status: 'manual_required',
+          message: '礼品卡查询账号解密失败，请重新保存账号池'
+        } satisfies GiftCardBalanceCheckRowStored;
+      }
+
+      if (!queryAccountsById.has(account.id)) {
+        const queryAccount = {
+          id: account.id,
+          appleId,
+          password
+        } satisfies GiftCardBalanceQueryAccountPayload;
+        queryAccountsById.set(account.id, queryAccount);
+        queryAccounts.push(queryAccount);
+      }
+
+      queryRows.push({
+        id: row.id,
+        giftCardCode,
+        giftCardCodeTail: row.giftCardCodeTail,
+        assignedAccountId: account.id,
+        assignedAppleId: appleId,
+        fileName: row.fileName
+      });
+
+      return {
+        ...row,
+        status: 'waiting_worker',
+        message: '正在执行礼品卡余额查询'
+      } satisfies GiftCardBalanceCheckRowStored;
+    });
+
+    return {
+      rows,
+      payload: {
+        runId: run.id,
+        createdAt: run.createdAt,
+        accounts: queryAccounts,
+        rows: queryRows
+      } satisfies GiftCardBalanceQueryCommandPayload
+    };
+  }
+
+  private getGiftCardBalanceQueryCommandConfig() {
+    const command = process.env.APPLE_GIFT_CARD_BALANCE_QUERY_COMMAND?.trim();
+    if (!command) return null;
+
+    return {
+      command,
+      args: this.parseGiftCardBalanceQueryCommandArgs(),
+      timeoutMs: this.getNumberFromEnv(
+        'APPLE_GIFT_CARD_BALANCE_QUERY_TIMEOUT_MS',
+        GIFT_CARD_BALANCE_QUERY_DEFAULT_TIMEOUT_MS
+      )
+    };
+  }
+
+  private parseGiftCardBalanceQueryCommandArgs() {
+    const raw = process.env.APPLE_GIFT_CARD_BALANCE_QUERY_ARGS?.trim();
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+      throw new Error('APPLE_GIFT_CARD_BALANCE_QUERY_ARGS must be a JSON string array');
+    }
+
+    return parsed;
+  }
+
+  private async runGiftCardBalanceQueryCommand(
+    config: {
+      command: string;
+      args: string[];
+      timeoutMs: number;
+    },
+    payload: GiftCardBalanceQueryCommandPayload
+  ): Promise<GiftCardBalanceQueryCommandResultRow[]> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(config.command, config.args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: process.env
+      });
+      let settled = false;
+      let stdout = '';
+      let stderr = '';
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill('SIGKILL');
+        reject(new Error('timeout'));
+      }, config.timeoutMs);
+
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk;
+      });
+      child.on('error', (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on('close', (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+
+        if (code !== 0) {
+          reject(new Error(`exit:${code ?? 'unknown'}:${stderr.length}`));
+          return;
+        }
+
+        try {
+          resolve(this.readGiftCardBalanceQueryCommandResult(stdout));
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      child.stdin.end(JSON.stringify(payload));
+    });
+  }
+
+  private readGiftCardBalanceQueryCommandResult(
+    value: string
+  ): GiftCardBalanceQueryCommandResultRow[] {
+    const data = this.toObject(JSON.parse(value));
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    return rows
+      .map((item) => {
+        const row = this.toObject(item);
+        if (!row) return null;
+        const rowId = this.getObjectString(row, 'rowId') ?? this.getObjectString(row, 'id');
+        const status = this.readGiftCardBalanceQueryResultStatus(row.status);
+        if (!rowId || !status) return null;
+        return {
+          rowId,
+          status,
+          balance: this.getObjectString(row, 'balance') ?? '-',
+          currency: (this.getObjectString(row, 'currency') ?? '-').toUpperCase(),
+          message:
+            this.getObjectString(row, 'message') ??
+            this.getGiftCardBalanceQueryDefaultMessage(status)
+        } satisfies GiftCardBalanceQueryCommandResultRow;
+      })
+      .filter((row): row is GiftCardBalanceQueryCommandResultRow => Boolean(row));
+  }
+
+  private readGiftCardBalanceQueryResultStatus(
+    value: unknown
+  ): GiftCardBalanceQueryCommandResultRow['status'] | null {
+    if (value === 'manual_required' || value === 'success' || value === 'failed') return value;
+    return null;
+  }
+
+  private getGiftCardBalanceQueryDefaultMessage(
+    status: GiftCardBalanceQueryCommandResultRow['status']
+  ) {
+    if (status === 'success') return '礼品卡余额查询成功';
+    if (status === 'manual_required') return '礼品卡余额查询需要人工验证';
+    return '礼品卡余额查询失败';
+  }
+
+  private getGiftCardBalanceQuerySensitiveValues(payload: GiftCardBalanceQueryCommandPayload) {
+    return [
+      ...payload.rows.map((row) => row.giftCardCode),
+      ...payload.accounts.map((account) => account.appleId),
+      ...payload.accounts.map((account) => account.password)
+    ].filter(Boolean);
+  }
+
+  private sanitizeGiftCardBalanceQueryMessage(value: string, sensitiveValues: string[]) {
+    let message = value.trim().slice(0, 300);
+    for (const sensitiveValue of sensitiveValues) {
+      if (!sensitiveValue) continue;
+      message = message.split(sensitiveValue).join('[已脱敏]');
+    }
+
+    return message || '礼品卡余额查询完成';
+  }
+
+  private resolveGiftCardBalanceCheckRunStatus(
+    rows: GiftCardBalanceCheckRowStored[]
+  ): GiftCardBalanceCheckRunStored['status'] {
+    if (
+      rows.some(
+        (row) =>
+          row.status === 'pending_ocr' ||
+          row.status === 'manual_required' ||
+          row.status === 'waiting_worker'
+      )
+    ) {
+      return 'manual_required';
+    }
+
+    return 'completed';
+  }
+
+  private readStoredGiftCardBalanceCheckRuns(value: unknown): GiftCardBalanceCheckRunStored[] {
+    const data = this.toObject(value);
+    const runs = Array.isArray(data?.runs) ? data.runs : [];
+
+    return runs
+      .map((item) => {
+        const run = this.toObject(item);
+        if (!run) return null;
+        const rows = Array.isArray(run.rows) ? run.rows : [];
+        return {
+          id: this.getObjectString(run, 'id') ?? randomUUID(),
+          status: this.readStoredGiftCardBalanceCheckRunStatus(run.status),
+          accountCount: this.getNumberOrNull(run.accountCount) ?? 0,
+          imageCount: this.getNumberOrNull(run.imageCount) ?? rows.length,
+          rows: rows
+            .map((row) => this.readStoredGiftCardBalanceCheckRow(row))
+            .filter((row): row is GiftCardBalanceCheckRowStored => Boolean(row)),
+          createdAt: this.getObjectString(run, 'createdAt') ?? new Date(0).toISOString(),
+          createdByUserId: this.getObjectString(run, 'createdByUserId')
+        } satisfies GiftCardBalanceCheckRunStored;
+      })
+      .filter((run): run is GiftCardBalanceCheckRunStored => Boolean(run));
+  }
+
+  private readStoredGiftCardBalanceCheckRow(value: unknown): GiftCardBalanceCheckRowStored | null {
+    const row = this.toObject(value);
+    if (!row) return null;
+
+    return {
+      id: this.getObjectString(row, 'id') ?? randomUUID(),
+      attachmentId: this.getObjectString(row, 'attachmentId') ?? '',
+      fileName: this.getObjectString(row, 'fileName') ?? 'gift-card-image',
+      extractedCode: this.getObjectString(row, 'extractedCode') ?? '待识别',
+      giftCardCodeEncrypted: this.getObjectString(row, 'giftCardCodeEncrypted'),
+      giftCardCodeHash: this.getObjectString(row, 'giftCardCodeHash'),
+      giftCardCodeTail: this.getObjectString(row, 'giftCardCodeTail'),
+      assignedAccountId: this.getObjectString(row, 'assignedAccountId'),
+      assignedAppleIdMasked: this.getObjectString(row, 'assignedAppleIdMasked') ?? '未分配',
+      status: this.readStoredGiftCardBalanceCheckRowStatus(row.status),
+      balance: this.getObjectString(row, 'balance') ?? '-',
+      currency: this.getObjectString(row, 'currency') ?? '-',
+      message: this.getObjectString(row, 'message') ?? '等待处理'
+    };
+  }
+
+  private readStoredGiftCardBalanceCheckRunStatus(
+    value: unknown
+  ): GiftCardBalanceCheckRunStored['status'] {
+    if (value === 'completed' || value === 'manual_required' || value === 'waiting_worker') {
+      return value;
+    }
+
+    return 'manual_required';
+  }
+
+  private readStoredGiftCardBalanceCheckRowStatus(value: unknown): GiftCardBalanceCheckRowStatus {
+    if (
+      value === 'pending_ocr' ||
+      value === 'waiting_worker' ||
+      value === 'manual_required' ||
+      value === 'success' ||
+      value === 'failed'
+    ) {
+      return value;
+    }
+
+    return 'manual_required';
+  }
+
+  private readStoredGiftCardQueryAccounts(value: unknown): GiftCardQueryAccountStored[] {
+    const data = this.toObject(value);
+    const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
+
+    return accounts
+      .map((item) => {
+        const account = this.toObject(item);
+        if (!account) return null;
+        const id = this.getObjectString(account, 'id') ?? randomUUID();
+        const updatedAt = this.getObjectString(account, 'updatedAt') ?? new Date(0).toISOString();
+        return {
+          id,
+          appleIdEncrypted: this.getObjectString(account, 'appleIdEncrypted'),
+          appleIdHash: this.getObjectString(account, 'appleIdHash'),
+          appleIdMasked: this.getObjectString(account, 'appleIdMasked') ?? '已保存账号',
+          passwordEncrypted: this.getObjectString(account, 'passwordEncrypted'),
+          status: this.readStoredGiftCardQueryAccountStatus(account.status),
+          remark: this.getObjectString(account, 'remark'),
+          createdAt: this.getObjectString(account, 'createdAt') ?? updatedAt,
+          updatedAt
+        } satisfies GiftCardQueryAccountStored;
+      })
+      .filter((account): account is GiftCardQueryAccountStored => Boolean(account));
+  }
+
+  private readStoredGiftCardQueryAccountStatus(value: unknown): GiftCardQueryAccountStatus {
+    return value === 'disabled' ? 'disabled' : 'ready';
+  }
+
+  private toGiftCardQueryAccountAuditValue(account: GiftCardQueryAccountStored) {
+    return {
+      id: account.id,
+      appleIdHash: account.appleIdHash,
+      appleIdMasked: account.appleIdMasked,
+      passwordSaved: Boolean(account.passwordEncrypted),
+      status: account.status,
+      remark: account.remark,
+      updatedAt: account.updatedAt
+    };
+  }
+
+  private async detectGiftCardCodeFromAttachment(attachment: {
+    originalName: string;
+    storageKey: string;
+  }) {
+    const fileNameCode = this.findGiftCardCodeCandidate(attachment.originalName);
+    if (fileNameCode) {
+      return {
+        code: fileNameCode,
+        message: '已从文件名识别礼品卡候选码'
+      };
+    }
+
+    const ocrResult = await this.readGiftCardOcrText(attachment.storageKey);
+    const ocrCode = ocrResult.text ? this.findGiftCardCodeCandidate(ocrResult.text) : null;
+    if (ocrCode) {
+      return {
+        code: ocrCode,
+        message: 'OCR 已识别礼品卡候选码'
+      };
+    }
+
+    return {
+      code: null,
+      message: this.getGiftCardOcrFallbackMessage(ocrResult.status)
+    };
+  }
+
+  private async readGiftCardOcrText(storageKey: string): Promise<GiftCardOcrReadResult> {
+    if (!this.isGiftCardOcrEnabled()) {
+      return { status: 'disabled', text: null };
+    }
+
+    const uploadDirectory = resolve(process.cwd(), process.env.ATTACHMENT_STORAGE_DIR ?? 'uploads');
+    const filePath = resolve(uploadDirectory, storageKey);
+    if (!filePath.startsWith(`${uploadDirectory}${sep}`) || !existsSync(filePath)) {
+      return { status: 'missing_file', text: null };
+    }
+
+    const executable = process.env.APPLE_GIFT_CARD_OCR_TESSERACT_PATH || 'tesseract';
+    const language = process.env.APPLE_GIFT_CARD_OCR_LANG || 'eng';
+    try {
+      const { stdout } = await execFileAsync(executable, [filePath, 'stdout', '-l', language], {
+        timeout: this.getGiftCardOcrTimeoutMs(),
+        maxBuffer: 1024 * 1024
+      });
+      return { status: 'completed', text: stdout };
+    } catch (error) {
+      if (this.isCommandMissingError(error)) {
+        return { status: 'unavailable', text: null };
+      }
+      if (this.isCommandTimeoutError(error)) {
+        return { status: 'timeout', text: null };
+      }
+      return { status: 'failed', text: null };
+    }
+  }
+
+  private getGiftCardOcrFallbackMessage(status: GiftCardOcrReadStatus) {
+    const prefix = '图片已保存并分配查询账号，';
+    if (status === 'disabled') {
+      return `${prefix}OCR 未启用，请在结果表补录礼品卡代码`;
+    }
+    if (status === 'missing_file') {
+      return `${prefix}OCR 找不到图片文件，请检查附件存储或在结果表补录礼品卡代码`;
+    }
+    if (status === 'unavailable') {
+      return `${prefix}OCR 执行器不可用，请检查 APPLE_GIFT_CARD_OCR_TESSERACT_PATH 或在结果表补录`;
+    }
+    if (status === 'timeout') {
+      return `${prefix}OCR 超时，请优化图片或在结果表补录礼品卡代码`;
+    }
+    if (status === 'failed') {
+      return `${prefix}OCR 执行失败，请检查图片格式或在结果表补录礼品卡代码`;
+    }
+    return `${prefix}OCR 未识别到礼品卡代码，请在结果表补录`;
+  }
+
+  private isCommandMissingError(error: unknown) {
+    return Boolean(
+      error && typeof error === 'object' && (error as { code?: unknown }).code === 'ENOENT'
+    );
+  }
+
+  private isCommandTimeoutError(error: unknown) {
+    if (!error || typeof error !== 'object') return false;
+    const candidate = error as { killed?: unknown; signal?: unknown };
+    return candidate.killed === true || typeof candidate.signal === 'string';
+  }
+
+  private isGiftCardOcrEnabled() {
+    return process.env.APPLE_GIFT_CARD_OCR_ENABLED !== 'false';
+  }
+
+  private getGiftCardOcrTimeoutMs() {
+    const value = Number(process.env.APPLE_GIFT_CARD_OCR_TIMEOUT_MS);
+    if (!Number.isFinite(value) || value < 1000 || value > 120_000) {
+      return GIFT_CARD_OCR_DEFAULT_TIMEOUT_MS;
+    }
+
+    return Math.floor(value);
+  }
+
+  private findGiftCardCodeCandidate(value: string | null | undefined) {
+    if (!value) return null;
+    const upperValue = value.toUpperCase();
+    const groupedMatches = upperValue.match(/[A-Z0-9][A-Z0-9\s_-]{8,}[A-Z0-9]/g) ?? [];
+    for (const candidate of groupedMatches.length ? groupedMatches : [upperValue]) {
+      const compact = candidate.replace(/[^A-Z0-9]/g, '');
+      const matches = compact.match(/[A-Z0-9]{10,64}/g) ?? [];
+      const match = matches.find((item) => /[A-Z]/.test(item) && /\d/.test(item));
+      if (match) return match;
+    }
+
+    return null;
+  }
+
+  private toGiftCardCodeFields(code: string | null): GiftCardCodeFields {
+    if (!code) {
+      return {
+        extractedCode: '待识别',
+        giftCardCodeEncrypted: null,
+        giftCardCodeHash: null,
+        giftCardCodeTail: null
+      };
+    }
+
+    const normalized = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return {
+      extractedCode: this.maskGiftCardCode(normalized),
+      giftCardCodeEncrypted: this.fieldEncryptionService.encrypt(normalized),
+      giftCardCodeHash: this.fieldEncryptionService.hash(normalized),
+      giftCardCodeTail: normalized.slice(-4)
+    };
+  }
+
+  private maskGiftCardCode(value: string) {
+    if (value.length <= 4) return '*'.repeat(value.length);
+    return `****${value.slice(-4)}`;
+  }
+
+  private maskGiftCardCodeInText(value: string) {
+    return value.replace(/[A-Z0-9][A-Z0-9\s_-]{8,}[A-Z0-9]/gi, (candidate) => {
+      const code = this.findGiftCardCodeCandidate(candidate);
+      return code ? this.maskGiftCardCode(code) : candidate;
+    });
   }
 
   private toAuditJson(data: unknown) {

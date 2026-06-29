@@ -53,6 +53,13 @@
         </div>
       </div>
 
+      <ListRequestError
+        v-if="currentTabLoadError"
+        :title="`${activeTabMeta.title}加载失败`"
+        :message="currentTabLoadError"
+        @retry="() => refreshCurrentTab({ force: true })"
+      />
+
       <el-tabs
         v-model="activeTab"
         class="system-tabs ops-monitor-tabs"
@@ -802,6 +809,7 @@ import { getApiErrorMessage } from '@/api/client';
 import { dataCenterApi, opsApi, type DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import OpsStatusTag from '@/components/ui/OpsStatusTag.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
@@ -810,6 +818,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import { OPS_ERROR_LEVEL_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { formatAppleRegionLabel } from '@/utils/appleAccountRegion';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import type {
   AppleWebGatewayStatus,
   CronJobLog,
@@ -850,6 +859,7 @@ const activeErrorsQueryKey = ref('');
 const activeSnapshotsQueryKey = ref('');
 const activatedOnce = ref(false);
 const errorLevelDictionaries = ref<DataDictionary[]>([]);
+const currentTabLoadError = ref('');
 
 type OpsQueueStatusResult = Awaited<ReturnType<typeof opsApi.queueStatus>>;
 type OpsCronJobsPage = Awaited<ReturnType<typeof opsApi.cronJobs>>;
@@ -1097,28 +1107,43 @@ const stopRealtimeRefresh = onRealtimeQueryInvalidated(
 onBeforeUnmount(stopRealtimeRefresh);
 
 async function refreshCurrentTab(options: { background?: boolean; force?: boolean } = {}) {
-  await loadOpsOptions(options);
-  await loadOverview({ background: options.background, force: options.force ?? true });
-  if (activeTab.value === 'queue') {
-    await loadQueueStatus({ background: options.background, force: options.force ?? true });
+  if (!options.background) {
+    currentTabLoadError.value = '';
   }
-  if (activeTab.value === 'cron') {
-    await loadCronJobs({ background: options.background, force: options.force ?? true });
-  }
-  if (activeTab.value === 'platforms') {
-    await loadPlatformSync({ background: options.background, force: options.force ?? true });
-  }
-  if (activeTab.value === 'gateways') {
-    await loadAppleWebGateways({ background: options.background, force: options.force ?? true });
-  }
-  if (activeTab.value === 'resources') {
-    await loadResources({ background: options.background, force: options.force ?? true });
-  }
-  if (activeTab.value === 'errors') {
-    await loadErrors({ background: options.background, force: options.force ?? true });
-  }
-  if (activeTab.value === 'snapshots') {
-    await loadSnapshots({ background: options.background, force: options.force ?? true });
+
+  try {
+    await loadOpsOptions(options);
+    await loadOverview({ background: options.background, force: options.force ?? true });
+    if (activeTab.value === 'queue') {
+      await loadQueueStatus({ background: options.background, force: options.force ?? true });
+    }
+    if (activeTab.value === 'cron') {
+      await loadCronJobs({ background: options.background, force: options.force ?? true });
+    }
+    if (activeTab.value === 'platforms') {
+      await loadPlatformSync({ background: options.background, force: options.force ?? true });
+    }
+    if (activeTab.value === 'gateways') {
+      await loadAppleWebGateways({ background: options.background, force: options.force ?? true });
+    }
+    if (activeTab.value === 'resources') {
+      await loadResources({ background: options.background, force: options.force ?? true });
+    }
+    if (activeTab.value === 'errors') {
+      await loadErrors({ background: options.background, force: options.force ?? true });
+    }
+    if (activeTab.value === 'snapshots') {
+      await loadSnapshots({ background: options.background, force: options.force ?? true });
+    }
+    currentTabLoadError.value = '';
+  } catch (error) {
+    if (!options.background) {
+      currentTabLoadError.value = getLoadErrorMessage(
+        error,
+        `${activeTabMeta.value.title}加载失败`
+      );
+      ElMessage.error(currentTabLoadError.value);
+    }
   }
 }
 

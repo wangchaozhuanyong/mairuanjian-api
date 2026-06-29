@@ -89,6 +89,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="platformsLoadError && platformRows.length"
+        title="平台接口状态刷新失败"
+        :message="platformsLoadError"
+        @retry="() => loadPlatforms({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -98,7 +105,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="platformsLoadError"
+            title="平台接口状态加载失败"
+            :message="platformsLoadError"
+            @retry="() => loadPlatforms({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无平台接口状态</strong>
             <span>可以清空筛选，或到平台授权配置中测试连接状态。</span>
             <div class="apple-core-empty-state__actions">
@@ -325,6 +338,18 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div
+        v-else-if="platformsLoadError"
+        class="mobile-record-list"
+        aria-label="平台接口状态加载失败"
+      >
+        <ListRequestError
+          title="平台接口状态加载失败"
+          :message="platformsLoadError"
+          @retry="() => loadPlatforms({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -554,6 +579,7 @@ import { dataCenterApi, opsApi, userTableViewsApi } from '@/api/system';
 import type { DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
@@ -571,6 +597,7 @@ import type {
 } from '@/types/system';
 import { PLATFORM_AUTH_MODE_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { buildPlatformAuthModeOptions } from '@/utils/systemQuickOptions';
 
@@ -619,6 +646,7 @@ const testingAll = ref(false);
 const testingPlatform = ref('');
 const reauthorizingPlatform = ref('');
 const platforms = ref<PlatformInterfaceStatus[]>([]);
+const platformsLoadError = ref('');
 const authorizationDialogVisible = ref(false);
 const authorizationLoading = ref(false);
 const authorizationSaving = ref(false);
@@ -788,6 +816,7 @@ async function loadPlatforms(options: { background?: boolean; force?: boolean } 
 
   if (cached) {
     platforms.value = cached.items;
+    platformsLoadError.value = '';
   }
 
   loading.value = !cached && !options.background;
@@ -805,10 +834,12 @@ async function loadPlatforms(options: { background?: boolean; force?: boolean } 
 
     if (result.changed || !cached) {
       platforms.value = result.data.items;
+      platformsLoadError.value = '';
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载平台接口状态失败');
+      platformsLoadError.value = getLoadErrorMessage(error, '加载平台接口状态失败');
+      ElMessage.error(platformsLoadError.value);
     }
   } finally {
     if (activePlatformsQueryKey.value === key) {

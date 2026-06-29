@@ -1,6 +1,10 @@
-FROM node:24-alpine AS build
+FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
+
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -13,12 +17,18 @@ RUN npm run prisma:generate --workspace @apple-business/api
 RUN npm run build --workspace @apple-business/shared
 RUN npm run build --workspace @apple-business/api
 
-FROM node:24-alpine AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends ca-certificates openssl tesseract-ocr \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app /app
+RUN cd /app && npx playwright install --with-deps chromium
 
 EXPOSE 3000
 

@@ -43,6 +43,13 @@
         @batch-action="handleBatchAction"
       />
 
+      <ListRequestError
+        v-if="templatesLoadError && templates.length"
+        title="发货模板刷新失败"
+        :message="templatesLoadError"
+        @retry="() => loadTemplates({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -53,7 +60,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="templatesLoadError"
+            title="发货模板加载失败"
+            :message="templatesLoadError"
+            @retry="() => loadTemplates({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无发货模板</strong>
             <span>可以新增模板，或清空筛选后重新查看模板列表。</span>
             <div class="apple-core-empty-state__actions">
@@ -160,6 +173,14 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div v-else-if="templatesLoadError" class="mobile-record-list" aria-label="发货模板加载失败">
+        <ListRequestError
+          title="发货模板加载失败"
+          :message="templatesLoadError"
+          @retry="() => loadTemplates({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -271,6 +292,7 @@ import { messageTemplatesApi, userTableViewsApi } from '@/api/system';
 import type { MessageTemplateQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -281,6 +303,7 @@ import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { MessageTemplate, PageResult, TableDensity, UserTableView } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const DELIVERY_TEMPLATE_TYPE = 'delivery' as const satisfies MessageTemplate['type'];
@@ -305,6 +328,7 @@ const dialogVisible = ref(false);
 const editingTemplate = ref<MessageTemplate | null>(null);
 const formRef = ref<FormInstance>();
 const templates = ref<MessageTemplate[]>([]);
+const templatesLoadError = ref('');
 const selectedTemplates = ref<MessageTemplate[]>([]);
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
@@ -374,6 +398,7 @@ function buildTemplateParams(): MessageTemplateQuery {
 function applyTemplateResult(data: PageResult<MessageTemplate>) {
   templates.value = data.items;
   total.value = data.total;
+  templatesLoadError.value = '';
 }
 
 async function loadTemplates(options: { background?: boolean; force?: boolean } = {}) {
@@ -405,7 +430,8 @@ async function loadTemplates(options: { background?: boolean; force?: boolean } 
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载发货模板失败');
+      templatesLoadError.value = getLoadErrorMessage(error, '加载发货模板失败');
+      ElMessage.error(templatesLoadError.value);
     }
   } finally {
     if (activeTemplatesQueryKey.value === key) {

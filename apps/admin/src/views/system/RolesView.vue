@@ -73,6 +73,13 @@
           @export="exportRoles"
         />
 
+        <ListRequestError
+          v-if="rolesLoadError && roles.length"
+          title="角色权限刷新失败"
+          :message="rolesLoadError"
+          @retry="() => loadData({ force: true })"
+        />
+
         <el-table
           v-loading="loading"
           class="desktop-data-table"
@@ -84,7 +91,13 @@
           @sort-change="handleSortChange"
         >
           <template #empty>
-            <div class="apple-core-empty-state">
+            <ListRequestError
+              v-if="rolesLoadError && !roles.length"
+              title="角色权限加载失败"
+              :message="rolesLoadError"
+              @retry="() => loadData({ force: true })"
+            />
+            <div v-else class="apple-core-empty-state">
               <strong>暂无角色</strong>
               <span>可以新增角色，或清空筛选后重新查看。</span>
               <div class="apple-core-empty-state__actions">
@@ -174,6 +187,18 @@
               <AppButton size="small" variant="soft" @click="selectRole(role)">选择角色</AppButton>
             </div>
           </article>
+        </div>
+
+        <div
+          v-else-if="rolesLoadError && !roles.length"
+          class="mobile-record-list"
+          aria-label="角色权限加载失败"
+        >
+          <ListRequestError
+            title="角色权限加载失败"
+            :message="rolesLoadError"
+            @retry="() => loadData({ force: true })"
+          />
         </div>
 
         <div v-else class="mobile-record-list">
@@ -296,6 +321,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { rolesApi, userTableViewsApi } from '@/api/system';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import AppButton from '@/components/ui/AppButton.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
@@ -304,6 +330,7 @@ import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { Permission, Role, TableDensity, UserTableView } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 interface PermissionTreeNode {
@@ -331,6 +358,7 @@ const roleColumnOptions = [
 const loading = ref(false);
 const saving = ref(false);
 const roles = ref<Role[]>([]);
+const rolesLoadError = ref('');
 const permissions = ref<Permission[]>([]);
 const selectedRole = ref<Role | null>(null);
 const treeRef = ref<InstanceType<typeof ElTree>>();
@@ -411,6 +439,7 @@ const filteredRoles = computed(() => {
 function applyRoleData(data: { roles: Role[]; permissions: Permission[] }) {
   roles.value = data.roles;
   permissions.value = data.permissions;
+  rolesLoadError.value = '';
 
   if (selectedRole.value) {
     selectedRole.value = roles.value.find((role) => role.id === selectedRole.value?.id) ?? null;
@@ -456,7 +485,8 @@ async function loadData(options: { background?: boolean; force?: boolean } = {})
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载角色权限失败');
+      rolesLoadError.value = getLoadErrorMessage(error, '加载角色权限失败');
+      ElMessage.error(rolesLoadError.value);
     }
   } finally {
     if (activeRolesQueryKey.value === key) {

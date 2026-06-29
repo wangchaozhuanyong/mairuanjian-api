@@ -26,6 +26,13 @@
         </div>
       </div>
 
+      <ListRequestError
+        v-if="activeTabLoadError"
+        :title="`${activeTabMeta.title}加载失败`"
+        :message="activeTabLoadError"
+        @retry="() => refreshCurrentTab({ force: true })"
+      />
+
       <el-tabs
         v-model="activeTab"
         class="system-tabs maintenance-tabs"
@@ -1377,6 +1384,7 @@ import type {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -1402,6 +1410,7 @@ import {
   MAINTENANCE_ANNOUNCEMENT_LEVEL_DICTIONARY_GROUP,
   MAINTENANCE_VERSION_STATUS_DICTIONARY_GROUP
 } from '@/config/quickSettings';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import {
   buildMaintenanceAnnouncementLevelOptions,
@@ -1418,6 +1427,7 @@ type LoadOptions = { background?: boolean; force?: boolean };
 const route = useRoute();
 const activeTab = ref('overview');
 const overview = ref<MaintenanceOverview | null>(null);
+const activeTabLoadError = ref('');
 const announcementLevelDictionaries = ref<DataDictionary[]>([]);
 const versionStatusDictionaries = ref<DataDictionary[]>([]);
 const overviewLoading = ref(false);
@@ -1957,9 +1967,11 @@ async function loadCachedData<TData>(config: {
     if (result.changed || !cached) {
       config.apply(result.data);
     }
+    activeTabLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : config.errorMessage);
+      activeTabLoadError.value = getLoadErrorMessage(error, config.errorMessage);
+      ElMessage.error(activeTabLoadError.value);
     }
   } finally {
     if (config.activeKey.value === key) {
@@ -2004,9 +2016,11 @@ async function loadPagedData<TItem>(config: {
     if (result.changed || !cached) {
       config.apply(result.data);
     }
+    activeTabLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : config.errorMessage);
+      activeTabLoadError.value = getLoadErrorMessage(error, config.errorMessage);
+      ElMessage.error(activeTabLoadError.value);
     }
   } finally {
     if (config.activeKey.value === key) {

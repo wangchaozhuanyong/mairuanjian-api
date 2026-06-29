@@ -24,6 +24,17 @@ interface RawEnv {
   APPLE_WEB_CHECK_SING_BOX_SELECTOR?: string;
   APPLE_WEB_CHECK_SING_BOX_API_SECRET?: string;
   APPLE_WEB_CHECK_IP_CHECK_URL?: string;
+  APPLE_GIFT_CARD_OCR_ENABLED?: string;
+  APPLE_GIFT_CARD_OCR_TESSERACT_PATH?: string;
+  APPLE_GIFT_CARD_OCR_LANG?: string;
+  APPLE_GIFT_CARD_OCR_TIMEOUT_MS?: string;
+  APPLE_GIFT_CARD_BALANCE_QUERY_COMMAND?: string;
+  APPLE_GIFT_CARD_BALANCE_QUERY_ARGS?: string;
+  APPLE_GIFT_CARD_BALANCE_QUERY_TIMEOUT_MS?: string;
+  APPLE_GIFT_CARD_BALANCE_QUERY_URL?: string;
+  APPLE_GIFT_CARD_BALANCE_QUERY_HEADLESS?: string;
+  APPLE_GIFT_CARD_BALANCE_QUERY_PROXY_SERVER?: string;
+  APPLE_GIFT_CARD_BALANCE_QUERY_SESSION_DIR?: string;
 }
 
 function assertUrl(name: string, value: string) {
@@ -114,11 +125,25 @@ export function validateEnv(config: RawEnv) {
     config.APPLE_WEB_CHECK_WORKER_RUN_ON_STARTUP
   );
   assertBooleanString('APPLE_WEB_CHECK_HEADLESS', config.APPLE_WEB_CHECK_HEADLESS);
+  assertBooleanString(
+    'APPLE_GIFT_CARD_BALANCE_QUERY_HEADLESS',
+    config.APPLE_GIFT_CARD_BALANCE_QUERY_HEADLESS
+  );
   if (config.APPLE_WEB_CHECK_SING_BOX_API_URL) {
     assertUrl('APPLE_WEB_CHECK_SING_BOX_API_URL', config.APPLE_WEB_CHECK_SING_BOX_API_URL);
   }
   if (config.APPLE_WEB_CHECK_IP_CHECK_URL) {
     assertUrl('APPLE_WEB_CHECK_IP_CHECK_URL', config.APPLE_WEB_CHECK_IP_CHECK_URL);
+  }
+  if (config.APPLE_GIFT_CARD_BALANCE_QUERY_URL) {
+    assertUrl('APPLE_GIFT_CARD_BALANCE_QUERY_URL', config.APPLE_GIFT_CARD_BALANCE_QUERY_URL);
+  }
+  assertBooleanString('APPLE_GIFT_CARD_OCR_ENABLED', config.APPLE_GIFT_CARD_OCR_ENABLED);
+  if (config.APPLE_GIFT_CARD_BALANCE_QUERY_ARGS) {
+    const args = JSON.parse(config.APPLE_GIFT_CARD_BALANCE_QUERY_ARGS) as unknown;
+    if (!Array.isArray(args) || args.some((item) => typeof item !== 'string')) {
+      throw new Error('APPLE_GIFT_CARD_BALANCE_QUERY_ARGS must be a JSON string array');
+    }
   }
 
   const officialPricePollIntervalMs = Number(
@@ -159,6 +184,26 @@ export function validateEnv(config: RawEnv) {
     throw new Error('APPLE_WEB_CHECK_TIMEOUT_MS must be between 10000 and 300000');
   }
 
+  const appleGiftCardOcrTimeoutMs = Number(config.APPLE_GIFT_CARD_OCR_TIMEOUT_MS ?? 15000);
+  if (
+    !Number.isInteger(appleGiftCardOcrTimeoutMs) ||
+    appleGiftCardOcrTimeoutMs < 1000 ||
+    appleGiftCardOcrTimeoutMs > 120000
+  ) {
+    throw new Error('APPLE_GIFT_CARD_OCR_TIMEOUT_MS must be between 1000 and 120000');
+  }
+
+  const appleGiftCardBalanceQueryTimeoutMs = Number(
+    config.APPLE_GIFT_CARD_BALANCE_QUERY_TIMEOUT_MS ?? 180000
+  );
+  if (
+    !Number.isInteger(appleGiftCardBalanceQueryTimeoutMs) ||
+    appleGiftCardBalanceQueryTimeoutMs < 5000 ||
+    appleGiftCardBalanceQueryTimeoutMs > 600000
+  ) {
+    throw new Error('APPLE_GIFT_CARD_BALANCE_QUERY_TIMEOUT_MS must be between 5000 and 600000');
+  }
+
   return {
     ...config,
     NODE_ENV: nodeEnv,
@@ -167,6 +212,8 @@ export function validateEnv(config: RawEnv) {
     APPLE_OFFICIAL_PRICE_POLL_INTERVAL_MS: String(officialPricePollIntervalMs),
     APPLE_WEB_CHECK_WORKER_INTERVAL_MS: String(appleWebCheckIntervalMs),
     APPLE_WEB_CHECK_WORKER_MAX_BATCH: String(appleWebCheckMaxBatch),
-    APPLE_WEB_CHECK_TIMEOUT_MS: String(appleWebCheckTimeoutMs)
+    APPLE_WEB_CHECK_TIMEOUT_MS: String(appleWebCheckTimeoutMs),
+    APPLE_GIFT_CARD_OCR_TIMEOUT_MS: String(appleGiftCardOcrTimeoutMs),
+    APPLE_GIFT_CARD_BALANCE_QUERY_TIMEOUT_MS: String(appleGiftCardBalanceQueryTimeoutMs)
   };
 }

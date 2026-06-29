@@ -238,7 +238,12 @@ export class ExchangeRatesService {
         )
       ]);
 
-      return this.buildP2pProviderQuote('Binance', merchantBuyAds, merchantSellAds, targetAmountRmb);
+      return this.buildP2pProviderQuote(
+        'Binance',
+        merchantBuyAds,
+        merchantSellAds,
+        targetAmountRmb
+      );
     } catch (error) {
       return this.buildP2pErrorQuote('Binance', error);
     }
@@ -368,10 +373,7 @@ export class ExchangeRatesService {
     };
   }
 
-  private filterAdsByAmount(
-    ads: P2pAdQuote[],
-    targetAmountRmb: PrismaNamespace.Decimal | null
-  ) {
+  private filterAdsByAmount(ads: P2pAdQuote[], targetAmountRmb: PrismaNamespace.Decimal | null) {
     const pricedAds = ads.filter((ad) => ad.price.greaterThan(0));
 
     if (!targetAmountRmb || targetAmountRmb.lessThanOrEqualTo(0)) {

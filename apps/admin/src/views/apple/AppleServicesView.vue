@@ -95,6 +95,13 @@
         </AppButton>
       </div>
 
+      <ListRequestError
+        v-if="servicesLoadError && services.length"
+        title="Apple ID 业务刷新失败"
+        :message="servicesLoadError"
+        @retry="() => loadServices({ force: true, dedupeMs: 0 })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -106,7 +113,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="servicesLoadError"
+            title="Apple ID 业务加载失败"
+            :message="servicesLoadError"
+            @retry="() => loadServices({ force: true, dedupeMs: 0 })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无 Apple ID 业务</strong>
             <span>可以新建业务，或清空筛选后查看已有的业务配置。</span>
             <div class="apple-core-empty-state__actions">
@@ -291,6 +304,18 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div
+        v-else-if="servicesLoadError"
+        class="mobile-record-list"
+        aria-label="Apple ID 业务加载失败"
+      >
+        <ListRequestError
+          title="Apple ID 业务加载失败"
+          :message="servicesLoadError"
+          @retry="() => loadServices({ force: true, dedupeMs: 0 })"
+        />
       </div>
 
       <div v-else class="mobile-record-list" aria-label="Apple ID 业务空状态">
@@ -1486,6 +1511,7 @@ import type {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -1536,6 +1562,7 @@ import {
   getAppleServicePeriodTypeLabel
 } from '@/utils/appleServiceOptions';
 import { confirmAction } from '@/utils/confirmAction';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, invalidateSmartQueries, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'apple_services';
@@ -1774,6 +1801,7 @@ const editingService = ref<AppleService | null>(null);
 const editingOfficialSource = ref<AppleOfficialPriceSource | null>(null);
 const formRef = ref<FormInstance>();
 const services = ref<AppleService[]>([]);
+const servicesLoadError = ref('');
 const selectedServices = ref<AppleService[]>([]);
 const officialPriceSources = ref<AppleOfficialPriceSource[]>([]);
 const officialPriceReviews = ref<ApplePriceChangeReview[]>([]);
@@ -2884,9 +2912,11 @@ async function loadServices(
 
     services.value = sortAppleServicesForDisplay(result.data.items.map(normalizeServiceRecord));
     total.value = result.data.total;
+    servicesLoadError.value = '';
   } catch (error) {
     if (requestId === servicesLoadRequestId && !options.silent) {
-      ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 业务失败');
+      servicesLoadError.value = getLoadErrorMessage(error, '加载 Apple ID 业务失败');
+      ElMessage.error(servicesLoadError.value);
     }
   } finally {
     endLoading();

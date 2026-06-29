@@ -7,13 +7,12 @@
     popper-class="feature-help-popper"
   >
     <template #reference>
-      <span
+      <button
         v-bind="attrs"
         class="feature-help"
         :aria-expanded="visible"
         :aria-label="accessibilityLabel"
-        role="button"
-        tabindex="0"
+        type="button"
         @blur="hide"
         @click.stop.prevent="toggle"
         @focus="show"
@@ -27,7 +26,7 @@
             <QuestionFilled />
           </el-icon>
         </span>
-      </span>
+      </button>
     </template>
     <span class="feature-help-popper__content" role="tooltip" @click.stop>
       <strong v-if="title">{{ title }}</strong>

@@ -170,6 +170,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="reportLoadError"
+        :title="activeVisibleRecordCount ? '兑换码报表刷新失败' : '兑换码报表加载失败'"
+        :message="reportLoadError"
+        @retry="() => loadReport({ force: true })"
+      />
+
       <el-tabs v-model="activeTab" class="report-table-tabs">
         <el-tab-pane label="按日期" name="daily">
           <ReportTable
@@ -458,6 +465,7 @@ import type { PropType } from 'vue';
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { codeReportsApi, userTableViewsApi, type CodeProfitReportQuery } from '@/api/system';
 import AppCard from '@/components/ui/AppCard.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -473,6 +481,7 @@ import type {
   UserTableView
 } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const ReportTable = defineComponent({
@@ -580,6 +589,7 @@ const query = reactive<CodeProfitReportQuery>({
   deliveryStatus: ''
 });
 const report = ref<CodeProfitReport>(createEmptyReport());
+const reportLoadError = ref('');
 const activeReportQueryKey = ref('');
 
 const tableSize = computed(() =>
@@ -661,6 +671,11 @@ function buildReportParams(): CodeProfitReportQuery {
   };
 }
 
+function applyReportResult(data: CodeProfitReport) {
+  report.value = data;
+  reportLoadError.value = '';
+}
+
 async function loadReport(options: { background?: boolean; force?: boolean } = {}) {
   const params = buildReportParams();
   const key = createSmartQueryKey('code-reports', params);
@@ -669,7 +684,7 @@ async function loadReport(options: { background?: boolean; force?: boolean } = {
   activeReportQueryKey.value = key;
 
   if (cached) {
-    report.value = cached;
+    applyReportResult(cached);
   }
 
   loading.value = !cached && !options.background;
@@ -686,11 +701,12 @@ async function loadReport(options: { background?: boolean; force?: boolean } = {
     }
 
     if (result.changed || !cached) {
-      report.value = result.data;
+      applyReportResult(result.data);
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载兑换码报表失败');
+      reportLoadError.value = getLoadErrorMessage(error, '加载兑换码报表失败');
+      ElMessage.error(reportLoadError.value);
     }
   } finally {
     if (activeReportQueryKey.value === key) {

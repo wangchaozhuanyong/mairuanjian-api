@@ -7,8 +7,12 @@ import type { AutomationTaskResultDto } from './dto/automation-task-result.dto';
 import type { BatchBalanceCheckDto } from './dto/batch-balance-check.dto';
 import type { BatchStatusCheckDto } from './dto/batch-status-check.dto';
 import type { BulkDeleteAutomationTasksDto } from './dto/bulk-delete-automation-tasks.dto';
+import type { CreateGiftCardBalanceCheckDto } from './dto/create-gift-card-balance-check.dto';
 import type { CreateAutomationTaskDto } from './dto/create-automation-task.dto';
 import type { MarkAutomationTaskManualDto } from './dto/mark-automation-task-manual.dto';
+import type { SaveGiftCardQueryAccountsDto } from './dto/save-gift-card-query-accounts.dto';
+import type { SubmitManualInputDto } from './dto/submit-manual-input.dto';
+import type { UpdateGiftCardBalanceCheckRowDto } from './dto/update-gift-card-balance-check-row.dto';
 import type { WebCheckGatewayAttemptDto } from './dto/web-check-gateway-attempt.dto';
 
 @Controller('apple/automation-tasks')
@@ -119,6 +123,50 @@ export class AppleAutomationTasksController {
     return this.automationTasksService.workbenchStatus();
   }
 
+  @Get('gift-card-query-accounts')
+  @RequirePermissions('apple.automation_task.manage')
+  listGiftCardQueryAccounts() {
+    return this.automationTasksService.listGiftCardQueryAccounts();
+  }
+
+  @Post('gift-card-query-accounts')
+  @RequirePermissions('apple.automation_task.manage')
+  saveGiftCardQueryAccounts(
+    @Body() dto: SaveGiftCardQueryAccountsDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.automationTasksService.saveGiftCardQueryAccounts(dto, operator);
+  }
+
+  @Post('gift-card-balance-check')
+  @RequirePermissions('apple.automation_task.manage')
+  createGiftCardBalanceCheck(
+    @Body() dto: CreateGiftCardBalanceCheckDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.automationTasksService.createGiftCardBalanceCheck(dto, operator);
+  }
+
+  @Post('gift-card-balance-check/:runId/rows/:rowId/code')
+  @RequirePermissions('apple.automation_task.manage')
+  updateGiftCardBalanceCheckRow(
+    @Param('runId') runId: string,
+    @Param('rowId') rowId: string,
+    @Body() dto: UpdateGiftCardBalanceCheckRowDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.automationTasksService.updateGiftCardBalanceCheckRow(runId, rowId, dto, operator);
+  }
+
+  @Post('gift-card-balance-check/:runId/run')
+  @RequirePermissions('apple.automation_task.manage')
+  runGiftCardBalanceCheck(
+    @Param('runId') runId: string,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    return this.automationTasksService.runGiftCardBalanceCheck(runId, operator);
+  }
+
   @Post('bulk-delete')
   @RequirePermissions('apple.automation_task.manage')
   async bulkDelete(
@@ -217,6 +265,25 @@ export class AppleAutomationTasksController {
     this.publishAutomationTaskEvent(
       'apple.automation_task.manual_required',
       'manual_required',
+      task.id,
+      {
+        appleAccountId: task.appleAccountId
+      }
+    );
+    return task;
+  }
+
+  @Post(':id/manual-input')
+  @RequirePermissions('apple.automation_task.manage')
+  async submitManualInput(
+    @Param('id') id: string,
+    @Body() dto: SubmitManualInputDto,
+    @CurrentUser() operator?: AuthenticatedUser
+  ) {
+    const task = await this.automationTasksService.submitManualInput(id, dto, operator);
+    this.publishAutomationTaskEvent(
+      'apple.automation_task.manual_input_submitted',
+      'manual_input_submitted',
       task.id,
       {
         appleAccountId: task.appleAccountId

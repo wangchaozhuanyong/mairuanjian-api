@@ -19,6 +19,13 @@
       </AppButton>
     </template>
 
+    <ListRequestError
+      v-if="baseLoadError"
+      title="订单基础数据加载失败"
+      :message="baseLoadError"
+      @retry="() => loadInitialData({ force: true, dedupeMs: 0 })"
+    />
+
     <AppCard
       title="订单信息"
       subtitle="先录入客户、业务和金额，再从自动匹配结果里选择 Apple ID。"
@@ -688,6 +695,13 @@
           </AppButton>
         </div>
 
+        <ListRequestError
+          v-if="availableAccountsLoadError && availableAccounts.length"
+          title="Apple ID 自动匹配刷新失败"
+          :message="availableAccountsLoadError"
+          @retry="() => loadAvailableAccounts({ autoSelect: true })"
+        />
+
         <el-table
           v-loading="matchingLoading"
           class="desktop-data-table"
@@ -696,7 +710,13 @@
           size="small"
         >
           <template #empty>
-            <div class="apple-core-empty-state">
+            <ListRequestError
+              v-if="availableAccountsLoadError"
+              title="Apple ID 自动匹配失败"
+              :message="availableAccountsLoadError"
+              @retry="() => loadAvailableAccounts({ autoSelect: true })"
+            />
+            <div v-else class="apple-core-empty-state">
               <strong>暂无匹配结果</strong>
               <span>请先选择业务，系统会按官方消耗金额自动匹配。</span>
               <div class="apple-core-empty-state__actions">
@@ -806,6 +826,17 @@
               </AppButton>
             </div>
           </article>
+        </div>
+        <div
+          v-else-if="!matchingLoading && availableAccountsLoadError"
+          class="mobile-record-list"
+          aria-label="Apple ID 自动匹配失败"
+        >
+          <ListRequestError
+            title="Apple ID 自动匹配失败"
+            :message="availableAccountsLoadError"
+            @retry="() => loadAvailableAccounts({ autoSelect: true })"
+          />
         </div>
         <div
           v-else-if="!matchingLoading"
@@ -920,6 +951,7 @@ import CustomerProfileForm from '@/components/business/CustomerProfileForm.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
 import {
@@ -957,6 +989,7 @@ import {
   formatAppleAccountRegionOptionLabel,
   mergeAppleAccountRegionOptions
 } from '@/utils/appleAccountRegion';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 import {
@@ -979,6 +1012,8 @@ const authStore = useAuthStore();
 const loading = ref(false);
 const saving = ref(false);
 const matchingLoading = ref(false);
+const baseLoadError = ref('');
+const availableAccountsLoadError = ref('');
 const customerSearching = ref(false);
 const orderContextLoading = ref(false);
 const formRef = ref<FormInstance>();
@@ -1772,7 +1807,8 @@ async function loadInitialData(
       dedupeMs: options.dedupeMs ?? 1_200
     });
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载订单基础数据失败');
+    baseLoadError.value = getLoadErrorMessage(error, '加载订单基础数据失败');
+    ElMessage.error(baseLoadError.value);
   }
 }
 
@@ -1836,6 +1872,7 @@ function applyOrderEntryBaseData(data: Awaited<ReturnType<typeof loadOrderEntryB
   applyCustomerTagResult(customerTagData);
   applyAppleRegionResult(appleRegionData);
   applyAppleServiceCategoryResult(appleServiceCategoryData);
+  baseLoadError.value = '';
 }
 
 function mergeAppleServiceItems(items: AppleService[], pinnedItems: AppleService[] = []) {
@@ -2033,6 +2070,7 @@ function clearSelectedAccount() {
   selectedAccount.value = null;
   form.appleAccountId = '';
   availableAccounts.value = [];
+  availableAccountsLoadError.value = '';
 }
 
 function clearSelectedService() {
@@ -2162,6 +2200,7 @@ async function loadAvailableAccounts(options: { autoSelect?: boolean } = {}) {
       showUnavailable: 'true'
     });
     availableAccounts.value = data.items;
+    availableAccountsLoadError.value = '';
     if (options.autoSelect) {
       const firstAvailableAccount =
         data.items.find((account) => account.availability === 'available') ?? null;
@@ -2173,7 +2212,8 @@ async function loadAvailableAccounts(options: { autoSelect?: boolean } = {}) {
       }
     }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '自动匹配失败');
+    availableAccountsLoadError.value = getLoadErrorMessage(error, '自动匹配失败');
+    ElMessage.error(availableAccountsLoadError.value);
   } finally {
     matchingLoading.value = false;
   }

@@ -87,6 +87,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="activationsLoadError && activations.length"
+        title="开通记录刷新失败"
+        :message="activationsLoadError"
+        @retry="() => loadActivations({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -98,7 +105,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="activationsLoadError"
+            title="开通记录加载失败"
+            :message="activationsLoadError"
+            @retry="() => loadActivations({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无 Apple ID 开通记录</strong>
             <span>开通记录会由 Apple ID 订单生成，也可以清空筛选后查看完整台账。</span>
             <div class="apple-core-empty-state__actions">
@@ -259,6 +272,18 @@
         </article>
       </div>
 
+      <div
+        v-else-if="activationsLoadError"
+        class="mobile-record-list"
+        aria-label="Apple ID 开通记录加载失败"
+      >
+        <ListRequestError
+          title="开通记录加载失败"
+          :message="activationsLoadError"
+          @retry="() => loadActivations({ force: true })"
+        />
+      </div>
+
       <div v-else class="mobile-record-list" aria-label="Apple ID 开通记录空状态">
         <div class="apple-core-empty-state">
           <strong>暂无 Apple ID 开通记录</strong>
@@ -368,6 +393,7 @@ import { appleActivationsApi, userTableViewsApi } from '@/api/system';
 import type { ServiceActivationQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -377,11 +403,13 @@ import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { PageResult, ServiceActivation, TableDensity, UserTableView } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const loading = ref(false);
 const detailDrawerVisible = ref(false);
 const activations = ref<ServiceActivation[]>([]);
+const activationsLoadError = ref('');
 const selectedActivations = ref<ServiceActivation[]>([]);
 const selectedActivation = ref<ServiceActivation | null>(null);
 const total = ref(0);
@@ -668,9 +696,11 @@ async function loadActivations(options: { background?: boolean; force?: boolean 
     if (result.changed || !cached) {
       applyActivationResult(result.data);
     }
+    activationsLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载开通记录失败');
+      activationsLoadError.value = getLoadErrorMessage(error, '加载开通记录失败');
+      ElMessage.error(activationsLoadError.value);
     }
   } finally {
     if (activeActivationsQueryKey.value === key) {

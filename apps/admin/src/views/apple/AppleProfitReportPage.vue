@@ -58,6 +58,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="reportLoadError"
+        title="Apple ID 报表加载失败"
+        :message="reportLoadError"
+        @retry="() => loadReport({ force: true, dedupeMs: 0 })"
+      />
+
       <el-tabs v-model="activeTab" class="report-table-tabs">
         <el-tab-pane label="按日期对账" name="daily">
           <el-table
@@ -313,7 +320,13 @@
           </div>
         </article>
 
-        <div v-if="!loading && activeGroupRows.length === 0" class="apple-core-empty-state">
+        <ListRequestError
+          v-if="!loading && reportLoadError && activeGroupRows.length === 0"
+          title="Apple ID 报表加载失败"
+          :message="reportLoadError"
+          @retry="() => loadReport({ force: true, dedupeMs: 0 })"
+        />
+        <div v-else-if="!loading && activeGroupRows.length === 0" class="apple-core-empty-state">
           <strong>暂无报表数据</strong>
           <span>可调整日期、状态或关键词后重新查询。</span>
         </div>
@@ -365,7 +378,16 @@
           </div>
         </article>
 
-        <div v-if="!loading && report.recentOrders.length === 0" class="apple-core-empty-state">
+        <ListRequestError
+          v-if="!loading && reportLoadError && report.recentOrders.length === 0"
+          title="Apple ID 报表加载失败"
+          :message="reportLoadError"
+          @retry="() => loadReport({ force: true, dedupeMs: 0 })"
+        />
+        <div
+          v-else-if="!loading && report.recentOrders.length === 0"
+          class="apple-core-empty-state"
+        >
           <strong>暂无最近订单</strong>
           <span>可切换日期范围或清空筛选后再查看最近订单。</span>
         </div>
@@ -378,6 +400,7 @@
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { appleReportsApi, userTableViewsApi, type AppleProfitReportQuery } from '@/api/system';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
@@ -394,6 +417,7 @@ import type {
 } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
 import { buildHelpText } from '@/utils/helpText';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
 const props = withDefaults(
@@ -506,6 +530,7 @@ const recentMetricColumns = reportMetricColumns
   }));
 
 const loading = ref(false);
+const reportLoadError = ref('');
 const activeTab = ref(props.defaultTab);
 const quickDate = ref('last_30_days');
 const density = ref<TableDensity>('default');
@@ -615,8 +640,10 @@ async function loadReport(options: { silent?: boolean; dedupeMs?: number; force?
       dedupeMs: options.dedupeMs ?? 1_200
     });
     report.value = result.data;
+    reportLoadError.value = '';
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 报表失败');
+    reportLoadError.value = getLoadErrorMessage(error, '加载 Apple ID 报表失败');
+    ElMessage.error(reportLoadError.value);
   } finally {
     loading.value = false;
   }

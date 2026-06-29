@@ -123,7 +123,54 @@ docker compose --env-file .env.production \
   up -d sing-box apple-web-worker
 ```
 
-`apps/api/Dockerfile.worker` 使用 Debian slim 镜像并安装 Playwright Chromium；普通 API 镜像仍保持原来的 Alpine 镜像。
+`apps/api/Dockerfile.worker` 使用 Debian slim 镜像并安装 Playwright Chromium；普通 API 镜像也使用 Debian slim，并安装 Playwright Chromium 与 Tesseract，供 Apple 礼品卡余额查询和图片 OCR 使用。
+
+## 礼品卡余额查询执行器
+
+Apple 礼品卡余额查询在“ID 自动化工作台 -> 礼品卡余额查询”里操作，不跳转到单独排队页：
+
+- 操作员先保存 5 个以内长期登录查询账号，账号和密码加密写入 `system_parameters`。
+- 上传礼品卡图片后，后端先从文件名/OCR 尝试识别礼品卡代码。
+- OCR 默认启用；API Docker 镜像内置 Tesseract，非 Docker 部署需要确保 `APPLE_GIFT_CARD_OCR_TESSERACT_PATH` 指向可执行的 `tesseract`。
+- 能识别到代码时，结果表只显示脱敏尾号；完整代码只保存加密值和 hash。
+- 识别不到时，结果表提供“补录代码”按钮。
+- 代码齐全后，后端会直接调用 `APPLE_GIFT_CARD_BALANCE_QUERY_COMMAND` 指定的执行器；执行器通过 stdin 接收 JSON，通过 stdout 返回 `{ "rows": [...] }`。
+- 如果 OCR 失败，操作员在本页补录代码；补录后同样会继续执行当前批次。
+- “重试当前批次”只用于执行器未配置、执行器失败或后续调整配置后的本页重试，不是单独队列入口。
+- 内置执行器脚本为 `scripts/apple-gift-card-balance-query.mjs`，默认访问 Apple 官方礼品卡余额页面；每个查询账号使用独立浏览器资料目录，登录态保存在 `APPLE_GIFT_CARD_BALANCE_QUERY_SESSION_DIR`。
+- 同一个批次会按查询账号分组执行：同一个查询 ID 只打开一次浏览器资料目录，批次内复用登录态连续查多张礼品卡。
+- 执行器会给每个查询账号的浏览器资料目录加锁；如果另一个批次正在使用同一个查询 ID，本批次会等待，超时后在结果行提示稍后重试。
+- 遇到验证码、设备确认、CAPTCHA 或页面无法稳定识别时，行状态回到“需人工”，表格行显示“重试查询”；操作员完成 Apple 侧验证后在本页本行重试，不绕过 Apple 安全验证。
+
+## ID 余额查询边界
+
+“ID 自动化工作台 -> ID 余额查询”当前只回写系统内已有余额快照，`resultPayload.source` 为 `system_snapshot`。它用于批量核对系统记录，不代表已经登录 Apple 官网读取实时余额。官网实时余额查询需要后续单独接入 Worker adapter 后才能把来源切换为实时页面结果。
+
+示例配置：
+
+```env
+APPLE_GIFT_CARD_OCR_ENABLED=true
+APPLE_GIFT_CARD_OCR_TESSERACT_PATH=tesseract
+APPLE_GIFT_CARD_OCR_LANG=eng
+APPLE_GIFT_CARD_OCR_TIMEOUT_MS=15000
+APPLE_GIFT_CARD_BALANCE_QUERY_COMMAND=node
+APPLE_GIFT_CARD_BALANCE_QUERY_ARGS=["scripts/apple-gift-card-balance-query.mjs"]
+APPLE_GIFT_CARD_BALANCE_QUERY_TIMEOUT_MS=180000
+APPLE_GIFT_CARD_BALANCE_QUERY_URL=https://secure.store.apple.com/shop/giftcard/balance
+APPLE_GIFT_CARD_BALANCE_QUERY_HEADLESS=true
+APPLE_GIFT_CARD_BALANCE_QUERY_PROXY_SERVER=
+APPLE_GIFT_CARD_BALANCE_QUERY_SESSION_DIR=.runtime/apple-gift-card-balance-sessions
+APPLE_GIFT_CARD_BALANCE_QUERY_CODE_SELECTOR=
+APPLE_GIFT_CARD_BALANCE_QUERY_SUBMIT_SELECTOR=
+```
+
+轻量检查执行器协议：
+
+```bash
+printf '{"rows":[],"accounts":[]}' | node scripts/apple-gift-card-balance-query.mjs
+```
+
+该检查只验证脚本输入输出协议，不登录 Apple，也不启动浏览器。
 
 ## Worker 节点联调接口
 

@@ -46,18 +46,25 @@
           :value="option.value"
         />
       </el-select>
-      <slot name="filters" />
-      <div v-if="showDateShortcut" class="quick-date" role="group" aria-label="日期快捷筛选">
-        <button
-          v-for="item in dateOptions"
-          :key="item.value"
-          :class="{ active: dateShortcutModel === item.value }"
-          :aria-pressed="dateShortcutModel === item.value"
-          type="button"
-          @click="selectDateShortcut(item.value)"
-        >
-          {{ item.label }}
-        </button>
+      <div
+        v-if="hasFilterControls"
+        :id="filterPanelId"
+        class="table-toolbar__filters"
+        :class="{ 'is-open': mobileFiltersOpen }"
+      >
+        <slot name="filters" />
+        <div v-if="showDateShortcut" class="quick-date" role="group" aria-label="日期快捷筛选">
+          <button
+            v-for="item in dateOptions"
+            :key="item.value"
+            :class="{ active: dateShortcutModel === item.value }"
+            :aria-pressed="dateShortcutModel === item.value"
+            type="button"
+            @click="selectDateShortcut(item.value)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -83,98 +90,161 @@
           :value="view.id"
         />
       </el-select>
-      <el-dropdown
-        v-if="showSaveView && savedViews.length"
-        trigger="click"
-        @command="handleSavedViewCommand"
-      >
-        <AppButton
-          class="table-toolbar__op table-toolbar__view-manage"
-          :disabled="!activeSavedView || managingView"
-          :loading="managingView"
-          title="管理当前保存视图"
+      <div class="table-toolbar__desktop-ops">
+        <el-dropdown
+          v-if="showSaveView && savedViews.length"
+          trigger="click"
+          @command="handleSavedViewCommand"
         >
-          管理视图
+          <AppButton
+            class="table-toolbar__op table-toolbar__view-manage"
+            :disabled="!activeSavedView || managingView"
+            :loading="managingView"
+            title="管理当前保存视图"
+          >
+            管理视图
+          </AppButton>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-if="showOverwriteView"
+                command="overwrite"
+                :disabled="!activeSavedView"
+              >
+                覆盖当前视图
+              </el-dropdown-item>
+              <el-dropdown-item command="rename" :disabled="!activeSavedView">
+                重命名当前视图
+              </el-dropdown-item>
+              <el-dropdown-item
+                command="setDefault"
+                :disabled="!activeSavedView || activeSavedView.isDefault"
+              >
+                设为默认视图
+              </el-dropdown-item>
+              <el-dropdown-item command="delete" divided :disabled="!activeSavedView">
+                删除当前视图
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <AppButton
+          class="table-toolbar__op"
+          :icon="Refresh"
+          title="刷新列表"
+          @click="$emit('refresh')"
+        >
+          刷新
+        </AppButton>
+        <AppButton
+          v-if="showExport"
+          class="table-toolbar__op"
+          :icon="Download"
+          title="导出当前列表"
+          @click="$emit('export')"
+        >
+          导出
+        </AppButton>
+        <el-dropdown v-if="hasColumnOptions" trigger="click" :hide-on-click="false">
+          <AppButton class="table-toolbar__op" :icon="Setting" title="配置表格列">
+            列显示
+          </AppButton>
+          <template #dropdown>
+            <el-dropdown-menu class="table-toolbar__columns-menu">
+              <div class="table-toolbar__columns-panel">
+                <div class="table-toolbar__columns-head">
+                  <div>
+                    <strong>列显示</strong>
+                    <span>已显示 {{ selectedColumnCount }} / {{ allColumnValues.length }}</span>
+                  </div>
+                  <AppButton size="small" variant="ghost" @click.stop="showAllColumns">
+                    全部显示
+                  </AppButton>
+                </div>
+                <el-checkbox-group v-model="selectedColumns" class="table-toolbar__columns-body">
+                  <el-checkbox
+                    v-for="column in effectiveColumnOptions"
+                    :key="column.value"
+                    :value="column.value"
+                    :disabled="column.required"
+                  >
+                    {{ column.label }}
+                  </el-checkbox>
+                </el-checkbox-group>
+                <div class="table-toolbar__columns-foot">必选列会自动保留</div>
+              </div>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <AppButton
+          v-if="showSaveView"
+          class="table-toolbar__op"
+          :icon="Collection"
+          title="保存当前筛选视图"
+          @click="$emit('saveView')"
+        >
+          保存视图
+        </AppButton>
+      </div>
+
+      <AppButton
+        v-if="hasFilterControls"
+        class="table-toolbar__filter-toggle"
+        :icon="Filter"
+        :aria-controls="filterPanelId"
+        :aria-expanded="mobileFiltersOpen"
+        title="展开或收起筛选"
+        @click="toggleMobileFilters"
+      >
+        筛选
+      </AppButton>
+
+      <el-dropdown
+        v-if="showMobileMore"
+        class="table-toolbar__mobile-more"
+        trigger="click"
+        @command="handleMobileOperationCommand"
+      >
+        <AppButton class="table-toolbar__op" :icon="MoreFilled" title="更多列表操作">
+          更多
         </AppButton>
         <template #dropdown>
           <el-dropdown-menu>
+            <el-dropdown-item command="refresh">刷新列表</el-dropdown-item>
+            <el-dropdown-item v-if="showExport" command="export">导出当前列表</el-dropdown-item>
+            <el-dropdown-item v-if="showSaveView" command="saveView">保存当前视图</el-dropdown-item>
             <el-dropdown-item
-              v-if="showOverwriteView"
+              v-if="showSaveView && savedViews.length && showOverwriteView"
               command="overwrite"
               :disabled="!activeSavedView"
             >
               覆盖当前视图
             </el-dropdown-item>
-            <el-dropdown-item command="rename" :disabled="!activeSavedView">
+            <el-dropdown-item
+              v-if="showSaveView && savedViews.length"
+              command="rename"
+              :disabled="!activeSavedView"
+            >
               重命名当前视图
             </el-dropdown-item>
             <el-dropdown-item
+              v-if="showSaveView && savedViews.length"
               command="setDefault"
               :disabled="!activeSavedView || activeSavedView.isDefault"
             >
               设为默认视图
             </el-dropdown-item>
-            <el-dropdown-item command="delete" divided :disabled="!activeSavedView">
+            <el-dropdown-item
+              v-if="showSaveView && savedViews.length"
+              command="delete"
+              divided
+              :disabled="!activeSavedView"
+            >
               删除当前视图
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <AppButton
-        class="table-toolbar__op"
-        :icon="Refresh"
-        title="刷新列表"
-        @click="$emit('refresh')"
-      >
-        刷新
-      </AppButton>
-      <AppButton
-        v-if="showExport"
-        class="table-toolbar__op"
-        :icon="Download"
-        title="导出当前列表"
-        @click="$emit('export')"
-      >
-        导出
-      </AppButton>
-      <el-dropdown v-if="hasColumnOptions" trigger="click" :hide-on-click="false">
-        <AppButton class="table-toolbar__op" :icon="Setting" title="配置表格列">列显示</AppButton>
-        <template #dropdown>
-          <el-dropdown-menu class="table-toolbar__columns-menu">
-            <div class="table-toolbar__columns-panel">
-              <div class="table-toolbar__columns-head">
-                <div>
-                  <strong>列显示</strong>
-                  <span>已显示 {{ selectedColumnCount }} / {{ allColumnValues.length }}</span>
-                </div>
-                <AppButton size="small" variant="ghost" @click.stop="showAllColumns">
-                  全部显示
-                </AppButton>
-              </div>
-              <el-checkbox-group v-model="selectedColumns" class="table-toolbar__columns-body">
-                <el-checkbox
-                  v-for="column in effectiveColumnOptions"
-                  :key="column.value"
-                  :value="column.value"
-                  :disabled="column.required"
-                >
-                  {{ column.label }}
-                </el-checkbox>
-              </el-checkbox-group>
-              <div class="table-toolbar__columns-foot">必选列会自动保留</div>
-            </div>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-      <AppButton
-        v-if="showSaveView"
-        class="table-toolbar__op"
-        :icon="Collection"
-        title="保存当前筛选视图"
-        @click="$emit('saveView')"
-      >
-        保存视图
-      </AppButton>
       <slot name="actions" />
       <AppButton
         v-if="showPrimary"
@@ -219,9 +289,18 @@
 </template>
 
 <script setup lang="ts">
-import { Close, Collection, Download, Refresh, Search, Setting } from '@element-plus/icons-vue';
+import {
+  Close,
+  Collection,
+  Download,
+  Filter,
+  MoreFilled,
+  Refresh,
+  Search,
+  Setting
+} from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { computed, ref, watch } from 'vue';
+import { computed, ref, useSlots, watch } from 'vue';
 import { userTableViewsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
@@ -309,6 +388,8 @@ const statusModel = defineModel<string>('status', { default: '' });
 const dateShortcutModel = defineModel<string>('dateShortcut', { default: 'last_7_days' });
 const visibleColumnsModel = defineModel<string[]>('visibleColumns', { default: () => [] });
 const savedViewIdModel = defineModel<string>('savedViewId', { default: '' });
+const slots = useSlots();
+const filterPanelId = `table-toolbar-filters-${Math.random().toString(36).slice(2, 10)}`;
 
 const dateOptions: SelectOption[] = [
   { label: '今天', value: 'today' },
@@ -323,6 +404,7 @@ const dateOptions: SelectOption[] = [
 const removedViewIds = ref<string[]>([]);
 const viewOverrides = ref<Record<string, Partial<UserTableView>>>({});
 const managingView = ref(false);
+const mobileFiltersOpen = ref(false);
 const toolbarHelp = buildHelpText({
   description: '这里处理当前列表的搜索、筛选、刷新、导出、列显示和保存视图。',
   suggestion: '先缩小筛选范围，再执行导出、批量处理或主操作，避免误处理不相关记录。',
@@ -382,6 +464,8 @@ const activeSavedViewLabel = computed(
 const activeSavedView = computed(() =>
   savedViews.value.find((view) => view.id === savedViewIdModel.value)
 );
+const showMobileMore = true;
+const hasFilterControls = computed(() => Boolean(slots.filters) || props.showDateShortcut);
 const filterSummaryText = computed(() => {
   if (activeChips.value.length) {
     return `筛选 ${activeChips.value.length} 项`;
@@ -433,6 +517,10 @@ function selectDateShortcut(value: string) {
   emit('search');
 }
 
+function toggleMobileFilters() {
+  mobileFiltersOpen.value = !mobileFiltersOpen.value;
+}
+
 function applySavedView(value: string) {
   if (value) {
     emit('applyView', value);
@@ -464,6 +552,29 @@ async function handleSavedViewCommand(command: string | number | object) {
   }
 
   await deleteSavedView(view);
+}
+
+function handleMobileOperationCommand(command: string | number | object) {
+  if (typeof command !== 'string') return;
+
+  if (command === 'refresh') {
+    emit('refresh');
+    return;
+  }
+
+  if (command === 'export') {
+    emit('export');
+    return;
+  }
+
+  if (command === 'saveView') {
+    emit('saveView');
+    return;
+  }
+
+  if (isSavedViewCommand(command)) {
+    void handleSavedViewCommand(command);
+  }
 }
 
 async function renameSavedView(view: UserTableView) {

@@ -20,22 +20,44 @@
         <PanelTitleHelp :title="activeTabMeta.title" :help="activeTabMeta.description" />
         <div class="inline-actions">
           <StatusChip :tone="activeTabMeta.tone" dot>{{ activeTabMeta.badge }}</StatusChip>
-          <StatusChip :tone="(overview?.failedLoginCount ?? 0) > 0 ? 'red' : 'green'" dot>
+          <StatusChip
+            :tone="
+              !overview && overviewLoadError
+                ? 'orange'
+                : (overview?.failedLoginCount ?? 0) > 0
+                  ? 'red'
+                  : 'green'
+            "
+            dot
+          >
             {{
-              (overview?.failedLoginCount ?? 0) > 0
-                ? `失败登录 ${overview?.failedLoginCount}`
-                : '登录正常'
+              !overview && overviewLoadError
+                ? '登录未知'
+                : (overview?.failedLoginCount ?? 0) > 0
+                  ? `失败登录 ${overview?.failedLoginCount}`
+                  : '登录正常'
             }}
           </StatusChip>
           <StatusChip :tone="(overview?.abnormalLoginCount ?? 0) > 0 ? 'orange' : 'green'">
             异常 {{ overview?.abnormalLoginCount ?? '-' }}
           </StatusChip>
           <StatusChip tone="blue">在线 {{ overview?.activeSessionCount ?? '-' }}</StatusChip>
-          <StatusChip :tone="(overview?.pendingApprovalCount ?? 0) > 0 ? 'orange' : 'green'" dot>
+          <StatusChip
+            :tone="
+              !overview && overviewLoadError
+                ? 'orange'
+                : (overview?.pendingApprovalCount ?? 0) > 0
+                  ? 'orange'
+                  : 'green'
+            "
+            dot
+          >
             {{
-              (overview?.pendingApprovalCount ?? 0) > 0
-                ? `待审批 ${overview?.pendingApprovalCount ?? 0}`
-                : '审批正常'
+              !overview && overviewLoadError
+                ? '审批未知'
+                : (overview?.pendingApprovalCount ?? 0) > 0
+                  ? `待审批 ${overview?.pendingApprovalCount ?? 0}`
+                  : '审批正常'
             }}
           </StatusChip>
           <StatusChip tone="green">白名单 {{ overview?.enabledWhitelistCount ?? '-' }}</StatusChip>
@@ -48,7 +70,31 @@
         @tab-change="() => refreshCurrentTab()"
       >
         <el-tab-pane label="总览" name="overview">
-          <el-table class="desktop-data-table" :data="overview?.recentLoginLogs ?? []" row-key="id">
+          <ListRequestError
+            v-if="overviewLoadError && overview?.recentLoginLogs?.length"
+            title="安全总览刷新失败"
+            :message="overviewLoadError"
+            @retry="() => loadOverview({ force: true })"
+          />
+
+          <el-table
+            v-loading="overviewLoading"
+            class="desktop-data-table"
+            :data="overview?.recentLoginLogs ?? []"
+            row-key="id"
+          >
+            <template #empty>
+              <ListRequestError
+                v-if="overviewLoadError"
+                title="安全总览加载失败"
+                :message="overviewLoadError"
+                @retry="() => loadOverview({ force: true })"
+              />
+              <div v-else class="apple-core-empty-state">
+                <strong>暂无最近登录</strong>
+                <span>登录记录生成后会在这里显示最近安全事件。</span>
+              </div>
+            </template>
             <el-table-column label="账号" min-width="150" prop="username" />
             <el-table-column label="结果" width="110">
               <template #default="{ row }">
@@ -85,6 +131,17 @@
                 </div>
               </div>
             </article>
+          </div>
+          <div
+            v-else-if="overviewLoadError"
+            class="mobile-record-list"
+            aria-label="安全总览加载失败"
+          >
+            <ListRequestError
+              title="安全总览加载失败"
+              :message="overviewLoadError"
+              @retry="() => loadOverview({ force: true })"
+            />
           </div>
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
@@ -129,6 +186,13 @@
             </template>
           </TableToolbar>
 
+          <ListRequestError
+            v-if="loginLoadError && loginLogs.length"
+            title="登录日志刷新失败"
+            :message="loginLoadError"
+            @retry="() => loadLoginLogs({ force: true })"
+          />
+
           <el-table
             v-loading="loginLoading"
             class="desktop-data-table"
@@ -138,7 +202,13 @@
             @sort-change="handleLoginSortChange"
           >
             <template #empty>
-              <div class="apple-core-empty-state">
+              <ListRequestError
+                v-if="loginLoadError"
+                title="登录日志加载失败"
+                :message="loginLoadError"
+                @retry="() => loadLoginLogs({ force: true })"
+              />
+              <div v-else class="apple-core-empty-state">
                 <strong>暂无登录日志</strong>
                 <span>可以清空筛选后重新查看登录成功、失败和异常记录。</span>
                 <div class="apple-core-empty-state__actions">
@@ -240,6 +310,13 @@
               </div>
             </article>
           </div>
+          <div v-else-if="loginLoadError" class="mobile-record-list" aria-label="登录日志加载失败">
+            <ListRequestError
+              title="登录日志加载失败"
+              :message="loginLoadError"
+              @retry="() => loadLoginLogs({ force: true })"
+            />
+          </div>
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
               <strong>暂无登录日志</strong>
@@ -279,6 +356,13 @@
             @export="showExportMessage"
           />
 
+          <ListRequestError
+            v-if="sessionLoadError && sessions.length"
+            title="在线会话刷新失败"
+            :message="sessionLoadError"
+            @retry="() => loadSessions({ force: true })"
+          />
+
           <el-table
             v-loading="sessionLoading"
             class="desktop-data-table"
@@ -288,7 +372,13 @@
             @sort-change="handleSessionSortChange"
           >
             <template #empty>
-              <div class="apple-core-empty-state">
+              <ListRequestError
+                v-if="sessionLoadError"
+                title="在线会话加载失败"
+                :message="sessionLoadError"
+                @retry="() => loadSessions({ force: true })"
+              />
+              <div v-else class="apple-core-empty-state">
                 <strong>暂无在线会话</strong>
                 <span>当前筛选下没有在线会话，可以清空筛选后重新查看。</span>
                 <div class="apple-core-empty-state__actions">
@@ -403,6 +493,17 @@
                 </AppButton>
               </div>
             </article>
+          </div>
+          <div
+            v-else-if="sessionLoadError"
+            class="mobile-record-list"
+            aria-label="在线会话加载失败"
+          >
+            <ListRequestError
+              title="在线会话加载失败"
+              :message="sessionLoadError"
+              @retry="() => loadSessions({ force: true })"
+            />
           </div>
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
@@ -675,6 +776,13 @@
             </template>
           </TableToolbar>
 
+          <ListRequestError
+            v-if="ipLoadError && ipWhitelists.length"
+            title="IP 白名单刷新失败"
+            :message="ipLoadError"
+            @retry="() => loadIpWhitelists({ force: true })"
+          />
+
           <el-table
             v-loading="ipLoading"
             class="desktop-data-table"
@@ -684,7 +792,13 @@
             @sort-change="handleIpSortChange"
           >
             <template #empty>
-              <div class="apple-core-empty-state">
+              <ListRequestError
+                v-if="ipLoadError"
+                title="IP 白名单加载失败"
+                :message="ipLoadError"
+                @retry="() => loadIpWhitelists({ force: true })"
+              />
+              <div v-else class="apple-core-empty-state">
                 <strong>暂无 IP 白名单</strong>
                 <span>可以新增 IP 规则，或清空筛选后查看已有配置。</span>
                 <div class="apple-core-empty-state__actions">
@@ -773,6 +887,13 @@
               </div>
             </article>
           </div>
+          <div v-else-if="ipLoadError" class="mobile-record-list" aria-label="IP 白名单加载失败">
+            <ListRequestError
+              title="IP 白名单加载失败"
+              :message="ipLoadError"
+              @retry="() => loadIpWhitelists({ force: true })"
+            />
+          </div>
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
               <strong>暂无 IP 白名单</strong>
@@ -824,6 +945,13 @@
             </template>
           </TableToolbar>
 
+          <ListRequestError
+            v-if="approvalLoadError && approvals.length"
+            title="敏感审批刷新失败"
+            :message="approvalLoadError"
+            @retry="() => loadApprovals({ force: true })"
+          />
+
           <el-table
             v-loading="approvalLoading"
             class="desktop-data-table"
@@ -833,7 +961,13 @@
             @sort-change="handleApprovalSortChange"
           >
             <template #empty>
-              <div class="apple-core-empty-state">
+              <ListRequestError
+                v-if="approvalLoadError"
+                title="敏感审批加载失败"
+                :message="approvalLoadError"
+                @retry="() => loadApprovals({ force: true })"
+              />
+              <div v-else class="apple-core-empty-state">
                 <strong>暂无敏感审批</strong>
                 <span>可以新增审批申请，或清空筛选后重新查看。</span>
                 <div class="apple-core-empty-state__actions">
@@ -970,6 +1104,17 @@
               </div>
             </article>
           </div>
+          <div
+            v-else-if="approvalLoadError"
+            class="mobile-record-list"
+            aria-label="敏感审批加载失败"
+          >
+            <ListRequestError
+              title="敏感审批加载失败"
+              :message="approvalLoadError"
+              @retry="() => loadApprovals({ force: true })"
+            />
+          </div>
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
               <strong>暂无敏感审批</strong>
@@ -1021,6 +1166,13 @@
             </template>
           </TableToolbar>
 
+          <ListRequestError
+            v-if="accessLogLoadError && accessLogs.length"
+            title="敏感查看日志刷新失败"
+            :message="accessLogLoadError"
+            @retry="() => loadAccessLogs({ force: true })"
+          />
+
           <el-table
             v-loading="accessLogLoading"
             class="desktop-data-table"
@@ -1030,7 +1182,13 @@
             @sort-change="handleAccessLogSortChange"
           >
             <template #empty>
-              <div class="apple-core-empty-state">
+              <ListRequestError
+                v-if="accessLogLoadError"
+                title="敏感查看日志加载失败"
+                :message="accessLogLoadError"
+                @retry="() => loadAccessLogs({ force: true })"
+              />
+              <div v-else class="apple-core-empty-state">
                 <strong>暂无敏感查看日志</strong>
                 <span>当前筛选下没有敏感字段查看记录。</span>
                 <div class="apple-core-empty-state__actions">
@@ -1127,6 +1285,17 @@
                 </div>
               </div>
             </article>
+          </div>
+          <div
+            v-else-if="accessLogLoadError"
+            class="mobile-record-list"
+            aria-label="敏感查看日志加载失败"
+          >
+            <ListRequestError
+              title="敏感查看日志加载失败"
+              :message="accessLogLoadError"
+              @retry="() => loadAccessLogs({ force: true })"
+            />
           </div>
           <div v-else class="mobile-record-list">
             <div class="apple-core-empty-state">
@@ -1289,6 +1458,7 @@ import type {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -1317,6 +1487,7 @@ import type {
 } from '@/types/system';
 import { SECURITY_IP_SCOPE_DICTIONARY_GROUP } from '@/config/quickSettings';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import {
   buildSecurityIpScopeOptions,
   getSecurityIpScopeLabel,
@@ -1327,6 +1498,8 @@ import { exportRowsToCsv } from '@/utils/exportCsv';
 const route = useRoute();
 const activeTab = ref(getInitialTab());
 const overview = ref<SecurityOverview | null>(null);
+const overviewLoading = ref(false);
+const overviewLoadError = ref('');
 const ipScopeDictionaries = ref<DataDictionary[]>([]);
 const loginTableKey = 'security_login_logs';
 const sessionTableKey = 'security_active_sessions';
@@ -1403,6 +1576,7 @@ const activeOverviewQueryKey = ref('');
 const loginLogs = ref<LoginLog[]>([]);
 const loginTotal = ref(0);
 const loginLoading = ref(false);
+const loginLoadError = ref('');
 const loginQuery = reactive({
   page: 1,
   pageSize: 10,
@@ -1421,6 +1595,7 @@ const activeLoginQueryKey = ref('');
 const sessions = ref<ActiveSession[]>([]);
 const sessionTotal = ref(0);
 const sessionLoading = ref(false);
+const sessionLoadError = ref('');
 const sessionQuery = reactive({ page: 1, pageSize: 10, keyword: '', revoked: 'false' });
 const sessionDensity = ref<TableDensity>('default');
 const sessionVisibleColumns = ref<string[]>([]);
@@ -1433,6 +1608,7 @@ const activeSessionQueryKey = ref('');
 const ipWhitelists = ref<IpWhitelist[]>([]);
 const ipTotal = ref(0);
 const ipLoading = ref(false);
+const ipLoadError = ref('');
 const ipQuery = reactive({
   page: 1,
   pageSize: 10,
@@ -1451,6 +1627,7 @@ const activeIpQueryKey = ref('');
 const approvals = ref<SensitiveAccessApproval[]>([]);
 const approvalTotal = ref(0);
 const approvalLoading = ref(false);
+const approvalLoadError = ref('');
 const approvalQuery = reactive({
   page: 1,
   pageSize: 10,
@@ -1469,6 +1646,7 @@ const activeApprovalQueryKey = ref('');
 const accessLogs = ref<SensitiveAccessLog[]>([]);
 const accessLogTotal = ref(0);
 const accessLogLoading = ref(false);
+const accessLogLoadError = ref('');
 const accessLogQuery = reactive({
   page: 1,
   pageSize: 10,
@@ -1744,7 +1922,10 @@ async function loadOverview(options: { background?: boolean; force?: boolean } =
 
   if (cached) {
     overview.value = cached;
+    overviewLoadError.value = '';
   }
+
+  overviewLoading.value = !cached && !options.background;
 
   try {
     const result = await refreshSmartQuery({
@@ -1760,9 +1941,15 @@ async function loadOverview(options: { background?: boolean; force?: boolean } =
     if (result.changed || !cached) {
       overview.value = result.data;
     }
+    overviewLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载安全总览失败');
+      overviewLoadError.value = getLoadErrorMessage(error, '加载安全总览失败');
+      ElMessage.error(overviewLoadError.value);
+    }
+  } finally {
+    if (activeOverviewQueryKey.value === key) {
+      overviewLoading.value = false;
     }
   }
 }
@@ -1789,6 +1976,7 @@ function buildLoginParams(): LoginLogQuery {
 function applyLoginLogsResult(result: PageResult<LoginLog>) {
   loginLogs.value = result.items;
   loginTotal.value = result.total;
+  loginLoadError.value = '';
 }
 
 async function loadLoginLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -1820,7 +2008,8 @@ async function loadLoginLogs(options: { background?: boolean; force?: boolean } 
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载登录日志失败');
+      loginLoadError.value = getLoadErrorMessage(error, '加载登录日志失败');
+      ElMessage.error(loginLoadError.value);
     }
   } finally {
     if (activeLoginQueryKey.value === key) {
@@ -1840,6 +2029,7 @@ function buildSessionParams(): ActiveSessionQuery {
 function applySessionsResult(result: PageResult<ActiveSession>) {
   sessions.value = result.items;
   sessionTotal.value = result.total;
+  sessionLoadError.value = '';
 }
 
 async function loadSessions(options: { background?: boolean; force?: boolean } = {}) {
@@ -1871,7 +2061,8 @@ async function loadSessions(options: { background?: boolean; force?: boolean } =
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载在线会话失败');
+      sessionLoadError.value = getLoadErrorMessage(error, '加载在线会话失败');
+      ElMessage.error(sessionLoadError.value);
     }
   } finally {
     if (activeSessionQueryKey.value === key) {
@@ -1949,6 +2140,7 @@ function buildIpParams(): IpWhitelistQuery {
 function applyIpWhitelistsResult(result: PageResult<IpWhitelist>) {
   ipWhitelists.value = result.items;
   ipTotal.value = result.total;
+  ipLoadError.value = '';
 }
 
 async function loadIpWhitelists(options: { background?: boolean; force?: boolean } = {}) {
@@ -1980,7 +2172,8 @@ async function loadIpWhitelists(options: { background?: boolean; force?: boolean
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载 IP 白名单失败');
+      ipLoadError.value = getLoadErrorMessage(error, '加载 IP 白名单失败');
+      ElMessage.error(ipLoadError.value);
     }
   } finally {
     if (activeIpQueryKey.value === key) {
@@ -2564,6 +2757,7 @@ function buildApprovalParams(): SensitiveAccessApprovalQuery {
 function applyApprovalsResult(result: PageResult<SensitiveAccessApproval>) {
   approvals.value = result.items;
   approvalTotal.value = result.total;
+  approvalLoadError.value = '';
 }
 
 async function loadApprovals(options: { background?: boolean; force?: boolean } = {}) {
@@ -2595,7 +2789,8 @@ async function loadApprovals(options: { background?: boolean; force?: boolean } 
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载敏感字段审批失败');
+      approvalLoadError.value = getLoadErrorMessage(error, '加载敏感字段审批失败');
+      ElMessage.error(approvalLoadError.value);
     }
   } finally {
     if (activeApprovalQueryKey.value === key) {
@@ -2615,6 +2810,7 @@ function buildAccessLogParams(): SensitiveAccessLogQuery {
 function applyAccessLogsResult(result: PageResult<SensitiveAccessLog>) {
   accessLogs.value = result.items;
   accessLogTotal.value = result.total;
+  accessLogLoadError.value = '';
 }
 
 async function loadAccessLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -2646,7 +2842,8 @@ async function loadAccessLogs(options: { background?: boolean; force?: boolean }
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载敏感字段访问日志失败');
+      accessLogLoadError.value = getLoadErrorMessage(error, '加载敏感字段访问日志失败');
+      ElMessage.error(accessLogLoadError.value);
     }
   } finally {
     if (activeAccessLogQueryKey.value === key) {

@@ -62,6 +62,20 @@
         @batch-action="handleBatchAction"
       />
 
+      <ListRequestError
+        v-if="rolesLoadError"
+        title="角色选项加载失败"
+        :message="rolesLoadError"
+        @retry="() => loadRoles({ force: true })"
+      />
+
+      <ListRequestError
+        v-if="usersLoadError && users.length"
+        title="用户列表刷新失败"
+        :message="usersLoadError"
+        @retry="() => loadUsers({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -72,7 +86,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="usersLoadError"
+            title="用户列表加载失败"
+            :message="usersLoadError"
+            @retry="() => loadUsers({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无用户</strong>
             <span>可以新增用户，或清空筛选后重新查看员工账号列表。</span>
             <div class="apple-core-empty-state__actions">
@@ -181,6 +201,14 @@
             <AppButton size="small" variant="ghost" @click="openEdit(user)">编辑</AppButton>
           </div>
         </article>
+      </div>
+
+      <div v-else-if="usersLoadError" class="mobile-record-list" aria-label="用户列表加载失败">
+        <ListRequestError
+          title="用户列表加载失败"
+          :message="usersLoadError"
+          @retry="() => loadUsers({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -300,6 +328,7 @@ import { rolesApi, userTableViewsApi, usersApi } from '@/api/system';
 import type { UserQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -309,6 +338,7 @@ import { usePageRefresh } from '@/composables/pageRefresh';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import type { ManagedUser, PageResult, Role, TableDensity, UserTableView } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const tableKey = 'system_users';
@@ -332,8 +362,10 @@ const dialogVisible = ref(false);
 const editingUser = ref<ManagedUser | null>(null);
 const formRef = ref<FormInstance>();
 const users = ref<ManagedUser[]>([]);
+const usersLoadError = ref('');
 const selectedUsers = ref<ManagedUser[]>([]);
 const roles = ref<Role[]>([]);
+const rolesLoadError = ref('');
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
 const savedViews = ref<UserTableView[]>([]);
@@ -385,6 +417,7 @@ function formatDate(value?: string | null) {
 
 function applyRolesResult(data: Role[]) {
   roles.value = data;
+  rolesLoadError.value = '';
 }
 
 async function loadRoles(options: { background?: boolean; force?: boolean } = {}) {
@@ -413,7 +446,8 @@ async function loadRoles(options: { background?: boolean; force?: boolean } = {}
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载角色失败');
+      rolesLoadError.value = getLoadErrorMessage(error, '加载角色失败');
+      ElMessage.error(rolesLoadError.value);
     }
   }
 }
@@ -432,6 +466,7 @@ function buildUserParams(): UserQuery {
 function applyUsersResult(data: PageResult<ManagedUser>) {
   users.value = data.items;
   total.value = data.total;
+  usersLoadError.value = '';
 }
 
 async function loadUsers(options: { background?: boolean; force?: boolean } = {}) {
@@ -463,7 +498,8 @@ async function loadUsers(options: { background?: boolean; force?: boolean } = {}
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载用户失败');
+      usersLoadError.value = getLoadErrorMessage(error, '加载用户失败');
+      ElMessage.error(usersLoadError.value);
     }
   } finally {
     if (activeUsersQueryKey.value === key) {

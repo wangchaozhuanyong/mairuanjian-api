@@ -1,6 +1,52 @@
 <template>
   <ElConfigProvider :locale="zhCn" :message="messageConfig">
     <RouterView />
+    <Transition name="app-route-error">
+      <div
+        v-if="currentRuntimeError && !currentRouteLoadError"
+        class="app-route-error app-route-error--runtime"
+        role="alert"
+        aria-live="assertive"
+      >
+        <section class="app-route-error__panel">
+          <span class="app-route-error__mark">!</span>
+          <div class="app-route-error__copy">
+            <strong>页面运行时遇到问题</strong>
+            <p>{{ currentRuntimeError.message }}</p>
+          </div>
+          <div class="app-route-error__actions">
+            <button
+              class="app-route-error__button app-route-error__button--primary"
+              @click="reloadApp"
+            >
+              刷新页面
+            </button>
+            <button class="app-route-error__button" @click="dismissRuntimeError">继续查看</button>
+            <button class="app-route-error__button" @click="goDashboard">回到首页</button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+    <Transition name="app-route-error">
+      <div v-if="currentRouteLoadError" class="app-route-error" role="alert" aria-live="assertive">
+        <section class="app-route-error__panel">
+          <span class="app-route-error__mark">!</span>
+          <div class="app-route-error__copy">
+            <strong>页面没有成功加载</strong>
+            <p>{{ currentRouteLoadError.message }}</p>
+          </div>
+          <div class="app-route-error__actions">
+            <button
+              class="app-route-error__button app-route-error__button--primary"
+              @click="reloadApp"
+            >
+              刷新页面
+            </button>
+            <button class="app-route-error__button" @click="goDashboard">回到首页</button>
+          </div>
+        </section>
+      </div>
+    </Transition>
     <Transition name="app-boot">
       <div
         v-if="showBootFallback"
@@ -30,8 +76,9 @@ import { ElConfigProvider } from 'element-plus/es/components/config-provider/ind
 import { ElMessage } from 'element-plus';
 import zhCn from 'element-plus/es/locale/lang/zh-cn.mjs';
 import { AUTH_SESSION_EXPIRED_EVENT } from '@/auth/session';
-import { isRoutePending, router } from '@/router';
+import { clearRouteLoadError, isRoutePending, routeLoadError, router } from '@/router';
 import { useRealtimeConnection } from '@/realtime/useRealtime';
+import { appRuntimeError, clearAppRuntimeError } from '@/runtime/appRuntimeError';
 import { useAuthStore } from '@/stores/auth';
 
 const isRouterReady = ref(false);
@@ -89,9 +136,28 @@ router
   });
 
 const showBootFallback = computed(() => !isRouterReady.value && isBootVisible.value);
+const currentRouteLoadError = computed(() => routeLoadError.value);
+const currentRuntimeError = computed(() => appRuntimeError.value);
 const bootMessage = computed(() =>
   isSlowBoot.value ? '正在连接登录状态和页面资源，请稍候。' : '加载页面结构和权限状态'
 );
+
+function reloadApp() {
+  window.location.reload();
+}
+
+function goDashboard() {
+  clearRouteLoadError();
+  clearAppRuntimeError();
+
+  void router.push('/dashboard').catch(() => {
+    window.location.assign('/dashboard');
+  });
+}
+
+function dismissRuntimeError() {
+  clearAppRuntimeError();
+}
 
 onBeforeUnmount(() => {
   window.clearTimeout(bootDelayTimer);

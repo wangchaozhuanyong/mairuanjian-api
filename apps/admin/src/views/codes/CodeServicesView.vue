@@ -63,6 +63,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="servicesLoadError && services.length"
+        title="兑换码业务刷新失败"
+        :message="servicesLoadError"
+        @retry="() => loadServices({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -73,7 +80,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="servicesLoadError"
+            title="兑换码业务加载失败"
+            :message="servicesLoadError"
+            @retry="() => loadServices({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无兑换码业务</strong>
             <span>可以新增业务，或清空筛选后查看已有兑换码业务配置。</span>
             <div class="apple-core-empty-state__actions">
@@ -221,6 +234,14 @@
         </article>
       </div>
 
+      <div v-else-if="servicesLoadError" class="mobile-record-list" aria-label="兑换码业务加载失败">
+        <ListRequestError
+          title="兑换码业务加载失败"
+          :message="servicesLoadError"
+          @retry="() => loadServices({ force: true })"
+        />
+      </div>
+
       <div v-else class="mobile-record-list">
         <div class="apple-core-empty-state">
           <strong>暂无兑换码业务</strong>
@@ -365,6 +386,13 @@
           用于手工导入或外部订单识别兑换码业务，不和 Apple ID 平台映射混用。
         </p>
 
+        <ListRequestError
+          v-if="mappingsLoadError && mappings.length"
+          title="平台映射刷新失败"
+          :message="mappingsLoadError"
+          @retry="() => loadMappings({ force: true })"
+        />
+
         <el-table
           v-loading="mappingLoading"
           class="desktop-data-table"
@@ -372,7 +400,13 @@
           row-key="id"
         >
           <template #empty>
-            <div class="apple-core-empty-state">
+            <ListRequestError
+              v-if="mappingsLoadError"
+              title="平台映射加载失败"
+              :message="mappingsLoadError"
+              @retry="() => loadMappings({ force: true })"
+            />
+            <div v-else class="apple-core-empty-state">
               <strong>暂无平台映射</strong>
               <span>新增平台商品或 SKU 映射后，外部订单才能自动匹配兑换码业务。</span>
               <div class="apple-core-empty-state__actions">
@@ -451,6 +485,17 @@
               </AppButton>
             </div>
           </article>
+        </div>
+        <div
+          v-else-if="!mappingLoading && mappingsLoadError"
+          class="mobile-record-list"
+          aria-label="平台映射加载失败"
+        >
+          <ListRequestError
+            title="平台映射加载失败"
+            :message="mappingsLoadError"
+            @retry="() => loadMappings({ force: true })"
+          />
         </div>
         <div v-else-if="!mappingLoading" class="mobile-record-list">
           <div class="apple-core-empty-state">
@@ -595,6 +640,7 @@ import type { CodePlatformMappingQuery, CodeServiceQuery, DataDictionaryQuery } 
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -618,6 +664,7 @@ import {
   getCodeServiceDeliveryModeLabel as getConfiguredCodeServiceDeliveryModeLabel
 } from '@/utils/codeServiceDeliveryModes';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartMessageTemplates, loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
 
@@ -648,8 +695,10 @@ const editingService = ref<CodeService | null>(null);
 const selectedService = ref<CodeService | null>(null);
 const editingMapping = ref<CodePlatformMapping | null>(null);
 const services = ref<CodeService[]>([]);
+const servicesLoadError = ref('');
 const selectedServices = ref<CodeService[]>([]);
 const mappings = ref<CodePlatformMapping[]>([]);
+const mappingsLoadError = ref('');
 const sourcePlatforms = ref<SourcePlatform[]>([]);
 const deliveryTemplates = ref<MessageTemplate[]>([]);
 const deliveryModeDictionaries = ref<DataDictionary[]>([]);
@@ -785,6 +834,7 @@ function buildServiceParams(): CodeServiceQuery {
 function applyServiceResult(data: PageResult<CodeService>) {
   services.value = data.items;
   total.value = data.total;
+  servicesLoadError.value = '';
 }
 
 async function loadServices(options: { background?: boolean; force?: boolean } = {}) {
@@ -816,7 +866,8 @@ async function loadServices(options: { background?: boolean; force?: boolean } =
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载兑换码业务失败');
+      servicesLoadError.value = getLoadErrorMessage(error, '加载兑换码业务失败');
+      ElMessage.error(servicesLoadError.value);
     }
   } finally {
     if (activeServicesQueryKey.value === key) {
@@ -1083,6 +1134,7 @@ function buildMappingParams(): CodePlatformMappingQuery | null {
 
 function applyMappingResult(data: PageResult<CodePlatformMapping>) {
   mappings.value = data.items;
+  mappingsLoadError.value = '';
 }
 
 async function loadMappings(options: { background?: boolean; force?: boolean } = {}) {
@@ -1119,7 +1171,8 @@ async function loadMappings(options: { background?: boolean; force?: boolean } =
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载平台映射失败');
+      mappingsLoadError.value = getLoadErrorMessage(error, '加载平台映射失败');
+      ElMessage.error(mappingsLoadError.value);
     }
   } finally {
     if (activeMappingsQueryKey.value === key) {

@@ -185,6 +185,13 @@
           <StatusChip tone="green" dot>关联同步</StatusChip>
         </div>
 
+        <ListRequestError
+          v-if="relatedLoadError"
+          title="关联业务数据加载失败"
+          :message="relatedLoadError"
+          @retry="retryRelatedData"
+        />
+
         <el-tabs v-model="activeTab" class="system-tabs account-detail-tabs">
           <el-tab-pane
             v-if="canViewAppleBalanceRecords"
@@ -839,6 +846,7 @@ import {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import StatusChip from '@/components/ui/StatusChip.vue';
@@ -858,6 +866,7 @@ import type {
   ServiceActivation
 } from '@/types/system';
 import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
@@ -887,6 +896,7 @@ const account = ref<AppleAccount | null>(null);
 const accountLoading = ref(false);
 const relatedLoading = ref(false);
 const loadError = ref('');
+const relatedLoadError = ref('');
 const activeTab = ref<AccountDetailTabName>('statusChecks');
 const topups = ref<AppleBalanceTopup[]>([]);
 const consumptions = ref<AppleBalanceConsumption[]>([]);
@@ -1239,12 +1249,22 @@ async function loadRelatedData(id: string, options: { silent?: boolean; dedupeMs
     activationTotal.value = activationData.total;
     renewalTaskTotal.value = renewalTaskData.total;
     actionPlanTotal.value = actionPlanData.total;
+    relatedLoadError.value = '';
     syncActiveAccountDetailTab();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载关联业务数据失败');
+    relatedLoadError.value = getLoadErrorMessage(error, '加载关联业务数据失败');
+    ElMessage.error(relatedLoadError.value);
   } finally {
     relatedLoading.value = false;
   }
+}
+
+function retryRelatedData() {
+  if (!account.value?.id) {
+    return;
+  }
+
+  void loadRelatedData(account.value.id, { dedupeMs: 0 });
 }
 
 function hasAccountDetailPermission(permission: string) {

@@ -23,6 +23,11 @@ interface AppleWebCheckExecutionPlan {
   appleAccountSignInUrl: string;
 }
 
+interface AppleWebManualInput {
+  inputType: 'verification_code' | 'captcha' | 'device_confirmation' | 'note';
+  value: string;
+}
+
 type AppleWebCheckResultStatus =
   | 'normal'
   | 'need_verify'
@@ -183,7 +188,8 @@ export class AppleWebCheckWorker implements OnModuleInit, OnModuleDestroy {
         appleId: account.appleId,
         password,
         plan,
-        nodeId: candidate.id
+        nodeId: candidate.id,
+        manualInput: this.getManualInput(task)
       });
 
       if (attempt.completed) return;
@@ -196,6 +202,7 @@ export class AppleWebCheckWorker implements OnModuleInit, OnModuleDestroy {
     password: string;
     plan: AppleWebCheckExecutionPlan;
     nodeId: string;
+    manualInput: AppleWebManualInput | null;
   }) {
     const { chromium } = await import('playwright');
     const timeoutMs = this.getTimeoutMs();
@@ -305,6 +312,7 @@ export class AppleWebCheckWorker implements OnModuleInit, OnModuleDestroy {
       appleId: string;
       password: string;
       plan: AppleWebCheckExecutionPlan;
+      manualInput: AppleWebManualInput | null;
     }
   ): Promise<
     { resultStatus: AppleWebCheckResultStatus; manualReason?: null } | { manualReason: string }
@@ -358,8 +366,24 @@ export class AppleWebCheckWorker implements OnModuleInit, OnModuleDestroy {
 
     const pageText = await this.getPageText(page);
     if (this.isManualChallengeText(pageText)) {
+      const manualInputUsed = await this.trySubmitManualChallengeInput(page, input.manualInput);
+      if (manualInputUsed) {
+        await page.waitForLoadState('networkidle').catch(() => undefined);
+        const nextPageText = await this.getPageText(page);
+        if (!this.isManualChallengeText(nextPageText)) {
+          return this.resolveSignedInStatus(page, nextPageText);
+        }
+      }
       return { manualReason: 'Apple 要求人工验证码、设备确认或 CAPTCHA，已停止等待人工处理' };
     }
+
+    return this.resolveSignedInStatus(page, pageText);
+  }
+
+  private resolveSignedInStatus(
+    page: Page,
+    pageText: string
+  ): { resultStatus: AppleWebCheckResultStatus; manualReason?: null } | { manualReason: string } {
     if (this.includesAny(pageText, ['incorrect password', '密码错误', 'password is incorrect'])) {
       return { resultStatus: 'password_error', manualReason: null };
     }
@@ -385,6 +409,65 @@ export class AppleWebCheckWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     return { manualReason: 'Apple 官网页面结果无法稳定判断，已转人工确认' };
+  }
+
+  private async trySubmitManualChallengeInput(page: Page, manualInput: AppleWebManualInput | null) {
+    if (!manualInput || manualInput.inputType === 'note') return false;
+    const value = manualInput.value.trim();
+    if (!value) return false;
+
+    const multiInputSubmitted = await this.tryFillSegmentedCodeInputs(page, value);
+    if (!multiInputSubmitted) {
+      const input = await this.findFirstVisibleLocator(page, [
+        'input[type="tel"]',
+        'input[inputmode="numeric"]',
+        'input[name*="code" i]',
+        'input[id*="code" i]',
+        'input[autocomplete="one-time-code"]',
+        'input[type="text"]'
+      ]);
+      if (!input) return false;
+      await input.fill(value).catch(async () => {
+        await input.type(value).catch(() => undefined);
+      });
+    }
+
+    await this.clickFirstVisibleLocator(page, [
+      'button[type="submit"]',
+      'button:has-text("Verify")',
+      'button:has-text("Continue")',
+      'button:has-text("验证")',
+      'button:has-text("继续")',
+      '#sign-in'
+    ]);
+    return true;
+  }
+
+  private async tryFillSegmentedCodeInputs(page: Page, value: string) {
+    const selectors = [
+      'input[aria-label*="digit" i]',
+      'input[id*="char" i]',
+      'input[type="tel"]',
+      'input[inputmode="numeric"]'
+    ];
+
+    for (const frame of page.frames()) {
+      for (const selector of selectors) {
+        const inputs = frame.locator(selector);
+        const count = await inputs.count().catch(() => 0);
+        if (count < 2 || count > value.length) continue;
+        let filled = 0;
+        for (let index = 0; index < Math.min(count, value.length); index += 1) {
+          const input = inputs.nth(index);
+          if (!(await input.isVisible().catch(() => false))) continue;
+          await input.fill(value[index] ?? '').catch(() => undefined);
+          filled += 1;
+        }
+        if (filled >= Math.min(count, value.length)) return true;
+      }
+    }
+
+    return false;
   }
 
   private async switchSingBoxSelector(nodeId: string) {
@@ -439,6 +522,29 @@ export class AppleWebCheckWorker implements OnModuleInit, OnModuleDestroy {
   private getPlaywrightProxy() {
     const server = process.env.APPLE_WEB_CHECK_PROXY_SERVER;
     return server ? { server } : undefined;
+  }
+
+  private getManualInput(
+    task: Pick<AutomationTask, 'inputPayloadEncrypted'>
+  ): AppleWebManualInput | null {
+    if (!task.inputPayloadEncrypted) return null;
+    const decrypted = this.fieldEncryptionService.decrypt(task.inputPayloadEncrypted);
+    if (!decrypted) return null;
+    const payload = this.safeJsonParse(decrypted);
+    const manualInput = this.toObject(payload.manualInput);
+    const inputType = this.getNullableString(manualInput?.inputType);
+    const value = this.getNullableString(manualInput?.value);
+    if (!value) return null;
+    if (
+      inputType === 'verification_code' ||
+      inputType === 'captcha' ||
+      inputType === 'device_confirmation' ||
+      inputType === 'note'
+    ) {
+      return { inputType: inputType as AppleWebManualInput['inputType'], value };
+    }
+
+    return { inputType: 'verification_code' as const, value };
   }
 
   private getIpCheckUrls() {

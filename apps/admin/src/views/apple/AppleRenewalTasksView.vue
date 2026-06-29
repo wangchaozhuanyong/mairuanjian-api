@@ -129,6 +129,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="tasksLoadError && tasks.length"
+        title="续费任务刷新失败"
+        :message="tasksLoadError"
+        @retry="() => loadTasks({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -140,7 +147,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="tasksLoadError"
+            title="续费任务加载失败"
+            :message="tasksLoadError"
+            @retry="() => loadTasks({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无续费任务</strong>
             <span>可以生成到期任务，或调整筛选条件后重新查看。</span>
             <div class="apple-core-empty-state__actions">
@@ -353,7 +366,13 @@
           </div>
         </article>
 
-        <div v-if="!loading && tasks.length === 0" class="apple-core-empty-state">
+        <ListRequestError
+          v-if="!loading && tasksLoadError && tasks.length === 0"
+          title="续费任务加载失败"
+          :message="tasksLoadError"
+          @retry="() => loadTasks({ force: true })"
+        />
+        <div v-else-if="!loading && tasks.length === 0" class="apple-core-empty-state">
           <strong>暂无续费任务</strong>
           <span>可以生成到期任务，或调整筛选条件后重新查看。</span>
           <div class="apple-core-empty-state__actions">
@@ -600,6 +619,7 @@ import {
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -610,6 +630,7 @@ import type { RenewalTask, TableDensity, UserTableView } from '@/types/system';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 
@@ -619,6 +640,7 @@ const authStore = useAuthStore();
 const tasks = ref<RenewalTask[]>([]);
 const total = ref(0);
 const loading = ref(false);
+const tasksLoadError = ref('');
 const generating = ref(false);
 const evidenceUploading = ref(false);
 const quickDate = ref('');
@@ -937,7 +959,8 @@ async function initializePage() {
   try {
     await loadPageData();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载续费任务失败');
+    tasksLoadError.value = getLoadErrorMessage(error, '加载续费任务失败');
+    ElMessage.error(tasksLoadError.value);
   }
 }
 
@@ -978,7 +1001,8 @@ async function loadTasks(options: { background?: boolean; force?: boolean } = {}
     });
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载续费任务失败');
+      tasksLoadError.value = getLoadErrorMessage(error, '加载续费任务失败');
+      ElMessage.error(tasksLoadError.value);
     }
   }
 }
@@ -1001,6 +1025,7 @@ function buildTaskListParams(): RenewalTaskQuery {
 function applyTaskListResult(result: RenewalTaskPage) {
   tasks.value = result.items;
   total.value = result.total;
+  tasksLoadError.value = '';
 }
 
 async function handleSearch() {

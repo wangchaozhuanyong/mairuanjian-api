@@ -1836,6 +1836,51 @@ export interface AppleAutomationWorkbenchStatus {
   officialPriceCheck: AppleAutomationWorkbenchCapability;
 }
 
+export type AppleGiftCardQueryAccountStatus = 'ready' | 'disabled';
+
+export interface AppleGiftCardQueryAccount {
+  id: string;
+  appleIdMasked: string;
+  passwordSaved: boolean;
+  status: AppleGiftCardQueryAccountStatus;
+  remark?: string | null;
+  updatedAt: string;
+}
+
+export interface AppleGiftCardQueryAccounts {
+  items: AppleGiftCardQueryAccount[];
+  maxAccounts: number;
+  updatedAt?: string | null;
+}
+
+export type AppleGiftCardBalanceCheckRowStatus =
+  | 'pending_ocr'
+  | 'waiting_worker'
+  | 'manual_required'
+  | 'success'
+  | 'failed';
+
+export interface AppleGiftCardBalanceCheckRow {
+  id: string;
+  attachmentId: string;
+  fileName: string;
+  extractedCode: string;
+  assignedAppleId: string;
+  status: AppleGiftCardBalanceCheckRowStatus;
+  balance: string;
+  currency: string;
+  message: string;
+}
+
+export interface AppleGiftCardBalanceCheckRun {
+  id: string;
+  status: 'waiting_worker' | 'manual_required' | 'completed';
+  accountCount: number;
+  imageCount: number;
+  rows: AppleGiftCardBalanceCheckRow[];
+  createdAt: string;
+}
+
 export interface AppleAutomationTask {
   id: string;
   batchId?: string | null;

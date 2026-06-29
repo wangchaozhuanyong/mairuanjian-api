@@ -536,7 +536,7 @@ export class NotificationsService {
           }),
           this.createNavItemBadge({
             itemKey: 'apple-automation',
-            label: 'ID 自动化任务',
+            label: 'ID 自动化工作台',
             count: appleAutomation,
             tone: appleAutomation > 0 ? 'red' : 'neutral',
             description: '失败、需复核或等待人工验证的自动化任务'

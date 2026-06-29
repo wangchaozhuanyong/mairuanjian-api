@@ -71,6 +71,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="accountsLoadError && accounts.length"
+        title="Apple ID 对账列表刷新失败"
+        :message="accountsLoadError"
+        @retry="() => loadAccounts({ force: true, dedupeMs: 0 })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -82,7 +89,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="accountsLoadError"
+            title="Apple ID 对账列表加载失败"
+            :message="accountsLoadError"
+            @retry="() => loadAccounts({ force: true, dedupeMs: 0 })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无需要对账的 Apple ID</strong>
             <span>可以清空筛选后查看账号，或回到 Apple ID 管理新增账号。</span>
             <div class="apple-core-empty-state__actions">
@@ -262,6 +275,18 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div
+        v-else-if="accountsLoadError"
+        class="mobile-record-list"
+        aria-label="余额对账账号加载失败"
+      >
+        <ListRequestError
+          title="Apple ID 对账列表加载失败"
+          :message="accountsLoadError"
+          @retry="() => loadAccounts({ force: true, dedupeMs: 0 })"
+        />
       </div>
 
       <div v-else class="mobile-record-list" aria-label="余额对账空状态">
@@ -766,6 +791,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -782,6 +808,7 @@ import type {
 } from '@/types/system';
 import { formatAppleRegionCurrencyLabel } from '@/utils/appleAccountRegion';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQuery } from '@/utils/smartQuery';
 
@@ -825,6 +852,7 @@ const detailDrawerVisible = ref(false);
 const selectedAccount = ref<AppleAccount | null>(null);
 const formRef = ref<FormInstance>();
 const accounts = ref<AppleAccount[]>([]);
+const accountsLoadError = ref('');
 const adjustments = ref<AppleBalanceAdjustment[]>([]);
 const selectedAccounts = ref<AppleAccount[]>([]);
 const density = ref<TableDensity>('default');
@@ -1067,8 +1095,10 @@ async function loadAccounts(
     });
     accounts.value = result.data.items;
     total.value = result.data.total;
+    accountsLoadError.value = '';
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载 Apple ID 失败');
+    accountsLoadError.value = getLoadErrorMessage(error, '加载 Apple ID 失败');
+    ElMessage.error(accountsLoadError.value);
   } finally {
     loading.value = false;
   }

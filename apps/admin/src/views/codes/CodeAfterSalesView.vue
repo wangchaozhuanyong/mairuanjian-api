@@ -55,6 +55,13 @@
         show-icon
       />
 
+      <ListRequestError
+        v-if="afterSalesLoadError && afterSales.length"
+        title="售后补发刷新失败"
+        :message="afterSalesLoadError"
+        @retry="() => loadAfterSales({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -65,7 +72,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="afterSalesLoadError"
+            title="售后补发加载失败"
+            :message="afterSalesLoadError"
+            @retry="() => loadAfterSales({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无售后补发记录</strong>
             <span>{{ afterSalesEmptyStateText }}</span>
             <div class="apple-core-empty-state__actions">
@@ -220,6 +233,14 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div v-else-if="afterSalesLoadError" class="mobile-record-list" aria-label="售后补发加载失败">
+        <ListRequestError
+          title="售后补发加载失败"
+          :message="afterSalesLoadError"
+          @retry="() => loadAfterSales({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -461,6 +482,7 @@ import type { CodeAfterSaleQuery, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -481,6 +503,7 @@ import type {
 } from '@/types/system';
 import { buildCodeDeliveryMethodOptions } from '@/utils/codeDeliveryMethods';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
@@ -509,6 +532,7 @@ const createDialogVisible = ref(false);
 const reissueDialogVisible = ref(false);
 const detailVisible = ref(false);
 const afterSales = ref<CodeAfterSale[]>([]);
+const afterSalesLoadError = ref('');
 const deliveredOrders = ref<CodePlatformOrder[]>([]);
 const deliveryMethodDictionaries = ref<DataDictionary[]>([]);
 const selectedAfterSales = ref<CodeAfterSale[]>([]);
@@ -642,6 +666,7 @@ function buildAfterSalesParams(): CodeAfterSaleQuery {
 function applyAfterSalesResult(data: PageResult<CodeAfterSale>) {
   afterSales.value = data.items;
   total.value = data.total;
+  afterSalesLoadError.value = '';
 }
 
 async function loadAfterSales(options: { background?: boolean; force?: boolean } = {}) {
@@ -673,7 +698,8 @@ async function loadAfterSales(options: { background?: boolean; force?: boolean }
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载售后补发失败');
+      afterSalesLoadError.value = getLoadErrorMessage(error, '加载售后补发失败');
+      ElMessage.error(afterSalesLoadError.value);
     }
   } finally {
     if (activeAfterSalesQueryKey.value === key) {
@@ -773,7 +799,11 @@ function handleSelectionChange(rows: CodeAfterSale[]) {
 
 async function reloadAll(options: { background?: boolean; force?: boolean } = {}) {
   try {
-    await Promise.all([loadDeliveredOrders(), loadDeliveryMethods(options), loadAfterSales(options)]);
+    await Promise.all([
+      loadDeliveredOrders(),
+      loadDeliveryMethods(options),
+      loadAfterSales(options)
+    ]);
   } catch (error) {
     if (!options.background) {
       ElMessage.error(error instanceof Error ? error.message : '刷新售后补发失败');

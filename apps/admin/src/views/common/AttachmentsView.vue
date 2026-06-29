@@ -86,6 +86,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="attachmentsLoadError && attachments.length"
+        title="附件列表刷新失败"
+        :message="attachmentsLoadError"
+        @retry="() => loadAttachments({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -96,7 +103,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="attachmentsLoadError"
+            title="附件列表加载失败"
+            :message="attachmentsLoadError"
+            @retry="() => loadAttachments({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无附件</strong>
             <span>可以上传附件，或清空筛选后重新查看附件列表。</span>
             <div class="apple-core-empty-state__actions">
@@ -215,6 +228,18 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div
+        v-else-if="attachmentsLoadError"
+        class="mobile-record-list"
+        aria-label="附件列表加载失败"
+      >
+        <ListRequestError
+          title="附件列表加载失败"
+          :message="attachmentsLoadError"
+          @retry="() => loadAttachments({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -349,6 +374,7 @@ import { attachmentsApi, dataCenterApi, userTableViewsApi } from '@/api/system';
 import type { AttachmentQuery, DataDictionaryQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -375,6 +401,7 @@ import {
   getAttachmentPurposeLabel
 } from '@/utils/systemQuickOptions';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 
 type LoadOptions = { background?: boolean; force?: boolean };
 
@@ -396,6 +423,7 @@ const uploadDialogVisible = ref(false);
 const fileInputRef = ref<HTMLInputElement>();
 const selectedFile = ref<File | null>(null);
 const attachments = ref<Attachment[]>([]);
+const attachmentsLoadError = ref('');
 const selectedAttachments = ref<Attachment[]>([]);
 const density = ref<TableDensity>('default');
 const visibleColumns = ref<string[]>([]);
@@ -552,6 +580,7 @@ function buildAttachmentParams(): AttachmentQuery {
 function applyAttachmentsResult(data: PageResult<Attachment>) {
   attachments.value = data.items;
   total.value = data.total;
+  attachmentsLoadError.value = '';
   selectedAttachments.value = selectedAttachments.value.filter((selected) =>
     data.items.some((attachment) => attachment.id === selected.id)
   );
@@ -595,7 +624,11 @@ async function loadCachedPage<TItem>(config: {
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : config.errorMessage);
+      const message = getLoadErrorMessage(error, config.errorMessage);
+      if (config.scope === 'attachments') {
+        attachmentsLoadError.value = message;
+      }
+      ElMessage.error(message);
     }
   } finally {
     if (config.activeKey.value === key) {

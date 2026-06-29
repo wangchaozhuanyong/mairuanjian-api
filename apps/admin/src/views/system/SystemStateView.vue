@@ -8,6 +8,7 @@
     <template #actions>
       <StatusChip :tone="state.tone" dot>{{ state.actionTag }}</StatusChip>
       <AppButton @click="router.back()">返回上一页</AppButton>
+      <AppButton v-if="isRouteError" @click="reloadPage">刷新页面</AppButton>
       <AppButton variant="primary" @click="router.push(primaryAction.route)">
         {{ primaryAction.label }}
       </AppButton>
@@ -39,9 +40,9 @@
         :type="state.stateType"
         :title="state.stateTitle"
         :description="state.stateDescription"
-        primary-label="回到首页"
+        :primary-label="isRouteError ? '刷新页面' : '回到首页'"
         secondary-label="返回上一页"
-        @primary="router.push('/dashboard')"
+        @primary="handleStatePrimary"
         @secondary="router.back()"
       />
     </AppCard>
@@ -187,6 +188,38 @@ const stateMap: Record<
       { title: '回到首页', description: '先查看首页里仍可处理的订单、续费和发货任务。' },
       { title: '联系管理员', description: '如果维护时间影响业务处理，请联系管理员确认恢复安排。' }
     ]
+  },
+  'route-error': {
+    title: '页面加载失败',
+    group: '异常页面',
+    phase: 'Design',
+    description: '页面资源或运行状态加载失败，系统已停止继续渲染当前页面。',
+    tone: 'red',
+    actionTag: '加载失败',
+    primaryLabel: '回到首页',
+    primaryRoute: '/dashboard',
+    cardTitle: '当前页面暂时不可用',
+    cardSubtitle: '可能是网络中断、前端资源更新，或页面运行时加载异常。',
+    stateType: 'error',
+    stateTitle: '页面没有成功加载',
+    stateDescription:
+      '当前业务数据没有被修改。请先刷新页面；如果仍失败，再返回首页重新进入功能模块。',
+    metrics: [
+      {
+        label: '页面状态',
+        value: '加载失败',
+        hint: '已停止继续渲染',
+        tag: '可重试',
+        tagTone: 'red'
+      },
+      { label: '业务数据', value: '未写入', hint: '本次异常不会提交表单或订单' },
+      { label: '建议操作', value: '刷新页面', hint: '重新获取页面资源后再继续' }
+    ],
+    actions: [
+      { title: '刷新页面', description: '重新加载前端资源，适合系统刚更新或网络短暂中断。' },
+      { title: '返回首页', description: '从工作台重新进入业务模块，避免停留在失败页面。' },
+      { title: '记录现象', description: '如果多次失败，请记录页面路径和操作步骤交给管理员排查。' }
+    ]
   }
 };
 
@@ -194,6 +227,7 @@ const state = computed(() => {
   const moduleKey = String(route.meta.moduleKey ?? '');
   return stateMap[moduleKey] ?? stateMap['not-found'];
 });
+const isRouteError = computed(() => String(route.meta.moduleKey ?? '') === 'route-error');
 const primaryAction = computed(() => {
   if (canAccessRoute(state.value.primaryRoute)) {
     return {
@@ -237,5 +271,18 @@ function canAccessRoute(path: string) {
   }
 
   return hasUserRoutePermission(authStore.user, targetRoute.meta.permission);
+}
+
+function reloadPage() {
+  window.location.reload();
+}
+
+function handleStatePrimary() {
+  if (isRouteError.value) {
+    reloadPage();
+    return;
+  }
+
+  void router.push('/dashboard');
 }
 </script>

@@ -54,7 +54,9 @@ describe('ExchangeRatesService', () => {
 
     expect(first.available).toBe(true);
     expect(first.source).toBe('free_daily');
-    expect(first.rawRateToRmb).toBe(new Prisma.Decimal(1).div('0.604').toDecimalPlaces(8).toString());
+    expect(first.rawRateToRmb).toBe(
+      new Prisma.Decimal(1).div('0.604').toDecimalPlaces(8).toString()
+    );
     expect(first.rateToRmb).toBe(
       new Prisma.Decimal(first.rawRateToRmb).mul('0.99').toDecimalPlaces(8).toString()
     );

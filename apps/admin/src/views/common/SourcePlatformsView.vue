@@ -61,6 +61,13 @@
       >
       </TableToolbar>
 
+      <ListRequestError
+        v-if="platformsLoadError && platforms.length"
+        title="来源平台刷新失败"
+        :message="platformsLoadError"
+        @retry="() => loadPlatforms({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -71,7 +78,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="platformsLoadError"
+            title="来源平台加载失败"
+            :message="platformsLoadError"
+            @retry="() => loadPlatforms({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无来源平台</strong>
             <span>可以新增来源平台，或清空筛选后重新查看配置列表。</span>
             <div class="apple-core-empty-state__actions">
@@ -206,6 +219,14 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div v-else-if="platformsLoadError" class="mobile-record-list" aria-label="来源平台加载失败">
+        <ListRequestError
+          title="来源平台加载失败"
+          :message="platformsLoadError"
+          @retry="() => loadPlatforms({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -2305,6 +2326,7 @@ import type { DataDictionaryQuery, SourcePlatformQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -2370,6 +2392,7 @@ import {
   refreshSmartQueryResource
 } from '@/utils/smartQuery';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 
 const tableKey = 'source_platforms';
 const statusOptions = [
@@ -2518,6 +2541,7 @@ const regionFormRef = ref<FormInstance>();
 const methodFormRef = ref<FormInstance>();
 const deliveryModeFormRef = ref<FormInstance>();
 const platforms = ref<SourcePlatform[]>([]);
+const platformsLoadError = ref('');
 const customerTags = ref<DataDictionary[]>([]);
 const appleServiceCategories = ref<DataDictionary[]>([]);
 const appleServiceOptionDictionaries = reactive<
@@ -3267,6 +3291,7 @@ interface SourceOptionResourceConfig<TData> {
   fetcher: (signal: AbortSignal) => Promise<TData>;
   apply: (data: TData) => void;
   errorMessage: string;
+  loadError?: Ref<string>;
   isCurrent?: () => boolean;
 }
 
@@ -3279,6 +3304,7 @@ async function loadSourceOptionResource<TData>({
   fetcher,
   apply,
   errorMessage,
+  loadError,
   isCurrent
 }: SourceOptionResourceConfig<TData>) {
   activeKey.value = key;
@@ -3298,9 +3324,16 @@ async function loadSourceOptionResource<TData>({
         : undefined,
       force: options.force ?? true
     });
+    if (loadError) {
+      loadError.value = '';
+    }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : errorMessage);
+      const message = getLoadErrorMessage(error, errorMessage);
+      if (loadError) {
+        loadError.value = message;
+      }
+      ElMessage.error(message);
     }
   }
 }
@@ -3367,7 +3400,8 @@ async function loadPlatforms(options: { background?: boolean; force?: boolean } 
     cancelScope: 'source-platforms',
     fetcher: (signal) => sourcePlatformsApi.list(params, { signal }),
     apply: applyPlatformResult,
-    errorMessage: '加载来源平台失败'
+    errorMessage: '加载来源平台失败',
+    loadError: platformsLoadError
   });
 }
 
@@ -5050,6 +5084,18 @@ onBeforeUnmount(stopRealtimeRefresh);
   padding: 0 0 14px;
   overflow-x: auto;
   scrollbar-width: thin;
+}
+
+.source-options-nav::after {
+  position: sticky;
+  right: -1px;
+  align-self: stretch;
+  width: 28px;
+  flex: 0 0 28px;
+  margin-left: -28px;
+  background: linear-gradient(270deg, var(--v3-surface), rgba(255, 255, 255, 0));
+  content: '';
+  pointer-events: none;
 }
 
 .source-options-nav__button {

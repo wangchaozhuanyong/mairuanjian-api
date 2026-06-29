@@ -505,7 +505,12 @@ const SOURCE_OPTIONS_ROUTES = new Set([
   '/system/source-platforms/notification-options',
   '/system/source-platforms/system-options'
 ]);
-const SYSTEM_STATE_WORKSPACE_ROUTES = new Set(['/403', '/404', '/system/maintenance-mode']);
+const SYSTEM_STATE_WORKSPACE_ROUTES = new Set([
+  '/403',
+  '/404',
+  '/system/maintenance-mode',
+  '/system/page-load-error'
+]);
 
 interface WorkspaceTab {
   fullPath: string;

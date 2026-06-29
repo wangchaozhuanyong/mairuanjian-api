@@ -47,6 +47,13 @@
         <AppButton variant="primary" @click="openCreate">新增来源渠道</AppButton>
       </div>
 
+      <ListRequestError
+        v-if="channelsLoadError && channels.length"
+        title="来源渠道刷新失败"
+        :message="channelsLoadError"
+        @retry="() => loadChannels({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -55,7 +62,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="channelsLoadError"
+            title="来源渠道加载失败"
+            :message="channelsLoadError"
+            @retry="() => loadChannels({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无 Apple ID 来源渠道</strong>
             <span>可以新增来源渠道，或清空筛选后重新查看。</span>
             <div class="apple-core-empty-state__actions">
@@ -122,6 +135,25 @@
         </article>
       </div>
 
+      <div v-else-if="channelsLoadError" class="mobile-record-list" aria-label="来源渠道加载失败">
+        <ListRequestError
+          title="来源渠道加载失败"
+          :message="channelsLoadError"
+          @retry="() => loadChannels({ force: true })"
+        />
+      </div>
+
+      <div v-else class="mobile-record-list" aria-label="来源渠道空状态">
+        <div class="apple-core-empty-state">
+          <strong>暂无 Apple ID 来源渠道</strong>
+          <span>可以新增来源渠道，或清空筛选后重新查看。</span>
+          <div class="apple-core-empty-state__actions">
+            <AppButton variant="soft" @click="clearFilters">清空筛选</AppButton>
+            <AppButton variant="primary" @click="openCreate">新增来源渠道</AppButton>
+          </div>
+        </div>
+      </div>
+
       <PaginationBar
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
@@ -172,6 +204,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { appleAccountSourceChannelsApi } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -179,6 +212,7 @@ import StatusChip from '@/components/ui/StatusChip.vue';
 import StatusTag from '@/components/ui/StatusTag.vue';
 import { usePageRefresh } from '@/composables/pageRefresh';
 import type { AppleAccountSourceChannel } from '@/types/system';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { invalidateSmartQueries } from '@/utils/smartQuery';
 
 const statusOptions: Array<{ label: string; value: AppleAccountSourceChannel['status'] }> = [
@@ -193,6 +227,7 @@ const dialogVisible = ref(false);
 const editingChannel = ref<AppleAccountSourceChannel | null>(null);
 const formRef = ref<FormInstance>();
 const channels = ref<AppleAccountSourceChannel[]>([]);
+const channelsLoadError = ref('');
 const total = ref(0);
 
 const query = reactive({
@@ -222,7 +257,7 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-';
 }
 
-async function loadChannels(options: { background?: boolean } = {}) {
+async function loadChannels(options: { background?: boolean; force?: boolean } = {}) {
   loading.value = !options.background;
   try {
     const data = await appleAccountSourceChannelsApi.list({
@@ -235,9 +270,11 @@ async function loadChannels(options: { background?: boolean } = {}) {
     });
     channels.value = data.items;
     total.value = data.total;
+    channelsLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载来源渠道失败');
+      channelsLoadError.value = getLoadErrorMessage(error, '加载来源渠道失败');
+      ElMessage.error(channelsLoadError.value);
     }
   } finally {
     loading.value = false;

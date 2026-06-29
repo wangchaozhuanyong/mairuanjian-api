@@ -53,6 +53,13 @@
         </div>
       </div>
 
+      <ListRequestError
+        v-if="summaryLoadError"
+        title="发货异常看板加载失败"
+        :message="summaryLoadError"
+        @retry="() => loadSummary({ force: true })"
+      />
+
       <div class="delivery-exception-board">
         <AppCard
           v-for="lane in exceptionLanes"
@@ -127,6 +134,13 @@
         </template>
       </TableToolbar>
 
+      <ListRequestError
+        v-if="ordersLoadError && orders.length"
+        title="发货异常列表刷新失败"
+        :message="ordersLoadError"
+        @retry="() => loadOrders({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -136,7 +150,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="ordersLoadError"
+            title="发货异常列表加载失败"
+            :message="ordersLoadError"
+            @retry="() => loadOrders({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无发货异常</strong>
             <span>当前筛选下没有失败、转人工或待确认发货订单。</span>
             <div class="apple-core-empty-state__actions">
@@ -269,6 +289,14 @@
         </article>
       </div>
 
+      <div v-else-if="ordersLoadError" class="mobile-record-list" aria-label="发货异常列表加载失败">
+        <ListRequestError
+          title="发货异常列表加载失败"
+          :message="ordersLoadError"
+          @retry="() => loadOrders({ force: true })"
+        />
+      </div>
+
       <div v-else class="mobile-record-list">
         <div class="apple-core-empty-state">
           <strong>暂无发货异常</strong>
@@ -364,6 +392,7 @@ import type { CodeOrderQuery } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import MetricCard from '@/components/ui/MetricCard.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
@@ -375,6 +404,7 @@ import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { useAuthStore } from '@/stores/auth';
 import type { CodePlatformOrder, PageResult, SourcePlatform, TableDensity } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
@@ -410,6 +440,8 @@ const summaryLoading = ref(false);
 const detailVisible = ref(false);
 const selectedOrder = ref<CodePlatformOrder | null>(null);
 const orders = ref<CodePlatformOrder[]>([]);
+const ordersLoadError = ref('');
+const summaryLoadError = ref('');
 const platforms = ref<SourcePlatform[]>([]);
 const total = ref(0);
 const density = ref<TableDensity>('default');
@@ -660,11 +692,13 @@ function applySummaryResult(data: DeliveryExceptionSummary) {
     exceptionStats[status] = data.stats[status];
     laneOrders[status] = data.lanes[status];
   }
+  summaryLoadError.value = '';
 }
 
 function applyOrderResult(data: PageResult<CodePlatformOrder>) {
   orders.value = data.items;
   total.value = data.total;
+  ordersLoadError.value = '';
 }
 
 async function loadSummary(options: { background?: boolean; force?: boolean } = {}) {
@@ -744,7 +778,8 @@ async function loadSummary(options: { background?: boolean; force?: boolean } = 
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载发货异常看板失败');
+      summaryLoadError.value = getLoadErrorMessage(error, '加载发货异常看板失败');
+      ElMessage.error(summaryLoadError.value);
     }
   } finally {
     if (activeSummaryQueryKey.value === key) {
@@ -787,7 +822,8 @@ async function loadOrders(options: { background?: boolean; force?: boolean } = {
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载发货异常订单失败');
+      ordersLoadError.value = getLoadErrorMessage(error, '加载发货异常订单失败');
+      ElMessage.error(ordersLoadError.value);
     }
   } finally {
     if (activeOrdersQueryKey.value === key) {

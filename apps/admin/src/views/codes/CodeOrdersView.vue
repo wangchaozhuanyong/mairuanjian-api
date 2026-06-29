@@ -79,6 +79,13 @@
         show-icon
       />
 
+      <ListRequestError
+        v-if="ordersLoadError && orders.length"
+        title="兑换码订单刷新失败"
+        :message="ordersLoadError"
+        @retry="() => loadOrders({ force: true })"
+      />
+
       <el-table
         v-loading="loading"
         class="desktop-data-table"
@@ -89,7 +96,13 @@
         @sort-change="handleSortChange"
       >
         <template #empty>
-          <div class="apple-core-empty-state">
+          <ListRequestError
+            v-if="ordersLoadError"
+            title="兑换码订单加载失败"
+            :message="ordersLoadError"
+            @retry="() => loadOrders({ force: true })"
+          />
+          <div v-else class="apple-core-empty-state">
             <strong>暂无兑换码订单</strong>
             <span>{{ codeOrdersEmptyStateText }}</span>
             <div class="apple-core-empty-state__actions">
@@ -295,6 +308,14 @@
             </AppButton>
           </div>
         </article>
+      </div>
+
+      <div v-else-if="ordersLoadError" class="mobile-record-list" aria-label="兑换码订单加载失败">
+        <ListRequestError
+          title="兑换码订单加载失败"
+          :message="ordersLoadError"
+          @retry="() => loadOrders({ force: true })"
+        />
       </div>
 
       <div v-else class="mobile-record-list">
@@ -720,6 +741,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppDrawer from '@/components/ui/AppDrawer.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
 import FeatureHelp from '@/components/ui/FeatureHelp.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -744,6 +766,7 @@ import {
   getCodeDeliveryMethodLabel as getConfiguredCodeDeliveryMethodLabel
 } from '@/utils/codeDeliveryMethods';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { hasUserPermission } from '@/utils/permissions';
 import { createSmartQueryKey, refreshSmartQueryResource } from '@/utils/smartQuery';
 import { loadSmartSourcePlatforms } from '@/utils/smartSystemQueries';
@@ -777,6 +800,7 @@ const detailVisible = ref(false);
 const generateDialogVisible = ref(false);
 const deliverDialogVisible = ref(false);
 const orders = ref<CodePlatformOrder[]>([]);
+const ordersLoadError = ref('');
 const deliveryLogs = ref<CodeDeliveryLog[]>([]);
 const platforms = ref<SourcePlatform[]>([]);
 const services = ref<CodeService[]>([]);
@@ -1069,6 +1093,7 @@ function buildOrderParams(): CodeOrderQuery {
 function applyOrderResult(data: PageResult<CodePlatformOrder>) {
   orders.value = data.items;
   total.value = data.total;
+  ordersLoadError.value = '';
 }
 
 async function loadOrders(options: { background?: boolean; force?: boolean } = {}) {
@@ -1092,7 +1117,8 @@ async function loadOrders(options: { background?: boolean; force?: boolean } = {
     });
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载兑换码订单失败');
+      ordersLoadError.value = getLoadErrorMessage(error, '加载兑换码订单失败');
+      ElMessage.error(ordersLoadError.value);
     }
   }
 }

@@ -18,6 +18,8 @@ import type {
   AppleAutomationTaskBatchResults,
   AppleAutomationWorkbenchStatus,
   AppleAutomationTask,
+  AppleGiftCardBalanceCheckRun,
+  AppleGiftCardQueryAccounts,
   AutomationTaskLog,
   AppleBalanceAdjustment,
   AppleBalanceConsumption,
@@ -406,6 +408,25 @@ function normalizeAutomationWorkbenchStatus(
     statusCheck: normalizeAutomationStatusCheckCapability(partial?.statusCheck),
     balanceCheck: normalizeAutomationCapability(partial?.balanceCheck),
     officialPriceCheck: normalizeAutomationCapability(partial?.officialPriceCheck)
+  };
+}
+
+function normalizeGiftCardQueryAccounts(
+  value: AppleGiftCardQueryAccounts
+): AppleGiftCardQueryAccounts {
+  const partial = value as Partial<AppleGiftCardQueryAccounts> | null | undefined;
+
+  return {
+    items: normalizeArray(partial?.items).map((item) => ({
+      id: item.id,
+      appleIdMasked: item.appleIdMasked,
+      passwordSaved: Boolean(item.passwordSaved),
+      status: item.status === 'disabled' ? 'disabled' : 'ready',
+      remark: item.remark ?? null,
+      updatedAt: item.updatedAt
+    })),
+    maxAccounts: Number(partial?.maxAccounts ?? 5),
+    updatedAt: partial?.updatedAt ?? null
   };
 }
 
@@ -1690,6 +1711,25 @@ export interface AppleWebCheckGatewayAttemptResult {
   remainingCandidateIds: string[];
 }
 
+export interface SaveAppleGiftCardQueryAccountPayload {
+  appleId: string;
+  password: string;
+  status?: 'ready' | 'disabled';
+  remark?: string | null;
+}
+
+export interface SaveAppleGiftCardQueryAccountsPayload {
+  accounts: SaveAppleGiftCardQueryAccountPayload[];
+}
+
+export interface CreateAppleGiftCardBalanceCheckPayload {
+  attachmentIds: string[];
+}
+
+export interface UpdateAppleGiftCardBalanceCheckRowPayload {
+  extractedCode: string;
+}
+
 export interface WriteAppleAutomationTaskResultPayload {
   status?: Extract<AutomationTaskStatus, 'success' | 'failed' | 'need_review'>;
   resultPayload?: Record<string, unknown> | null;
@@ -1700,6 +1740,12 @@ export interface WriteAppleAutomationTaskResultPayload {
 
 export interface MarkAppleAutomationTaskManualPayload {
   reason: string;
+}
+
+export interface SubmitAppleAutomationTaskManualInputPayload {
+  inputType?: 'verification_code' | 'captcha' | 'device_confirmation' | 'note';
+  value: string;
+  note?: string | null;
 }
 
 export interface BulkDeleteAppleAutomationTasksPayload {
@@ -2949,6 +2995,38 @@ export const appleAutomationTasksApi = {
       http.get('/apple/automation-tasks/workbench-status')
     ).then(normalizeAutomationWorkbenchStatus);
   },
+  listGiftCardQueryAccounts() {
+    return request<AppleGiftCardQueryAccounts>(
+      http.get('/apple/automation-tasks/gift-card-query-accounts')
+    ).then(normalizeGiftCardQueryAccounts);
+  },
+  saveGiftCardQueryAccounts(payload: SaveAppleGiftCardQueryAccountsPayload) {
+    return request<AppleGiftCardQueryAccounts>(
+      http.post('/apple/automation-tasks/gift-card-query-accounts', payload)
+    ).then(normalizeGiftCardQueryAccounts);
+  },
+  createGiftCardBalanceCheck(payload: CreateAppleGiftCardBalanceCheckPayload) {
+    return request<AppleGiftCardBalanceCheckRun>(
+      http.post('/apple/automation-tasks/gift-card-balance-check', payload)
+    );
+  },
+  updateGiftCardBalanceCheckRow(
+    runId: string,
+    rowId: string,
+    payload: UpdateAppleGiftCardBalanceCheckRowPayload
+  ) {
+    return request<AppleGiftCardBalanceCheckRun>(
+      http.post(
+        `/apple/automation-tasks/gift-card-balance-check/${runId}/rows/${rowId}/code`,
+        payload
+      )
+    );
+  },
+  runGiftCardBalanceCheck(runId: string) {
+    return request<AppleGiftCardBalanceCheckRun>(
+      http.post(`/apple/automation-tasks/gift-card-balance-check/${runId}/run`)
+    );
+  },
   listLogs(id: string) {
     return request<{ items: NonNullable<AppleAutomationTask['logs']> }>(
       http.get(`/apple/automation-tasks/${id}/logs`)
@@ -2982,6 +3060,11 @@ export const appleAutomationTasksApi = {
   markManual(id: string, payload: MarkAppleAutomationTaskManualPayload) {
     return request<AppleAutomationTask>(
       http.post(`/apple/automation-tasks/${id}/mark-manual`, payload)
+    ).then(normalizeAutomationTask);
+  },
+  submitManualInput(id: string, payload: SubmitAppleAutomationTaskManualInputPayload) {
+    return request<AppleAutomationTask>(
+      http.post(`/apple/automation-tasks/${id}/manual-input`, payload)
     ).then(normalizeAutomationTask);
   },
   writeResult(id: string, payload: WriteAppleAutomationTaskResultPayload) {

@@ -22,6 +22,13 @@
         </div>
       </div>
 
+      <ListRequestError
+        v-if="currentAuditLoadError"
+        :title="`${currentAuditTabLabel}加载失败`"
+        :message="currentAuditLoadError"
+        @retry="() => refreshCurrentTab({ force: true })"
+      />
+
       <el-tabs
         v-model="activeTab"
         class="system-tabs audit-log-tabs"
@@ -1124,6 +1131,7 @@ import type {
   AuditSensitiveAccessQuery
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -1146,11 +1154,30 @@ import type {
   UserTableView
 } from '@/types/system';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import { createSmartQueryKey, getSmartQueryData, refreshSmartQuery } from '@/utils/smartQuery';
 
 const route = useRoute();
-const activeTab = ref('operation');
 type LoadOptions = { background?: boolean; force?: boolean };
+type AuditTab =
+  | 'operation'
+  | 'sensitive'
+  | 'login'
+  | 'exports'
+  | 'permission'
+  | 'automation'
+  | 'platform';
+
+const activeTab = ref<AuditTab>('operation');
+const auditTabLabels: Record<AuditTab, string> = {
+  operation: '操作日志',
+  sensitive: '敏感查看日志',
+  login: '登录日志',
+  exports: '导出日志',
+  permission: '权限变更日志',
+  automation: '自动化任务日志',
+  platform: '平台接口日志'
+};
 
 const operationTableKey = 'audit_operation_logs';
 const operationColumnOptions = [
@@ -1268,6 +1295,17 @@ const operationSavedViewId = ref('');
 const operationSortConfig = ref<{ prop?: string; order?: 'ascending' | 'descending' | null }>({});
 const operationViewsLoaded = ref(false);
 const activeOperationQueryKey = ref('');
+const auditLoadErrors = reactive<Record<AuditTab, string>>({
+  operation: '',
+  sensitive: '',
+  login: '',
+  exports: '',
+  permission: '',
+  automation: '',
+  platform: ''
+});
+const currentAuditTabLabel = computed(() => auditTabLabels[activeTab.value]);
+const currentAuditLoadError = computed(() => auditLoadErrors[activeTab.value]);
 
 const sensitiveQuery = reactive({
   page: 1,
@@ -1531,6 +1569,7 @@ function buildOperationParams(): AuditLogQuery {
 function applyOperationLogsResult(result: PageResult<AuditLog>) {
   operationLogs.value = result.items;
   operationTotal.value = result.total;
+  auditLoadErrors.operation = '';
 }
 
 async function loadOperationLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -1562,7 +1601,8 @@ async function loadOperationLogs(options: { background?: boolean; force?: boolea
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载操作日志失败');
+      auditLoadErrors.operation = getLoadErrorMessage(error, '加载操作日志失败');
+      ElMessage.error(auditLoadErrors.operation);
     }
   } finally {
     if (activeOperationQueryKey.value === key) {
@@ -1722,6 +1762,7 @@ function buildSensitiveParams(): AuditSensitiveAccessQuery {
 function applySensitiveLogsResult(result: PageResult<SensitiveAccessLog>) {
   sensitiveLogs.value = result.items;
   sensitiveTotal.value = result.total;
+  auditLoadErrors.sensitive = '';
 }
 
 async function loadSensitiveLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -1753,7 +1794,8 @@ async function loadSensitiveLogs(options: { background?: boolean; force?: boolea
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载敏感查看日志失败');
+      auditLoadErrors.sensitive = getLoadErrorMessage(error, '加载敏感查看日志失败');
+      ElMessage.error(auditLoadErrors.sensitive);
     }
   } finally {
     if (activeSensitiveQueryKey.value === key) {
@@ -1916,6 +1958,7 @@ function buildLoginParams(): AuditLoginQuery {
 function applyLoginLogsResult(result: PageResult<LoginLog>) {
   loginLogs.value = result.items;
   loginTotal.value = result.total;
+  auditLoadErrors.login = '';
 }
 
 async function loadLoginLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -1947,7 +1990,8 @@ async function loadLoginLogs(options: { background?: boolean; force?: boolean } 
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载登录日志失败');
+      auditLoadErrors.login = getLoadErrorMessage(error, '加载登录日志失败');
+      ElMessage.error(auditLoadErrors.login);
     }
   } finally {
     if (activeLoginQueryKey.value === key) {
@@ -2100,6 +2144,7 @@ function buildExportParams(): AuditExportQuery {
 function applyExportLogsResult(result: PageResult<DataExportJob>) {
   exportLogs.value = result.items;
   exportTotal.value = result.total;
+  auditLoadErrors.exports = '';
 }
 
 async function loadExportLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -2131,7 +2176,8 @@ async function loadExportLogs(options: { background?: boolean; force?: boolean }
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载导出日志失败');
+      auditLoadErrors.exports = getLoadErrorMessage(error, '加载导出日志失败');
+      ElMessage.error(auditLoadErrors.exports);
     }
   } finally {
     if (activeExportQueryKey.value === key) {
@@ -2291,6 +2337,7 @@ function buildPermissionParams(): AuditPermissionChangeQuery {
 function applyPermissionLogsResult(result: PageResult<AuditLog>) {
   permissionLogs.value = result.items;
   permissionTotal.value = result.total;
+  auditLoadErrors.permission = '';
 }
 
 async function loadPermissionLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -2322,7 +2369,8 @@ async function loadPermissionLogs(options: { background?: boolean; force?: boole
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载权限变更日志失败');
+      auditLoadErrors.permission = getLoadErrorMessage(error, '加载权限变更日志失败');
+      ElMessage.error(auditLoadErrors.permission);
     }
   } finally {
     if (activePermissionQueryKey.value === key) {
@@ -2467,6 +2515,7 @@ function buildAutomationParams(): AuditAutomationTaskLogQuery {
 function applyAutomationLogsResult(result: PageResult<AutomationTaskLog>) {
   automationLogs.value = result.items;
   automationTotal.value = result.total;
+  auditLoadErrors.automation = '';
 }
 
 async function loadAutomationLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -2498,7 +2547,8 @@ async function loadAutomationLogs(options: { background?: boolean; force?: boole
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载自动化任务日志失败');
+      auditLoadErrors.automation = getLoadErrorMessage(error, '加载自动化任务日志失败');
+      ElMessage.error(auditLoadErrors.automation);
     }
   } finally {
     if (activeAutomationQueryKey.value === key) {
@@ -2652,6 +2702,7 @@ function buildPlatformParams(): AuditPlatformInterfaceLogQuery {
 function applyPlatformLogsResult(result: PageResult<PlatformSyncLog>) {
   platformLogs.value = result.items;
   platformTotal.value = result.total;
+  auditLoadErrors.platform = '';
 }
 
 async function loadPlatformLogs(options: { background?: boolean; force?: boolean } = {}) {
@@ -2683,7 +2734,8 @@ async function loadPlatformLogs(options: { background?: boolean; force?: boolean
     }
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载平台接口日志失败');
+      auditLoadErrors.platform = getLoadErrorMessage(error, '加载平台接口日志失败');
+      ElMessage.error(auditLoadErrors.platform);
     }
   } finally {
     if (activePlatformQueryKey.value === key) {
@@ -3040,7 +3092,7 @@ async function exportPlatformLogs() {
   }
 }
 
-function getRouteTab(moduleKey: string) {
+function getRouteTab(moduleKey: string): AuditTab {
   if (moduleKey === 'platform-interface-logs') return 'platform';
   if (moduleKey === 'automation-logs') return 'automation';
   return 'operation';

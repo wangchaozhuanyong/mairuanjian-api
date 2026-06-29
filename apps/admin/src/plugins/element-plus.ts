@@ -218,6 +218,10 @@ const components: Array<[string, ComponentLoader]> = [
   [
     'ElTree',
     () => import('element-plus/es/components/tree/index.mjs').then((module) => module.ElTree)
+  ],
+  [
+    'ElUpload',
+    () => import('element-plus/es/components/upload/index.mjs').then((module) => module.ElUpload)
   ]
 ];
 

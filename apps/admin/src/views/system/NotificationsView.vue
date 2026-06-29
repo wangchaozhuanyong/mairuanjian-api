@@ -43,6 +43,13 @@
         </div>
       </div>
 
+      <ListRequestError
+        v-if="activeTabLoadError"
+        :title="`${activeTabMeta.title}加载失败`"
+        :message="activeTabLoadError"
+        @retry="refreshCurrentTab"
+      />
+
       <el-tabs v-model="activeTab" class="notification-tabs" @tab-change="refreshCurrentTab">
         <el-tab-pane label="通知总览" name="overview">
           <el-table class="desktop-data-table" :data="overview?.recentLogs ?? []" row-key="id">
@@ -1138,6 +1145,7 @@ import {
 } from '@/api/system';
 import AppButton from '@/components/ui/AppButton.vue';
 import FieldHelpLabel from '@/components/ui/FieldHelpLabel.vue';
+import ListRequestError from '@/components/ui/ListRequestError.vue';
 import PageScaffold from '@/components/ui/PageScaffold.vue';
 import PanelTitleHelp from '@/components/ui/PanelTitleHelp.vue';
 import PaginationBar from '@/components/ui/PaginationBar.vue';
@@ -1163,6 +1171,7 @@ import {
 } from '@/utils/smartQuery';
 import { onRealtimeQueryInvalidated } from '@/realtime/realtimeQueryEvents';
 import { exportRowsToCsv } from '@/utils/exportCsv';
+import { getLoadErrorMessage } from '@/utils/loadErrorMessage';
 import {
   buildNotificationChannelOptions,
   buildNotificationLevelOptions,
@@ -1181,6 +1190,7 @@ import {
 
 const activeTab = ref('overview');
 const overview = ref<NotificationOverview | null>(null);
+const activeTabLoadError = ref('');
 const rules = ref<NotificationRule[]>([]);
 const templates = ref<NotificationTemplate[]>([]);
 const logs = ref<NotificationLog[]>([]);
@@ -1607,9 +1617,11 @@ async function loadOverview(options: { background?: boolean; force?: boolean } =
     if (result.changed || !cached) {
       overview.value = result.data;
     }
+    activeTabLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载通知总览失败');
+      activeTabLoadError.value = getLoadErrorMessage(error, '加载通知总览失败');
+      ElMessage.error(activeTabLoadError.value);
     }
   }
 }
@@ -1641,9 +1653,11 @@ async function loadRules(options: { background?: boolean; force?: boolean } = {}
     if (result.changed || !cached) {
       applyRuleListResult(result.data);
     }
+    activeTabLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载通知规则失败');
+      activeTabLoadError.value = getLoadErrorMessage(error, '加载通知规则失败');
+      ElMessage.error(activeTabLoadError.value);
     }
   } finally {
     if (activeRulesQueryKey.value === key) {
@@ -1679,9 +1693,11 @@ async function loadTemplates(options: { background?: boolean; force?: boolean } 
     if (result.changed || !cached) {
       applyTemplateListResult(result.data);
     }
+    activeTabLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载通知模板失败');
+      activeTabLoadError.value = getLoadErrorMessage(error, '加载通知模板失败');
+      ElMessage.error(activeTabLoadError.value);
     }
   } finally {
     if (activeTemplatesQueryKey.value === key) {
@@ -1716,9 +1732,11 @@ async function loadTelegramConfigs(options: { background?: boolean; force?: bool
     if (result.changed || !cached) {
       telegramConfigs.value = result.data.items;
     }
+    activeTabLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载 Telegram 配置失败');
+      activeTabLoadError.value = getLoadErrorMessage(error, '加载 Telegram 配置失败');
+      ElMessage.error(activeTabLoadError.value);
     }
   } finally {
     if (activeTelegramQueryKey.value === key) {
@@ -1754,9 +1772,11 @@ async function loadLogs(options: { background?: boolean; force?: boolean } = {})
     if (result.changed || !cached) {
       applyLogListResult(result.data);
     }
+    activeTabLoadError.value = '';
   } catch (error) {
     if (!options.background) {
-      ElMessage.error(error instanceof Error ? error.message : '加载通知日志失败');
+      activeTabLoadError.value = getLoadErrorMessage(error, '加载通知日志失败');
+      ElMessage.error(activeTabLoadError.value);
     }
   } finally {
     if (activeLogsQueryKey.value === key) {
